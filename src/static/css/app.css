@@ -345,6 +345,17 @@ body.map-camera-moving .peer-panel-body {
     position: relative;
     cursor: default;
 }
+.fd-net-chip.has-local-address::after {
+    content: "";
+    position: absolute;
+    top: 4px;
+    right: 3px;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--title-accent);
+    box-shadow: 0 0 5px rgba(232, 197, 71, 0.8);
+}
 .fd-net-dot {
     width: 7px;
     height: 7px;
@@ -404,6 +415,13 @@ body.map-camera-moving .peer-panel-body {
 .fd-tooltip .fdt-row { color: var(--text-secondary); font-size: 11px; }
 .fd-tooltip .fdt-row-muted { color: var(--text-muted); font-size: 10px; font-style: italic; margin-top: 4px; }
 .fd-tooltip .fdt-warn { color: var(--warn); font-size: 10px; margin-top: 4px; line-height: 1.4; }
+.fd-tooltip .node-address {
+    display: inline-block;
+    max-width: 210px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: bottom;
+}
 
 /* ==========================================================
    5. PULSE ANIMATIONS — number change effects
@@ -615,6 +633,15 @@ body.map-camera-moving .peer-panel-body {
     min-width: 60px;
     text-align: right;
 }
+.mo-p2p-row {
+    gap: 8px;
+}
+.mo-p2p-value {
+    min-width: 72px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    text-align: right;
+}
 /* HUD solid backgrounds — toggled via body.hud-solid class */
 body.hud-solid .map-overlay {
     background: rgba(var(--surface-overlay-rgb), 0.72);
@@ -653,7 +680,7 @@ body.theme-light .ro-rate {
 /* Map controls — below system stats on the left */
 .map-controls {
     position: fixed;
-    top: 210px;
+    top: 250px;
     left: 18px;
     transform: none;
     z-index: 290;
@@ -686,7 +713,7 @@ body.donut-focused .map-overlay {
 
 /* Map controls: adjust for focused mode stats shift */
 body.donut-focused .map-controls {
-    top: 206px;
+    top: 246px;
 }
 
 /* ==========================================================
@@ -713,6 +740,13 @@ body.donut-focused .map-controls {
 .net-popover .pop-row { display: flex; justify-content: space-between; padding: 1px 0; gap: 12px; }
 .net-popover .pop-label { color: var(--text-muted); font-size: 9px; text-transform: uppercase; letter-spacing: 0.6px; }
 .net-popover .pop-val { color: var(--text-secondary); font-weight: 600; }
+.net-popover .node-address {
+    display: block;
+    min-width: 0;
+    max-width: 190px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
 
 /* ==========================================================
    8. ANTARCTICA MODAL

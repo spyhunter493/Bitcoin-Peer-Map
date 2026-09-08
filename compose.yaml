@@ -6,6 +6,7 @@ services:
       context: .
       args:
         BPM_BUILD_REVISION: ${BPM_BUILD_REVISION:-unknown}
+        BUILDKIT_CONTEXT_KEEP_GIT_DIR: "1"
     image: bitcoin-peer-map:local
     restart: unless-stopped
     init: true

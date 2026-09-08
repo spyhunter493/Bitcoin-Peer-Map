@@ -1,13 +1,13 @@
 /* ============================================================
-   AS Diversity Analysis — Stylesheet
-   Isolated CSS for the AS Diversity view.
+   AS Distribution Analysis — Stylesheet
+   Isolated CSS for the AS Distribution view.
    Delete this file to fully revert the feature.
    ============================================================ */
 
 /* ==========================================================
-   2. AS DIVERSITY CONTAINER — Upper-right corner of map
+   2. AS DISTRIBUTION CONTAINER — Upper-right corner of map
    ========================================================== */
-.as-diversity-container {
+.as-distribution-container {
     --as-donut-fit-scale: 1;
     position: fixed;
     top: 52px;
@@ -28,8 +28,45 @@
                 transform 0.45s cubic-bezier(0.4, 0, 0.2, 1),
                 opacity 0.3s ease;
 }
-.as-diversity-container:hover {
+.as-distribution-container:hover {
     opacity: 1;
+}
+
+/* ==========================================================
+   2a. DISTRIBUTION LENS TOGGLE
+   ========================================================== */
+.as-lens-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px;
+    margin-bottom: 4px;
+    border: 1px solid rgba(88, 166, 255, 0.2);
+    border-radius: 5px;
+    background: rgba(13, 17, 23, 0.7);
+    pointer-events: auto;
+}
+.as-lens-btn {
+    height: 22px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--text-muted);
+    font-family: var(--font-data);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0;
+    text-transform: uppercase;
+    cursor: pointer;
+}
+.as-lens-btn:hover {
+    color: var(--text-primary);
+    background: rgba(88, 166, 255, 0.1);
+}
+.as-lens-btn.active {
+    color: var(--text-primary);
+    background: rgba(88, 166, 255, 0.22);
 }
 
 /* ==========================================================
@@ -100,7 +137,7 @@ body.donut-focused .as-focused-close {
     opacity: 0;
     transition: opacity 0.2s ease, background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
 }
-body.donut-focused .as-diversity-container:has(:hover) .as-focused-close {
+body.donut-focused .as-distribution-container:has(:hover) .as-focused-close {
     opacity: 1;
 }
 /* Hide blue back arrow when insight rect is showing (it has its own back arrow) */
@@ -149,8 +186,8 @@ body.insight-rect-active .as-focused-close {
     pointer-events: auto;
     cursor: pointer;
 }
-/* "DIVERSITY" label inside donut, above SCORE */
-.as-score-diversity {
+/* "DISTRIBUTION" label inside donut, above SCORE */
+.as-score-distribution {
     font-family: var(--font-display);
     font-size: 12px;
     font-weight: 700;
@@ -250,7 +287,7 @@ body.insight-rect-active .as-focused-close {
 }
 
 /* Hover-all state: all donut segments highlighted simultaneously */
-.as-diversity-container.as-all-hovered .as-donut-segment {
+.as-distribution-container.as-all-hovered .as-donut-segment {
     filter: brightness(1.3) saturate(1.15);
 }
 /* Title hover + click feedback */
@@ -278,11 +315,11 @@ body.insight-rect-active .as-focused-close {
 .as-score-critical  { color: var(--err-bright); }
 
 /* No-data greyed state */
-.as-diversity-container.no-data .as-donut-wrap {
+.as-distribution-container.no-data .as-donut-wrap {
     filter: drop-shadow(0 4px 12px rgba(0,0,0,0.3)) saturate(0.3);
     opacity: 0.6;
 }
-.as-diversity-container.no-data .as-donut-title {
+.as-distribution-container.no-data .as-donut-title {
     color: var(--text-dim);
 }
 
@@ -505,8 +542,8 @@ body.insight-rect-active .as-focused-close {
     pointer-events: none;
 }
 /* Show legend when hovering the donut area (but NOT when only hovering the mini private donut) */
-.as-diversity-container:hover:not(:has(.pn-mini-donut:hover)) .as-legend,
-.as-diversity-container.as-legend-visible .as-legend {
+.as-distribution-container:hover:not(:has(.pn-mini-donut:hover)) .as-legend,
+.as-distribution-container.as-legend-visible .as-legend {
     opacity: 1;
     transform: translateY(0);
     pointer-events: auto;
@@ -514,8 +551,8 @@ body.insight-rect-active .as-focused-close {
     overflow-y: auto;
 }
 /* When "Display Top ISP/Net" toggle is OFF, suppress legend expansion even on hover */
-.as-diversity-container.legends-hidden .as-legend,
-.as-diversity-container.legends-hidden:hover:not(:has(.pn-mini-donut:hover)) .as-legend {
+.as-distribution-container.legends-hidden .as-legend,
+.as-distribution-container.legends-hidden:hover:not(:has(.pn-mini-donut:hover)) .as-legend {
     max-height: 0 !important;
     opacity: 0 !important;
     pointer-events: none !important;
@@ -646,7 +683,7 @@ body.panel-focus-as .as-detail-panel { z-index: 270; }
 body.panel-focus-as .peer-panel { z-index: 80; }
 
 /* --- Push effect: when detail panel is open, shift the donut and map elements --- */
-body.as-panel-open .as-diversity-container {
+body.as-panel-open .as-distribution-container {
     right: 334px;
 }
 body.as-panel-open #worldmap {
@@ -874,7 +911,7 @@ body.as-panel-open .footer {
 /* ==========================================================
    7. HUD SOLID BACKGROUND SUPPORT
    ========================================================== */
-body.hud-solid .as-diversity-container {
+body.hud-solid .as-distribution-container {
     background: rgba(var(--surface-overlay-rgb), 0.72);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
@@ -1223,7 +1260,7 @@ body.theme-light .as-sub-sub-tooltip {
    ========================================================== */
 
 /* --- Donut container: moves from upper-right to top-center --- */
-body.donut-focused .as-diversity-container {
+body.donut-focused .as-distribution-container {
     top: 52px;
     right: auto;
     left: 50%;
@@ -1239,7 +1276,7 @@ body.donut-focused .as-diversity-container {
 }
 
 /* When panel is also open in focused mode, center between system info and panel */
-body.donut-focused.as-panel-open .as-diversity-container {
+body.donut-focused.as-panel-open .as-distribution-container {
     left: calc((180px + (100vw - 320px)) / 2);
     right: auto;
 }
@@ -1273,7 +1310,7 @@ body.donut-focused .as-legend {
     max-height: 0 !important;
     transition: opacity 0.3s ease, max-height 0.3s ease;
 }
-body.donut-focused .as-diversity-container.as-legend-visible .as-legend {
+body.donut-focused .as-distribution-container.as-legend-visible .as-legend {
     opacity: 0 !important;
     pointer-events: none !important;
     max-height: 0 !important;
@@ -1563,6 +1600,49 @@ body.as-panel-open .peer-detail-popup {
 .peer-popup-section .as-detail-sub-val {
     font-size: 10px;
 }
+.peer-popup-section .as-detail-sub-row:has(.service-flag-list) {
+    display: block;
+}
+.peer-popup-section .as-detail-sub-row:has(.service-flag-list) .as-detail-sub-label {
+    display: block;
+    margin-bottom: 4px;
+}
+.service-flag-list {
+    display: grid;
+    gap: 3px;
+    width: 100%;
+}
+.service-flag-row {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr) minmax(92px, auto);
+    align-items: center;
+    gap: 6px;
+    padding: 3px 6px;
+    border: 1px solid rgba(88, 166, 255, 0.10);
+    border-radius: 4px;
+    background: rgba(88, 166, 255, 0.04);
+}
+.service-flag-abbr {
+    color: var(--accent, #58a6ff);
+    font-family: var(--font-data);
+    font-weight: 800;
+    font-size: 10px;
+}
+.service-flag-label {
+    color: var(--text-primary, #c9d1d9);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.service-flag-rpc {
+    color: var(--text-muted, #8b949e);
+    font-family: var(--font-data);
+    font-size: 9px;
+    text-align: right;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
 
 /* --- Fixed footer with buttons --- */
 .peer-popup-footer {
@@ -1670,12 +1750,12 @@ body.as-panel-open .peer-detail-popup {
 }
 .pn-mini-donut-ring {
     position: relative;
-    width: 180px;
-    height: 180px;
+    width: 260px;
+    height: 260px;
 }
 .pn-mini-svg {
-    width: 180px;
-    height: 180px;
+    width: 260px;
+    height: 260px;
 }
 .pn-mini-center {
     position: absolute;
@@ -1688,7 +1768,7 @@ body.as-panel-open .peer-detail-popup {
 }
 .pn-mini-center-label {
     font-family: var(--font-display, 'Cinzel', serif);
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 700;
     letter-spacing: 1.5px;
     text-transform: uppercase;
@@ -1696,14 +1776,14 @@ body.as-panel-open .peer-detail-popup {
 }
 .pn-mini-center-count {
     font-family: var(--font-data, 'JetBrains Mono', monospace);
-    font-size: 26px;
+    font-size: 42px;
     font-weight: 800;
     color: var(--text-primary, #c9d1d9);
     line-height: 1;
     margin: 2px 0;
 }
 .pn-mini-center-sub {
-    font-size: 9px;
+    font-size: 11px;
     font-weight: 600;
     letter-spacing: 1px;
     text-transform: uppercase;
@@ -1715,7 +1795,7 @@ body.as-panel-open .peer-detail-popup {
     flex-direction: column;
     align-items: flex-start;
     gap: 2px;
-    width: 180px;
+    width: 260px;
     opacity: 0;
     transform: translateY(-4px);
     transition: opacity 0.25s ease, transform 0.25s ease;
@@ -1777,7 +1857,7 @@ body.private-net-mode .pn-mini-donut {
 }
 
 /* ==========================================================
-   PN1. Container — positioned like the AS diversity container
+   PN1. Container — positioned like the AS distribution container
    ========================================================== */
 .pn-container {
     position: fixed;
@@ -1869,7 +1949,7 @@ body.pn-panel-open .pn-container.pn-focused {
 }
 
 /* ==========================================================
-   PN3. Circular Donut — SVG arc segments (like AS diversity)
+   PN3. Circular Donut — SVG arc segments (like AS distribution)
    ========================================================== */
 .pn-donut-wrap {
     position: relative;
@@ -2400,7 +2480,7 @@ body.private-net-mode .peer-panel {
 /* ==========================================================
    PN6. Body class for private network mode
    ========================================================== */
-body.private-net-mode .as-diversity-container {
+body.private-net-mode .as-distribution-container {
     opacity: 0 !important;
     pointer-events: none !important;
     transition: opacity 0.3s ease;
@@ -2413,7 +2493,7 @@ body.private-net-mode .peer-popup {
 }
 
 @media (max-width: 720px) {
-    .as-diversity-container {
+    .as-distribution-container {
         right: 8px;
         transform: scale(calc(0.65 * var(--as-donut-fit-scale)));
         transform-origin: top right;

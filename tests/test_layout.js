@@ -95,7 +95,7 @@ async function waitForDashboardReady(page) {
 
 async function donutLayout(page) {
     return page.evaluate(() => {
-        const container = document.getElementById('as-diversity-container');
+        const container = document.getElementById('as-distribution-container');
         const panel = document.getElementById('peer-panel');
         const privateDonut = document.getElementById('pn-mini-donut');
         const containerRect = container.getBoundingClientRect();
@@ -115,7 +115,7 @@ async function donutLayout(page) {
 
 async function assertDonutFits(page, label) {
     await page.waitForFunction(() => {
-        const container = document.getElementById('as-diversity-container');
+        const container = document.getElementById('as-distribution-container');
         const panel = document.getElementById('peer-panel');
         if (!container || !panel) return false;
         const containerRect = container.getBoundingClientRect();

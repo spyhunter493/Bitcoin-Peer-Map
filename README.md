@@ -7,7 +7,7 @@ Bitcoin Peer Map is a Docker-first dashboard for monitoring and managing peers c
 ## Requirements
 
 - Docker Engine with Docker Compose
-- A reachable Bitcoin Core or Bitcoin Knots JSON-RPC endpoint
+- A reachable Bitcoin Node JSON-RPC endpoint
 - Dedicated RPC credentials for the dashboard
 
 The Bitcoin node can run on another machine, in another Compose project, or elsewhere on the network. Bitcoin Peer Map does not need the node datadir, blockchain files, `bitcoin-cli`, Python, or a virtualenv on the Docker host.
@@ -28,22 +28,13 @@ BITCOIN_RPC_USER=bpm
 BITCOIN_RPC_PASSWORD=replace-with-a-long-random-password
 ```
 
-The `.env` file is the normal Compose configuration method and is excluded from Git.
-
-```bash
-./scripts/compose-local.sh up -d --build
-./scripts/compose-local.sh logs -f bpm
-```
-
-Open `http://localhost:58333`.
+Open `http://HOST_IP:58333`.
 
 To stop the application:
 
 ```bash
 docker compose down
 ```
-
-Application data remains in the `bitcoin-peer-map-data` volume.
 
 ## Bitcoin RPC
 
@@ -60,8 +51,6 @@ rpcpassword=replace-with-a-long-random-password
 ```
 
 Restrict `rpcbind` and `rpcallowip` to the interface and subnet that actually need access. Do not expose Bitcoin RPC to the public internet. Prefer `rpcauth` over plaintext `rpcuser` and `rpcpassword` in the node configuration where practical.
-
-Bitcoin Core and Bitcoin Knots must be restarted after their RPC configuration changes.
 
 ### Another Compose Project
 
@@ -85,7 +74,7 @@ the container. Most deployments should set `BITCOIN_RPC_PASSWORD` directly in `.
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
 | `BITCOIN_RPC_SCHEME` | No | `http` | RPC transport, `http` or `https` |
-| `BITCOIN_RPC_HOST` | Yes | - | Bitcoin Core/Knots RPC hostname or address |
+| `BITCOIN_RPC_HOST` | Yes | - | Bitcoin Node RPC hostname or address |
 | `BITCOIN_RPC_PORT` | No | `8332` | RPC port |
 | `BITCOIN_RPC_USER` | Yes | - | Dedicated RPC username |
 | `BITCOIN_RPC_PASSWORD` | Yes* | - | RPC password; use this for the normal `.env` setup |
@@ -105,7 +94,7 @@ both variables; the application will reject the configuration.*
 Inspect the effective runtime configuration without exposing RPC credentials:
 
 ```bash
-curl http://localhost:58333/api/config
+curl http://HOST_IP:58333/api/config
 ```
 
 ### Optional Compose Secret
@@ -146,7 +135,7 @@ RPC credentials are never written to the volume. Browser display preferences rem
 
 ## Build Revision
 
-The header displays the first seven characters of the Git commit embedded in the image and links to that exact commit on GitHub. Pass the full commit SHA whenever the image is built:
+The header displays the first seven characters of the Git commit embedded in the image and links to that exact commit on GitHub. Local builds can pass the full commit SHA explicitly:
 
 ```bash
 ./scripts/compose-local.sh build
@@ -154,8 +143,23 @@ The header displays the first seven characters of the Git commit embedded in the
 
 The helper exports `BPM_BUILD_REVISION` from the current Git checkout before running Docker Compose.
 For dirty worktrees, it uses `unknown` so locally changed static assets get a fresh content-hash
-cache key. GitHub Actions passes `GITHUB_SHA` directly to the Docker build. Images built without
-`BPM_BUILD_REVISION` display `unknown` rather than an inaccurate revision.
+cache key. GitHub Actions passes `GITHUB_SHA` directly to the Docker build.
+
+Remote Git builds can derive the revision from the cloned build context instead. For production
+Compose files that use a GitHub URL as the build context, keep the Git metadata during the build:
+
+```yaml
+services:
+  bpm:
+    build:
+      context: https://github.com/spyhunter493/Bitcoin-Peer-Map.git#main
+      args:
+        BUILDKIT_CONTEXT_KEEP_GIT_DIR: "1"
+```
+
+The image writes the detected commit to `/app/build-revision`, and the application uses that file
+when `BPM_BUILD_REVISION` is not set. Images built without either `BPM_BUILD_REVISION` or preserved
+Git metadata display `unknown` rather than an inaccurate revision.
 
 ## Container Security
 
@@ -248,4 +252,4 @@ docker build --build-arg BPM_BUILD_REVISION="$(git rev-parse HEAD)" \
 
 MIT License. See [LICENSE](LICENSE).
 
-inspired by [mbhillrn](https://github.com/mbhillrn).
+Inspired by [mbhillrn](https://github.com/mbhillrn), [Mirobit](https://github.com/Mirobit).

@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 from typing import Any, Callable
 
-from network import normalize_peer_address, split_peer_address
+from network import format_bytes, normalize_peer_address, split_peer_address
 from rpc import BitcoinRpcClient, RpcError
 
 from .connectivity import ConnectivityService
@@ -25,6 +26,85 @@ class NodeService:
         self.connectivity = connectivity
         self.geo_database = geo_database
         self.auto_update_enabled = auto_update_enabled
+        self._traffic_baseline: tuple[int, int] | None = None
+        self._traffic_lock = threading.Lock()
+
+    @staticmethod
+    def _network_key(name: Any) -> str | None:
+        value = str(name or "").lower()
+        if value == "onion":
+            return "onion"
+        if value in {"ipv4", "ipv6", "i2p", "cjdns"}:
+            return value
+        return None
+
+    @classmethod
+    def _local_address_network(cls, address: str) -> str:
+        lower = address.lower()
+        if lower.endswith(".onion"):
+            return "onion"
+        if lower.endswith(".i2p"):
+            return "i2p"
+        if lower.startswith(("fc", "fd")) and ":" in lower:
+            return "cjdns"
+        if ":" in address:
+            return "ipv6"
+        return "ipv4"
+
+    @classmethod
+    def _network_summary(cls, network: dict[str, Any]) -> dict[str, Any]:
+        details: dict[str, dict[str, Any]] = {
+            key: {"reachable": False, "limited": True, "proxy": "", "localaddresses": []}
+            for key in ("ipv4", "ipv6", "onion", "i2p", "cjdns")
+        }
+        for item in network.get("networks", []):
+            key = cls._network_key(item.get("name"))
+            if key is None:
+                continue
+            details[key]["reachable"] = bool(item.get("reachable", False))
+            details[key]["limited"] = bool(item.get("limited", True))
+            details[key]["proxy"] = str(item.get("proxy", "") or "")
+
+        for item in network.get("localaddresses", []):
+            address = str(item.get("address", "") or "").strip()
+            if not address:
+                continue
+            key = cls._local_address_network(address)
+            details[key]["localaddresses"].append(
+                {
+                    "address": address,
+                    "port": item.get("port"),
+                    "score": item.get("score", 0),
+                }
+            )
+
+        for detail in details.values():
+            detail["localaddresses"].sort(
+                key=lambda item: int(item.get("score") or 0),
+                reverse=True,
+            )
+        return details
+
+    def _node_traffic_summary(self, net_totals: dict[str, Any]) -> dict[str, Any]:
+        received = max(0, int(net_totals.get("totalbytesrecv") or 0))
+        sent = max(0, int(net_totals.get("totalbytessent") or 0))
+
+        with self._traffic_lock:
+            if self._traffic_baseline is None:
+                self._traffic_baseline = (received, sent)
+            baseline_received, baseline_sent = self._traffic_baseline
+            if received < baseline_received or sent < baseline_sent:
+                self._traffic_baseline = (received, sent)
+                baseline_received, baseline_sent = self._traffic_baseline
+
+        downloaded = received - baseline_received
+        uploaded = sent - baseline_sent
+        return {
+            "download_bytes": downloaded,
+            "upload_bytes": uploaded,
+            "download_fmt": format_bytes(downloaded),
+            "upload_fmt": format_bytes(uploaded),
+        }
 
     def dashboard_info(self, currency: str = "USD") -> dict[str, Any]:
         currency = currency.upper()
@@ -40,6 +120,8 @@ class NodeService:
             "connected": None,
             "mempool_size": None,
             "subversion": None,
+            "network_details": None,
+            "node_traffic": None,
             "last_known_price": connectivity["last_known_price"],
             "last_price_currency": connectivity["last_price_currency"],
             "last_price_error": connectivity["last_price_error"],
@@ -78,6 +160,7 @@ class NodeService:
             network = self.rpc.call("getnetworkinfo", timeout=10)
             result["subversion"] = network.get("subversion", "")
             result["connected"] = network.get("connections", 0)
+            result["network_details"] = self._network_summary(network)
             scores: dict[str, int | None] = {"ipv4": None, "ipv6": None}
             for local_address in network.get("localaddresses", []):
                 address = local_address.get("address", "")
@@ -90,6 +173,12 @@ class NodeService:
             result["network_scores"] = scores
         except RpcError as exc:
             print(f"Could not load network details: {exc}")
+
+        try:
+            net_totals = self.rpc.call("getnettotals", timeout=10)
+            result["node_traffic"] = self._node_traffic_summary(net_totals)
+        except (RpcError, TypeError, ValueError) as exc:
+            print(f"Could not load node traffic totals: {exc}")
 
         try:
             result["mempool_size"] = self.rpc.call("getmempoolinfo", timeout=10).get("size", 0)

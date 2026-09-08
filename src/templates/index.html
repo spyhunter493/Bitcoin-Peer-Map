@@ -4,18 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bitcoin Peer Map</title>
+    <link rel="icon" type="image/svg+xml" href="/static/assets/favicon.svg?v={{ asset_revision }}">
     <link rel="stylesheet" href="/static/css/app.css?v={{ asset_revision }}">
-    <link rel="stylesheet" href="/static/css/as-diversity.css?v={{ asset_revision }}"><!-- [AS-DIVERSITY] -->
+    <link rel="stylesheet" href="/static/css/as-distribution.css?v={{ asset_revision }}"><!-- [AS-DISTRIBUTION] -->
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;900&display=swap" rel="stylesheet">
 </head>
 <body data-repository-url="{{ repository_url }}" data-asset-revision="{{ asset_revision }}">
     <!-- Top bar -->
     <header id="topbar">
         <div class="topbar-left">
-            <a href="{{ repository_url }}" target="_blank" rel="noopener" class="logo" title="Peer map, service provider diversity analysis, and tools for your Bitcoin node - View on GitHub"><span class="brand-primary">Bitcoin</span> <span class="brand-accent">Peer</span> <span class="brand-primary">Map</span></a>
+            <a href="{{ repository_url }}" target="_blank" rel="noopener" class="logo" title="Peer map, service provider distribution analysis, and tools for your Bitcoin node - View on GitHub"><span class="brand-primary">Bitcoin</span> <span class="brand-accent">Peer</span> <span class="brand-primary">Map</span></a>
             <a href="{{ revision_url }}" target="_blank" rel="noopener" class="revision" title="View commit {{ revision }} on GitHub">{{ revision }}</a>
         </div>
-        <!-- [AS-DIVERSITY] Flight deck moved to topbar center -->
+        <!-- [AS-DISTRIBUTION] Flight deck moved to topbar center -->
         <div class="topbar-center" id="topbar-center">
             <div id="flight-deck" class="flight-deck-inline">
                 <div class="fd-content" id="fd-content">
@@ -97,16 +98,28 @@
             <span class="ro-bar-bg"><span class="ro-bar ro-bar-out" id="ro-bar-out"></span></span>
             <span class="ro-rate" id="ro-rate-out">&mdash;</span>
         </div>
+        <div class="mo-row mo-sys-row mo-p2p-row" id="mo-row-p2p-in" title="Bitcoin node P2P download since Bitcoin Peer Map started">
+            <span class="mo-label">P2P &#8595;</span>
+            <span class="mo-value mo-p2p-value" id="mo-p2p-in">&mdash;</span>
+        </div>
+        <div class="mo-row mo-sys-row mo-p2p-row" id="mo-row-p2p-out" title="Bitcoin node P2P upload since Bitcoin Peer Map started">
+            <span class="mo-label">P2P &#8593;</span>
+            <span class="mo-value mo-p2p-value" id="mo-p2p-out">&mdash;</span>
+        </div>
     </div>
 
-    <!-- [AS-DIVERSITY] Donut — fixed upper-right corner of map, always visible -->
-    <div id="as-diversity-container" class="as-diversity-container">
-        <div class="as-donut-title" id="as-donut-title" title="Autonomous System Peer Service Provider Analysis"><span class="as-title-peer">Peer</span> <span class="as-title-provider">Service Providers</span><span class="as-title-subtitle" id="as-title-subtitle">(IPv4/IPv6)</span></div>
+    <!-- [AS-DISTRIBUTION] Donut — fixed upper-right corner of map, always visible -->
+    <div id="as-distribution-container" class="as-distribution-container">
+        <div class="as-lens-toggle" id="as-lens-toggle" role="tablist" aria-label="Distribution lens">
+            <button class="as-lens-btn active" type="button" data-lens="provider" role="tab" aria-selected="true">Providers</button>
+            <button class="as-lens-btn" type="button" data-lens="country" role="tab" aria-selected="false">Countries</button>
+        </div>
+        <div class="as-donut-title" id="as-donut-title" title="Autonomous System Peer Distribution Analysis"><span class="as-title-peer">Peer</span> <span class="as-title-provider">Service Providers</span><span class="as-title-subtitle" id="as-title-subtitle">(IPv4/IPv6)</span></div>
         <button class="as-focused-close" id="as-focused-close" title="Back">&#x2192;</button>
         <div class="as-donut-wrap" id="as-donut-wrap">
             <svg id="as-donut" class="as-donut" viewBox="0 0 260 260"></svg>
             <div id="as-donut-center" class="as-donut-center">
-                <div class="as-score-diversity" id="as-score-diversity">DIVERSITY</div>
+                <div class="as-score-distribution" id="as-score-distribution">DISTRIBUTION</div>
                 <div class="as-score-heading" id="as-score-heading">SCORE:</div>
                 <div class="as-score-value" id="as-score-value" title="">&mdash;</div>
                 <div class="as-score-quality" id="as-score-quality"></div>
@@ -120,7 +133,7 @@
         <div id="pn-mini-donut" class="pn-mini-donut hidden">
             <div class="pn-mini-label">Private Networks<span class="pn-mini-subtitle">(TOR/I2P/CJDNS)</span></div>
             <div class="pn-mini-donut-ring">
-                <svg id="pn-mini-svg" class="pn-mini-svg" viewBox="0 0 160 160"></svg>
+                <svg id="pn-mini-svg" class="pn-mini-svg" viewBox="0 0 260 260"></svg>
                 <div class="pn-mini-center" id="pn-mini-center">
                     <div class="pn-mini-center-label">Private</div>
                     <div class="pn-mini-center-count" id="pn-mini-count">0</div>
@@ -217,7 +230,7 @@
         </div>
     </div>
 
-    <!-- [AS-DIVERSITY] Detail panel — slides in from right, pushes content -->
+    <!-- [AS-DISTRIBUTION] Detail panel — slides in from right, pushes content -->
     <div id="as-detail-panel" class="as-detail-panel hidden">
         <div class="as-detail-header">
             <div class="as-detail-header-info">
@@ -242,7 +255,7 @@
         <span class="footer-btc" id="footer-btc">Support (btc): <span class="footer-btc-addr">bc1qnngus06lk0e60e05yq902e9edx7kt4kcuuuy72</span></span>
     </footer>
 
-    <script src="/static/js/as-diversity.js?v={{ asset_revision }}"></script><!-- [AS-DIVERSITY] loaded before app.js -->
+    <script src="/static/js/as-distribution.js?v={{ asset_revision }}"></script><!-- [AS-DISTRIBUTION] loaded before app.js -->
     <script src="/static/js/app.js?v={{ asset_revision }}"></script>
 </body>
 </html>
