@@ -235,10 +235,99 @@ async function assertChainTipsModal(page) {
             element => element.textContent
         ),
         rows: document.querySelectorAll('#chain-tips-body .chain-tip-table tbody tr').length,
+        role: document.querySelector('#chain-tips-modal [role="dialog"]')?.getAttribute('role'),
+        ariaModal: document.querySelector('#chain-tips-modal [role="dialog"]')?.getAttribute('aria-modal'),
+        labelledBy: document.querySelector('#chain-tips-modal [role="dialog"]')?.getAttribute('aria-labelledby'),
+        titleId: document.querySelector('#chain-tips-modal .modal-title')?.id,
+        closeLabel: document.getElementById('chain-tips-close')?.getAttribute('aria-label'),
+        focusedId: document.activeElement?.id,
     }));
     assert.ok(modal.labels.includes('Latest Non-active Tip'));
     assert.strictEqual(modal.rows, 2);
-    await page.click('#chain-tips-close');
+    assert.strictEqual(modal.role, 'dialog');
+    assert.strictEqual(modal.ariaModal, 'true');
+    assert.strictEqual(modal.labelledBy, modal.titleId);
+    assert.strictEqual(modal.closeLabel, 'Close Chain Tips');
+    assert.strictEqual(modal.focusedId, 'chain-tips-close');
+
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('#chain-tips-modal', { state: 'detached' });
+    assert.strictEqual(await page.evaluate(() => document.activeElement?.id), 'btn-chain-tips');
+}
+
+async function assertPeerActionInteractions(page) {
+    const disconnectRoute = '**/api/peer/disconnect';
+    let disconnectBody = null;
+    await page.route(disconnectRoute, async route => {
+        disconnectBody = route.request().postDataJSON();
+        await route.fulfill({
+            contentType: 'application/json',
+            body: JSON.stringify({ success: true }),
+        });
+    });
+
+    const actionButton = page.locator('#peer-tbody .peer-action-btn[data-action="disconnect"]').first();
+    await actionButton.focus();
+    await actionButton.click();
+    await page.waitForSelector('#disconnect-dialog');
+    const dialog = await page.evaluate(() => ({
+        role: document.querySelector('#disconnect-dialog [role="dialog"]')?.getAttribute('role'),
+        ariaModal: document.querySelector('#disconnect-dialog [role="dialog"]')?.getAttribute('aria-modal'),
+        ariaLabel: document.querySelector('#disconnect-dialog [role="dialog"]')?.getAttribute('aria-label'),
+        focusedChoice: document.activeElement?.dataset.choice,
+    }));
+    assert.strictEqual(dialog.role, 'dialog');
+    assert.strictEqual(dialog.ariaModal, 'true');
+    assert.ok(dialog.ariaLabel.startsWith('Disconnect peer '));
+    assert.strictEqual(dialog.focusedChoice, 'disconnect');
+
+    await page.keyboard.press('Shift+Tab');
+    assert.strictEqual(
+        await page.evaluate(() => document.activeElement?.dataset.choice),
+        'cancel'
+    );
+    await page.keyboard.press('Tab');
+    assert.strictEqual(
+        await page.evaluate(() => document.activeElement?.dataset.choice),
+        'disconnect'
+    );
+
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('#disconnect-dialog', { state: 'detached' });
+    assert.strictEqual(
+        await page.evaluate(() => document.activeElement?.dataset.action),
+        'disconnect'
+    );
+
+    await actionButton.click();
+    await page.click('#disconnect-dialog [data-choice="disconnect"]');
+    await page.waitForSelector('#action-notification[role="status"]');
+    assert.strictEqual(disconnectBody.peer_id > 0, true);
+    assert.match(
+        await page.locator('#action-notification').textContent(),
+        /^Disconnected peer /,
+    );
+    await page.unroute(disconnectRoute);
+
+    const bansRoute = '**/api/bans';
+    await page.route(bansRoute, route => route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ bans: [] }),
+    }));
+    await page.click('#btn-bans');
+    await page.waitForSelector('#ban-modal .ban-list-empty');
+    const banModal = await page.evaluate(() => ({
+        role: document.querySelector('#ban-modal [role="dialog"]')?.getAttribute('role'),
+        ariaModal: document.querySelector('#ban-modal [role="dialog"]')?.getAttribute('aria-modal'),
+        focusedId: document.activeElement?.id,
+    }));
+    assert.strictEqual(banModal.role, 'dialog');
+    assert.strictEqual(banModal.ariaModal, 'true');
+    assert.strictEqual(banModal.focusedId, 'ban-modal-close');
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('#ban-modal', { state: 'detached' });
+    assert.strictEqual(await page.evaluate(() => document.activeElement?.id), 'btn-bans');
+    await page.unroute(bansRoute);
 }
 
 async function assertPeerControlsResponsive(browser, baseUrl) {
@@ -343,6 +432,7 @@ async function assertPeerControlsResponsive(browser, baseUrl) {
             }),
         });
         await assertChainTipsModal(page);
+        await assertPeerActionInteractions(page);
 
         await applyTablePreferences(page);
         await assertDonutFits(page, 'after row-count change');

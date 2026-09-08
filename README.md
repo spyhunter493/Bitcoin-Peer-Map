@@ -217,6 +217,11 @@ bitcoin-peer-map/
 
 The application uses FastAPI lifespan hooks to start and stop peer polling, GeoIP enrichment, connectivity monitoring, and container metric workers. API routers obtain services through the application runtime rather than module-level global state.
 
+Browser code is split by responsibility: `static/js/core/` contains shared API and accessible-modal
+infrastructure, while `static/js/features/` contains independently testable feature controllers.
+`app.js` remains the map and dashboard composition root, and `as-distribution.js` owns the
+autonomous-network distribution visualization.
+
 ## Development and Tests
 
 The production image installs dependencies directly into the container's Python installation and runs `src/main.py`. A virtualenv inside the image would duplicate isolation already provided by the container and is intentionally not used.
