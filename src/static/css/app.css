@@ -2507,6 +2507,33 @@ body.donut-focused .map-controls {
     .topbar-center {
         display: none;
     }
+    .handle-row1 {
+        gap: 4px;
+        padding-inline: 8px;
+        overflow-x: auto;
+        overscroll-behavior-inline: contain;
+        scrollbar-width: thin;
+    }
+    .handle-row1::-webkit-scrollbar {
+        height: 4px;
+    }
+    .handle-show-label {
+        display: none;
+    }
+    .handle-nets {
+        flex-shrink: 0;
+        gap: 2px;
+    }
+    .handle-nets .net-badge {
+        gap: 2px;
+        padding-inline: 6px;
+        font-size: 11px;
+    }
+    .handle-btn {
+        flex-shrink: 0;
+        padding-inline: 4px;
+        font-size: 10px;
+    }
 }
 
 @media (max-width: 720px) {
@@ -2521,5 +2548,8 @@ body.donut-focused .map-controls {
     .revision,
     .topbar-right > :not(.topbar-dots):not(.topbar-gear) {
         display: none !important;
+    }
+    .handle-title {
+        display: none;
     }
 }

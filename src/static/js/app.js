@@ -4324,8 +4324,8 @@
     }
 
     function renderRecentBlocksModal(data) {
-        if (!data || data.success === false) {
-            return `<div style="color:var(--err)">${modalEscapeHtml(data?.error || 'Could not load recent blocks')}</div>`;
+        if (!data || data.success !== true) {
+            return `<div style="color:var(--err)">${modalEscapeHtml(data?.error || data?.detail || 'Could not load recent blocks')}</div>`;
         }
 
         const summary = data.summary || {};
@@ -4381,15 +4381,19 @@
         overlay.id = 'recent-blocks-modal';
         overlay.innerHTML = '<div class="modal-box" style="width:calc(100vw - 32px);max-width:900px"><div class="modal-header"><span class="modal-title">Recent Blocks</span><button class="modal-close" id="recent-blocks-close">&times;</button></div><div class="modal-body" id="recent-blocks-body"><div style="color:var(--text-muted);text-align:center;padding:16px">Loading...</div></div></div>';
         document.body.appendChild(overlay);
-        document.getElementById('recent-blocks-close').addEventListener('click', () => overlay.remove());
+        const body = overlay.querySelector('#recent-blocks-body');
+        overlay.querySelector('#recent-blocks-close').addEventListener('click', () => overlay.remove());
         overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
 
-        fetch('/api/blocks/recent?limit=25').then(r => r.json()).then(data => {
-            const body = document.getElementById('recent-blocks-body');
-            if (body) body.innerHTML = renderRecentBlocksModal(data);
+        fetch('/api/blocks/recent?limit=25').then(response => {
+            if (!response.ok) throw new Error(`Request failed (${response.status})`);
+            return response.json();
+        }).then(data => {
+            if (overlay.isConnected) body.innerHTML = renderRecentBlocksModal(data);
         }).catch(err => {
-            const body = document.getElementById('recent-blocks-body');
-            if (body) body.innerHTML = `<div style="color:var(--err)">Error: ${modalEscapeHtml(err.message)}</div>`;
+            if (overlay.isConnected) {
+                body.innerHTML = `<div style="color:var(--err)">Error: ${modalEscapeHtml(err.message)}</div>`;
+            }
         });
     }
 

@@ -73,21 +73,30 @@ class GeoDatabase:
 
 
 class BlocksRpc:
+    def __init__(self):
+        self.tip_height = 101
+        self.calls: list[tuple[str, tuple[Any, ...]]] = []
+
     def call(self, method: str, *params: Any, **kwargs: Any) -> Any:
         del kwargs
+        self.calls.append((method, params))
         if method == "getblockchaininfo":
-            return {"chain": "main", "blocks": 101}
-        if method == "getblockhash":
-            return f"hash-{params[0]}"
+            return {
+                "chain": "main",
+                "blocks": self.tip_height,
+                "bestblockhash": f"hash-{self.tip_height}",
+            }
         if method == "getblock":
             height = int(str(params[0]).split("-")[1])
             return {
+                "height": height,
                 "time": 1_700_000_000 + height,
                 "size": height * 1000,
                 "weight": height * 4000,
                 "nTx": height - 90,
                 "version": 536870912,
                 "difficulty": 123_456_789_012_345,
+                "previousblockhash": f"hash-{height - 1}" if height else None,
             }
         raise AssertionError(f"unexpected RPC method {method}")
 
@@ -142,7 +151,8 @@ def test_dashboard_info_snapshots_connectivity_after_price_fetch() -> None:
 
 def test_recent_blocks_returns_tip_first_with_summary(monkeypatch) -> None:
     monkeypatch.setattr("services.node.time.time", lambda: 1_700_000_200)
-    service = NodeService(BlocksRpc(), Connectivity(), GeoDatabase(), lambda: True)
+    rpc = BlocksRpc()
+    service = NodeService(rpc, Connectivity(), GeoDatabase(), lambda: True)
 
     result = service.recent_blocks(2)
 
@@ -158,6 +168,29 @@ def test_recent_blocks_returns_tip_first_with_summary(monkeypatch) -> None:
     assert result["summary"]["total_size"] == 201000
     assert result["summary"]["total_transactions"] == 21
     assert result["summary"]["avg_transactions"] == 10.5
+    assert rpc.calls == [
+        ("getblockchaininfo", ()),
+        ("getblock", ("hash-101", 1)),
+        ("getblock", ("hash-100", 1)),
+    ]
+
+
+def test_recent_blocks_reuses_cached_blocks_and_follows_a_new_tip() -> None:
+    rpc = BlocksRpc()
+    service = NodeService(rpc, Connectivity(), GeoDatabase(), lambda: True)
+
+    service.recent_blocks(2)
+    service.recent_blocks(2)
+    rpc.tip_height = 102
+    result = service.recent_blocks(2)
+
+    assert [block["height"] for block in result["blocks"]] == [102, 101]
+    assert [params[0] for method, params in rpc.calls if method == "getblock"] == [
+        "hash-101",
+        "hash-100",
+        "hash-102",
+    ]
+    assert sum(method == "getblockchaininfo" for method, _params in rpc.calls) == 3
 
 
 def test_recent_blocks_reports_rpc_errors() -> None:

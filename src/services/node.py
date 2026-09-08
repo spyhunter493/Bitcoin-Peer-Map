@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import threading
 import time
+from collections import OrderedDict
 from typing import Any, Callable
 
 from network import format_bytes, normalize_peer_address, split_peer_address
@@ -12,6 +13,8 @@ from rpc import BitcoinRpcClient, RpcError
 
 from .connectivity import ConnectivityService
 from .geoip import GeoDatabase
+
+_RECENT_BLOCK_CACHE_LIMIT = 256
 
 
 class NodeService:
@@ -28,6 +31,8 @@ class NodeService:
         self.auto_update_enabled = auto_update_enabled
         self._traffic_baseline: tuple[int, int] | None = None
         self._traffic_lock = threading.Lock()
+        self._recent_blocks: OrderedDict[str, dict[str, Any]] = OrderedDict()
+        self._recent_blocks_lock = threading.Lock()
 
     @staticmethod
     def _network_key(name: Any) -> str | None:
@@ -215,6 +220,44 @@ class NodeService:
         except RpcError as exc:
             return {"blockchain": None, "error": str(exc)}
 
+    def _recent_block(self, block_hash: str, expected_height: int) -> dict[str, Any]:
+        cached = self._recent_blocks.get(block_hash)
+        if cached is not None:
+            self._recent_blocks.move_to_end(block_hash)
+            return cached
+
+        block = self.rpc.call("getblock", block_hash, 1, timeout=10)
+        if not isinstance(block, dict):
+            raise ValueError("getblock returned an unexpected response")
+
+        height_value = block.get("height")
+        height = int(height_value if height_value is not None else expected_height)
+        if height != expected_height:
+            raise ValueError(
+                f"getblock returned height {height} while traversing height {expected_height}"
+            )
+
+        tx_count = block.get("nTx")
+        if tx_count is None and isinstance(block.get("tx"), list):
+            tx_count = len(block["tx"])
+        size = int(block.get("size", 0) or 0)
+        cached = {
+            "height": height,
+            "hash": block_hash,
+            "time": int(block.get("time", 0) or 0),
+            "size": size,
+            "size_mb": round(size / 1_000_000, 3),
+            "weight": int(block.get("weight", 0) or 0),
+            "tx_count": int(tx_count or 0),
+            "version": block.get("version"),
+            "difficulty": block.get("difficulty"),
+            "previous_hash": str(block.get("previousblockhash", "") or ""),
+        }
+        self._recent_blocks[block_hash] = cached
+        while len(self._recent_blocks) > _RECENT_BLOCK_CACHE_LIMIT:
+            self._recent_blocks.popitem(last=False)
+        return cached
+
     def recent_blocks(self, limit: int = 25) -> dict[str, Any]:
         try:
             limit = max(1, min(int(limit), 100))
@@ -222,35 +265,47 @@ class NodeService:
             limit = 25
 
         try:
-            blockchain = self.rpc.call("getblockchaininfo", timeout=10)
-            tip_height = int(blockchain.get("blocks", 0) or 0)
-            start_height = max(tip_height - limit + 1, 0)
+            with self._recent_blocks_lock:
+                blockchain = self.rpc.call("getblockchaininfo", timeout=10)
+                if not isinstance(blockchain, dict):
+                    raise ValueError("getblockchaininfo returned an unexpected response")
+
+                tip_height = int(blockchain.get("blocks", 0) or 0)
+                block_hash = blockchain.get("bestblockhash")
+                if not isinstance(block_hash, str) or not block_hash:
+                    raise ValueError("getblockchaininfo did not return bestblockhash")
+
+                cached_blocks = []
+                count = min(limit, tip_height + 1)
+                for offset in range(count):
+                    expected_height = tip_height - offset
+                    block = self._recent_block(block_hash, expected_height)
+                    cached_blocks.append(block)
+                    if expected_height > 0:
+                        block_hash = block["previous_hash"]
+                        if not block_hash:
+                            raise ValueError(
+                                f"getblock did not return previousblockhash at height {expected_height}"
+                            )
+
             generated_at = int(time.time())
-            blocks = []
-
-            for height in range(tip_height, start_height - 1, -1):
-                block_hash = self.rpc.call("getblockhash", height, timeout=10)
-                block = self.rpc.call("getblock", block_hash, 1, timeout=10)
-                block_time = int(block.get("time", 0) or 0)
-                size = int(block.get("size", 0) or 0)
-                tx_count = block.get("nTx")
-                if tx_count is None and isinstance(block.get("tx"), list):
-                    tx_count = len(block["tx"])
-
-                blocks.append(
-                    {
-                        "height": height,
-                        "hash": block_hash,
-                        "time": block_time,
-                        "age_seconds": max(0, generated_at - block_time) if block_time else None,
-                        "size": size,
-                        "size_mb": round(size / 1_000_000, 3),
-                        "weight": int(block.get("weight", 0) or 0),
-                        "tx_count": int(tx_count or 0),
-                        "version": block.get("version"),
-                        "difficulty": block.get("difficulty"),
-                    }
-                )
+            blocks = [
+                {
+                    "height": block["height"],
+                    "hash": block["hash"],
+                    "time": block["time"],
+                    "age_seconds": (
+                        max(0, generated_at - block["time"]) if block["time"] else None
+                    ),
+                    "size": block["size"],
+                    "size_mb": block["size_mb"],
+                    "weight": block["weight"],
+                    "tx_count": block["tx_count"],
+                    "version": block["version"],
+                    "difficulty": block["difficulty"],
+                }
+                for block in cached_blocks
+            ]
 
             count = len(blocks)
             total_size = sum(block["size"] for block in blocks)
