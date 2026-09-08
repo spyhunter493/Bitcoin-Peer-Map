@@ -913,6 +913,7 @@
     // Cached flight deck counts and scores for tooltip use
     let fdCachedCounts = { ipv4: {in:0,out:0}, ipv6: {in:0,out:0}, onion: {in:0,out:0}, i2p: {in:0,out:0}, cjdns: {in:0,out:0} };
     let fdCachedScores = { ipv4: null, ipv6: null };
+    let fdCachedNetworkDetails = {};
 
     function updateFlightDeck(peerNodes) {
         const counts = { ipv4: {in:0,out:0}, ipv6: {in:0,out:0}, onion: {in:0,out:0}, i2p: {in:0,out:0}, cjdns: {in:0,out:0} };
@@ -957,6 +958,11 @@
                     dotEl.className = 'fd-net-dot disabled';
                 }
             }
+            const chipEl = document.querySelector(`.fd-net-chip[data-net="${net}"]`);
+            if (chipEl) {
+                const addresses = fdCachedNetworkDetails[net]?.localaddresses || [];
+                chipEl.classList.toggle('has-local-address', addresses.length > 0);
+            }
         }
     }
 
@@ -974,6 +980,52 @@
         i2p:   { full: 'I2P anonymous network', label: 'I2P anonymous network', isOverlay: true },
         cjdns: { full: 'CJDNS encrypted mesh network', label: 'CJDNS encrypted mesh network', isOverlay: true },
     };
+
+    function formatNodeAddress(address) {
+        if (!address || !address.address) return '';
+        const host = String(address.address);
+        const port = Number(address.port || 0);
+        if (!port) return host;
+        return host.includes(':') && !host.endsWith('.onion') && !host.endsWith('.i2p')
+            ? `[${host}]:${port}`
+            : `${host}:${port}`;
+    }
+
+    function shortNodeAddress(value) {
+        if (value.length <= 36) return value;
+        return `${value.slice(0, 16)}...${value.slice(-15)}`;
+    }
+
+    function buildNetworkIdentityRows(netKey, rowClass, mutedClass) {
+        const details = fdCachedNetworkDetails[netKey];
+        if (!details) return '';
+
+        let html = '';
+        html += `<div class="${rowClass}">Reachable: ${details.reachable ? 'Yes' : 'No'}</div>`;
+        if (details.limited) html += `<div class="${mutedClass}">Limited by node network settings</div>`;
+        if (details.proxy) {
+            const proxy = escapeServiceHtml(details.proxy);
+            html += `<div class="${rowClass}">Proxy: <span title="${proxy}">${proxy}</span></div>`;
+        }
+
+        const addresses = details.localaddresses || [];
+        if (addresses.length === 0) {
+            html += `<div class="${mutedClass}">No advertised address reported</div>`;
+            return html;
+        }
+
+        const label = PRIVATE_NETS.has(netKey) ? 'Service' : 'Advertised';
+        for (const address of addresses.slice(0, 3)) {
+            const fullAddress = formatNodeAddress(address);
+            const escapedFull = escapeServiceHtml(fullAddress);
+            const shortAddress = escapeServiceHtml(shortNodeAddress(fullAddress));
+            html += `<div class="${rowClass}">${label}: <span class="node-address" title="${escapedFull}">${shortAddress}</span></div>`;
+        }
+        if (addresses.length > 3) {
+            html += `<div class="${mutedClass}">${addresses.length - 3} more advertised addresses</div>`;
+        }
+        return html;
+    }
 
     function buildFdTooltip(netKey) {
         const info = FD_NET_INFO[netKey];
@@ -998,6 +1050,7 @@
 
         html += `<div class="fdt-row">Inbound: ${c.in} peers</div>`;
         html += `<div class="fdt-row">Outbound: ${c.out} peers</div>`;
+        html += buildNetworkIdentityRows(netKey, 'fdt-row', 'fdt-row-muted');
 
         if (info.isOverlay) {
             html += '<div class="fdt-row-muted">Overlay network (no reliable local score)</div>';
@@ -4098,6 +4151,24 @@
         dbStatusEl.className = 'db-update-status';
     }
 
+    function updateNodeTrafficTotals(traffic) {
+        if (!traffic) return;
+        const inEl = document.getElementById('mo-p2p-in');
+        const outEl = document.getElementById('mo-p2p-out');
+        const downloaded = Number(traffic.download_bytes || 0);
+        const uploaded = Number(traffic.upload_bytes || 0);
+        if (inEl) {
+            inEl.textContent = traffic.download_fmt || fmtBytesShort(downloaded);
+            inEl.title = `${downloaded.toLocaleString()} bytes downloaded since Bitcoin Peer Map started`;
+            pulseOnChange('mo-p2p-in', downloaded, 'white');
+        }
+        if (outEl) {
+            outEl.textContent = traffic.upload_fmt || fmtBytesShort(uploaded);
+            outEl.title = `${uploaded.toLocaleString()} bytes uploaded since Bitcoin Peer Map started`;
+            pulseOnChange('mo-p2p-out', uploaded, 'white');
+        }
+    }
+
     /** Run the DB auto-update sequence: countdown → check → result. */
     async function performDbAutoUpdate() {
         // 3-second countdown
@@ -4164,6 +4235,7 @@
 
             // Update BTC price in topbar
             updateBtcPricePanel(info);
+            updateNodeTrafficTotals(info.node_traffic);
 
             // Update right overlay GeoIP DB count
             if (info.geo_db_stats && info.geo_db_stats.entries != null) {
@@ -4176,6 +4248,7 @@
                 fdCachedScores.ipv4 = info.network_scores.ipv4;
                 fdCachedScores.ipv6 = info.network_scores.ipv6;
             }
+            fdCachedNetworkDetails = info.network_details || {};
 
             updateHUD();
 
@@ -7693,8 +7766,9 @@
         const total = net === 'all'
             ? aliveNodes.length
             : (counts[net] || 0);
+        const detailsForNet = net !== 'all' ? fdCachedNetworkDetails[net] : null;
 
-        if (total === 0 && net !== 'all') return null;
+        if (total === 0 && net !== 'all' && !detailsForNet) return null;
 
         const avgPing = pingCount > 0 ? Math.round(totalPing / pingCount) : '—';
         const label = net === 'all' ? 'All Networks' : (NET_DISPLAY[net] || net.toUpperCase());
@@ -7704,6 +7778,28 @@
         html += `<div class="pop-row"><span class="pop-label">Inbound</span><span class="pop-val">${inbound}</span></div>`;
         html += `<div class="pop-row"><span class="pop-label">Outbound</span><span class="pop-val">${outbound}</span></div>`;
         html += `<div class="pop-row"><span class="pop-label">Avg Ping</span><span class="pop-val">${avgPing}${avgPing !== '—' ? 'ms' : ''}</span></div>`;
+        if (net !== 'all') {
+            const details = detailsForNet;
+            if (details) {
+                html += `<div class="pop-row"><span class="pop-label">Reachable</span><span class="pop-val">${details.reachable ? 'Yes' : 'No'}</span></div>`;
+                if (details.proxy) {
+                    const proxy = escapeServiceHtml(details.proxy);
+                    html += `<div class="pop-row"><span class="pop-label">Proxy</span><span class="pop-val node-address" title="${proxy}">${proxy}</span></div>`;
+                }
+                const addresses = details.localaddresses || [];
+                const labelText = PRIVATE_NETS.has(net) ? 'Service' : 'Advertised';
+                if (addresses.length) {
+                    for (const address of addresses.slice(0, 3)) {
+                        const fullAddress = formatNodeAddress(address);
+                        const escapedFull = escapeServiceHtml(fullAddress);
+                        const shortAddress = escapeServiceHtml(shortNodeAddress(fullAddress));
+                        html += `<div class="pop-row"><span class="pop-label">${labelText}</span><span class="pop-val node-address" title="${escapedFull}">${shortAddress}</span></div>`;
+                    }
+                } else {
+                    html += '<div class="pop-row"><span class="pop-label">Advertised</span><span class="pop-val">None</span></div>';
+                }
+            }
+        }
 
         if (net === 'all') {
             // Show per-network breakdown
@@ -8041,6 +8137,11 @@
             html += `<div class="info-row" style="margin-top:2px"><span class="info-label">Current Max</span><span class="info-val" style="font-size:10px">IN: ${formatBps(curMaxIn)} \u00b7 OUT: ${formatBps(curMaxOut)}</span></div>`;
         } else {
             html += '<div style="color:var(--text-muted);padding:4px 0">No traffic data yet</div>';
+        }
+        if (lastNodeInfo && lastNodeInfo.node_traffic) {
+            const traffic = lastNodeInfo.node_traffic;
+            html += `<div class="info-row"><span class="info-label">P2P IN \u2193</span><span class="info-val">${traffic.download_fmt || fmtBytesShort(traffic.download_bytes || 0)}</span></div>`;
+            html += `<div class="info-row"><span class="info-label">P2P OUT \u2191</span><span class="info-val">${traffic.upload_fmt || fmtBytesShort(traffic.upload_bytes || 0)}</span></div>`;
         }
 
         // ── Section 3: NET Bar Settings ──
