@@ -680,7 +680,7 @@ body.theme-light .ro-rate {
 /* Map controls — below system stats on the left */
 .map-controls {
     position: fixed;
-    top: 210px;
+    top: 250px;
     left: 18px;
     transform: none;
     z-index: 290;
@@ -713,7 +713,7 @@ body.donut-focused .map-overlay {
 
 /* Map controls: adjust for focused mode stats shift */
 body.donut-focused .map-controls {
-    top: 206px;
+    top: 246px;
 }
 
 /* ==========================================================
