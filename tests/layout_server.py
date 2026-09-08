@@ -293,6 +293,41 @@ class FakeNode:
     def blockchain(self) -> dict[str, Any]:
         return {"blockchain": {"chain": "main", "blocks": 875000, "headers": 875000}, "error": None}
 
+    def recent_blocks(self, limit: int = 25) -> dict[str, Any]:
+        now = int(time.time())
+        count = min(limit, 2)
+        blocks = [
+            {
+                "height": 875000 - offset,
+                "hash": f"{'0' * 56}{875000 - offset:08x}",
+                "time": now - (offset * 600),
+                "age_seconds": offset * 600,
+                "size": 1_500_000 - (offset * 100_000),
+                "size_mb": 1.5 - (offset * 0.1),
+                "weight": 3_900_000 - (offset * 100_000),
+                "tx_count": 3200 - (offset * 200),
+                "version": 536870912,
+                "difficulty": 123_456_789_012_345,
+            }
+            for offset in range(count)
+        ]
+        return {
+            "success": True,
+            "summary": {
+                "chain": "main",
+                "tip_height": 875000,
+                "count": count,
+                "latest_time": blocks[0]["time"],
+                "total_size": sum(block["size"] for block in blocks),
+                "avg_size_mb": 1.45,
+                "total_transactions": sum(block["tx_count"] for block in blocks),
+                "avg_transactions": 3100,
+                "generated_at": now,
+            },
+            "blocks": blocks,
+            "error": None,
+        }
+
 
 class FakeGeoDatabase:
     def update(self) -> dict[str, Any]:

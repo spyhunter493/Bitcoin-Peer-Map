@@ -4266,6 +4266,137 @@
         return `<div class="modal-row"><span class="modal-label"${lt}>${label}</span><span class="modal-val${cls}"${vt}>${value}</span></div>`;
     }
 
+    function modalEscapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, ch => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;',
+        }[ch]));
+    }
+
+    function fmtModalDateTime(seconds) {
+        if (!seconds) return '\u2014';
+        return new Date(seconds * 1000).toLocaleString();
+    }
+
+    function fmtModalAge(seconds) {
+        if (seconds == null || seconds < 0) return '\u2014';
+        if (seconds < 60) return `${seconds}s`;
+        if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+        if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
+        return `${Math.floor(seconds / 86400)}d`;
+    }
+
+    function fmtModalDifficulty(value) {
+        const diff = Number(value);
+        if (!Number.isFinite(diff) || diff <= 0) return '\u2014';
+        if (diff >= 1e12) return `${(diff / 1e12).toFixed(2)}T`;
+        if (diff >= 1e9) return `${(diff / 1e9).toFixed(2)}B`;
+        if (diff >= 1e6) return `${(diff / 1e6).toFixed(2)}M`;
+        return diff.toLocaleString();
+    }
+
+    function shortModalHash(hash) {
+        if (!hash) return '\u2014';
+        if (hash.length <= 20) return hash;
+        return `${hash.substring(0, 10)}\u2026${hash.substring(hash.length - 8)}`;
+    }
+
+    function blockExplorerBlockUrl(hash, chain) {
+        if (!hash) return null;
+        const paths = {
+            main: '',
+            test: '/testnet',
+            testnet4: '/testnet4',
+            signet: '/signet',
+        };
+        const chainPath = paths[chain];
+        if (chainPath == null) return null;
+        return `https://mempool.space${chainPath}/block/${encodeURIComponent(hash)}`;
+    }
+
+    function modalSummaryItem(label, value, title) {
+        const safeValue = modalEscapeHtml(value);
+        const safeTitle = modalEscapeHtml(title || value);
+        return `<div class="modal-summary-item" title="${safeTitle}"><span class="modal-summary-label">${modalEscapeHtml(label)}</span><span class="modal-summary-val">${safeValue}</span></div>`;
+    }
+
+    function renderRecentBlocksModal(data) {
+        if (!data || data.success !== true) {
+            return `<div style="color:var(--err)">${modalEscapeHtml(data?.error || data?.detail || 'Could not load recent blocks')}</div>`;
+        }
+
+        const summary = data.summary || {};
+        const blocks = Array.isArray(data.blocks) ? data.blocks : [];
+        let html = '<div class="modal-section-title">Summary</div>';
+        html += '<div class="modal-summary-grid">';
+        html += modalSummaryItem('Tip Height', summary.tip_height != null ? summary.tip_height.toLocaleString() : '\u2014');
+        html += modalSummaryItem('Blocks', summary.count != null ? summary.count.toLocaleString() : blocks.length.toLocaleString());
+        html += modalSummaryItem('Avg Size', summary.avg_size_mb != null ? `${summary.avg_size_mb} MB` : '\u2014');
+        html += modalSummaryItem('Avg TXs', summary.avg_transactions != null ? summary.avg_transactions.toLocaleString() : '\u2014');
+        html += modalSummaryItem('Total TXs', summary.total_transactions != null ? summary.total_transactions.toLocaleString() : '\u2014');
+        html += modalSummaryItem('Latest', fmtModalDateTime(summary.latest_time));
+        html += '</div>';
+
+        html += '<div class="modal-section-title">Recent Blocks</div>';
+        if (!blocks.length) {
+            html += '<div style="color:var(--text-muted);padding:4px 0">No block data returned</div>';
+            return html;
+        }
+
+        html += '<div class="modal-table-wrap"><table class="modal-data-table">';
+        html += '<colgroup><col style="width:82px"><col style="width:170px"><col style="width:74px"><col style="width:86px"><col style="width:74px"><col style="width:82px"><col style="width:96px"></colgroup>';
+        html += '<thead><tr><th>Height</th><th>Hash</th><th>Age</th><th>Size</th><th>TXs</th><th>Version</th><th>Difficulty</th></tr></thead><tbody>';
+        for (const block of blocks) {
+            const height = block.height != null ? Number(block.height).toLocaleString() : '\u2014';
+            const hash = block.hash || '';
+            const hashText = modalEscapeHtml(shortModalHash(hash));
+            const hashTitle = modalEscapeHtml(hash);
+            const url = blockExplorerBlockUrl(hash, summary.chain);
+            const hashCell = url
+                ? `<a class="modal-link modal-mono" href="${url}" target="_blank" rel="noopener" title="${hashTitle}">${hashText}</a>`
+                : `<span class="modal-mono" title="${hashTitle}">${hashText}</span>`;
+            html += '<tr>';
+            html += `<td class="modal-mono num">${modalEscapeHtml(height)}</td>`;
+            html += `<td>${hashCell}</td>`;
+            html += `<td title="${modalEscapeHtml(fmtModalDateTime(block.time))}">${modalEscapeHtml(fmtModalAge(block.age_seconds))}</td>`;
+            html += `<td class="num">${modalEscapeHtml(fmtBytesShort(block.size || 0))}</td>`;
+            html += `<td class="modal-mono num">${modalEscapeHtml((block.tx_count || 0).toLocaleString())}</td>`;
+            html += `<td class="modal-mono num">${modalEscapeHtml(block.version ?? '\u2014')}</td>`;
+            html += `<td class="num">${modalEscapeHtml(fmtModalDifficulty(block.difficulty))}</td>`;
+            html += '</tr>';
+        }
+        html += '</tbody></table></div>';
+        return html;
+    }
+
+    function openRecentBlocksModal() {
+        const existing = document.getElementById('recent-blocks-modal');
+        if (existing) existing.remove();
+
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.id = 'recent-blocks-modal';
+        overlay.innerHTML = '<div class="modal-box" style="width:calc(100vw - 32px);max-width:900px"><div class="modal-header"><span class="modal-title">Recent Blocks</span><button class="modal-close" id="recent-blocks-close">&times;</button></div><div class="modal-body" id="recent-blocks-body"><div style="color:var(--text-muted);text-align:center;padding:16px">Loading...</div></div></div>';
+        document.body.appendChild(overlay);
+        const body = overlay.querySelector('#recent-blocks-body');
+        overlay.querySelector('#recent-blocks-close').addEventListener('click', () => overlay.remove());
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+        fetch('/api/blocks/recent?limit=25').then(response => {
+            if (!response.ok) throw new Error(`Request failed (${response.status})`);
+            return response.json();
+        }).then(data => {
+            if (overlay.isConnected) body.innerHTML = renderRecentBlocksModal(data);
+        }).catch(err => {
+            if (overlay.isConnected) {
+                body.innerHTML = `<div style="color:var(--err)">Error: ${modalEscapeHtml(err.message)}</div>`;
+            }
+        });
+    }
+
     function openNodeInfoModal() {
         // Remove any existing
         const existing = document.getElementById('node-info-modal');
@@ -8994,6 +9125,12 @@
         const nodeInfoPeerBtn = document.getElementById('btn-node-info-peer');
         if (nodeInfoPeerBtn) {
             nodeInfoPeerBtn.addEventListener('click', (e) => { e.stopPropagation(); openNodeInfoModal(); });
+        }
+
+        // BLOCKS button in peer panel handle
+        const recentBlocksBtn = document.getElementById('btn-recent-blocks');
+        if (recentBlocksBtn) {
+            recentBlocksBtn.addEventListener('click', (e) => { e.stopPropagation(); openRecentBlocksModal(); });
         }
 
         // GEOIP-DB button in peer panel handle

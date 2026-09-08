@@ -1376,6 +1376,79 @@ body.donut-focused .map-controls {
 }
 .modal-section-title:first-child { margin-top: 0; padding-top: 0; border-top: none; }
 
+.modal-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 8px;
+    margin: 6px 0 10px;
+}
+.modal-summary-item {
+    min-width: 0;
+    padding: 7px 9px;
+    background: rgba(88, 166, 255, 0.06);
+    border: 1px solid rgba(88, 166, 255, 0.12);
+    border-radius: 6px;
+}
+.modal-summary-label {
+    display: block;
+    color: var(--text-secondary);
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+}
+.modal-summary-val {
+    display: block;
+    margin-top: 3px;
+    color: var(--text-primary);
+    font-size: 13px;
+    font-weight: 700;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.modal-table-wrap {
+    margin-top: 6px;
+    overflow-x: auto;
+    border: 1px solid rgba(88, 166, 255, 0.12);
+    border-radius: 6px;
+}
+.modal-data-table {
+    width: 100%;
+    min-width: 720px;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 11px;
+}
+.modal-data-table th,
+.modal-data-table td {
+    padding: 7px 9px;
+    border-bottom: 1px solid rgba(88, 166, 255, 0.08);
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.modal-data-table th {
+    color: var(--text-secondary);
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    background: rgba(88, 166, 255, 0.05);
+}
+.modal-data-table tr:last-child td { border-bottom: none; }
+.modal-data-table td.num { text-align: right; }
+.modal-link {
+    color: var(--accent);
+    text-decoration: none;
+}
+.modal-link:hover { color: #8ac7ff; }
+.modal-mono {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+}
+
 /* Info rows inside modals */
 .info-row {
     display: flex;
@@ -2434,6 +2507,33 @@ body.donut-focused .map-controls {
     .topbar-center {
         display: none;
     }
+    .handle-row1 {
+        gap: 4px;
+        padding-inline: 8px;
+        overflow-x: auto;
+        overscroll-behavior-inline: contain;
+        scrollbar-width: thin;
+    }
+    .handle-row1::-webkit-scrollbar {
+        height: 4px;
+    }
+    .handle-show-label {
+        display: none;
+    }
+    .handle-nets {
+        flex-shrink: 0;
+        gap: 2px;
+    }
+    .handle-nets .net-badge {
+        gap: 2px;
+        padding-inline: 6px;
+        font-size: 11px;
+    }
+    .handle-btn {
+        flex-shrink: 0;
+        padding-inline: 4px;
+        font-size: 10px;
+    }
 }
 
 @media (max-width: 720px) {
@@ -2448,5 +2548,8 @@ body.donut-focused .map-controls {
     .revision,
     .topbar-right > :not(.topbar-dots):not(.topbar-gear) {
         display: none !important;
+    }
+    .handle-title {
+        display: none;
     }
 }

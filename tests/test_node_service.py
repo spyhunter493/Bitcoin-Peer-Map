@@ -1,5 +1,6 @@
 from typing import Any
 
+from rpc import RpcError
 from services.node import NodeService
 
 
@@ -71,6 +72,41 @@ class GeoDatabase:
         return {"status": "ok", "entries": 0}
 
 
+class BlocksRpc:
+    def __init__(self):
+        self.tip_height = 101
+        self.calls: list[tuple[str, tuple[Any, ...]]] = []
+
+    def call(self, method: str, *params: Any, **kwargs: Any) -> Any:
+        del kwargs
+        self.calls.append((method, params))
+        if method == "getblockchaininfo":
+            return {
+                "chain": "main",
+                "blocks": self.tip_height,
+                "bestblockhash": f"hash-{self.tip_height}",
+            }
+        if method == "getblock":
+            height = int(str(params[0]).split("-")[1])
+            return {
+                "height": height,
+                "time": 1_700_000_000 + height,
+                "size": height * 1000,
+                "weight": height * 4000,
+                "nTx": height - 90,
+                "version": 536870912,
+                "difficulty": 123_456_789_012_345,
+                "previousblockhash": f"hash-{height - 1}" if height else None,
+            }
+        raise AssertionError(f"unexpected RPC method {method}")
+
+
+class ErrorRpc:
+    def call(self, method: str, *params: Any, **kwargs: Any) -> Any:
+        del method, params, kwargs
+        raise RpcError("rpc unavailable")
+
+
 def test_dashboard_info_snapshots_connectivity_after_price_fetch() -> None:
     rpc = Rpc()
     service = NodeService(rpc, Connectivity(), GeoDatabase(), lambda: True)
@@ -110,4 +146,61 @@ def test_dashboard_info_snapshots_connectivity_after_price_fetch() -> None:
         "upload_bytes": 5120,
         "download_fmt": "1.5KB",
         "upload_fmt": "5.0KB",
+    }
+
+
+def test_recent_blocks_returns_tip_first_with_summary(monkeypatch) -> None:
+    monkeypatch.setattr("services.node.time.time", lambda: 1_700_000_200)
+    rpc = BlocksRpc()
+    service = NodeService(rpc, Connectivity(), GeoDatabase(), lambda: True)
+
+    result = service.recent_blocks(2)
+
+    assert result["success"] is True
+    assert result["error"] is None
+    assert [block["height"] for block in result["blocks"]] == [101, 100]
+    assert result["blocks"][0]["hash"] == "hash-101"
+    assert result["blocks"][0]["age_seconds"] == 99
+    assert result["blocks"][1]["tx_count"] == 10
+    assert result["summary"]["chain"] == "main"
+    assert result["summary"]["tip_height"] == 101
+    assert result["summary"]["count"] == 2
+    assert result["summary"]["total_size"] == 201000
+    assert result["summary"]["total_transactions"] == 21
+    assert result["summary"]["avg_transactions"] == 10.5
+    assert rpc.calls == [
+        ("getblockchaininfo", ()),
+        ("getblock", ("hash-101", 1)),
+        ("getblock", ("hash-100", 1)),
+    ]
+
+
+def test_recent_blocks_reuses_cached_blocks_and_follows_a_new_tip() -> None:
+    rpc = BlocksRpc()
+    service = NodeService(rpc, Connectivity(), GeoDatabase(), lambda: True)
+
+    service.recent_blocks(2)
+    service.recent_blocks(2)
+    rpc.tip_height = 102
+    result = service.recent_blocks(2)
+
+    assert [block["height"] for block in result["blocks"]] == [102, 101]
+    assert [params[0] for method, params in rpc.calls if method == "getblock"] == [
+        "hash-101",
+        "hash-100",
+        "hash-102",
+    ]
+    assert sum(method == "getblockchaininfo" for method, _params in rpc.calls) == 3
+
+
+def test_recent_blocks_reports_rpc_errors() -> None:
+    service = NodeService(ErrorRpc(), Connectivity(), GeoDatabase(), lambda: True)
+
+    result = service.recent_blocks(2)
+
+    assert result == {
+        "success": False,
+        "summary": None,
+        "blocks": [],
+        "error": "rpc unavailable",
     }
