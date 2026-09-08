@@ -151,319 +151,42 @@ window.ASDistribution = (function () {
     };
 
     // ═══════════════════════════════════════════════════════════
-    // PARSING & AGGREGATION
+    // PARSING & AGGREGATION — delegated pure data module
     // ═══════════════════════════════════════════════════════════
 
-    /** Extract AS number from the "AS12345 Org Name" string */
-    function parseAsNumber(asField) {
-        if (!asField) return null;
-        var m = asField.match(/^(AS\d+)/);
-        return m ? m[1] : null;
-    }
+    const distributionData = window.BPMDistributionData;
+    const parseAsNumber = distributionData.parseAsNumber;
+    const parseAsOrg = distributionData.parseAsOrg;
+    const fmtBytes = distributionData.fmtBytes;
+    const fmtDuration = distributionData.fmtDuration;
+    const buildDistributionGroup = distributionData.buildDistributionGroup;
 
-    /** Extract org name from the "AS12345 Org Name" string */
-    function parseAsOrg(asField) {
-        if (!asField) return '';
-        var m = asField.match(/^AS\d+\s+(.+)/);
-        return m ? m[1].trim() : asField;
-    }
-
-    /** Format bytes to human-readable */
-    function fmtBytes(b) {
-        if (b == null || isNaN(b)) return '\u2014';
-        if (b < 1024) return b + ' B';
-        if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
-        if (b < 1073741824) return (b / 1048576).toFixed(1) + ' MB';
-        return (b / 1073741824).toFixed(2) + ' GB';
-    }
-
-    /** Format seconds to human-readable duration */
-    function fmtDuration(secs) {
-        if (!secs || secs <= 0) return '\u2014';
-        var d = Math.floor(secs / 86400);
-        var h = Math.floor((secs % 86400) / 3600);
-        var m = Math.floor((secs % 3600) / 60);
-        if (d > 0) return d + 'd ' + h + 'h';
-        if (h > 0) return h + 'h ' + m + 'm';
-        return m + 'm';
-    }
-
-    /** Get hosting label from peer flags */
-    function getHostingLabel(peers) {
-        var hostingCount = peers.filter(function (p) { return p.hosting; }).length;
-        var ratio = hostingCount / peers.length;
-        if (ratio >= 0.7) return 'Cloud/Hosting';
-        if (ratio <= 0.3) return 'Residential';
-        return 'Mixed';
-    }
-
-    /** Get concentration risk level for a percentage */
-    function getRisk(pct) {
-        if (pct >= 50) return { level: 'critical', label: 'Critical \u2014 Dominates Peers' };
-        if (pct >= 30) return { level: 'high', label: 'High Concentration' };
-        if (pct >= 15) return { level: 'moderate', label: 'Moderate Concentration' };
-        return { level: 'low', label: '' };
-    }
-
-    /** Build the shared metrics for a provider/country distribution group. */
-    function buildDistributionGroup(base, gPeers, denominator) {
-        var count = gPeers.length;
-        var pct = denominator > 0 ? (count / denominator) * 100 : 0;
-
-        var inbound = 0;
-        for (var ii = 0; ii < gPeers.length; ii++) {
-            if (gPeers[ii].direction === 'IN') inbound++;
-        }
-        var outbound = count - inbound;
-
-        var connTypes = {};
-        for (var ci = 0; ci < gPeers.length; ci++) {
-            var t = gPeers[ci].connection_type || 'unknown';
-            connTypes[t] = (connTypes[t] || 0) + 1;
-        }
-
-        var pings = [];
-        for (var pii = 0; pii < gPeers.length; pii++) {
-            if (gPeers[pii].ping_ms > 0) pings.push(gPeers[pii].ping_ms);
-        }
-        var avgPing = pings.length > 0 ? pings.reduce(function (a, b) { return a + b; }, 0) / pings.length : 0;
-
-        var nowSec = Math.floor(Date.now() / 1000);
-        var durations = [];
-        for (var di = 0; di < gPeers.length; di++) {
-            if (gPeers[di].conntime > 0) {
-                var dur = nowSec - gPeers[di].conntime;
-                if (dur > 0) durations.push(dur);
-            }
-        }
-        var avgDuration = durations.length > 0 ? durations.reduce(function (a, b) { return a + b; }, 0) / durations.length : 0;
-
-        var totalSent = 0, totalRecv = 0;
-        for (var bi = 0; bi < gPeers.length; bi++) {
-            totalSent += (gPeers[bi].bytessent || 0);
-            totalRecv += (gPeers[bi].bytesrecv || 0);
-        }
-
-        var verMap = {};
-        for (var vi = 0; vi < gPeers.length; vi++) {
-            var v = gPeers[vi].subver || 'Unknown';
-            if (!verMap[v]) verMap[v] = { count: 0, peers: [] };
-            verMap[v].count++;
-            verMap[v].peers.push(gPeers[vi]);
-        }
-        var versions = [];
-        var verKeys = Object.keys(verMap);
-        for (var vk = 0; vk < verKeys.length; vk++) {
-            versions.push({ subver: verKeys[vk], count: verMap[verKeys[vk]].count, peers: verMap[verKeys[vk]].peers });
-        }
-        versions.sort(function (a, b) { return b.count - a.count; });
-
-        var countryMap = {};
-        for (var coi = 0; coi < gPeers.length; coi++) {
-            if (!gPeers[coi].countryCode || gPeers[coi].countryCode === '') continue;
-            var ckey = gPeers[coi].countryCode;
-            if (!countryMap[ckey]) countryMap[ckey] = { code: ckey, name: gPeers[coi].country || ckey, count: 0, peers: [] };
-            countryMap[ckey].count++;
-            countryMap[ckey].peers.push(gPeers[coi]);
-        }
-        var countries = [];
-        var coKeys = Object.keys(countryMap);
-        for (var ck = 0; ck < coKeys.length; ck++) {
-            countries.push(countryMap[coKeys[ck]]);
-        }
-        countries.sort(function (a, b) { return b.count - a.count; });
-
-        var svcMap = {};
-        for (var si = 0; si < gPeers.length; si++) {
-            var s = gPeers[si].services_abbrev || '\u2014';
-            if (!svcMap[s]) svcMap[s] = { count: 0, peers: [] };
-            svcMap[s].count++;
-            svcMap[s].peers.push(gPeers[si]);
-        }
-        var servicesCombos = [];
-        var sKeys = Object.keys(svcMap);
-        for (var sk = 0; sk < sKeys.length; sk++) {
-            servicesCombos.push({ abbrev: sKeys[sk], count: svcMap[sKeys[sk]].count, peers: svcMap[sKeys[sk]].peers });
-        }
-        servicesCombos.sort(function (a, b) { return b.count - a.count; });
-
-        var connTypeMap = {};
-        for (var cti = 0; cti < gPeers.length; cti++) {
-            var ct = gPeers[cti].connection_type || 'unknown';
-            if (!connTypeMap[ct]) connTypeMap[ct] = { count: 0, peers: [] };
-            connTypeMap[ct].count++;
-            connTypeMap[ct].peers.push(gPeers[cti]);
-        }
-        var connTypesList = [];
-        var ctKeys = Object.keys(connTypeMap);
-        for (var ctk = 0; ctk < ctKeys.length; ctk++) {
-            connTypesList.push({ type: ctKeys[ctk], count: connTypeMap[ctKeys[ctk]].count, peers: connTypeMap[ctKeys[ctk]].peers });
-        }
-        connTypesList.sort(function (a, b) { return b.count - a.count; });
-
-        var risk = getRisk(pct);
-
-        return {
-            asNumber: base.asNumber,
-            asName: base.asName,
-            asShort: base.asShort,
-            countryCode: base.countryCode || '',
-            countryName: base.countryName || '',
-            isCountryGroup: !!base.isCountryGroup,
-            peerCount: count,
-            percentage: pct,
-            inboundCount: inbound,
-            outboundCount: outbound,
-            connTypes: connTypes,
-            connTypesList: connTypesList,
-            avgPingMs: avgPing,
-            avgDurationSecs: avgDuration,
-            avgDurationFmt: fmtDuration(avgDuration),
-            totalBytesSent: totalSent,
-            totalBytesRecv: totalRecv,
-            totalBytesSentFmt: fmtBytes(totalSent),
-            totalBytesRecvFmt: fmtBytes(totalRecv),
-            versions: versions,
-            countries: countries,
-            servicesCombos: servicesCombos,
-            hostingLabel: getHostingLabel(gPeers),
-            riskLevel: risk.level,
-            riskLabel: risk.label,
-            peers: gPeers,
-            peerIds: gPeers.map(function (p) { return p.id; }),
-            color: '#6e7681',
-        };
-    }
-
-    /** Aggregate peer data into per-AS groups */
     function aggregatePeers(peers) {
-        var map = {};
-        var locatablePeers = 0;
-
-        for (var pi = 0; pi < peers.length; pi++) {
-            var p = peers[pi];
-            var asNum = parseAsNumber(p.as);
-            if (!asNum) continue;
-            locatablePeers++;
-
-            if (!map[asNum]) {
-                map[asNum] = {
-                    asNumber: asNum,
-                    asName: parseAsOrg(p.as),
-                    asShort: p.asname || '',
-                    peers: [],
-                };
-            }
-            map[asNum].peers.push(p);
-        }
-
-        totalPeers = locatablePeers;
-
-        // Build full group objects
-        var keys = Object.keys(map);
-        var groups = [];
-        for (var ki = 0; ki < keys.length; ki++) {
-            var g = map[keys[ki]];
-            groups.push(buildDistributionGroup(g, g.peers, totalPeers));
-        }
-
-        // Sort by peer count descending
-        groups.sort(function (a, b) { return b.peerCount - a.peerCount; });
-        return groups;
+        const aggregation = distributionData.aggregateProviders(peers);
+        totalPeers = aggregation.total;
+        return aggregation.groups;
     }
 
-    /** Aggregate peer data into per-country / territory groups. */
     function aggregateCountryPeers(peers) {
-        var map = {};
-        var locatablePeers = 0;
-
-        for (var pi = 0; pi < peers.length; pi++) {
-            var p = peers[pi];
-            var code = (p.countryCode || '').trim();
-            if (!code) continue;
-            locatablePeers++;
-
-            var key = 'country:' + code;
-            if (!map[key]) {
-                map[key] = {
-                    asNumber: key,
-                    asName: p.country || code,
-                    asShort: p.country || code,
-                    countryCode: code,
-                    countryName: p.country || code,
-                    isCountryGroup: true,
-                    peers: [],
-                };
-            }
-            map[key].peers.push(p);
-        }
-
-        countryTotalPeers = locatablePeers;
-
-        var keys = Object.keys(map);
-        var groups = [];
-        for (var ki = 0; ki < keys.length; ki++) {
-            var g = map[keys[ki]];
-            groups.push(buildDistributionGroup(g, g.peers, countryTotalPeers));
-        }
-
-        groups.sort(function (a, b) { return b.peerCount - a.peerCount; });
-        return groups;
+        const aggregation = distributionData.aggregateCountries(peers);
+        countryTotalPeers = aggregation.total;
+        return aggregation.groups;
     }
 
-    /** Calculate Herfindahl-Hirschman distribution score (0-10) */
     function calcDistributionScoreFor(groups, denominator) {
-        if (denominator === 0) return 0;
-        var hhi = 0;
-        for (var i = 0; i < groups.length; i++) {
-            var share = groups[i].peerCount / denominator;
-            hhi += share * share;
-        }
-        return Math.round((1 - hhi) * 100) / 10; // 0.0 to 10.0
+        return distributionData.distributionScore(groups, denominator);
     }
 
     function calcDistributionScore(groups) {
         return calcDistributionScoreFor(groups, totalPeers);
     }
 
-    /** Build donut segments: top N + Others bucket */
     function buildDonutSegmentsFor(groups, denominator, othersNoun) {
-        var top = groups.slice(0, MAX_SEGMENTS);
-        var rest = groups.slice(MAX_SEGMENTS);
-
-        // Assign colors
-        for (var i = 0; i < top.length; i++) {
-            top[i].color = PALETTE[i % PALETTE.length];
-        }
-
-        var segments = top.slice();
-
-        if (rest.length > 0) {
-            var othersCount = 0;
-            var othersPeerIds = [];
-            for (var ri = 0; ri < rest.length; ri++) {
-                othersCount += rest[ri].peerCount;
-                for (var rpi = 0; rpi < rest[ri].peerIds.length; rpi++) {
-                    othersPeerIds.push(rest[ri].peerIds[rpi]);
-                }
-            }
-            var othersPct = denominator > 0 ? (othersCount / denominator) * 100 : 0;
-            segments.push({
-                asNumber: 'Others',
-                asName: rest.length + ' other ' + othersNoun,
-                asShort: '',
-                peerCount: othersCount,
-                percentage: othersPct,
-                riskLevel: 'low',
-                riskLabel: '',
-                color: PALETTE[PALETTE.length - 1],
-                peerIds: othersPeerIds,
-                isOthers: true,
-                _othersGroups: rest,
-            });
-        }
-
-        return segments;
+        return distributionData.buildDonutSegments(groups, denominator, {
+            maxSegments: MAX_SEGMENTS,
+            palette: PALETTE,
+            othersNoun: othersNoun,
+        });
     }
 
     function buildDonutSegments(groups) {
