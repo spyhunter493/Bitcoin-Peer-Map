@@ -30,10 +30,15 @@ class FakeMetrics:
 class FakeNode:
     def __init__(self):
         self.recent_limits: list[int] = []
+        self.chain_tip_calls = 0
 
     def recent_blocks(self, limit: int) -> dict[str, Any]:
         self.recent_limits.append(limit)
         return {"success": True, "summary": {"count": 0}, "blocks": [], "error": None}
+
+    def chain_tips(self) -> dict[str, Any]:
+        self.chain_tip_calls += 1
+        return {"success": True, "summary": {"total": 0}, "tips": [], "error": None}
 
 
 def settings(tmp_path: Path) -> AppSettings:
@@ -62,6 +67,10 @@ def test_application_factory_serves_health_dashboard_and_assets(tmp_path: Path) 
         assert recent_blocks.json()["success"] is True
         assert runtime.node.recent_limits == [3]
         assert client.get("/api/blocks/recent?limit=101").status_code == 422
+        chain_tips = client.get("/api/chain-tips")
+        assert chain_tips.status_code == 200
+        assert chain_tips.json()["success"] is True
+        assert runtime.node.chain_tip_calls == 1
         config = client.get("/api/config")
         assert config.status_code == 200
         assert "secret" not in config.text

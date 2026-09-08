@@ -328,6 +328,52 @@ class FakeNode:
             "error": None,
         }
 
+    def chain_tips(self) -> dict[str, Any]:
+        now = int(time.time())
+        tips = [
+            {
+                "height": 875000,
+                "hash": f"{'0' * 56}{875000:08x}",
+                "branch_length": 0,
+                "status": "active",
+                "status_label": "Active",
+                "time": now - 300,
+                "age_seconds": 300,
+                "is_active": True,
+            },
+            {
+                "height": 874998,
+                "hash": f"{'1' * 56}{874998:08x}",
+                "branch_length": 1,
+                "status": "valid-fork",
+                "status_label": "Valid Fork",
+                "time": now - 1200,
+                "age_seconds": 1200,
+                "is_active": False,
+            },
+        ]
+        return {
+            "success": True,
+            "summary": {
+                "chain": "main",
+                "best_height": 875000,
+                "best_hash": tips[0]["hash"],
+                "total": 2,
+                "active_count": 1,
+                "non_active_count": 1,
+                "fork_count": 1,
+                "headers_only_count": 0,
+                "latest_non_active_height": 874998,
+                "latest_non_active_status": "valid-fork",
+                "counts_by_status": {"active": 1, "valid-fork": 1},
+                "age_lookup_limited": False,
+                "age_lookup_limit": 100,
+                "generated_at": now,
+            },
+            "tips": tips,
+            "error": None,
+        }
+
 
 class FakeGeoDatabase:
     def update(self) -> dict[str, Any]:

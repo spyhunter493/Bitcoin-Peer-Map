@@ -21,8 +21,12 @@ class GeoDatabase:
 
 
 class ChainTipsRpc:
+    def __init__(self):
+        self.calls: list[tuple[str, tuple[Any, ...]]] = []
+
     def call(self, method: str, *params: Any, **kwargs: Any) -> Any:
         del kwargs
+        self.calls.append((method, params))
         if method == "getchaintips":
             return [
                 {"height": 98, "hash": "headers-hash", "branchlen": 1, "status": "headers-only"},
@@ -49,7 +53,8 @@ class ErrorRpc:
 
 def test_chain_tips_sorts_active_tip_first_and_counts_statuses(monkeypatch) -> None:
     monkeypatch.setattr("services.node.time.time", lambda: 1_700_000_200)
-    service = NodeService(ChainTipsRpc(), Connectivity(), GeoDatabase(), lambda: True)
+    rpc = ChainTipsRpc()
+    service = NodeService(rpc, Connectivity(), GeoDatabase(), lambda: True)
 
     result = service.chain_tips()
 
@@ -76,6 +81,63 @@ def test_chain_tips_sorts_active_tip_first_and_counts_statuses(monkeypatch) -> N
         "active": 1,
         "valid-fork": 1,
     }
+    assert result["summary"]["age_lookup_limited"] is False
+    assert [params[0] for method, params in rpc.calls if method == "getblockheader"] == [
+        "active-hash",
+        "fork-hash",
+        "headers-hash",
+    ]
+
+
+def test_chain_tips_reuses_cached_header_times(monkeypatch) -> None:
+    monkeypatch.setattr("services.node.time.time", lambda: 1_700_000_200)
+    rpc = ChainTipsRpc()
+    service = NodeService(rpc, Connectivity(), GeoDatabase(), lambda: True)
+
+    first = service.chain_tips()
+    second = service.chain_tips()
+
+    assert first["tips"] == second["tips"]
+    assert sum(method == "getchaintips" for method, _params in rpc.calls) == 2
+    assert sum(method == "getblockchaininfo" for method, _params in rpc.calls) == 2
+    assert sum(method == "getblockheader" for method, _params in rpc.calls) == 3
+
+
+def test_chain_tips_bounds_header_lookups() -> None:
+    class ManyTipsRpc:
+        def __init__(self):
+            self.header_calls = 0
+
+        def call(self, method: str, *params: Any, **kwargs: Any) -> Any:
+            del kwargs
+            if method == "getchaintips":
+                return [
+                    {
+                        "height": 10_000 - index,
+                        "hash": f"hash-{index}",
+                        "branchlen": index,
+                        "status": "active" if index == 0 else "valid-fork",
+                    }
+                    for index in range(105)
+                ]
+            if method == "getblockchaininfo":
+                return {"chain": "main", "blocks": 10_000, "bestblockhash": "hash-0"}
+            if method == "getblockheader":
+                self.header_calls += 1
+                return {"time": 1_700_000_000}
+            raise AssertionError(f"unexpected RPC method {method}")
+
+    rpc = ManyTipsRpc()
+    service = NodeService(rpc, Connectivity(), GeoDatabase(), lambda: True)
+
+    result = service.chain_tips()
+
+    assert result["success"] is True
+    assert result["summary"]["total"] == 105
+    assert result["summary"]["age_lookup_limited"] is True
+    assert result["summary"]["age_lookup_limit"] == 100
+    assert rpc.header_calls == 100
+    assert sum(tip["time"] is None for tip in result["tips"]) == 5
 
 
 def test_chain_tips_reports_rpc_errors() -> None:

@@ -1474,76 +1474,10 @@ body.donut-focused .map-controls {
     white-space: nowrap;
 }
 .chain-tip-summary-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
-    gap: 8px;
-    margin: 6px 0 10px;
-}
-.chain-tip-summary-item {
-    min-width: 0;
-    padding: 7px 9px;
-    background: rgba(88, 166, 255, 0.06);
-    border: 1px solid rgba(88, 166, 255, 0.12);
-    border-radius: 6px;
-}
-.chain-tip-summary-label {
-    display: block;
-    color: var(--text-secondary);
-    font-size: 9px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    white-space: nowrap;
-}
-.chain-tip-summary-val {
-    display: block;
-    margin-top: 3px;
-    color: var(--text-primary);
-    font-size: 13px;
-    font-weight: 700;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-.chain-tip-table-wrap {
-    margin-top: 6px;
-    overflow-x: auto;
-    border: 1px solid rgba(88, 166, 255, 0.12);
-    border-radius: 6px;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
 }
 .chain-tip-table {
-    width: 100%;
     min-width: 620px;
-    border-collapse: collapse;
-    table-layout: fixed;
-    font-size: 11px;
-}
-.chain-tip-table th,
-.chain-tip-table td {
-    padding: 7px 9px;
-    border-bottom: 1px solid rgba(88, 166, 255, 0.08);
-    text-align: left;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-.chain-tip-table th {
-    color: var(--text-secondary);
-    font-size: 9px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    background: rgba(88, 166, 255, 0.05);
-}
-.chain-tip-table tr:last-child td { border-bottom: none; }
-.chain-tip-table td.num { text-align: right; }
-.chain-tip-link {
-    color: var(--accent);
-    text-decoration: none;
-}
-.chain-tip-link:hover { color: #8ac7ff; }
-.chain-tip-mono {
-    font-family: var(--font-mono);
-    font-variant-numeric: tabular-nums;
 }
 .chain-tip-status {
     display: inline-block;
