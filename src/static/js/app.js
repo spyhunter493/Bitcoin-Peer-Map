@@ -330,6 +330,7 @@
 
     // Original CSS variable values from :root (captured once on init for 'dark' theme reset)
     const DARK_CSS_VARS = {};
+    let advancedDisplaySettings = null;
 
     /** Apply a theme by name. Updates CSS variables, map defaults, and network colours.
      *  opts.preserveAdvSettings — when true, skip overwriting map slider values
@@ -413,21 +414,8 @@
         }
 
         // 7. Refresh advanced panel if open
-        if (advPanelEl) {
-            syncOceanPresetUI();
-            refreshAllAdvSliders();
-            // Sync HUD solid checkbox
-            const hsc = document.getElementById('adv-hud-solid');
-            if (hsc) hsc.checked = advSettings.hudSolidBg;
-            // Update dropdown display
-            const label = document.getElementById('adv-theme-current');
-            if (label) label.textContent = theme.label;
-            const list = document.getElementById('adv-theme-list');
-            if (list) {
-                list.querySelectorAll('.adv-theme-option').forEach(o => {
-                    o.classList.toggle('active', o.dataset.theme === themeName);
-                });
-            }
+        if (advancedDisplaySettings) {
+            advancedDisplaySettings.refreshTheme(themeName, theme.label);
         }
     }
 
@@ -690,25 +678,6 @@
     }
 
     // ═══════════════════════════════════════════════════════════
-    // ANTARCTICA RESEARCH STATIONS
-    // Private/overlay peers get placed here (same stations as v5)
-    // ═══════════════════════════════════════════════════════════
-
-    const ANTARCTICA_STATIONS = [
-        { lat: -67.6020, lon: 62.8730  },  // Mawson Station
-        { lat: -68.5760, lon: 77.9670  },  // Davis Station
-        { lat: -66.2810, lon: 110.5280 },  // Casey Station
-        { lat: -66.6630, lon: 140.0010 },  // Dumont d'Urville
-        { lat: -69.0050, lon: 39.5800  },  // Syowa Station
-        { lat: -70.6670, lon: 11.6330  },  // Novolazarevskaya
-        { lat: -70.7500, lon: -8.2500  },  // Neumayer Station
-        { lat: -70.4500, lon: -2.8420  },  // SANAE IV Station
-    ];
-
-    // Cache so each peer always lands on the same Antarctica spot
-    const antarcticaCache = {};
-
-    // ═══════════════════════════════════════════════════════════
     // CANVAS & VIEW STATE
     // ═══════════════════════════════════════════════════════════
 
@@ -822,10 +791,6 @@
     let citiesReady = false;
     let countryLabelsReady = false;
     let stateLabelsReady = false;
-    let stateGeometryPromise = null;
-    let stateLabelsPromise = null;
-    let cityDataPromise = null;
-
     // Zoom thresholds for progressive detail layers
     // Country borders render at ALL zoom levels (no threshold)
     // Label hierarchy: countries first → states → cities
@@ -3711,250 +3676,86 @@
     }
 
     // ═══════════════════════════════════════════════════════════
-    // HELPERS
+    // WORLD MAP PROJECTION, PRIVATE-PEER PLACEMENT & DATA LOADING
     // ═══════════════════════════════════════════════════════════
 
-    /** Mercator projection: lon/lat -> normalised 0..1 coordinates */
-    function project(lon, lat) {
-        const x = (lon + 180) / 360;
-        const latRad = lat * Math.PI / 180;
-        const mercN = Math.log(Math.tan(Math.PI / 4 + latRad / 2));
-        const y = 0.5 - mercN / (2 * Math.PI);
-        return { x, y };
-    }
+    const mapTools = window.BPMWorldMap;
+    const project = mapTools.project;
+    const rgba = mapTools.rgba;
+    const lerp = mapTools.lerp;
+    const clamp = mapTools.clamp;
+    const getAntarcticaPosition = mapTools.createAntarcticaLocator();
 
-    /** Convert lon/lat to screen pixel coordinates using current view */
     function worldToScreen(lon, lat) {
-        const p = project(lon, lat);
-        const sx = (p.x - 0.5) * W * view.zoom + W / 2 - view.x * view.zoom;
-        const sy = (p.y - 0.5) * H * view.zoom + H / 2 - view.y * view.zoom;
-        return { x: sx, y: sy };
+        return mapTools.worldToScreen(lon, lat, W, H, view);
     }
 
-    /** Convert screen pixel coordinates back to lon/lat */
-    function screenToWorld(sx, sy) {
-        const px = ((sx - W / 2 + view.x * view.zoom) / (W * view.zoom)) + 0.5;
-        const py = ((sy - H / 2 + view.y * view.zoom) / (H * view.zoom)) + 0.5;
-        const lon = px * 360 - 180;
-        const mercN = (0.5 - py) * 2 * Math.PI;
-        const lat = (2 * Math.atan(Math.exp(mercN)) - Math.PI / 2) * 180 / Math.PI;
-        return { lon, lat };
+    function screenToWorld(x, y) {
+        return mapTools.screenToWorld(x, y, W, H, view);
     }
 
-    function rgba(c, a) {
-        return `rgba(${c.r},${c.g},${c.b},${a})`;
-    }
+    const mapDataLoader = mapTools.createDataLoader({
+        fetchJson: fetchStaticJson,
+        thresholds: {
+            states: ZOOM_PREFETCH_STATES,
+            stateLabels: ZOOM_PREFETCH_STATE_LABELS,
+            cities: ZOOM_PREFETCH_CITIES,
+        },
+        callbacks: {
+            world(polygons) {
+                worldPolygons = polygons;
+                worldReady = true;
+                classifyPolarPolygons();
+                rebuildWorldPaths();
+                markBasemapDirty();
+            },
+            lakes(polygons) {
+                lakePolygons = polygons;
+                lakesReady = true;
+                rebuildLakePath();
+                markBasemapDirty();
+            },
+            borders(lines) {
+                borderLines = lines;
+                bordersReady = true;
+                rebuildBorderPath();
+                markBasemapDirty();
+            },
+            states(lines) {
+                stateLines = lines;
+                statesReady = true;
+                rebuildStatePath();
+                markBasemapDirty();
+            },
+            cities(points) {
+                cityPoints = points;
+                citiesReady = true;
+                projectBasemapPoints(cityPoints);
+                markBasemapDirty();
+            },
+            countryLabels(labels) {
+                countryLabels = labels;
+                countryLabelsReady = true;
+                projectBasemapPoints(countryLabels);
+                markBasemapDirty();
+            },
+            stateLabels(labels) {
+                stateLabels = labels;
+                stateLabelsReady = true;
+                projectBasemapPoints(stateLabels);
+                markBasemapDirty();
+            },
+        },
+    });
 
-    function lerp(a, b, t) {
-        return a + (b - a) * t;
-    }
-
-    function clamp(v, min, max) {
-        return Math.max(min, Math.min(max, v));
-    }
-
-    /** Simple deterministic hash for stable Antarctica placement */
-    function hashString(str) {
-        let hash = 0;
-        for (let i = 0; i < str.length; i++) {
-            hash = ((hash << 5) - hash) + str.charCodeAt(i);
-            hash = hash & hash;  // force 32-bit integer
-        }
-        return hash;
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // ANTARCTICA PLACEMENT
-    // Peers with location_status "private" or "unavailable" (or
-    // overlay networks like Tor/I2P/CJDNS) are placed near
-    // Antarctic research stations with a deterministic offset
-    // so they don't jump around between refreshes.
-    // ═══════════════════════════════════════════════════════════
-
-    function getAntarcticaPosition(addr) {
-        if (antarcticaCache[addr]) return antarcticaCache[addr];
-
-        const h1 = hashString(addr);
-        const h2 = hashString(addr + '_offset');
-
-        // Pick a station deterministically
-        const idx = Math.abs(h1) % ANTARCTICA_STATIONS.length;
-        const station = ANTARCTICA_STATIONS[idx];
-
-        // Small offset (±0.5 deg) so peers near same station don't stack
-        const latOff = ((Math.abs(h2) % 100) / 100 - 0.5) * 1.0;
-        const lonOff = ((Math.abs(h2 >> 8) % 100) / 100 - 0.5) * 1.0;
-
-        const pos = { lat: station.lat + latOff, lon: station.lon + lonOff };
-        antarcticaCache[addr] = pos;
-        return pos;
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // WORLD MAP GEOMETRY — Real Natural Earth 50m landmasses
-    // Loaded from /static/assets/world-50m.json on startup.
-    // Format: array of polygons, each polygon is an array of
-    // rings (outer + holes), each ring is [[lon,lat], ...].
-    // Source: Natural Earth (public domain), stripped to coords only.
-    // 50m gives much better coastline detail than 110m (~1410 polygons
-    // vs 127), while still being fast to load and render on canvas.
-    // ═══════════════════════════════════════════════════════════
-
-    async function loadWorldGeometry() {
-        try {
-            const polygons = await fetchStaticJson('world-50m.json');
-
-            // Convert to our internal format: each entry is { rings: [[[lon,lat],...], ...] }
-            // The first ring is the outer boundary, subsequent rings are holes (lakes etc)
-            worldPolygons = polygons;
-            worldReady = true;
-            classifyPolarPolygons();
-            rebuildWorldPaths();
-            markBasemapDirty();
-            console.log(`[Bitcoin Peer Map] Loaded ${polygons.length} land polygons (${polarPolygons.length} polar)`);
-        } catch (err) {
-            console.error('[Bitcoin Peer Map] Failed to load world geometry, using fallback:', err);
-            // Fallback: minimal hand-traced outlines so the map isn't blank
-            worldPolygons = [
-                [[[-130,50],[-125,60],[-115,68],[-95,72],[-80,72],[-65,62],[-55,50],[-60,45],[-68,44],[-75,38],[-82,30],[-90,28],[-97,26],[-105,30],[-118,34],[-125,42],[-130,50]]],
-                [[[-80,10],[-75,12],[-63,10],[-52,4],[-42,0],[-35,-5],[-35,-12],[-38,-18],[-42,-22],[-48,-28],[-52,-33],[-58,-38],[-65,-45],[-68,-53],[-72,-48],[-75,-42],[-72,-35],[-68,-28],[-70,-18],[-75,-10],[-80,0],[-80,10]]],
-                [[[-10,36],[0,38],[3,42],[5,44],[2,48],[-5,48],[-8,54],[-5,58],[5,62],[12,58],[18,55],[24,58],[30,60],[35,58],[42,55],[45,50],[40,45],[35,40],[28,36],[20,36],[12,38],[5,38],[0,36],[-10,36]]],
-                [[[-15,12],[-17,15],[-12,25],[-5,35],[0,36],[10,37],[12,32],[20,32],[25,30],[32,32],[35,30],[42,12],[50,2],[42,-5],[40,-12],[35,-22],[30,-30],[22,-34],[18,-34],[15,-28],[12,-18],[8,-5],[5,5],[0,6],[-8,5],[-15,12]]],
-                [[[28,36],[35,40],[42,48],[50,50],[55,55],[60,60],[65,68],[75,72],[90,72],[100,68],[115,65],[125,60],[130,55],[140,55],[145,50],[142,44],[135,38],[128,34],[122,30],[115,24],[108,18],[105,12],[100,5],[98,8],[95,15],[88,22],[80,28],[72,32],[60,38],[50,40],[42,45],[35,40],[28,36]]],
-                [[[115,-15],[120,-14],[130,-12],[135,-14],[140,-16],[148,-20],[152,-25],[153,-28],[150,-33],[145,-38],[137,-35],[130,-32],[122,-33],[116,-32],[114,-28],[114,-22],[118,-20],[120,-18],[115,-15]]],
-            ];
-            worldReady = true;
-            classifyPolarPolygons();
-            rebuildWorldPaths();
-            markBasemapDirty();
-        }
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // LAKES GEOMETRY — Natural Earth 50m major lakes
-    // Loaded from /static/assets/lakes-50m.json on startup.
-    // Rendered on top of land using the ocean background colour
-    // to "carve out" Great Lakes, Caspian Sea, Lake Victoria, etc.
-    // ═══════════════════════════════════════════════════════════
-
-    async function loadLakeGeometry() {
-        try {
-            lakePolygons = await fetchStaticJson('lakes-50m.json');
-            lakesReady = true;
-            rebuildLakePath();
-            markBasemapDirty();
-            console.log(`[Bitcoin Peer Map] Loaded ${lakePolygons.length} lake polygons`);
-        } catch (err) {
-            // Lakes are non-critical — map still works without them
-            console.warn('[Bitcoin Peer Map] Failed to load lake geometry:', err);
-        }
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // COUNTRY BORDERS — Natural Earth 50m admin-0 boundary lines
-    // Subtle dashed lines between countries, visible at medium zoom.
-    // ═══════════════════════════════════════════════════════════
-
-    async function loadBorderGeometry() {
-        try {
-            borderLines = await fetchStaticJson('borders-50m.json');
-            bordersReady = true;
-            rebuildBorderPath();
-            markBasemapDirty();
-            console.log(`[Bitcoin Peer Map] Loaded ${borderLines.length} country border lines`);
-        } catch (err) {
-            console.warn('[Bitcoin Peer Map] Failed to load country borders:', err);
-        }
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // STATE/PROVINCE BORDERS — Natural Earth 50m admin-1 lines
-    // Even subtler lines, visible only at higher zoom.
-    // ═══════════════════════════════════════════════════════════
-
-    async function loadStateGeometry() {
-        if (!stateGeometryPromise) {
-            stateGeometryPromise = (async () => {
-                try {
-                    stateLines = await fetchStaticJson('states-50m.json');
-                    statesReady = true;
-                    rebuildStatePath();
-                    markBasemapDirty();
-                    console.log(`[Bitcoin Peer Map] Loaded ${stateLines.length} state/province border lines`);
-                } catch (err) {
-                    console.warn('[Bitcoin Peer Map] Failed to load state borders:', err);
-                }
-            })();
-        }
-        return stateGeometryPromise;
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // CITIES — Natural Earth 50m populated places
-    // Point data with name and population, shown at high zoom.
-    // ═══════════════════════════════════════════════════════════
-
-    async function loadCityData() {
-        if (!cityDataPromise) {
-            cityDataPromise = (async () => {
-                try {
-                    cityPoints = await fetchStaticJson('cities-50m.json');
-                    citiesReady = true;
-                    projectBasemapPoints(cityPoints);
-                    markBasemapDirty();
-                    console.log(`[Bitcoin Peer Map] Loaded ${cityPoints.length} cities`);
-                } catch (err) {
-                    console.warn('[Bitcoin Peer Map] Failed to load city data:', err);
-                }
-            })();
-        }
-        return cityDataPromise;
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // COUNTRY LABELS — Natural Earth 50m admin-0 (English names)
-    // Appear at medium zoom, before state labels.
-    // ═══════════════════════════════════════════════════════════
-
-    async function loadCountryLabels() {
-        try {
-            countryLabels = await fetchStaticJson('country-labels-50m.json');
-            countryLabelsReady = true;
-            projectBasemapPoints(countryLabels);
-            markBasemapDirty();
-            console.log(`[Bitcoin Peer Map] Loaded ${countryLabels.length} country labels`);
-        } catch (err) {
-            console.warn('[Bitcoin Peer Map] Failed to load country labels:', err);
-        }
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // STATE/PROVINCE LABELS — Natural Earth 50m admin-1 (English)
-    // Rendered after country labels are already visible.
-    // ═══════════════════════════════════════════════════════════
-
-    async function loadStateLabels() {
-        if (!stateLabelsPromise) {
-            stateLabelsPromise = (async () => {
-                try {
-                    stateLabels = await fetchStaticJson('state-labels-50m.json');
-                    stateLabelsReady = true;
-                    projectBasemapPoints(stateLabels);
-                    markBasemapDirty();
-                    console.log(`[Bitcoin Peer Map] Loaded ${stateLabels.length} state/province labels`);
-                } catch (err) {
-                    console.warn('[Bitcoin Peer Map] Failed to load state labels:', err);
-                }
-            })();
-        }
-        return stateLabelsPromise;
-    }
-
-    function ensureZoomDetailLoaded(zoom) {
-        if (zoom >= ZOOM_PREFETCH_STATES) loadStateGeometry();
-        if (zoom >= ZOOM_PREFETCH_STATE_LABELS) loadStateLabels();
-        if (zoom >= ZOOM_PREFETCH_CITIES) loadCityData();
-    }
+    const loadWorldGeometry = mapDataLoader.loadWorld;
+    const loadLakeGeometry = mapDataLoader.loadLakes;
+    const loadBorderGeometry = mapDataLoader.loadBorders;
+    const loadStateGeometry = mapDataLoader.loadStates;
+    const loadCityData = mapDataLoader.loadCities;
+    const loadCountryLabels = mapDataLoader.loadCountryLabels;
+    const loadStateLabels = mapDataLoader.loadStateLabels;
+    const ensureZoomDetailLoaded = mapDataLoader.ensureZoomDetailLoaded;
 
     // ═══════════════════════════════════════════════════════════
     // DATA FETCHING — Real peers from /api/peers
@@ -7520,7 +7321,7 @@
             advBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 closeDisplaySettingsPopup();
-                openAdvancedPanel();
+                openAdvancedPanel(anchorEl);
             });
         }
 
@@ -8024,472 +7825,25 @@
     }
 
     // ═══════════════════════════════════════════════════════════
-    // ADVANCED DISPLAY SETTINGS — Floating draggable panel
+    // ADVANCED DISPLAY SETTINGS — delegated panel controller
     // ═══════════════════════════════════════════════════════════
 
-    let advPanelEl = null;
+    advancedDisplaySettings = window.BPMDisplaySettings.create({
+        settings: advSettings,
+        defaults: ADV_DEFAULTS,
+        themes: THEMES,
+        config: CFG,
+        getCurrentTheme: () => currentTheme,
+        applyTheme,
+        saveSettings: saveAdvSettings,
+        saveTheme,
+        updateColors: updateAdvColors,
+        markMapDirty: markBasemapDirty,
+        applyHud: applyHudSolidBg,
+    });
 
-    function openAdvancedPanel() {
-        if (advPanelEl) { advPanelEl.remove(); advPanelEl = null; }
-
-        const panel = document.createElement('div');
-        panel.className = 'adv-panel';
-        panel.id = 'adv-panel';
-
-        // ── Build HTML ──
-        let h = '';
-        // Titlebar
-        h += '<div class="adv-titlebar" id="adv-titlebar">';
-        h += '<span class="adv-titlebar-text">Advanced Display</span>';
-        h += '<button class="adv-close" id="adv-close" title="Close">&times;</button>';
-        h += '</div>';
-
-        h += '<div class="adv-body">';
-
-        // ── Theme Selector (custom dropdown) ──
-        h += '<div class="adv-theme-section">';
-        h += '<div class="adv-section">Theme</div>';
-        h += '<div class="adv-theme-wrap" id="adv-theme-wrap">';
-        h += '<div class="adv-theme-selected" id="adv-theme-selected">';
-        h += '<span id="adv-theme-current">' + (THEMES[currentTheme] ? THEMES[currentTheme].label : 'Dark') + '</span>';
-        h += '<span class="adv-theme-arrow">&#9660;</span>';
-        h += '</div>';
-        h += '<div class="adv-theme-list" id="adv-theme-list">';
-        for (const [key, theme] of Object.entries(THEMES)) {
-            const active = (key === currentTheme) ? ' active' : '';
-            h += '<div class="adv-theme-option' + active + '" data-theme="' + key + '">';
-            h += '<span>' + theme.label + '</span>';
-            h += '<span class="adv-theme-check">&#10003;</span>';
-            // Hover tooltip with color dot + description
-            h += '<div class="adv-theme-tip">';
-            h += '<div class="adv-theme-tip-head">';
-            h += '<span class="adv-theme-tip-dot" style="background:' + (theme.dot || '#888') + '"></span>';
-            h += '<span class="adv-theme-tip-name">' + theme.label + '</span>';
-            h += '</div>';
-            h += '<div class="adv-theme-tip-desc">' + (theme.desc || '') + '</div>';
-            h += '</div>';
-            h += '</div>';
-        }
-        h += '</div>'; // end theme-list
-        h += '</div>'; // end theme-wrap
-        h += '</div>'; // end theme-section
-
-        // ── Service Provider Distribution ──
-        h += '<div class="adv-section">Service Provider Distribution</div>';
-        h += advSliderHTML('adv-as-linewidth', 'Line Thickness', advSettings.asLineWidth, 0, 100, 1);
-        h += advSliderHTML('adv-as-fan', 'Line Fanning', advSettings.asLineFan, 0, 100, 1);
-
-        // ── Peer Effects ──
-        h += '<div class="adv-section">Peer Effects</div>';
-        h += advSliderHTML('adv-shimmer', 'Shimmer', advSettings.shimmerStrength, 0, 1, 0.01);
-        h += advSliderHTML('adv-pdepth-in', 'Pulse Depth In', advSettings.pulseDepthIn, 0, 1, 0.01);
-        h += advSliderHTML('adv-pdepth-out', 'Pulse Depth Out', advSettings.pulseDepthOut, 0, 1, 0.01);
-        h += advSliderHTML('adv-pspeed-in', 'Pulse Speed In', advSettings.pulseSpeedIn, 0, 100, 1);
-        h += advSliderHTML('adv-pspeed-out', 'Pulse Speed Out', advSettings.pulseSpeedOut, 0, 100, 1);
-
-        // ── Land ──
-        h += '<div class="adv-section">Land</div>';
-        h += advSliderHTML('adv-land-hue', 'Hue', advSettings.landHue, 0, 360, 1, true);
-        h += advSliderHTML('adv-land-bright', 'Brightness', advSettings.landBright, 0, 100, 1);
-        h += advSliderHTML('adv-snow-poles', 'Snow the Poles', advSettings.snowPoles, 0, 100, 1, false, true);
-        h += '<div class="adv-note">*Use Peer table <span style="font-size:11px">&#9881;</span> below to adjust its transparency</div>';
-
-        // ── Ocean ──
-        h += '<div class="adv-section">Ocean</div>';
-        h += '<div class="adv-preset-row">';
-        h += '<span class="adv-preset-label">Preset</span>';
-        h += '<span class="adv-preset-chip' + (advSettings.oceanLightBlue ? '' : ' active') + '" id="adv-ocean-original">Original</span>';
-        h += '<span class="adv-preset-chip' + (advSettings.oceanLightBlue ? ' active' : '') + '" id="adv-ocean-lightblue">Light Blue</span>';
-        h += '</div>';
-        // Hue slider range depends on mode: Light Blue = 190-230, Original = 0-360
-        if (advSettings.oceanLightBlue) {
-            const clampedHue = Math.max(190, Math.min(230, advSettings.oceanHue));
-            h += advSliderHTML('adv-ocean-hue', 'Hue', clampedHue, 190, 230, 1, false);
-            // Swap class after build — blue-hue-slider applied by syncOceanPresetUI on bind
-        } else {
-            h += advSliderHTML('adv-ocean-hue', 'Hue', advSettings.oceanHue, 0, 360, 1, true);
-        }
-        h += advSliderHTML('adv-ocean-bright', 'Brightness', advSettings.oceanBright, 0, 100, 1);
-
-        // ── Lat/Lon Grid ──
-        h += '<div class="adv-section">Lat/Lon Grid</div>';
-        h += '<div class="adv-toggle-row">';
-        h += '<span class="adv-toggle-label adv-reset-link" data-default-key="gridVisible" title="Click to reset">Visible</span>';
-        h += '<label class="dsp-toggle"><input type="checkbox" id="adv-grid-visible" ' + (advSettings.gridVisible ? 'checked' : '') + '><span class="dsp-toggle-slider"></span></label>';
-        h += '</div>';
-        h += advSliderHTML('adv-grid-thick', 'Thickness', advSettings.gridThickness, 0, 100, 1);
-        h += advSliderHTML('adv-grid-hue', 'Hue', advSettings.gridHue, 0, 360, 1, true);
-        h += advSliderHTML('adv-grid-bright', 'Brightness', advSettings.gridBright, 0, 100, 1);
-
-        // ── Borders ──
-        h += '<div class="adv-section">Borders</div>';
-        h += advSliderHTML('adv-border-scale', 'Thickness', advSettings.borderScale, 0, 100, 1);
-        h += advSliderHTML('adv-border-hue', 'Hue', advSettings.borderHue, 0, 360, 1, true);
-
-        // ── HUD ──
-        h += '<div class="adv-section">HUD Overlays</div>';
-        h += '<div class="adv-toggle-row">';
-        h += '<span class="adv-toggle-label">Solid Backgrounds</span>';
-        h += '<label class="dsp-toggle"><input type="checkbox" id="adv-hud-solid" ' + (advSettings.hudSolidBg ? 'checked' : '') + '><span class="dsp-toggle-slider"></span></label>';
-        h += '</div>';
-        h += '<div class="adv-note">Adds backgrounds behind stats, price &amp; info panels for readability on lighter maps</div>';
-
-        h += '</div>'; // end adv-body
-
-        // Footer buttons + feedback area
-        h += '<div class="adv-footer">';
-        h += '<button class="adv-btn adv-btn-reset" id="adv-reset">Reset</button>';
-        h += '<button class="adv-btn adv-btn-session" id="adv-session-save" title="Keeps settings for this session only — closes menu">Session Save</button>';
-        h += '<button class="adv-btn adv-btn-save" id="adv-save" title="Saves settings permanently across sessions">Permanent Save</button>';
-        h += '</div>';
-        h += '<div class="adv-feedback" id="adv-feedback"></div>';
-
-        panel.innerHTML = h;
-        document.body.appendChild(panel);
-        advPanelEl = panel;
-
-        // ── Position: top-right, offset from edge ──
-        positionAdvPanel();
-
-        // ── Bind close ──
-        document.getElementById('adv-close').addEventListener('click', closeAdvancedPanel);
-
-        // ── Bind theme dropdown ──
-        const themeWrap = document.getElementById('adv-theme-wrap');
-        const themeSelected = document.getElementById('adv-theme-selected');
-        const themeList = document.getElementById('adv-theme-list');
-        if (themeSelected && themeWrap) {
-            themeSelected.addEventListener('click', (e) => {
-                e.stopPropagation();
-                themeWrap.classList.toggle('open');
-            });
-            // Close dropdown when clicking outside
-            document.addEventListener('click', function themeOutsideClick(e) {
-                if (!themeWrap.contains(e.target)) {
-                    themeWrap.classList.remove('open');
-                }
-                // Clean up when panel is removed
-                if (!document.body.contains(themeWrap)) {
-                    document.removeEventListener('click', themeOutsideClick);
-                }
-            });
-        }
-        if (themeList) {
-            themeList.querySelectorAll('.adv-theme-option').forEach(opt => {
-                opt.addEventListener('click', () => {
-                    const t = opt.dataset.theme;
-                    if (t && THEMES[t]) {
-                        applyTheme(t);
-                        // Update dropdown display
-                        const label = document.getElementById('adv-theme-current');
-                        if (label) label.textContent = THEMES[t].label;
-                        // Mark active option
-                        themeList.querySelectorAll('.adv-theme-option').forEach(o => o.classList.remove('active'));
-                        opt.classList.add('active');
-                        // Close dropdown
-                        if (themeWrap) themeWrap.classList.remove('open');
-                        // Refresh slider values for new theme map defaults
-                        refreshAllAdvSliders();
-                        const gv = document.getElementById('adv-grid-visible');
-                        if (gv) gv.checked = advSettings.gridVisible;
-                    }
-                });
-            });
-        }
-
-        // ── Bind drag ──
-        initAdvDrag();
-
-        // ── Bind all sliders ──
-        bindAdvSlider('adv-shimmer', v => { advSettings.shimmerStrength = v; CFG.shimmerStrength = v; });
-        bindAdvSlider('adv-pdepth-in', v => { advSettings.pulseDepthIn = v; CFG.pulseDepthInbound = v; });
-        bindAdvSlider('adv-pdepth-out', v => { advSettings.pulseDepthOut = v; CFG.pulseDepthOutbound = v; });
-        bindAdvSlider('adv-pspeed-in', v => {
-            advSettings.pulseSpeedIn = v;
-            CFG.pulseSpeedInbound = 0.0014 * Math.pow(2, (v - 50) / 30);
-        });
-        bindAdvSlider('adv-pspeed-out', v => {
-            advSettings.pulseSpeedOut = v;
-            CFG.pulseSpeedOutbound = 0.0026 * Math.pow(2, (v - 50) / 30);
-        });
-        bindAdvSlider('adv-land-hue', v => { advSettings.landHue = v; updateAdvColors(); });
-        bindAdvSlider('adv-land-bright', v => { advSettings.landBright = v; updateAdvColors(); });
-        bindAdvSlider('adv-snow-poles', v => { advSettings.snowPoles = v; markBasemapDirty(); });
-        bindAdvSlider('adv-ocean-hue', v => { advSettings.oceanHue = v; updateAdvColors(); });
-        bindAdvSlider('adv-ocean-bright', v => { advSettings.oceanBright = v; updateAdvColors(); });
-
-        // ── Bind ocean preset chips ──
-        const oceanOrigBtn = document.getElementById('adv-ocean-original');
-        const oceanLBBtn   = document.getElementById('adv-ocean-lightblue');
-        if (oceanOrigBtn) oceanOrigBtn.addEventListener('click', () => {
-            advSettings.oceanLightBlue = false;
-            advSettings.oceanHue = ADV_DEFAULTS.oceanHue;
-            advSettings.oceanBright = ADV_DEFAULTS.oceanBright;
-            syncOceanPresetUI();            // restores hue slider to 0-360
-            setSliderValue('adv-ocean-hue', advSettings.oceanHue);
-            setSliderValue('adv-ocean-bright', advSettings.oceanBright);
-            updateAdvColors();
-        });
-        if (oceanLBBtn) oceanLBBtn.addEventListener('click', () => {
-            advSettings.oceanLightBlue = true;
-            advSettings.oceanHue = 210;     // center of blue range
-            advSettings.oceanBright = 50;   // midpoint — soft sky blue
-            syncOceanPresetUI();            // constrains hue slider to 190-230
-            setSliderValue('adv-ocean-hue', advSettings.oceanHue);
-            setSliderValue('adv-ocean-bright', advSettings.oceanBright);
-            updateAdvColors();
-        });
-        bindAdvSlider('adv-grid-thick', v => { advSettings.gridThickness = v; updateAdvColors(); });
-        bindAdvSlider('adv-grid-hue', v => { advSettings.gridHue = v; updateAdvColors(); });
-        bindAdvSlider('adv-grid-bright', v => { advSettings.gridBright = v; updateAdvColors(); });
-        bindAdvSlider('adv-as-linewidth', v => { advSettings.asLineWidth = v; });
-        bindAdvSlider('adv-as-fan', v => { advSettings.asLineFan = v; });
-        bindAdvSlider('adv-border-scale', v => { advSettings.borderScale = v; markBasemapDirty(); });
-        bindAdvSlider('adv-border-hue', v => { advSettings.borderHue = v; updateAdvColors(); });
-
-        // ── Bind grid visibility toggle ──
-        const gridVisCB = document.getElementById('adv-grid-visible');
-        if (gridVisCB) gridVisCB.addEventListener('change', () => {
-            advSettings.gridVisible = gridVisCB.checked;
-            markBasemapDirty();
-        });
-
-        // ── Bind HUD solid background toggle ──
-        const hudSolidCB = document.getElementById('adv-hud-solid');
-        if (hudSolidCB) hudSolidCB.addEventListener('change', () => { advSettings.hudSolidBg = hudSolidCB.checked; applyHudSolidBg(); });
-
-        // ── Apply blue-hue-slider class if Light Blue mode is active ──
-        syncOceanPresetUI();
-
-        // ── Bind slider labels as reset-to-default links ──
-        bindLabelResets(panel);
-
-        // ── Reset button ──
-        document.getElementById('adv-reset').addEventListener('click', () => {
-            // Reset theme to Dark
-            applyTheme('dark');
-            Object.assign(advSettings, ADV_DEFAULTS);
-            CFG.shimmerStrength    = ADV_DEFAULTS.shimmerStrength;
-            CFG.pulseDepthInbound  = ADV_DEFAULTS.pulseDepthIn;
-            CFG.pulseDepthOutbound = ADV_DEFAULTS.pulseDepthOut;
-            CFG.pulseSpeedInbound  = 0.0014;
-            CFG.pulseSpeedOutbound = 0.0026;
-            updateAdvColors();
-            syncOceanPresetUI();
-            refreshAllAdvSliders();
-            const gv = document.getElementById('adv-grid-visible');
-            if (gv) gv.checked = ADV_DEFAULTS.gridVisible;
-            const hs = document.getElementById('adv-hud-solid');
-            if (hs) hs.checked = ADV_DEFAULTS.hudSolidBg;
-            applyHudSolidBg();
-            showAdvFeedback('All settings reset to defaults');
-        });
-
-        // ── Session Save button — just close the panel (settings persist in memory) ──
-        document.getElementById('adv-session-save').addEventListener('click', () => {
-            showAdvFeedback('Session settings applied');
-            setTimeout(closeAdvancedPanel, 400);
-        });
-
-        // ── Permanent Save button ──
-        document.getElementById('adv-save').addEventListener('click', () => {
-            saveAdvSettings();
-            saveTheme();
-            showAdvFeedback('Settings saved permanently');
-        });
-    }
-
-    /** Generate HTML for a single slider row — label is a clickable reset link */
-    function advSliderHTML(id, label, value, min, max, step, isHue, bold) {
-        const cls = isHue ? 'adv-slider hue-slider' : 'adv-slider';
-        const display = (step < 1) ? parseFloat(value).toFixed(2) : Math.round(value);
-        const bOpen = bold ? '<b>' : '', bClose = bold ? '</b>' : '';
-        return '<div class="adv-slider-row">' +
-            '<span class="adv-slider-label adv-reset-link" data-slider="' + id + '" title="Click to reset to default">' + bOpen + label + bClose + '</span>' +
-            '<input type="range" class="' + cls + '" id="' + id + '" min="' + min + '" max="' + max + '" step="' + step + '" value="' + value + '">' +
-            '<span class="adv-slider-val" id="' + id + '-val">' + display + '</span>' +
-            '</div>';
-    }
-
-    /** Bind a slider to a callback, fires on every input event (live) */
-    function bindAdvSlider(id, callback) {
-        const slider = document.getElementById(id);
-        const valEl  = document.getElementById(id + '-val');
-        if (!slider) return;
-        slider.addEventListener('input', () => {
-            const v = parseFloat(slider.value);
-            if (valEl) valEl.textContent = (parseFloat(slider.step) < 1) ? v.toFixed(2) : Math.round(v);
-            callback(v);
-        });
-    }
-
-    /** Set a slider value programmatically and update its display */
-    function setSliderValue(id, val) {
-        const slider = document.getElementById(id);
-        const valEl  = document.getElementById(id + '-val');
-        if (slider) {
-            slider.value = val;
-            if (valEl) valEl.textContent = (parseFloat(slider.step) < 1) ? parseFloat(val).toFixed(2) : Math.round(val);
-        }
-    }
-
-    /** Refresh all slider positions from current advSettings */
-    function refreshAllAdvSliders() {
-        setSliderValue('adv-as-linewidth', advSettings.asLineWidth);
-        setSliderValue('adv-as-fan', advSettings.asLineFan);
-        setSliderValue('adv-shimmer', advSettings.shimmerStrength);
-        setSliderValue('adv-pdepth-in', advSettings.pulseDepthIn);
-        setSliderValue('adv-pdepth-out', advSettings.pulseDepthOut);
-        setSliderValue('adv-pspeed-in', advSettings.pulseSpeedIn);
-        setSliderValue('adv-pspeed-out', advSettings.pulseSpeedOut);
-        setSliderValue('adv-land-hue', advSettings.landHue);
-        setSliderValue('adv-land-bright', advSettings.landBright);
-        setSliderValue('adv-snow-poles', advSettings.snowPoles);
-        setSliderValue('adv-ocean-hue', advSettings.oceanHue);
-        setSliderValue('adv-ocean-bright', advSettings.oceanBright);
-        setSliderValue('adv-grid-thick', advSettings.gridThickness);
-        setSliderValue('adv-grid-hue', advSettings.gridHue);
-        setSliderValue('adv-grid-bright', advSettings.gridBright);
-        setSliderValue('adv-border-scale', advSettings.borderScale);
-        setSliderValue('adv-border-hue', advSettings.borderHue);
-    }
-
-    /** Map slider IDs to their advSettings key and default value */
-    const SLIDER_DEFAULTS = {
-        'adv-as-linewidth':{ key: 'asLineWidth' },
-        'adv-as-fan':      { key: 'asLineFan' },
-        'adv-shimmer':     { key: 'shimmerStrength', cfg: 'shimmerStrength' },
-        'adv-pdepth-in':   { key: 'pulseDepthIn',   cfg: 'pulseDepthInbound' },
-        'adv-pdepth-out':  { key: 'pulseDepthOut',   cfg: 'pulseDepthOutbound' },
-        'adv-pspeed-in':   { key: 'pulseSpeedIn',    cfgFn: v => { CFG.pulseSpeedInbound = 0.0014 * Math.pow(2, (v - 50) / 30); } },
-        'adv-pspeed-out':  { key: 'pulseSpeedOut',   cfgFn: v => { CFG.pulseSpeedOutbound = 0.0026 * Math.pow(2, (v - 50) / 30); } },
-        'adv-land-hue':    { key: 'landHue',         recolor: true },
-        'adv-land-bright': { key: 'landBright',      recolor: true },
-        'adv-snow-poles':  { key: 'snowPoles', redraw: true },
-        'adv-ocean-hue':   { key: 'oceanHue',        recolor: true },
-        'adv-ocean-bright':{ key: 'oceanBright',     recolor: true },
-        'adv-grid-thick':  { key: 'gridThickness',   recolor: true },
-        'adv-grid-hue':    { key: 'gridHue',         recolor: true },
-        'adv-grid-bright': { key: 'gridBright',      recolor: true },
-        'adv-border-scale':{ key: 'borderScale', redraw: true },
-        'adv-border-hue':  { key: 'borderHue',      recolor: true },
-    };
-
-    /** Bind every .adv-reset-link label to reset its slider/toggle to default on click */
-    function bindLabelResets(panel) {
-        panel.querySelectorAll('.adv-reset-link').forEach(label => {
-            // Slider reset
-            const sliderId = label.dataset.slider;
-            if (sliderId) {
-                label.addEventListener('click', () => {
-                    const info = SLIDER_DEFAULTS[sliderId];
-                    if (!info) return;
-                    const defVal = ADV_DEFAULTS[info.key];
-                    advSettings[info.key] = defVal;
-                    setSliderValue(sliderId, defVal);
-                    if (info.cfg) CFG[info.cfg] = defVal;
-                    if (info.cfgFn) info.cfgFn(defVal);
-                    if (info.recolor) updateAdvColors();
-                    if (info.redraw) markBasemapDirty();
-                });
-                return;
-            }
-            // Toggle reset (e.g. grid visibility)
-            const defKey = label.dataset.defaultKey;
-            if (defKey && ADV_DEFAULTS[defKey] !== undefined) {
-                label.addEventListener('click', () => {
-                    advSettings[defKey] = ADV_DEFAULTS[defKey];
-                    // Sync the checkbox if there's a matching one
-                    const cb = panel.querySelector('#adv-grid-visible');
-                    if (defKey === 'gridVisible' && cb) cb.checked = ADV_DEFAULTS[defKey];
-                    if (defKey === 'gridVisible') markBasemapDirty();
-                });
-            }
-        });
-    }
-
-    /** Position advanced panel in viewport, anchored top-right */
-    function positionAdvPanel() {
-        if (!advPanelEl) return;
-        const pad = 12;
-        const panelW = 310;
-        // Default: top-right area, below topbar
-        let left = window.innerWidth - panelW - pad;
-        let top = 56;
-        // Ensure it stays on screen
-        left = Math.max(pad, Math.min(left, window.innerWidth - panelW - pad));
-        top = Math.max(pad, top);
-        advPanelEl.style.left = left + 'px';
-        advPanelEl.style.top = top + 'px';
-    }
-
-    /** Make the panel draggable by its titlebar */
-    function initAdvDrag() {
-        const titlebar = document.getElementById('adv-titlebar');
-        if (!titlebar) return;
-        let dragging = false, startX = 0, startY = 0, startLeft = 0, startTop = 0;
-
-        titlebar.addEventListener('mousedown', (e) => {
-            if (e.target.classList.contains('adv-close')) return;
-            dragging = true;
-            startX = e.clientX;
-            startY = e.clientY;
-            startLeft = parseInt(advPanelEl.style.left) || 0;
-            startTop  = parseInt(advPanelEl.style.top) || 0;
-            e.preventDefault();
-        });
-
-        window.addEventListener('mousemove', (e) => {
-            if (!dragging) return;
-            let nx = startLeft + (e.clientX - startX);
-            let ny = startTop  + (e.clientY - startY);
-            // Clamp within viewport
-            const pw = advPanelEl.offsetWidth;
-            const ph = advPanelEl.offsetHeight;
-            nx = Math.max(0, Math.min(nx, window.innerWidth - pw));
-            ny = Math.max(0, Math.min(ny, window.innerHeight - ph));
-            advPanelEl.style.left = nx + 'px';
-            advPanelEl.style.top  = ny + 'px';
-        });
-
-        window.addEventListener('mouseup', () => { dragging = false; });
-    }
-
-    function closeAdvancedPanel() {
-        if (advPanelEl) { advPanelEl.remove(); advPanelEl = null; }
-    }
-
-    /** Sync ocean preset chip active states + slider range with current advSettings */
-    function syncOceanPresetUI() {
-        const orig = document.getElementById('adv-ocean-original');
-        const lb = document.getElementById('adv-ocean-lightblue');
-        if (orig) orig.classList.toggle('active', !advSettings.oceanLightBlue);
-        if (lb) lb.classList.toggle('active', !!advSettings.oceanLightBlue);
-
-        // Change hue slider range: Light Blue = 190-230 (blue only), Original = 0-360
-        const hueSlider = document.getElementById('adv-ocean-hue');
-        if (hueSlider) {
-            if (advSettings.oceanLightBlue) {
-                hueSlider.min = 190;
-                hueSlider.max = 230;
-                hueSlider.classList.remove('hue-slider');
-                hueSlider.classList.add('blue-hue-slider');
-            } else {
-                hueSlider.min = 0;
-                hueSlider.max = 360;
-                hueSlider.classList.remove('blue-hue-slider');
-                hueSlider.classList.add('hue-slider');
-            }
-        }
-    }
-
-    function showAdvFeedback(msg) {
-        const el = document.getElementById('adv-feedback');
-        if (!el) return;
-        el.textContent = msg;
-        el.style.opacity = '1';
-        clearTimeout(el._timer);
-        el._timer = setTimeout(() => { el.style.opacity = '0'; }, 2000);
+    function openAdvancedPanel(returnFocus) {
+        advancedDisplaySettings.open(returnFocus);
     }
 
     // ═══════════════════════════════════════════════════════════

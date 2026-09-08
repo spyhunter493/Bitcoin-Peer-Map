@@ -330,6 +330,47 @@ async function assertPeerActionInteractions(page) {
     await page.unroute(bansRoute);
 }
 
+async function assertAdvancedDisplaySettings(page) {
+    await page.click('#topbar-gear');
+    await page.waitForSelector('#display-settings-popup');
+    await page.click('#dsp-advanced-btn');
+    await page.waitForSelector('#adv-panel');
+
+    const panel = await page.evaluate(() => ({
+        role: document.getElementById('adv-panel')?.getAttribute('role'),
+        ariaModal: document.getElementById('adv-panel')?.getAttribute('aria-modal'),
+        labelledBy: document.getElementById('adv-panel')?.getAttribute('aria-labelledby'),
+        titleId: document.querySelector('#adv-panel .adv-titlebar-text')?.id,
+        closeLabel: document.getElementById('adv-close')?.getAttribute('aria-label'),
+        focusedId: document.activeElement?.id,
+        shimmerLabel: document.getElementById('adv-shimmer')?.getAttribute('aria-label'),
+    }));
+    assert.deepStrictEqual(panel, {
+        role: 'dialog',
+        ariaModal: 'false',
+        labelledBy: 'adv-panel-title',
+        titleId: 'adv-panel-title',
+        closeLabel: 'Close Advanced Display',
+        focusedId: 'adv-close',
+        shimmerLabel: 'Shimmer',
+    });
+
+    await page.evaluate(() => {
+        const slider = document.getElementById('adv-shimmer');
+        slider.value = '0.42';
+        slider.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('#adv-panel', { state: 'detached' });
+    assert.strictEqual(await page.evaluate(() => document.activeElement?.id), 'topbar-gear');
+
+    await page.click('#topbar-gear');
+    await page.click('#dsp-advanced-btn');
+    await page.waitForSelector('#adv-panel');
+    assert.strictEqual(await page.locator('#adv-shimmer').inputValue(), '0.42');
+    await page.keyboard.press('Escape');
+}
+
 async function assertPeerControlsResponsive(browser, baseUrl) {
     const compactContext = await browser.newContext({ viewport: { width: 1080, height: 728 } });
     await compactContext.addInitScript(() => {
@@ -433,6 +474,7 @@ async function assertPeerControlsResponsive(browser, baseUrl) {
         });
         await assertChainTipsModal(page);
         await assertPeerActionInteractions(page);
+        await assertAdvancedDisplaySettings(page);
 
         await applyTablePreferences(page);
         await assertDonutFits(page, 'after row-count change');

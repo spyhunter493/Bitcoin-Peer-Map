@@ -13,6 +13,11 @@ source = source.slice(0, markerPosition)
     + source.slice(markerPosition);
 
 const sandbox = { window: {} };
+vm.runInNewContext(
+    fs.readFileSync('src/static/js/features/distribution-data.js', 'utf8'),
+    sandbox,
+    { filename: 'src/static/js/features/distribution-data.js' }
+);
 vm.runInNewContext(source, sandbox);
 const { escHtml, peerDetailRow, renderServiceFlagList } = sandbox.window.__test;
 const hostile = `<img src=x onerror="alert(1)"> & '`;

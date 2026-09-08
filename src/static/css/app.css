@@ -1785,6 +1785,7 @@ body.donut-focused .map-controls {
 }
 .adv-theme-selected {
     display: flex;
+    width: 100%;
     align-items: center;
     justify-content: space-between;
     padding: 5px 10px;
