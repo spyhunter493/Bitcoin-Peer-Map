@@ -33,6 +33,43 @@
 }
 
 /* ==========================================================
+   2a. DISTRIBUTION LENS TOGGLE
+   ========================================================== */
+.as-lens-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px;
+    margin-bottom: 4px;
+    border: 1px solid rgba(88, 166, 255, 0.2);
+    border-radius: 5px;
+    background: rgba(13, 17, 23, 0.7);
+    pointer-events: auto;
+}
+.as-lens-btn {
+    height: 22px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--text-muted);
+    font-family: var(--font-data);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0;
+    text-transform: uppercase;
+    cursor: pointer;
+}
+.as-lens-btn:hover {
+    color: var(--text-primary);
+    background: rgba(88, 166, 255, 0.1);
+}
+.as-lens-btn.active {
+    color: var(--text-primary);
+    background: rgba(88, 166, 255, 0.22);
+}
+
+/* ==========================================================
    2b. DONUT TITLE — "PEER SERVICE PROVIDERS" above donut
    ========================================================== */
 .as-donut-title {

@@ -110,6 +110,10 @@
 
     <!-- [AS-DISTRIBUTION] Donut — fixed upper-right corner of map, always visible -->
     <div id="as-distribution-container" class="as-distribution-container">
+        <div class="as-lens-toggle" id="as-lens-toggle" role="tablist" aria-label="Distribution lens">
+            <button class="as-lens-btn active" type="button" data-lens="provider" role="tab" aria-selected="true">Providers</button>
+            <button class="as-lens-btn" type="button" data-lens="country" role="tab" aria-selected="false">Countries</button>
+        </div>
         <div class="as-donut-title" id="as-donut-title" title="Autonomous System Peer Distribution Analysis"><span class="as-title-peer">Peer</span> <span class="as-title-provider">Service Providers</span><span class="as-title-subtitle" id="as-title-subtitle">(IPv4/IPv6)</span></div>
         <button class="as-focused-close" id="as-focused-close" title="Back">&#x2192;</button>
         <div class="as-donut-wrap" id="as-donut-wrap">
