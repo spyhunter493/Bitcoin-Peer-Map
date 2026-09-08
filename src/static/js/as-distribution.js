@@ -94,7 +94,6 @@ window.ASDistribution = (function () {
     let lastPeersRaw = [];         // Raw peers from last update (for summary computation)
     let panelHistory = [];         // Navigation stack [{type:'summary'|'provider', asNumber?, scrollTop?}]
     let peerDetailActive = false;  // True when peer detail panel is shown (from peer list/map click)
-    let multiPeerGroupIds = null;   // Peer IDs from multi-peer dot click (for back navigation)
     let insightActiveAsNum = null;  // AS number to show in donut when an insight is active (Most Stable, Fastest, etc.)
     let insightActiveType = null;   // Type of insight active: 'stable', 'fastest', 'data-bytessent', 'data-bytesrecv'
     let insightActiveData = null;   // Full data object for the active insight provider (for restoring after peer hover)
@@ -116,6 +115,7 @@ window.ASDistribution = (function () {
     let _clearPeerSelection = null; // fn() — clear peer selection without zoom reset
     let _hideMapTooltip = null;    // fn() — hide the map peer tooltip
     let _enterPrivateNetMode = null; // fn(targetNet) — enter private network mode
+    let _showDisconnectDialog = null; // fn(peerId, network) — shared peer-actions dialog
 
     // Service flag definitions (mirrored from app.js for hover expansion)
     var SERVICE_FLAGS = {
@@ -160,6 +160,7 @@ window.ASDistribution = (function () {
     const fmtBytes = distributionData.fmtBytes;
     const fmtDuration = distributionData.fmtDuration;
     const buildDistributionGroup = distributionData.buildDistributionGroup;
+    const escHtml = window.BPMModal.escapeHtml;
 
     function aggregatePeers(peers) {
         const aggregation = distributionData.aggregateProviders(peers);
@@ -300,384 +301,50 @@ window.ASDistribution = (function () {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // SUMMARY DATA COMPUTATION
+    // SUMMARY DATA COMPUTATION — delegated pure data module
     // ═══════════════════════════════════════════════════════════
 
-    /** Get all peer objects for a donut segment (handles Others bucket) */
-    function getAllPeersForSegment(seg) {
-        if (seg.isOthers && seg._othersGroups) {
-            var all = [];
-            for (var i = 0; i < seg._othersGroups.length; i++) {
-                for (var j = 0; j < seg._othersGroups[i].peers.length; j++) {
-                    all.push(seg._othersGroups[i].peers[j]);
-                }
-            }
-            return all;
-        }
-        var grp = asGroups.find(function (g) { return g.asNumber === seg.asNumber; });
-        return grp ? grp.peers : [];
-    }
-
-    /** Find the donut segment color for a given AS number.
-     *  Peers in the "Others" bucket get the Others color. */
     function getColorForAsNum(asNum) {
-        for (var i = 0; i < donutSegments.length; i++) {
-            if (donutSegments[i].asNumber === asNum) return donutSegments[i].color;
-            if (donutSegments[i].isOthers && donutSegments[i]._othersGroups) {
-                for (var j = 0; j < donutSegments[i]._othersGroups.length; j++) {
-                    if (donutSegments[i]._othersGroups[j].asNumber === asNum) return donutSegments[i].color;
-                }
-            }
-        }
-        return PALETTE[PALETTE.length - 1];
+        return distributionData.colorForProvider(
+            asNum,
+            donutSegments,
+            PALETTE[PALETTE.length - 1]
+        );
     }
 
-    /** Generic: aggregate peers by a category key function.
-     *  Returns [{label, peerCount, providerCount, peerIds, providers: [{asNumber, name, color, peerCount, peerIds, peers}]}]
-     *  sorted by peerCount descending. */
     function aggregateSummaryByCategory(peers, getKey, getLabel) {
-        var catMap = {};
-        for (var i = 0; i < peers.length; i++) {
-            var p = peers[i];
-            var key = getKey(p);
-            if (!key) continue;
-            var asNum = parseAsNumber(p.as);
-            if (!asNum) continue;
-            var label = getLabel ? getLabel(p, key) : key;
-
-            if (!catMap[key]) catMap[key] = { key: key, label: label, peerCount: 0, peerIds: [], providerMap: {} };
-            catMap[key].peerCount++;
-            catMap[key].peerIds.push(p.id);
-
-            if (!catMap[key].providerMap[asNum]) {
-                catMap[key].providerMap[asNum] = {
-                    asNumber: asNum,
-                    name: parseAsOrg(p.as) || asNum,
-                    color: getColorForAsNum(asNum),
-                    peerCount: 0,
-                    peerIds: [],
-                    peers: []
-                };
-            }
-            catMap[key].providerMap[asNum].peerCount++;
-            catMap[key].providerMap[asNum].peerIds.push(p.id);
-            catMap[key].providerMap[asNum].peers.push(p);
-        }
-
-        var result = [];
-        var keys = Object.keys(catMap);
-        for (var k = 0; k < keys.length; k++) {
-            var item = catMap[keys[k]];
-            var providers = [];
-            var pKeys = Object.keys(item.providerMap);
-            for (var pk = 0; pk < pKeys.length; pk++) {
-                providers.push(item.providerMap[pKeys[pk]]);
-            }
-            providers.sort(function (a, b) { return b.peerCount - a.peerCount; });
-            result.push({
-                key: item.key,
-                label: item.label,
-                peerCount: item.peerCount,
-                providerCount: providers.length,
-                peerIds: item.peerIds,
-                providers: providers
-            });
-        }
-        result.sort(function (a, b) { return b.peerCount - a.peerCount; });
-        return result;
-    }
-
-    /** Aggregate peers by network type (IPv4, IPv6, Tor, I2P, CJDNS) */
-    function aggregateSummaryNetworks(peers) {
-        var netLabels = { 'ipv4': 'IPv4', 'ipv6': 'IPv6', 'onion': 'Tor', 'i2p': 'I2P', 'cjdns': 'CJDNS' };
-        return aggregateSummaryByCategory(peers,
-            function (p) { return p.network || 'ipv4'; },
-            function (p, key) { return netLabels[key] || key; }
+        return distributionData.aggregateSummaryByCategory(
+            peers,
+            getKey,
+            getLabel,
+            donutSegments
         );
     }
 
-    /** Aggregate peers by hosting type (Cloud/Hosting, Proxy/VPN, Mobile, Residential) */
-    function aggregateSummaryHosting(peers) {
-        return aggregateSummaryByCategory(peers,
-            function (p) {
-                if (p.hosting) return 'cloud';
-                if (p.proxy) return 'proxy';
-                if (p.mobile) return 'mobile';
-                return 'residential';
-            },
-            function (p, key) {
-                var labels = { 'cloud': 'Cloud / Hosting', 'proxy': 'Proxy / VPN', 'mobile': 'Mobile', 'residential': 'Residential' };
-                return labels[key] || key;
-            }
-        );
-    }
-
-    /** Aggregate peers by country */
-    function aggregateSummaryCountries(peers) {
-        return aggregateSummaryByCategory(peers,
-            function (p) { return p.countryCode || null; },
-            function (p, key) { return key + '  ' + (p.country || key); }
-        );
-    }
-
-    /** Aggregate a peer slice by AS provider for country detail panels. */
     function aggregateProvidersForPeers(peers) {
-        var providerMap = {};
-        for (var i = 0; i < peers.length; i++) {
-            var p = peers[i];
-            var asNum = parseAsNumber(p.as);
-            if (!asNum) continue;
-            if (!providerMap[asNum]) {
-                providerMap[asNum] = {
-                    asNumber: asNum,
-                    name: parseAsOrg(p.as) || asNum,
-                    peerCount: 0,
-                    peerIds: [],
-                    peers: []
-                };
-            }
-            providerMap[asNum].peerCount++;
-            providerMap[asNum].peerIds.push(p.id);
-            providerMap[asNum].peers.push(p);
-        }
-        var providers = [];
-        var keys = Object.keys(providerMap);
-        for (var k = 0; k < keys.length; k++) providers.push(providerMap[keys[k]]);
-        providers.sort(function (a, b) { return b.peerCount - a.peerCount; });
-        return providers;
+        return distributionData.aggregateProvidersForPeers(peers, donutSegments);
     }
 
-    /** Aggregate peers by software version */
-    function aggregateSummarySoftware(peers) {
-        return aggregateSummaryByCategory(peers,
-            function (p) { return p.subver || 'Unknown'; },
-            null
-        );
-    }
-
-    /** Aggregate peers by service flag combo */
-    function aggregateSummaryServices(peers) {
-        return aggregateSummaryByCategory(peers,
-            function (p) { return p.services_abbrev || '\u2014'; },
-            null
-        );
-    }
-
-    /** Build connection grid: each donut segment with IN/OUT counts and outbound subtypes */
-    function buildConnectionGrid() {
-        var grid = [];
-        for (var i = 0; i < donutSegments.length; i++) {
-            var seg = donutSegments[i];
-            var peers = getAllPeersForSegment(seg);
-            var inPeers = [], outPeers = [];
-            for (var j = 0; j < peers.length; j++) {
-                if (peers[j].connection_type === 'inbound') inPeers.push(peers[j]);
-                else outPeers.push(peers[j]);
-            }
-            // Break out outbound by connection subtype
-            var outSubtypes = {};
-            for (var oj = 0; oj < outPeers.length; oj++) {
-                var ct = outPeers[oj].connection_type || 'unknown';
-                if (!outSubtypes[ct]) outSubtypes[ct] = [];
-                outSubtypes[ct].push(outPeers[oj]);
-            }
-            var outSubList = [];
-            for (var oKey in outSubtypes) {
-                if (!outSubtypes.hasOwnProperty(oKey)) continue;
-                outSubList.push({
-                    type: oKey,
-                    label: CONN_TYPE_LABELS[oKey] || oKey,
-                    count: outSubtypes[oKey].length,
-                    peerIds: outSubtypes[oKey].map(function (p) { return p.id; })
-                });
-            }
-            var displayName = seg.isOthers ? 'Others' : (seg.asShort || seg.asName || seg.asNumber);
-            if (displayName.length > 16) displayName = displayName.substring(0, 15) + '\u2026';
-            var gridItem = {
-                asNumber: seg.asNumber,
-                name: displayName,
-                color: seg.color,
-                isOthers: seg.isOthers || false,
-                inCount: inPeers.length,
-                outCount: outPeers.length,
-                inPeerIds: inPeers.map(function (p) { return p.id; }),
-                outPeerIds: outPeers.map(function (p) { return p.id; }),
-                totalPeerIds: peers.map(function (p) { return p.id; }),
-                inPeers: inPeers,
-                outPeers: outPeers,
-                outSubtypes: outSubList,
-                totalCount: peers.length
-            };
-            // Carry over sub-provider groups for the Others bucket
-            if (seg.isOthers && seg._othersGroups) {
-                gridItem._othersGroups = seg._othersGroups;
-            }
-            grid.push(gridItem);
-        }
-        return grid;
-    }
-
-    /** Compute 4 dynamic insights for the summary panel */
-    function computeInsights() {
-        var insights = [];
-        var nowSec = Math.floor(Date.now() / 1000);
-
-        // Insight 1: Most stable — provider with highest avg connection duration
-        if (asGroups.length > 0) {
-            var bestAvg = 0, bestGroup = null;
-            for (var i = 0; i < asGroups.length; i++) {
-                var g = asGroups[i];
-                var totalDur = 0, durCount = 0;
-                for (var j = 0; j < g.peers.length; j++) {
-                    if (g.peers[j].conntime > 0) {
-                        totalDur += (nowSec - g.peers[j].conntime);
-                        durCount++;
-                    }
-                }
-                var avg = durCount > 0 ? totalDur / durCount : 0;
-                if (avg > bestAvg) { bestAvg = avg; bestGroup = g; }
-            }
-            if (bestGroup && bestAvg > 0) {
-                insights.push({
-                    type: 'stable',
-                    icon: '\u23f3',
-                    asNumber: bestGroup.asNumber,
-                    provName: bestGroup.asShort || bestGroup.asNumber,
-                    durText: fmtDuration(bestAvg),
-                    peerIds: bestGroup.peers.map(function (p) { return p.id; }),
-                    peers: bestGroup.peers
-                });
-            }
-        }
-
-        // Insight 2: Fastest connection — providers ranked by avg ping time (lowest first)
-        if (asGroups.length > 0) {
-            var pingProvList = [];
-            for (var i = 0; i < asGroups.length; i++) {
-                var g = asGroups[i];
-                var totalPing = 0, pingCount = 0;
-                for (var j = 0; j < g.peers.length; j++) {
-                    if (g.peers[j].ping_ms > 0) {
-                        totalPing += g.peers[j].ping_ms;
-                        pingCount++;
-                    }
-                }
-                if (pingCount > 0) {
-                    var avgPing = totalPing / pingCount;
-                    var peersSorted = g.peers.slice().sort(function (a, b) { return (a.ping_ms || 9999) - (b.ping_ms || 9999); });
-                    pingProvList.push({
-                        asNumber: g.asNumber,
-                        provName: g.asShort || g.asName || g.asNumber,
-                        color: getColorForAsNum(g.asNumber),
-                        avgPing: avgPing,
-                        peers: peersSorted,
-                        peerIds: g.peerIds
-                    });
-                }
-            }
-            pingProvList.sort(function (a, b) { return a.avgPing - b.avgPing; });
-            if (pingProvList.length > 0) {
-                insights.push({
-                    type: 'fastest',
-                    icon: '\u26a1',
-                    topProviders: pingProvList,
-                    field: 'ping'
-                });
-            }
-        }
-
-        // Insight 3: Providers with most total bytes sent
-        var sentByProvider = {};
-        for (var i = 0; i < lastPeersRaw.length; i++) {
-            var p = lastPeersRaw[i];
-            var asNum = parseAsNumber(p.as);
-            if (!asNum || !(p.bytessent > 0)) continue;
-            if (!sentByProvider[asNum]) sentByProvider[asNum] = { asNumber: asNum, totalBytes: 0, peers: [] };
-            sentByProvider[asNum].totalBytes += p.bytessent;
-            sentByProvider[asNum].peers.push(p);
-        }
-        var sentProvList = [];
-        for (var k in sentByProvider) {
-            if (!sentByProvider.hasOwnProperty(k)) continue;
-            var sp = sentByProvider[k];
-            sp.peers.sort(function (a, b) { return (b.bytessent || 0) - (a.bytessent || 0); });
-            var grp = asGroups.find(function (g) { return g.asNumber === sp.asNumber; });
-            sp.provName = grp ? (grp.asShort || grp.asName || grp.asNumber) : sp.asNumber;
-            sp.color = getColorForAsNum(sp.asNumber);
-            sentProvList.push(sp);
-        }
-        sentProvList.sort(function (a, b) { return b.totalBytes - a.totalBytes; });
-        if (sentProvList.length > 0) {
-            insights.push({
-                type: 'data-providers',
-                icon: '\u2b06\ufe0f',
-                label: 'Most data sent to <span style="color:var(--text-muted)">(by rank)</span>',
-                topProviders: sentProvList,
-                field: 'bytessent'
-            });
-        }
-
-        // Insight 4: Providers with most total bytes received
-        var recvByProvider = {};
-        for (var i = 0; i < lastPeersRaw.length; i++) {
-            var p = lastPeersRaw[i];
-            var asNum = parseAsNumber(p.as);
-            if (!asNum || !(p.bytesrecv > 0)) continue;
-            if (!recvByProvider[asNum]) recvByProvider[asNum] = { asNumber: asNum, totalBytes: 0, peers: [] };
-            recvByProvider[asNum].totalBytes += p.bytesrecv;
-            recvByProvider[asNum].peers.push(p);
-        }
-        var recvProvList = [];
-        for (var k in recvByProvider) {
-            if (!recvByProvider.hasOwnProperty(k)) continue;
-            var rp = recvByProvider[k];
-            rp.peers.sort(function (a, b) { return (b.bytesrecv || 0) - (a.bytesrecv || 0); });
-            var grp = asGroups.find(function (g) { return g.asNumber === rp.asNumber; });
-            rp.provName = grp ? (grp.asShort || grp.asName || grp.asNumber) : rp.asNumber;
-            rp.color = getColorForAsNum(rp.asNumber);
-            recvProvList.push(rp);
-        }
-        recvProvList.sort(function (a, b) { return b.totalBytes - a.totalBytes; });
-        if (recvProvList.length > 0) {
-            insights.push({
-                type: 'data-providers',
-                icon: '\u2b07\ufe0f',
-                label: 'Most data recv by <span style="color:var(--text-muted)">(by rank)</span>',
-                topProviders: recvProvList,
-                field: 'bytesrecv'
-            });
-        }
-
-        return insights;
-    }
-
-    /** Compute all summary data */
     function computeSummaryData() {
-        var peers = lastPeersRaw;
-        return {
+        const data = distributionData.computeSummaryData({
             score: distributionScore,
-            quality: getQuality(distributionScore),
-            uniqueProviders: asGroups.length,
-            topProvider: asGroups.length > 0 ? asGroups[0] : null,
-            insights: computeInsights(),
-            connectionGrid: buildConnectionGrid(),
-            networks: aggregateSummaryNetworks(peers),
-            hosting: aggregateSummaryHosting(peers),
-            countries: aggregateSummaryCountries(peers),
-            software: aggregateSummarySoftware(peers),
-            services: aggregateSummaryServices(peers)
-        };
+            groups: asGroups,
+            segments: donutSegments,
+            peers: lastPeersRaw,
+            connectionTypeLabels: CONN_TYPE_LABELS,
+        });
+        data.quality = getQuality(distributionScore);
+        return data;
     }
 
     function computeCountrySummaryData() {
-        return {
-            score: countryDistributionScore,
-            quality: getQuality(countryDistributionScore),
-            uniqueCountries: countryGroups.length,
-            totalPeers: countryTotalPeers,
-            topCountry: countryGroups.length > 0 ? countryGroups[0] : null,
-            countries: countryGroups
-        };
+        const data = distributionData.computeCountrySummaryData(
+            countryGroups,
+            countryTotalPeers,
+            countryDistributionScore
+        );
+        data.quality = getQuality(countryDistributionScore);
+        return data;
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -4628,7 +4295,7 @@ window.ASDistribution = (function () {
 
         // Always go back to distribution summary (clear all state)
         activeNetworkPanel = null;
-        peerDetailActive = false;
+        dismissPeerDetailView(false);
         selectedAs = null;
         subFilterPeerIds = null;
         subFilterLabel = null;
@@ -5518,7 +5185,7 @@ window.ASDistribution = (function () {
             deselectSummary();
             return;
         }
-        peerDetailActive = false;
+        dismissPeerDetailView(false);
         selectedAs = null;
         subFilterPeerIds = null;
         subFilterLabel = null;
@@ -5542,8 +5209,10 @@ window.ASDistribution = (function () {
 
     function onKeyDown(e) {
         if (e.key === 'Escape') {
+            // The shared modal controller owns Escape while a peer action dialog is open.
+            if (document.getElementById('disconnect-dialog')) return;
             // Close peer popup first
-            if (peerDetailActive && peerPopupEl) {
+            if (peerDetailActive && peerDetailController.isOpen()) {
                 closePeerPopup();
                 return;
             }
@@ -5655,7 +5324,7 @@ window.ASDistribution = (function () {
         if (!donutFocused) return;
         donutFocused = false;
         focusedHoverAs = null;
-        peerDetailActive = false;
+        dismissPeerDetailView(false);
         activeNetworkPanel = null;
         if (othersListOpen) closeOthersListInDonut();
         document.body.classList.remove('donut-focused');
@@ -5689,72 +5358,39 @@ window.ASDistribution = (function () {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // PEER DETAIL POPUP — Floating popup for peer info
+    // PEER DETAIL POPUP — delegated view controller
     // ═══════════════════════════════════════════════════════════
 
-    var peerPopupEl = null;   // Current peer popup DOM element
-    var selectedPeerData = null; // Full peer object for the currently selected peer
+    const peerDetailController = window.BPMDistributionPeerDetail.create({
+        getPeers: () => lastPeersRaw,
+        getProviderColor: getColorForAsNum,
+        connectionTypeLabels: CONN_TYPE_FULL,
+        serviceFlags: SERVICE_FLAGS,
+        onRequestClose: () => closePeerPopup(),
+        onRequestPeer: (peer, source) => openPeerDetailPanel(peer, source),
+        onRequestGroup: peerIds => openMultiPeerPopup(peerIds),
+        onDisconnect: (peerId, network) => {
+            if (_showDisconnectDialog) _showDisconnectDialog(peerId, network);
+        },
+    });
 
-    /** Update the peer popup header to preview a hovered peer (without rebuilding the whole popup) */
-    function previewPeerInPopup(peer) {
-        if (!peerPopupEl || !peerDetailActive) return;
-        var nameEl = peerPopupEl.querySelector('.peer-popup-name');
-        var addrEl = peerPopupEl.querySelector('.peer-popup-addr');
-        var metaEl = peerPopupEl.querySelector('.peer-popup-meta');
-        var circleEl = peerPopupEl.querySelector('.peer-popup-circle');
-        if (!nameEl) return;
-        var asNum = parseAsNumber(peer.as);
-        var provColor = asNum ? getColorForAsNum(asNum) : '#6e7681';
-        var netColors = { 'ipv4': '#58a6ff', 'ipv6': '#3fb950', 'onion': '#1565c0', 'tor': '#1565c0', 'i2p': '#d29922', 'cjdns': '#bc8cff' };
-        var netColor = netColors[(peer.network || 'ipv4').toLowerCase()] || '#58a6ff';
-        nameEl.textContent = 'Peer #' + peer.id;
-        nameEl.style.color = provColor;
-        if (addrEl) addrEl.textContent = peer.addr || '';
-        if (metaEl) metaEl.textContent = (peer.network || 'ipv4').toUpperCase() + ' \u00b7 ' + (peer.direction === 'IN' ? 'Inbound' : 'Outbound');
-        if (circleEl) circleEl.style.background = netColor;
-        // Add preview indicator
-        peerPopupEl.classList.add('peer-popup-previewing');
-    }
-
-    /** Restore the peer popup to the selected peer's info */
-    function restorePeerPopupToSelected() {
-        if (!peerPopupEl || !peerDetailActive || !selectedPeerData) return;
-        var peer = selectedPeerData;
-        var nameEl = peerPopupEl.querySelector('.peer-popup-name');
-        var addrEl = peerPopupEl.querySelector('.peer-popup-addr');
-        var metaEl = peerPopupEl.querySelector('.peer-popup-meta');
-        var circleEl = peerPopupEl.querySelector('.peer-popup-circle');
-        if (!nameEl) return;
-        var asNum = parseAsNumber(peer.as);
-        var provColor = asNum ? getColorForAsNum(asNum) : '#6e7681';
-        var netColors = { 'ipv4': '#58a6ff', 'ipv6': '#3fb950', 'onion': '#1565c0', 'tor': '#1565c0', 'i2p': '#d29922', 'cjdns': '#bc8cff' };
-        var netColor = netColors[(peer.network || 'ipv4').toLowerCase()] || '#58a6ff';
-        nameEl.textContent = 'Peer #' + peer.id;
-        nameEl.style.color = provColor;
-        if (addrEl) addrEl.textContent = peer.addr || '';
-        if (metaEl) metaEl.textContent = (peer.network || 'ipv4').toUpperCase() + ' \u00b7 ' + (peer.direction === 'IN' ? 'Inbound' : 'Outbound');
-        if (circleEl) circleEl.style.background = netColor;
-        peerPopupEl.classList.remove('peer-popup-previewing');
-    }
-
-    /** Close the peer detail popup.
-     *  @param {boolean} [skipZoomReset] - if true, skip resetting map zoom (used when
-     *         transitioning to another view like a donut segment, not a full close) */
-    function closePeerPopup(skipZoomReset) {
+    function dismissPeerDetailView(restoreFocus) {
         peerDetailActive = false;
         selectedPeerId = null;
-        selectedPeerData = null;
-        multiPeerGroupIds = null;
-        if (peerPopupEl) {
-            peerPopupEl.classList.remove('visible');
-            setTimeout(function () {
-                if (peerPopupEl && peerPopupEl.parentNode) {
-                    peerPopupEl.parentNode.removeChild(peerPopupEl);
-                }
-                peerPopupEl = null;
-            }, 200);
-        }
-        // Restore previous line/filter state
+        peerDetailController.close({ restoreFocus: restoreFocus !== false });
+    }
+
+    function previewPeerInPopup(peer) {
+        if (peerDetailActive) peerDetailController.previewPeer(peer);
+    }
+
+    function restorePeerPopupToSelected() {
+        peerDetailController.restorePreview();
+    }
+
+    function closePeerPopup(skipZoomReset) {
+        dismissPeerDetailView(!skipZoomReset);
+
         if (summarySelected) {
             if (insightActiveAsNum) {
                 var peerIds = getPeerIdsForAnyAs(insightActiveAsNum);
@@ -5763,7 +5399,6 @@ window.ASDistribution = (function () {
                 if (_filterPeerTable) _filterPeerTable(peerIds);
                 if (_dimMapPeers) _dimMapPeers(peerIds);
             } else if (subFilterPeerIds && subFilterPeerIds.length > 0) {
-                // Restore to active sub-filter (e.g. IPv6, country, etc.)
                 previewSummaryLines(subFilterPeerIds);
             } else {
                 if (_filterPeerTable) _filterPeerTable(null);
@@ -5772,12 +5407,16 @@ window.ASDistribution = (function () {
             }
             renderCenter();
         } else if (selectedAs) {
-            var seg = donutSegments.find(function (s) { return s.asNumber === selectedAs; });
+            var seg = donutSegments.find(function (item) { return item.asNumber === selectedAs; });
             if (!seg) {
-                var grp = asGroups.find(function (g) { return g.asNumber === selectedAs; });
-                if (grp) {
-                    var othersSeg = donutSegments.find(function (s) { return s.isOthers; });
-                    seg = { asNumber: selectedAs, peerIds: grp.peerIds, color: othersSeg ? othersSeg.color : '#58a6ff' };
+                var group = asGroups.find(function (item) { return item.asNumber === selectedAs; });
+                if (group) {
+                    var others = donutSegments.find(function (item) { return item.isOthers; });
+                    seg = {
+                        asNumber: selectedAs,
+                        peerIds: group.peerIds,
+                        color: others ? others.color : '#58a6ff'
+                    };
                 }
             }
             if (seg) {
@@ -5792,433 +5431,44 @@ window.ASDistribution = (function () {
             if (_clearAsLines) _clearAsLines();
             renderCenter();
         }
-        // Zoom map back out when closing peer detail (unless caller says skip)
+
         if (!skipZoomReset && _resetMapZoom) {
             _resetMapZoom();
         } else if (skipZoomReset && _clearPeerSelection) {
-            // Clear selection state without resetting zoom (navigating to another view)
             _clearPeerSelection();
         }
-        // Clear selected peer highlight
-        var allSelected = document.querySelectorAll('.as-sub-tt-peer-selected');
-        for (var i = 0; i < allSelected.length; i++) allSelected[i].classList.remove('as-sub-tt-peer-selected');
+        document.querySelectorAll('.as-sub-tt-peer-selected').forEach(function (element) {
+            element.classList.remove('as-sub-tt-peer-selected');
+        });
     }
 
-    /** Open a floating popup showing the list of peers at a multi-peer dot.
-     *  Selecting a peer from this list opens the full detail with a back button. */
     function openMultiPeerPopup(peerIds) {
-        // Close any existing popup
-        if (peerPopupEl && peerPopupEl.parentNode) {
-            peerPopupEl.parentNode.removeChild(peerPopupEl);
-            peerPopupEl = null;
-        }
-
         peerDetailActive = true;
-        multiPeerGroupIds = peerIds.slice();
-
-        // Find matching peer objects
-        var peers = [];
-        var idSet = {};
-        for (var i = 0; i < peerIds.length; i++) idSet[peerIds[i]] = true;
-        for (var i = 0; i < lastPeersRaw.length; i++) {
-            if (idSet[lastPeersRaw[i].id]) peers.push(lastPeersRaw[i]);
-        }
-
-        var html = '';
-        html += '<div class="peer-popup-header" style="justify-content:center">';
-        html += '<div class="peer-popup-title" style="text-align:center">';
-        html += '<div class="peer-popup-name">' + peers.length + ' Peers at This Location</div>';
-        if (peers[0]) {
-            var loc = [peers[0].city, peers[0].regionName, peers[0].country].filter(function (s) { return s; }).join(', ');
-            if (loc) html += '<div class="peer-popup-addr">' + escHtml(loc) + '</div>';
-        }
-        html += '</div>';
-        html += '</div>';
-
-        html += '<div class="peer-popup-scroll">';
-        html += '<div class="peer-popup-section">';
-        html += '<div class="peer-popup-section-title">Select a Peer</div>';
-        for (var pi = 0; pi < peers.length; pi++) {
-            var p = peers[pi];
-            var netLabel = (p.network || 'ipv4').toUpperCase();
-            var netColor = '#58a6ff';
-            if (p.network === 'ipv6') netColor = '#3fb950';
-            else if (p.network === 'onion' || p.network === 'tor') netColor = '#da3633';
-            else if (p.network === 'i2p') netColor = '#d29922';
-            else if (p.network === 'cjdns') netColor = '#bc8cff';
-            html += '<div class="as-detail-sub-row multi-peer-row" data-peer-id="' + p.id + '" style="cursor:pointer; padding:4px 0; border-bottom:1px solid rgba(88,166,255,0.06)">';
-            html += '<span class="as-detail-sub-label" style="min-width:40px; color:' + netColor + '">#' + p.id + '</span>';
-            html += '<span class="as-detail-sub-val" style="flex:1">' + escHtml(p.addr || '') + '</span>';
-            html += '<span class="as-detail-sub-label" style="font-size:9px;color:var(--text-muted)">' + netLabel + '</span>';
-            html += '</div>';
-        }
-        html += '</div>';
-        html += '</div>';
-
-        html += '<div class="peer-popup-footer">';
-        html += '<button class="peer-popup-close" style="flex:1">Close</button>';
-        html += '</div>';
-
-        var popup = document.createElement('div');
-        popup.className = 'peer-detail-popup';
-        popup.innerHTML = html;
-        document.body.appendChild(popup);
-        peerPopupEl = popup;
-
-        requestAnimationFrame(function () { popup.classList.add('visible'); });
-
-        popup.addEventListener('click', function (e) { e.stopPropagation(); });
-
-        // Close button
-        var closeBtn = popup.querySelector('.peer-popup-close');
-        if (closeBtn) closeBtn.addEventListener('click', function () { closePeerPopup(); });
-
-        // Peer row clicks — open detail with back button to list
-        var rows = popup.querySelectorAll('.multi-peer-row');
-        for (var ri = 0; ri < rows.length; ri++) {
-            (function (row) {
-                row.addEventListener('click', function (e) {
-                    e.stopPropagation();
-                    var peerId = parseInt(row.dataset.peerId);
-                    var peer = lastPeersRaw.find(function (p) { return p.id === peerId; });
-                    if (peer) {
-                        openPeerDetailPanel(peer, 'map-group');
-                    }
-                });
-            })(rows[ri]);
-        }
+        selectedPeerId = null;
+        peerDetailController.openGroup(peerIds);
     }
 
-    /** Open a floating popup showing full peer detail info.
-     *  Does NOT take over the right panel — the summary/provider panel stays open.
-     *  @param {Object} peer — raw peer data from lastPeersRaw
-     *  @param {string} source — 'peerlist' | 'map' | 'panel' | 'map-group' */
     function openPeerDetailPanel(peer, source) {
-        // Close any existing peer popup
-        if (peerPopupEl && peerPopupEl.parentNode) {
-            peerPopupEl.parentNode.removeChild(peerPopupEl);
-            peerPopupEl = null;
-        }
-
         peerDetailActive = true;
         selectedPeerId = peer.id;
-        selectedPeerData = peer;
 
-        // Find the provider for this peer
         var asNum = parseAsNumber(peer.as);
-        var asOrg = parseAsOrg(peer.as);
-        var asShort = peer.asname || '';
         var provColor = asNum ? getColorForAsNum(asNum) : '#6e7681';
-
-        // Determine network color
-        var netColors = {
-            'ipv4': 'var(--net-ipv4, #58a6ff)',
-            'ipv6': 'var(--net-ipv6, #3fb950)',
-            'onion': 'var(--net-tor, #1565c0)',
-            'tor': 'var(--net-tor, #1565c0)',
-            'i2p': 'var(--net-i2p, #d29922)',
-            'cjdns': 'var(--net-cjdns, #bc8cff)'
-        };
-        var netColor = netColors[(peer.network || 'ipv4').toLowerCase()] || 'var(--accent, #58a6ff)';
-        var netLabelMap = { 'ipv4': 'IPv4', 'ipv6': 'IPv6', 'onion': 'Tor', 'tor': 'Tor', 'i2p': 'I2P', 'cjdns': 'CJDNS' };
-        var netLabel = netLabelMap[(peer.network || 'ipv4').toLowerCase()] || (peer.network || 'IPv4').toUpperCase();
-
-        // Enter focused mode if not already (for line drawing)
         if (!donutFocused) {
             donutFocused = true;
             document.body.classList.add('donut-focused');
-            if (!summarySelected && !selectedAs) {
-                selectSummary();
-            }
-            // Re-assert peer detail state after focused mode transition.
-            // selectSummary() → openSummaryPanel() → closePeerPopup() clears
-            // peerDetailActive/selectedPeerId/selectedPeerData during the cascade.
-            // Without this, the next update() cycle won't early-return and will
-            // re-render the donut/lines in summary-all mode, losing peer focus.
+            if (!summarySelected && !selectedAs) selectSummary();
             peerDetailActive = true;
             selectedPeerId = peer.id;
-            selectedPeerData = peer;
         }
 
-        // Draw a single line to this peer
-        if (_drawLinesForAs && asNum) {
-            _drawLinesForAs(asNum, [peer.id], provColor);
-        }
+        if (_drawLinesForAs && asNum) _drawLinesForAs(asNum, [peer.id], provColor);
         if (_filterPeerTable) _filterPeerTable([peer.id]);
         if (_dimMapPeers) _dimMapPeers([peer.id]);
-
-        // Show peer in donut center
         showPeerInDonutCenter(peer, provColor);
-
-        // Build popup HTML
-        var hasBackNav = (source === 'map-group' && multiPeerGroupIds);
-        var html = '';
-        html += '<div class="peer-popup-badge" style="border-color:' + netColor + ';color:' + netColor + '">' + netLabel + '</div>';
-        html += '<div class="peer-popup-header">';
-        if (hasBackNav) {
-            html += '<span class="peer-popup-back" style="cursor:pointer;color:var(--accent);font-size:11px;font-weight:600;margin-right:4px">\u2190 List</span>';
-        }
-        html += '<div class="peer-popup-circle" style="background:' + netColor + '"></div>';
-        html += '<div class="peer-popup-title">';
-        html += '<div class="peer-popup-name" style="color:' + provColor + '">Peer #' + peer.id + '</div>';
-        html += '<div class="peer-popup-addr">' + escHtml(peer.addr || '') + '</div>';
-        html += '<div class="peer-popup-meta">' + (peer.network || 'ipv4').toUpperCase() + ' \u00b7 ' + (peer.direction === 'IN' ? 'Inbound' : 'Outbound') + '</div>';
-        html += '</div>';
-        html += '</div>';
-
-        html += '<div class="peer-popup-scroll">';
-
-        // Identity section
-        html += '<div class="peer-popup-section">';
-        html += '<div class="peer-popup-section-title">Identity</div>';
-        html += peerDetailRow('Peer ID', '#' + peer.id);
-        html += peerDetailRow('Address', peer.addr || '\u2014');
-        html += peerDetailRow('Network', (peer.network || 'ipv4').toUpperCase());
-        html += peerDetailRow('Direction', peer.direction === 'IN' ? 'Inbound' : 'Outbound');
-        html += peerDetailRow('Conn Type', CONN_TYPE_FULL[peer.connection_type] || peer.connection_type || '\u2014');
-        if (peer.addrlocal) html += peerDetailRow('Your Addr', peer.addrlocal);
-        html += '</div>';
-
-        // Performance section
-        html += '<div class="peer-popup-section">';
-        html += '<div class="peer-popup-section-title">Performance</div>';
-        html += peerDetailRow('Ping', peer.ping_ms ? peer.ping_ms + ' ms' : '\u2014');
-        html += peerDetailRow('Min Ping', peer.minping ? (peer.minping * 1000).toFixed(1) + ' ms' : '\u2014');
-        html += peerDetailRow('Connected', peer.conntime_fmt || fmtDuration(peer.conntime ? (Math.floor(Date.now() / 1000) - peer.conntime) : 0));
-        html += peerDetailRow('Last Send', peer.lastsend ? fmtDuration(Math.floor(Date.now() / 1000) - peer.lastsend) + ' ago' : '\u2014');
-        html += peerDetailRow('Last Recv', peer.lastrecv ? fmtDuration(Math.floor(Date.now() / 1000) - peer.lastrecv) + ' ago' : '\u2014');
-        html += peerDetailRow('Last Block', peer.last_block ? fmtDuration(Math.floor(Date.now() / 1000) - peer.last_block) + ' ago' : '\u2014');
-        html += peerDetailRow('Last Tx', peer.last_transaction ? fmtDuration(Math.floor(Date.now() / 1000) - peer.last_transaction) + ' ago' : '\u2014');
-        html += peerDetailRow('Bytes Sent', peer.bytessent_fmt || fmtBytes(peer.bytessent));
-        html += peerDetailRow('Bytes Recv', peer.bytesrecv_fmt || fmtBytes(peer.bytesrecv));
-        html += peerDetailRow('Time Offset', peer.timeoffset != null ? (peer.timeoffset === 0 ? '0s (synced)' : peer.timeoffset + 's') : '\u2014');
-        html += '</div>';
-
-        // Software section
-        html += '<div class="peer-popup-section">';
-        html += '<div class="peer-popup-section-title">Software</div>';
-        html += peerDetailRow('Version', peer.subver || '\u2014');
-        html += peerDetailRow('Protocol', peer.version || '\u2014');
-        html += peerDetailRow('Services', renderServiceFlagList(peer.services_abbrev || ''), true);
-        html += peerDetailRow('Start Height', peer.startingheight || '\u2014');
-        html += peerDetailRow('Synced Hdrs', peer.synced_headers || '\u2014');
-        html += peerDetailRow('Synced Blks', peer.synced_blocks || '\u2014');
-        if (peer.transport_protocol_type) html += peerDetailRow('Transport', peer.transport_protocol_type === 'v2' ? 'v2 (BIP324 encrypted)' : peer.transport_protocol_type);
-        if (peer.session_id) html += peerDetailRow('Session ID', '<span style="font-size:9px;word-break:break-all">' + escHtml(peer.session_id) + '</span>', true);
-        if (peer.minfeefilter != null) html += peerDetailRow('Min Fee Filter', peer.minfeefilter > 0 ? (peer.minfeefilter * 100000000).toFixed(0) + ' sat/kvB' : 'None');
-        html += '</div>';
-
-        // Location section
-        html += '<div class="peer-popup-section">';
-        html += '<div class="peer-popup-section-title">Location</div>';
-        html += peerDetailRow('Country', peer.country || '\u2014');
-        html += peerDetailRow('Region', peer.regionName || '\u2014');
-        html += peerDetailRow('City', peer.city || '\u2014');
-        html += peerDetailRow('ISP', peer.isp || '\u2014');
-        html += peerDetailRow('AS', asNum ? (asNum + ' ' + (asOrg || asShort || '')) : '\u2014');
-        if (peer.mapped_as) html += peerDetailRow('Mapped AS', 'AS' + peer.mapped_as);
-        html += '</div>';
-
-        // Status section
-        html += '<div class="peer-popup-section">';
-        html += '<div class="peer-popup-section-title">Status</div>';
-        html += peerDetailRow('Relay Txs', peer.relaytxes != null ? (peer.relaytxes ? 'Yes' : 'No') : '\u2014');
-        html += peerDetailRow('Addrman', peer.in_addrman ? 'Yes' : 'No');
-        html += peerDetailRow('Addr Relay', peer.addr_relay_enabled != null ? (peer.addr_relay_enabled ? 'Yes' : 'No') : '\u2014');
-        if (peer.addr_processed || peer.addr_rate_limited) html += peerDetailRow('Addr Stats', (peer.addr_processed || 0) + ' processed, ' + (peer.addr_rate_limited || 0) + ' limited');
-        var hbParts = [];
-        if (peer.bip152_hb_from) hbParts.push('From: Yes');
-        if (peer.bip152_hb_to) hbParts.push('To: Yes');
-        html += peerDetailRow('BIP152 HB', hbParts.length > 0 ? hbParts.join(', ') : 'No');
-        if (peer.permissions && peer.permissions.length > 0) html += peerDetailRow('Permissions', peer.permissions.join(', '));
-        if (peer.hosting) html += peerDetailRow('Hosting', 'Cloud/Hosting');
-        if (peer.proxy) html += peerDetailRow('Proxy', 'VPN/Proxy');
-        if (peer.mobile) html += peerDetailRow('Mobile', 'Mobile network');
-        html += '</div>';
-
-        html += '</div>'; // end peer-popup-scroll
-
-        // Fixed bottom buttons
-        html += '<div class="peer-popup-footer">';
-        html += '<button class="peer-popup-disconnect" data-peer-id="' + peer.id + '">\u2716 Disconnect</button>';
-        html += '<button class="peer-popup-close">Close</button>';
-        html += '</div>';
-        html += '<div class="peer-popup-resize-handle"></div>';
-
-        // Create popup element
-        var popup = document.createElement('div');
-        popup.className = 'peer-detail-popup';
-        popup.style.borderColor = netColor;
-        popup.innerHTML = html;
-        document.body.appendChild(popup);
-        peerPopupEl = popup;
-
-        // Animate in
-        requestAnimationFrame(function () {
-            popup.classList.add('visible');
-        });
-
-        // Prevent clicks from propagating to map
-        popup.addEventListener('click', function (e) {
-            e.stopPropagation();
-        });
-
-        // Make popup draggable by its header
-        (function () {
-            var header = popup.querySelector('.peer-popup-header');
-            if (!header) return;
-            header.style.cursor = 'grab';
-            var isDragging = false, startX = 0, startY = 0, startLeft = 0, startTop = 0;
-            header.addEventListener('mousedown', function (e) {
-                if (e.target.closest('button, a, .peer-popup-back')) return;
-                isDragging = true;
-                startX = e.clientX;
-                startY = e.clientY;
-                var rect = popup.getBoundingClientRect();
-                startLeft = rect.left;
-                startTop = rect.top;
-                popup.classList.add('dragging');
-                header.style.cursor = 'grabbing';
-                e.preventDefault();
-            });
-            document.addEventListener('mousemove', function (e) {
-                if (!isDragging) return;
-                var dx = e.clientX - startX;
-                var dy = e.clientY - startY;
-                popup.style.left = (startLeft + dx) + 'px';
-                popup.style.top = (startTop + dy) + 'px';
-                popup.style.transform = 'none';
-            });
-            document.addEventListener('mouseup', function () {
-                if (!isDragging) return;
-                isDragging = false;
-                popup.classList.remove('dragging');
-                header.style.cursor = 'grab';
-            });
-        })();
-
-        // Make popup resizable by bottom-right handle
-        (function () {
-            var handle = popup.querySelector('.peer-popup-resize-handle');
-            if (!handle) return;
-            var isResizing = false, startX, startY, startW, startH;
-            handle.addEventListener('mousedown', function (e) {
-                isResizing = true;
-                startX = e.clientX;
-                startY = e.clientY;
-                var rect = popup.getBoundingClientRect();
-                startW = rect.width;
-                startH = rect.height;
-                popup.classList.add('resizing');
-                e.preventDefault();
-                e.stopPropagation();
-            });
-            document.addEventListener('mousemove', function (e) {
-                if (!isResizing) return;
-                var newW = Math.max(260, startW + (e.clientX - startX));
-                var newH = Math.max(200, startH + (e.clientY - startY));
-                popup.style.width = newW + 'px';
-                popup.style.maxHeight = 'none';
-                popup.style.height = newH + 'px';
-            });
-            document.addEventListener('mouseup', function () {
-                if (!isResizing) return;
-                isResizing = false;
-                popup.classList.remove('resizing');
-            });
-        })();
-
-        // Bind back button (returns to multi-peer list)
-        var backBtn = popup.querySelector('.peer-popup-back');
-        if (backBtn) {
-            backBtn.addEventListener('click', function () {
-                openMultiPeerPopup(multiPeerGroupIds);
-            });
-        }
-
-        // Bind close button
-        var closeBtn = popup.querySelector('.peer-popup-close');
-        if (closeBtn) {
-            closeBtn.addEventListener('click', function () {
-                closePeerPopup();
-            });
-        }
-
-        // Bind disconnect button — shows Disconnect Only / Disconnect + Ban 24h / Cancel dialog
-        var disconnBtn = popup.querySelector('.peer-popup-disconnect');
-        if (disconnBtn) {
-            disconnBtn.addEventListener('click', function (e) {
-                e.stopPropagation();
-                var peerId = parseInt(disconnBtn.dataset.peerId);
-                if (isNaN(peerId)) return;
-                var peerNet = (peer.network || 'ipv4').toLowerCase();
-                var canBan = (peerNet === 'ipv4' || peerNet === 'ipv6');
-                // Remove any existing dialog
-                var existingDlg = document.getElementById('disconnect-dialog');
-                if (existingDlg) existingDlg.remove();
-                // Create the dialog overlay
-                var overlay = document.createElement('div');
-                overlay.id = 'disconnect-dialog';
-                overlay.className = 'dialog-overlay';
-                overlay.innerHTML = '<div class="dialog-box">' +
-                    '<div class="dialog-title">Disconnect Peer ' + peerId + '</div>' +
-                    '<div class="dialog-text">Choose an action for this peer:</div>' +
-                    '<div class="dialog-actions">' +
-                    '<button class="dialog-btn dialog-btn-disconnect" data-choice="disconnect">Disconnect Only</button>' +
-                    (canBan ? '<button class="dialog-btn dialog-btn-ban" data-choice="ban">Disconnect + Ban 24h</button>' : '') +
-                    '<button class="dialog-btn dialog-btn-cancel" data-choice="cancel">Cancel</button>' +
-                    '</div></div>';
-                document.body.appendChild(overlay);
-                overlay.addEventListener('click', function (ev) {
-                    var btn = ev.target.closest('.dialog-btn');
-                    if (!btn && ev.target === overlay) { overlay.remove(); return; }
-                    if (!btn) return;
-                    var choice = btn.dataset.choice;
-                    overlay.remove();
-                    if (choice === 'cancel') return;
-                    if (choice === 'ban') {
-                        fetch('/api/peer/ban', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ peer_id: peerId })
-                        }).then(function (r) { return r.json(); }).then(function (banData) {
-                            if (!banData.success) {
-                                disconnBtn.textContent = 'Ban failed: ' + (banData.error || '');
-                                return;
-                            }
-                            fetch('/api/peer/disconnect', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ peer_id: peerId })
-                            }).then(function (r) { return r.json(); }).then(function (dcData) {
-                                if (dcData.success) {
-                                    disconnBtn.textContent = '\u2714 Banned + Disconnected';
-                                    disconnBtn.classList.add('disconnected');
-                                    disconnBtn.disabled = true;
-                                } else {
-                                    disconnBtn.textContent = 'Banned but DC failed';
-                                }
-                            });
-                        }).catch(function () { disconnBtn.textContent = 'Error'; });
-                    } else {
-                        fetch('/api/peer/disconnect', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ peer_id: peerId })
-                        }).then(function (r) { return r.json(); }).then(function (data) {
-                            if (data.success) {
-                                disconnBtn.textContent = '\u2714 Disconnected';
-                                disconnBtn.classList.add('disconnected');
-                                disconnBtn.disabled = true;
-                            } else {
-                                disconnBtn.textContent = 'Failed: ' + (data.error || '');
-                            }
-                        }).catch(function () { disconnBtn.textContent = 'Error'; });
-                    }
-                });
-            });
-        }
+        peerDetailController.openPeer(peer, source);
     }
+
 
     /** Show peer ID and provider in donut center */
     function showPeerInDonutCenter(peer, color) {
@@ -6250,49 +5500,6 @@ window.ASDistribution = (function () {
             scoreLbl.textContent = '';
             scoreLbl.classList.remove('as-summary-link');
         }
-    }
-
-    /** Build a simple key-value row for peer detail panel */
-    function peerDetailRow(label, value, allowHtml) {
-        var renderedValue = allowHtml ? value : escHtml(value);
-        return '<div class="as-detail-sub-row"><span class="as-detail-sub-label">' + escHtml(label) + '</span><span class="as-detail-sub-val">' + renderedValue + '</span></div>';
-    }
-
-    /** HTML-escape untrusted values before inserting them into markup. */
-    function escHtml(s) {
-        if (s === null || s === undefined) return '';
-        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-    }
-
-    function serviceFlagFromAbbr(abbr) {
-        for (var key in SERVICE_FLAGS) {
-            if (Object.prototype.hasOwnProperty.call(SERVICE_FLAGS, key) && SERVICE_FLAGS[key].abbr === abbr) {
-                return SERVICE_FLAGS[key];
-            }
-        }
-        return null;
-    }
-
-    /** Render service flag abbreviations as compact detail rows */
-    function renderServiceFlagList(abbrev) {
-        if (!abbrev || abbrev === '\u2014') return '\u2014';
-        var flags = abbrev.split(/\s+/);
-        var html = '<div class="service-flag-list">';
-        for (var i = 0; i < flags.length; i++) {
-            var flag = flags[i].trim();
-            if (!flag) continue;
-            var details = serviceFlagFromAbbr(flag);
-            var label = details ? details.label : 'Unknown service flag';
-            var rpc = details ? details.rpc : flag;
-            var title = details ? serviceFlagDescription(details) : flag;
-            html += '<div class="service-flag-row" title="' + escHtml(title) + '">'
-                + '<span class="service-flag-abbr">' + escHtml(flag) + '</span>'
-                + '<span class="service-flag-label">' + escHtml(label) + '</span>'
-                + '<span class="service-flag-rpc">' + escHtml(rpc) + '</span>'
-                + '</div>';
-        }
-        html += '</div>';
-        return html;
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -6336,7 +5543,7 @@ window.ASDistribution = (function () {
         insightActiveAsNum = null;
         insightActiveData = null;
         insightActiveType = null;
-        peerDetailActive = false;
+        dismissPeerDetailView(false);
         if (othersListOpen) closeOthersListInDonut();
         hideSubTooltip();
         hideSubSubTooltip();
@@ -6474,6 +5681,7 @@ window.ASDistribution = (function () {
         _clearPeerSelection = hooks.clearPeerSelection || null;
         _hideMapTooltip = hooks.hideMapTooltip || null;
         _enterPrivateNetMode = hooks.enterPrivateNetMode || null;
+        _showDisconnectDialog = hooks.showDisconnectDialog || null;
     }
 
     /** Update with new peer data. Called after each fetchPeers(). */

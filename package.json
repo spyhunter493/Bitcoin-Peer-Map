@@ -4,7 +4,7 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "check:js": "node --check src/static/js/core/api.js && node --check src/static/js/core/modal.js && node --check src/static/js/features/node-monitor.js && node --check src/static/js/features/peer-actions.js && node --check src/static/js/features/display-settings.js && node --check src/static/js/features/world-map.js && node --check src/static/js/features/distribution-data.js && node --check src/static/js/app.js && node --check src/static/js/as-distribution.js && node --check tests/test_frontend_modules.js && node --check tests/test_as_distribution.js && node --check tests/test_layout.js",
+    "check:js": "node --check src/static/js/core/api.js && node --check src/static/js/core/modal.js && node --check src/static/js/features/node-monitor.js && node --check src/static/js/features/peer-actions.js && node --check src/static/js/features/display-settings.js && node --check src/static/js/features/world-map.js && node --check src/static/js/features/distribution-data.js && node --check src/static/js/features/distribution-peer-detail.js && node --check src/static/js/app.js && node --check src/static/js/as-distribution.js && node --check tests/test_frontend_modules.js && node --check tests/test_as_distribution.js && node --check tests/test_layout.js",
     "test:js": "node tests/test_frontend_modules.js && node tests/test_as_distribution.js",
     "test:layout": "node tests/test_layout.js",
     "test:layout:docker": "scripts/test-layout-docker.sh"

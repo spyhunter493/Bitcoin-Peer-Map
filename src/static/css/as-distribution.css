@@ -1525,6 +1525,26 @@ body.as-panel-open .peer-detail-popup {
     flex: 1;
     min-width: 0;
 }
+.peer-popup-back {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--text-secondary, #8b949e);
+    padding: 2px;
+    cursor: pointer;
+    font: inherit;
+    font-size: 14px;
+    line-height: 1;
+}
+.peer-popup-back:hover {
+    color: var(--text-primary, #c9d1d9);
+}
+.peer-popup-back:focus-visible,
+.peer-popup-close:focus-visible,
+.peer-popup-disconnect:focus-visible {
+    outline: 2px solid var(--accent, #58a6ff);
+    outline-offset: 2px;
+}
 .peer-popup-name {
     font-size: 14px;
     font-weight: 700;

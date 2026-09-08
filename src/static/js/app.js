@@ -7967,6 +7967,9 @@
             enterPrivateNetMode: function (targetNet) {
                 enterPrivateNetMode(null, targetNet || null);
             },
+            showDisconnectDialog: function (peerId, network) {
+                peerActions.showDisconnectDialog(peerId, network);
+            },
         });
 
         // Donut is always active — feed it initial data if available

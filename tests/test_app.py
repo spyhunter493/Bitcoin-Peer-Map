@@ -129,6 +129,10 @@ def test_application_factory_serves_health_dashboard_and_assets(tmp_path: Path) 
             "/static/js/features/distribution-data.js?v=abcdef0123456789abcdef0123456789abcdef01"
             in dashboard.text
         )
+        assert (
+            "/static/js/features/distribution-peer-detail.js?v=abcdef0123456789abcdef0123456789abcdef01"
+            in dashboard.text
+        )
         assert "/static/js/app.js?v=abcdef0123456789abcdef0123456789abcdef01" in dashboard.text
         assert (
             "https://github.com/spyhunter493/bitcoin-peer-map/commit/"

@@ -330,6 +330,61 @@ async function assertPeerActionInteractions(page) {
     await page.unroute(bansRoute);
 }
 
+async function assertDistributionPeerDetailInteractions(page) {
+    const peerId = await page.evaluate(() => {
+        const rows = Array.from(document.querySelectorAll('#peer-tbody tr[data-id]'));
+        const publicRow = rows.find(row => !['onion', 'i2p', 'cjdns'].includes(row.dataset.net));
+        if (!publicRow) throw new Error('No public peer row available for peer-detail test');
+        publicRow.click();
+        return Number(publicRow.dataset.id);
+    });
+    await page.waitForSelector('.peer-detail-popup.visible');
+
+    const popup = await page.evaluate(() => {
+        const element = document.querySelector('.peer-detail-popup');
+        return {
+            role: element?.getAttribute('role'),
+            ariaModal: element?.getAttribute('aria-modal'),
+            labelledBy: element?.getAttribute('aria-labelledby'),
+            titleId: element?.querySelector('.peer-popup-name')?.id,
+            closeLabel: element?.querySelector('.peer-popup-close')?.getAttribute('aria-label'),
+            focusedClass: document.activeElement?.className,
+            disconnectIsButton: element?.querySelector('.peer-popup-disconnect')?.tagName,
+        };
+    });
+    assert.deepStrictEqual(popup, {
+        role: 'dialog',
+        ariaModal: 'false',
+        labelledBy: 'peer-popup-title',
+        titleId: 'peer-popup-title',
+        closeLabel: 'Close peer details',
+        focusedClass: 'peer-popup-close',
+        disconnectIsButton: 'BUTTON',
+    });
+    assert.strictEqual(
+        await page.locator('.peer-popup-name').textContent(),
+        `Peer #${peerId}`
+    );
+
+    await page.click('.peer-detail-popup .peer-popup-disconnect');
+    await page.waitForSelector('#disconnect-dialog');
+    assert.strictEqual(
+        await page.evaluate(() => document.activeElement?.dataset.choice),
+        'disconnect'
+    );
+
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('#disconnect-dialog', { state: 'detached' });
+    assert.strictEqual(
+        await page.evaluate(() => document.activeElement?.classList.contains('peer-popup-disconnect')),
+        true
+    );
+    assert.strictEqual(await page.locator('.peer-detail-popup').count(), 1);
+
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('.peer-detail-popup', { state: 'detached' });
+}
+
 async function assertAdvancedDisplaySettings(page) {
     await page.click('#topbar-gear');
     await page.waitForSelector('#display-settings-popup');
@@ -473,6 +528,7 @@ async function assertPeerControlsResponsive(browser, baseUrl) {
             }),
         });
         await assertChainTipsModal(page);
+        await assertDistributionPeerDetailInteractions(page);
         await assertPeerActionInteractions(page);
         await assertAdvancedDisplaySettings(page);
 

@@ -226,6 +226,343 @@
         return segments;
     }
 
+    function peersForSegment(segment, groups) {
+        if (segment.isOthers && segment._othersGroups) {
+            return segment._othersGroups.flatMap(group => group.peers);
+        }
+        const group = groups.find(item => item.asNumber === segment.asNumber);
+        return group ? group.peers : [];
+    }
+
+    function colorForProvider(asNumber, segments, fallbackColor) {
+        const fallback = fallbackColor || '#58a6ff';
+        for (const segment of segments) {
+            if (segment.asNumber === asNumber) return segment.color;
+            if (
+                segment.isOthers &&
+                segment._othersGroups &&
+                segment._othersGroups.some(group => group.asNumber === asNumber)
+            ) {
+                return segment.color;
+            }
+        }
+        return fallback;
+    }
+
+    function aggregateSummaryByCategory(peers, getKey, getLabel, segments) {
+        const categories = Object.create(null);
+        for (const peer of peers) {
+            const key = getKey(peer);
+            if (!key) continue;
+            const asNumber = parseAsNumber(peer.as);
+            if (!asNumber) continue;
+            const label = getLabel ? getLabel(peer, key) : key;
+            if (!categories[key]) {
+                categories[key] = {
+                    key,
+                    label,
+                    peerCount: 0,
+                    peerIds: [],
+                    providers: Object.create(null),
+                };
+            }
+            const category = categories[key];
+            category.peerCount += 1;
+            category.peerIds.push(peer.id);
+            if (!category.providers[asNumber]) {
+                category.providers[asNumber] = {
+                    asNumber,
+                    name: parseAsOrg(peer.as) || asNumber,
+                    color: colorForProvider(asNumber, segments),
+                    peerCount: 0,
+                    peerIds: [],
+                    peers: [],
+                };
+            }
+            const provider = category.providers[asNumber];
+            provider.peerCount += 1;
+            provider.peerIds.push(peer.id);
+            provider.peers.push(peer);
+        }
+        return Object.values(categories)
+            .map(category => {
+                const providers = Object.values(category.providers)
+                    .sort((left, right) => right.peerCount - left.peerCount);
+                return {
+                    key: category.key,
+                    label: category.label,
+                    peerCount: category.peerCount,
+                    providerCount: providers.length,
+                    peerIds: category.peerIds,
+                    providers,
+                };
+            })
+            .sort((left, right) => right.peerCount - left.peerCount);
+    }
+
+    function aggregateSummaryNetworks(peers, segments) {
+        const labels = { ipv4: 'IPv4', ipv6: 'IPv6', onion: 'Tor', i2p: 'I2P', cjdns: 'CJDNS' };
+        return aggregateSummaryByCategory(
+            peers,
+            peer => peer.network || 'ipv4',
+            (peer, key) => labels[key] || key,
+            segments
+        );
+    }
+
+    function aggregateSummaryHosting(peers, segments) {
+        const labels = {
+            cloud: 'Cloud / Hosting',
+            proxy: 'Proxy / VPN',
+            mobile: 'Mobile',
+            residential: 'Residential',
+        };
+        return aggregateSummaryByCategory(
+            peers,
+            peer => {
+                if (peer.hosting) return 'cloud';
+                if (peer.proxy) return 'proxy';
+                if (peer.mobile) return 'mobile';
+                return 'residential';
+            },
+            (peer, key) => labels[key] || key,
+            segments
+        );
+    }
+
+    function aggregateSummaryCountries(peers, segments) {
+        return aggregateSummaryByCategory(
+            peers,
+            peer => peer.countryCode || null,
+            (peer, key) => key + '  ' + (peer.country || key),
+            segments
+        );
+    }
+
+    function aggregateSummarySoftware(peers, segments) {
+        return aggregateSummaryByCategory(
+            peers,
+            peer => peer.subver || 'Unknown',
+            null,
+            segments
+        );
+    }
+
+    function aggregateSummaryServices(peers, segments) {
+        return aggregateSummaryByCategory(
+            peers,
+            peer => peer.services_abbrev || '\u2014',
+            null,
+            segments
+        );
+    }
+
+    function aggregateProvidersForPeers(peers, segments) {
+        const providers = Object.create(null);
+        for (const peer of peers) {
+            const asNumber = parseAsNumber(peer.as);
+            if (!asNumber) continue;
+            if (!providers[asNumber]) {
+                providers[asNumber] = {
+                    asNumber,
+                    name: parseAsOrg(peer.as) || asNumber,
+                    color: colorForProvider(asNumber, segments),
+                    peerCount: 0,
+                    peerIds: [],
+                    peers: [],
+                };
+            }
+            providers[asNumber].peerCount += 1;
+            providers[asNumber].peerIds.push(peer.id);
+            providers[asNumber].peers.push(peer);
+        }
+        return Object.values(providers).sort((left, right) => right.peerCount - left.peerCount);
+    }
+
+    function buildConnectionGrid(segments, groups, connectionTypeLabels) {
+        return segments.map(segment => {
+            const peers = peersForSegment(segment, groups);
+            const inboundPeers = peers.filter(peer => peer.connection_type === 'inbound');
+            const outboundPeers = peers.filter(peer => peer.connection_type !== 'inbound');
+            const subtypeGroups = Object.create(null);
+            for (const peer of outboundPeers) {
+                const type = peer.connection_type || 'unknown';
+                if (!subtypeGroups[type]) subtypeGroups[type] = [];
+                subtypeGroups[type].push(peer);
+            }
+            const outboundSubtypes = Object.entries(subtypeGroups).map(([type, subtypePeers]) => ({
+                type,
+                label: connectionTypeLabels[type] || type,
+                count: subtypePeers.length,
+                peerIds: subtypePeers.map(peer => peer.id),
+            }));
+            let name = segment.isOthers
+                ? 'Others'
+                : (segment.asShort || segment.asName || segment.asNumber);
+            if (name.length > 16) name = name.substring(0, 15) + '\u2026';
+            const item = {
+                asNumber: segment.asNumber,
+                name,
+                color: segment.color,
+                isOthers: segment.isOthers || false,
+                inCount: inboundPeers.length,
+                outCount: outboundPeers.length,
+                inPeerIds: inboundPeers.map(peer => peer.id),
+                outPeerIds: outboundPeers.map(peer => peer.id),
+                totalPeerIds: peers.map(peer => peer.id),
+                inPeers: inboundPeers,
+                outPeers: outboundPeers,
+                outSubtypes: outboundSubtypes,
+                totalCount: peers.length,
+            };
+            if (segment.isOthers && segment._othersGroups) {
+                item._othersGroups = segment._othersGroups;
+            }
+            return item;
+        });
+    }
+
+    function rankProvidersByBytes(peers, groups, segments, field) {
+        const providers = Object.create(null);
+        for (const peer of peers) {
+            const asNumber = parseAsNumber(peer.as);
+            if (!asNumber || !(peer[field] > 0)) continue;
+            if (!providers[asNumber]) {
+                providers[asNumber] = { asNumber, totalBytes: 0, peers: [] };
+            }
+            providers[asNumber].totalBytes += peer[field];
+            providers[asNumber].peers.push(peer);
+        }
+        return Object.values(providers)
+            .map(provider => {
+                provider.peers.sort((left, right) => (right[field] || 0) - (left[field] || 0));
+                const group = groups.find(item => item.asNumber === provider.asNumber);
+                provider.provName = group
+                    ? (group.asShort || group.asName || group.asNumber)
+                    : provider.asNumber;
+                provider.color = colorForProvider(provider.asNumber, segments);
+                return provider;
+            })
+            .sort((left, right) => right.totalBytes - left.totalBytes);
+    }
+
+    function computeInsights(groups, peers, segments, nowSeconds) {
+        const insights = [];
+        const currentSeconds = nowSeconds == null ? Math.floor(Date.now() / 1000) : nowSeconds;
+        let mostStable = null;
+        let longestAverage = 0;
+        const pingProviders = [];
+
+        for (const group of groups) {
+            const durations = group.peers
+                .filter(peer => peer.conntime > 0)
+                .map(peer => currentSeconds - peer.conntime);
+            const averageDuration = durations.length
+                ? durations.reduce((total, duration) => total + duration, 0) / durations.length
+                : 0;
+            if (averageDuration > longestAverage) {
+                longestAverage = averageDuration;
+                mostStable = group;
+            }
+
+            const pingPeers = group.peers.filter(peer => peer.ping_ms > 0);
+            if (pingPeers.length) {
+                const averagePing = pingPeers.reduce((total, peer) => total + peer.ping_ms, 0)
+                    / pingPeers.length;
+                pingProviders.push({
+                    asNumber: group.asNumber,
+                    provName: group.asShort || group.asName || group.asNumber,
+                    color: colorForProvider(group.asNumber, segments),
+                    avgPing: averagePing,
+                    peers: group.peers.slice().sort(
+                        (left, right) => (left.ping_ms || 9999) - (right.ping_ms || 9999)
+                    ),
+                    peerIds: group.peerIds,
+                });
+            }
+        }
+
+        if (mostStable && longestAverage > 0) {
+            insights.push({
+                type: 'stable',
+                icon: '\u23f3',
+                asNumber: mostStable.asNumber,
+                provName: mostStable.asShort || mostStable.asNumber,
+                durText: fmtDuration(longestAverage),
+                peerIds: mostStable.peers.map(peer => peer.id),
+                peers: mostStable.peers,
+            });
+        }
+
+        pingProviders.sort((left, right) => left.avgPing - right.avgPing);
+        if (pingProviders.length) {
+            insights.push({
+                type: 'fastest',
+                icon: '\u26a1',
+                topProviders: pingProviders,
+                field: 'ping',
+            });
+        }
+
+        const sentProviders = rankProvidersByBytes(peers, groups, segments, 'bytessent');
+        if (sentProviders.length) {
+            insights.push({
+                type: 'data-providers',
+                icon: '\u2b06\ufe0f',
+                label: 'Most data sent to <span style="color:var(--text-muted)">(by rank)</span>',
+                topProviders: sentProviders,
+                field: 'bytessent',
+            });
+        }
+
+        const receivedProviders = rankProvidersByBytes(peers, groups, segments, 'bytesrecv');
+        if (receivedProviders.length) {
+            insights.push({
+                type: 'data-providers',
+                icon: '\u2b07\ufe0f',
+                label: 'Most data recv by <span style="color:var(--text-muted)">(by rank)</span>',
+                topProviders: receivedProviders,
+                field: 'bytesrecv',
+            });
+        }
+
+        return insights;
+    }
+
+    function computeSummaryData(options) {
+        return {
+            score: options.score,
+            uniqueProviders: options.groups.length,
+            topProvider: options.groups.length ? options.groups[0] : null,
+            insights: computeInsights(
+                options.groups,
+                options.peers,
+                options.segments,
+                options.nowSeconds
+            ),
+            connectionGrid: buildConnectionGrid(
+                options.segments,
+                options.groups,
+                options.connectionTypeLabels
+            ),
+            networks: aggregateSummaryNetworks(options.peers, options.segments),
+            hosting: aggregateSummaryHosting(options.peers, options.segments),
+            countries: aggregateSummaryCountries(options.peers, options.segments),
+            software: aggregateSummarySoftware(options.peers, options.segments),
+            services: aggregateSummaryServices(options.peers, options.segments),
+        };
+    }
+
+    function computeCountrySummaryData(groups, totalPeers, score) {
+        return {
+            score,
+            uniqueCountries: groups.length,
+            totalPeers,
+            topCountry: groups.length ? groups[0] : null,
+            countries: groups,
+        };
+    }
+
     global.BPMDistributionData = Object.freeze({
         parseAsNumber,
         parseAsOrg,
@@ -238,5 +575,18 @@
         aggregateCountries,
         distributionScore,
         buildDonutSegments,
+        peersForSegment,
+        colorForProvider,
+        aggregateSummaryByCategory,
+        aggregateSummaryNetworks,
+        aggregateSummaryHosting,
+        aggregateSummaryCountries,
+        aggregateSummarySoftware,
+        aggregateSummaryServices,
+        aggregateProvidersForPeers,
+        buildConnectionGrid,
+        computeInsights,
+        computeSummaryData,
+        computeCountrySummaryData,
     });
 })(window);

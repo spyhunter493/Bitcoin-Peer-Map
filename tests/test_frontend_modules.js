@@ -43,6 +43,7 @@ function loadScript(sandbox, path) {
     loadScript(sandbox, 'src/static/js/features/display-settings.js');
     loadScript(sandbox, 'src/static/js/features/world-map.js');
     loadScript(sandbox, 'src/static/js/features/distribution-data.js');
+    loadScript(sandbox, 'src/static/js/features/distribution-peer-detail.js');
 
     assert.strictEqual(typeof sandbox.window.BPMDisplaySettings.create, 'function');
 
@@ -134,10 +135,10 @@ function loadScript(sandbox, path) {
 
     const distribution = sandbox.window.BPMDistributionData;
     const peers = [
-        { id: 1, as: 'AS64500 Alpha Net', asname: 'Alpha', countryCode: 'NZ', country: 'New Zealand', direction: 'IN', ping_ms: 20, conntime: 900, bytessent: 1024, bytesrecv: 2048 },
-        { id: 2, as: 'AS64500 Alpha Net', asname: 'Alpha', countryCode: 'NZ', country: 'New Zealand', direction: 'OUT', ping_ms: 40, conntime: 800, hosting: true },
-        { id: 3, as: 'AS64501 Beta Net', asname: 'Beta', countryCode: 'AU', country: 'Australia', direction: 'OUT', ping_ms: 60, conntime: 700, hosting: true },
-        { id: 4, as: '', countryCode: '', direction: 'IN' },
+        { id: 1, as: 'AS64500 Alpha Net', asname: 'Alpha', countryCode: 'NZ', country: 'New Zealand', direction: 'IN', connection_type: 'inbound', network: 'ipv4', subver: '/Satoshi:27.0/', services_abbrev: 'N W', ping_ms: 20, conntime: 900, bytessent: 1024, bytesrecv: 2048 },
+        { id: 2, as: 'AS64500 Alpha Net', asname: 'Alpha', countryCode: 'NZ', country: 'New Zealand', direction: 'OUT', connection_type: 'outbound-full-relay', network: 'ipv6', subver: '/Satoshi:27.0/', services_abbrev: 'N', ping_ms: 40, conntime: 800, hosting: true },
+        { id: 3, as: 'AS64501 Beta Net', asname: 'Beta', countryCode: 'AU', country: 'Australia', direction: 'OUT', connection_type: 'block-relay-only', network: 'onion', subver: '/Satoshi:26.0/', services_abbrev: 'N W', ping_ms: 60, conntime: 700, bytessent: 4096, bytesrecv: 1024, hosting: true },
+        { id: 4, as: '', countryCode: '', direction: 'IN', connection_type: 'inbound' },
     ];
     const providers = distribution.aggregateProviders(peers, 1000);
     assert.strictEqual(providers.total, 3);
@@ -156,6 +157,52 @@ function loadScript(sandbox, path) {
     assert.strictEqual(segments[1].peerCount, 1);
     assert.strictEqual(distribution.fmtBytes(1024), '1.0 KB');
     assert.strictEqual(distribution.fmtDuration(3660), '1h 1m');
+
+    const summary = distribution.computeSummaryData({
+        score: distribution.distributionScore(providers.groups, providers.total),
+        groups: providers.groups,
+        segments,
+        peers,
+        connectionTypeLabels: {
+            inbound: 'Inbound',
+            'outbound-full-relay': 'Outbound full relay',
+            'block-relay-only': 'Block relay only',
+        },
+        nowSeconds: 1000,
+    });
+    assert.strictEqual(summary.uniqueProviders, 2);
+    assert.strictEqual(summary.topProvider.asNumber, 'AS64500');
+    assert.deepStrictEqual(
+        Array.from(summary.networks, item => [item.key, item.peerCount]),
+        [['ipv4', 1], ['ipv6', 1], ['onion', 1]]
+    );
+    assert.strictEqual(summary.hosting[0].key, 'cloud');
+    assert.strictEqual(summary.hosting[0].peerCount, 2);
+    assert.strictEqual(summary.hosting[0].providerCount, 2);
+    assert.strictEqual(summary.countries[0].key, 'NZ');
+    assert.strictEqual(summary.software[0].peerCount, 2);
+    assert.strictEqual(summary.services[0].peerCount, 2);
+    assert.deepStrictEqual(
+        Array.from(summary.connectionGrid, item => [item.asNumber, item.inCount, item.outCount]),
+        [['AS64500', 1, 1], ['Others', 0, 1]]
+    );
+    assert.strictEqual(summary.connectionGrid[0].outSubtypes[0].label, 'Outbound full relay');
+    assert.strictEqual(summary.insights[0].type, 'stable');
+    assert.strictEqual(summary.insights[0].asNumber, 'AS64501');
+    assert.strictEqual(summary.insights[1].type, 'fastest');
+    assert.strictEqual(summary.insights[1].topProviders[0].asNumber, 'AS64500');
+    assert.strictEqual(summary.insights[2].topProviders[0].asNumber, 'AS64501');
+    assert.strictEqual(summary.insights[3].topProviders[0].asNumber, 'AS64500');
+
+    const countries = distribution.aggregateCountries(peers, 1000);
+    const countrySummary = distribution.computeCountrySummaryData(
+        countries.groups,
+        countries.total,
+        distribution.distributionScore(countries.groups, countries.total)
+    );
+    assert.strictEqual(countrySummary.uniqueCountries, 2);
+    assert.strictEqual(countrySummary.totalPeers, 3);
+    assert.strictEqual(countrySummary.topCountry.countryCode, 'NZ');
 
     console.log('Frontend module tests passed');
 })().catch(error => {
