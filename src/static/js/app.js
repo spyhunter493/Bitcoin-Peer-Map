@@ -4323,6 +4323,33 @@
         return `<div class="modal-summary-item" title="${safeTitle}"><span class="modal-summary-label">${modalEscapeHtml(label)}</span><span class="modal-summary-val">${safeValue}</span></div>`;
     }
 
+    function openFetchedModal({ modalId, closeId, bodyId, title, maxWidth, url, render }) {
+        const existing = document.getElementById(modalId);
+        if (existing) existing.remove();
+
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.id = modalId;
+        overlay.innerHTML = `<div class="modal-box" style="width:calc(100vw - 32px);max-width:${maxWidth}px"><div class="modal-header"><span class="modal-title">${modalEscapeHtml(title)}</span><button class="modal-close" id="${closeId}">&times;</button></div><div class="modal-body" id="${bodyId}"><div style="color:var(--text-muted);text-align:center;padding:16px">Loading...</div></div></div>`;
+        document.body.appendChild(overlay);
+        const body = overlay.querySelector(`#${bodyId}`);
+        overlay.querySelector(`#${closeId}`).addEventListener('click', () => overlay.remove());
+        overlay.addEventListener('click', (event) => {
+            if (event.target === overlay) overlay.remove();
+        });
+
+        fetch(url).then(response => {
+            if (!response.ok) throw new Error(`Request failed (${response.status})`);
+            return response.json();
+        }).then(data => {
+            if (overlay.isConnected) body.innerHTML = render(data);
+        }).catch(error => {
+            if (overlay.isConnected) {
+                body.innerHTML = `<div style="color:var(--err)">Error: ${modalEscapeHtml(error.message)}</div>`;
+            }
+        });
+    }
+
     function renderRecentBlocksModal(data) {
         if (!data || data.success !== true) {
             return `<div style="color:var(--err)">${modalEscapeHtml(data?.error || data?.detail || 'Could not load recent blocks')}</div>`;
@@ -4373,27 +4400,14 @@
     }
 
     function openRecentBlocksModal() {
-        const existing = document.getElementById('recent-blocks-modal');
-        if (existing) existing.remove();
-
-        const overlay = document.createElement('div');
-        overlay.className = 'modal-overlay';
-        overlay.id = 'recent-blocks-modal';
-        overlay.innerHTML = '<div class="modal-box" style="width:calc(100vw - 32px);max-width:900px"><div class="modal-header"><span class="modal-title">Recent Blocks</span><button class="modal-close" id="recent-blocks-close">&times;</button></div><div class="modal-body" id="recent-blocks-body"><div style="color:var(--text-muted);text-align:center;padding:16px">Loading...</div></div></div>';
-        document.body.appendChild(overlay);
-        const body = overlay.querySelector('#recent-blocks-body');
-        overlay.querySelector('#recent-blocks-close').addEventListener('click', () => overlay.remove());
-        overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
-
-        fetch('/api/blocks/recent?limit=25').then(response => {
-            if (!response.ok) throw new Error(`Request failed (${response.status})`);
-            return response.json();
-        }).then(data => {
-            if (overlay.isConnected) body.innerHTML = renderRecentBlocksModal(data);
-        }).catch(err => {
-            if (overlay.isConnected) {
-                body.innerHTML = `<div style="color:var(--err)">Error: ${modalEscapeHtml(err.message)}</div>`;
-            }
+        openFetchedModal({
+            modalId: 'recent-blocks-modal',
+            closeId: 'recent-blocks-close',
+            bodyId: 'recent-blocks-body',
+            title: 'Recent Blocks',
+            maxWidth: 900,
+            url: '/api/blocks/recent?limit=25',
+            render: renderRecentBlocksModal,
         });
     }
 
@@ -4539,6 +4553,89 @@
         }).catch(err => {
             const section = document.getElementById('ni-blockchain-section');
             if (section) section.innerHTML = `<div style="color:var(--err)">Error: ${err.message}</div>`;
+        });
+    }
+
+    function chainTipStatusClass(status) {
+        const safeStatus = String(status || 'unknown').toLowerCase().replace(/[^a-z0-9-]/g, '-');
+        return `chain-tip-status-${safeStatus}`;
+    }
+
+    function renderChainTipsModal(data) {
+        if (!data || data.success !== true) {
+            return `<div style="color:var(--err)">${modalEscapeHtml(data?.error || data?.detail || 'Could not load chain tips')}</div>`;
+        }
+
+        const summary = data.summary || {};
+        const tips = Array.isArray(data.tips) ? data.tips : [];
+        let html = '<div class="modal-section-title">Summary</div>';
+        html += '<div class="modal-summary-grid chain-tip-summary-grid">';
+        html += modalSummaryItem('Best Height', summary.best_height != null ? summary.best_height.toLocaleString() : '\u2014');
+        html += modalSummaryItem('Tips', summary.total != null ? summary.total.toLocaleString() : tips.length.toLocaleString());
+        html += modalSummaryItem('Active', summary.active_count != null ? summary.active_count.toLocaleString() : '\u2014');
+        html += modalSummaryItem('Non-active', summary.non_active_count != null ? summary.non_active_count.toLocaleString() : '\u2014');
+        html += modalSummaryItem('Forks', summary.fork_count != null ? summary.fork_count.toLocaleString() : '\u2014');
+        const latestNonActive = summary.latest_non_active_height != null
+            ? `#${summary.latest_non_active_height.toLocaleString()} ${summary.latest_non_active_status || ''}`.trim()
+            : 'None';
+        html += modalSummaryItem('Latest Non-active Tip', latestNonActive);
+        html += '</div>';
+
+        if (summary.best_hash) {
+            const bestHash = shortModalHash(summary.best_hash);
+            html += mrow('Best Block Hash', modalEscapeHtml(bestHash), 'Best block hash on the active chain', modalEscapeHtml(summary.best_hash));
+        }
+
+        html += '<div class="modal-section-title">Chain Tips</div>';
+        if (!tips.length) {
+            html += '<div style="color:var(--text-muted);padding:4px 0">No chain-tip data returned</div>';
+            return html;
+        }
+
+        if (!summary.non_active_count) {
+            html += '<div style="color:var(--ok);padding:4px 0">No forked or stale chain tips reported</div>';
+        }
+        if (summary.age_lookup_limited) {
+            const ageLookupLimit = summary.age_lookup_limit ?? 100;
+            html += `<div style="color:var(--text-muted);padding:4px 0">Age lookup limited to the first ${modalEscapeHtml(ageLookupLimit)} prioritized tips</div>`;
+        }
+
+        html += '<div class="modal-table-wrap"><table class="modal-data-table chain-tip-table">';
+        html += '<colgroup><col style="width:120px"><col style="width:90px"><col style="width:82px"><col style="width:180px"><col style="width:74px"></colgroup>';
+        html += '<thead><tr><th>Status</th><th>Height</th><th>Branch</th><th>Hash</th><th>Age</th></tr></thead><tbody>';
+        for (const tip of tips) {
+            const status = tip.status || 'unknown';
+            const statusLabel = tip.status_label || status;
+            const height = tip.height != null ? Number(tip.height).toLocaleString() : '\u2014';
+            const branchLength = tip.branch_length != null ? Number(tip.branch_length).toLocaleString() : '\u2014';
+            const hash = tip.hash || '';
+            const hashTitle = modalEscapeHtml(hash);
+            const hashText = modalEscapeHtml(shortModalHash(hash));
+            const url = blockExplorerBlockUrl(hash, summary.chain);
+            const hashCell = url
+                ? `<a class="modal-link modal-mono" href="${url}" target="_blank" rel="noopener" title="${hashTitle}">${hashText}</a>`
+                : `<span class="modal-mono" title="${hashTitle}">${hashText}</span>`;
+            html += '<tr>';
+            html += `<td><span class="chain-tip-status ${chainTipStatusClass(status)}">${modalEscapeHtml(statusLabel)}</span></td>`;
+            html += `<td class="modal-mono num">${modalEscapeHtml(height)}</td>`;
+            html += `<td class="modal-mono num">${modalEscapeHtml(branchLength)}</td>`;
+            html += `<td>${hashCell}</td>`;
+            html += `<td title="${modalEscapeHtml(fmtModalDateTime(tip.time))}">${modalEscapeHtml(fmtModalAge(tip.age_seconds))}</td>`;
+            html += '</tr>';
+        }
+        html += '</tbody></table></div>';
+        return html;
+    }
+
+    function openChainTipsModal() {
+        openFetchedModal({
+            modalId: 'chain-tips-modal',
+            closeId: 'chain-tips-close',
+            bodyId: 'chain-tips-body',
+            title: 'Chain Tips',
+            maxWidth: 820,
+            url: '/api/chain-tips',
+            render: renderChainTipsModal,
         });
     }
 
@@ -9137,6 +9234,12 @@
         const geoipDbPeerButton = document.getElementById('btn-geoip-db-peer');
         if (geoipDbPeerButton) {
             geoipDbPeerButton.addEventListener('click', (e) => { e.stopPropagation(); openGeoDBDropdown(); });
+        }
+
+        // CHAIN-TIPS button in peer panel handle
+        const chainTipsButton = document.getElementById('btn-chain-tips');
+        if (chainTipsButton) {
+            chainTipsButton.addEventListener('click', (e) => { e.stopPropagation(); openChainTipsModal(); });
         }
 
         // Topbar gear icon → open primary Map Settings popup

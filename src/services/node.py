@@ -14,7 +14,8 @@ from rpc import BitcoinRpcClient, RpcError
 from .connectivity import ConnectivityService
 from .geoip import GeoDatabase
 
-_RECENT_BLOCK_CACHE_LIMIT = 256
+_BLOCK_METADATA_CACHE_LIMIT = 256
+_CHAIN_TIP_HEADER_LIMIT = 100
 
 
 class NodeService:
@@ -33,6 +34,8 @@ class NodeService:
         self._traffic_lock = threading.Lock()
         self._recent_blocks: OrderedDict[str, dict[str, Any]] = OrderedDict()
         self._recent_blocks_lock = threading.Lock()
+        self._chain_tip_times: OrderedDict[str, int] = OrderedDict()
+        self._chain_tips_lock = threading.Lock()
 
     @staticmethod
     def _network_key(name: Any) -> str | None:
@@ -254,7 +257,7 @@ class NodeService:
             "previous_hash": str(block.get("previousblockhash", "") or ""),
         }
         self._recent_blocks[block_hash] = cached
-        while len(self._recent_blocks) > _RECENT_BLOCK_CACHE_LIMIT:
+        while len(self._recent_blocks) > _BLOCK_METADATA_CACHE_LIMIT:
             self._recent_blocks.popitem(last=False)
         return cached
 
@@ -375,6 +378,131 @@ class NodeService:
             return {"success": True}
         except RpcError as exc:
             return {"success": False, "error": str(exc)}
+
+    def _chain_tip_time(self, block_hash: str) -> int:
+        cached = self._chain_tip_times.get(block_hash)
+        if cached is not None:
+            self._chain_tip_times.move_to_end(block_hash)
+            return cached
+
+        with self._recent_blocks_lock:
+            recent_block = self._recent_blocks.get(block_hash)
+            if recent_block is not None:
+                block_time = int(recent_block["time"])
+            else:
+                block_time = 0
+
+        if not block_time:
+            header = self.rpc.call("getblockheader", block_hash, timeout=10)
+            if not isinstance(header, dict):
+                raise TypeError("getblockheader returned an unexpected response")
+            block_time = int(header.get("time", 0) or 0)
+
+        if block_time:
+            self._chain_tip_times[block_hash] = block_time
+            while len(self._chain_tip_times) > _BLOCK_METADATA_CACHE_LIMIT:
+                self._chain_tip_times.popitem(last=False)
+        return block_time
+
+    def chain_tips(self) -> dict[str, Any]:
+        try:
+            with self._chain_tips_lock:
+                tips = self.rpc.call("getchaintips", timeout=10)
+                if not isinstance(tips, list):
+                    raise TypeError("getchaintips returned an unexpected response")
+
+                blockchain: dict[str, Any] = {}
+                try:
+                    blockchain_result = self.rpc.call("getblockchaininfo", timeout=10)
+                    if isinstance(blockchain_result, dict):
+                        blockchain = blockchain_result
+                except RpcError:
+                    pass
+
+                normalized = []
+                counts_by_status: dict[str, int] = {}
+
+                for tip in tips:
+                    if not isinstance(tip, dict):
+                        continue
+                    status = str(tip.get("status") or "unknown").lower()
+                    counts_by_status[status] = counts_by_status.get(status, 0) + 1
+                    normalized.append(
+                        {
+                            "height": int(tip.get("height", 0) or 0),
+                            "hash": str(tip.get("hash") or ""),
+                            "branch_length": int(tip.get("branchlen", 0) or 0),
+                            "status": status,
+                            "status_label": status.replace("-", " ").title(),
+                            "time": None,
+                            "age_seconds": None,
+                            "is_active": status == "active",
+                        }
+                    )
+
+                status_priority = {
+                    "active": 0,
+                    "valid-fork": 1,
+                    "valid-headers": 2,
+                    "headers-only": 3,
+                    "invalid": 4,
+                }
+                normalized.sort(
+                    key=lambda tip: (
+                        status_priority.get(tip["status"], 5),
+                        -tip["height"],
+                        -tip["branch_length"],
+                    )
+                )
+
+                candidates = [tip for tip in normalized if tip["hash"]]
+                for tip in candidates[:_CHAIN_TIP_HEADER_LIMIT]:
+                    try:
+                        tip["time"] = self._chain_tip_time(tip["hash"])
+                    except (RpcError, TypeError, ValueError):
+                        pass
+
+            generated_at = int(time.time())
+            for tip in normalized:
+                block_time = tip["time"]
+                tip["age_seconds"] = max(0, generated_at - block_time) if block_time else None
+
+            active_tip = next((tip for tip in normalized if tip["is_active"]), None)
+            non_active_tip = max(
+                (tip for tip in normalized if not tip["is_active"]),
+                key=lambda tip: tip["height"],
+                default=None,
+            )
+            fork_count = counts_by_status.get("valid-fork", 0)
+            headers_only_count = counts_by_status.get("headers-only", 0)
+            non_active_count = sum(1 for tip in normalized if not tip["is_active"])
+            summary = {
+                "chain": blockchain.get("chain"),
+                "best_height": blockchain.get("blocks")
+                if blockchain.get("blocks") is not None
+                else active_tip["height"]
+                if active_tip
+                else None,
+                "best_hash": blockchain.get("bestblockhash")
+                if blockchain.get("bestblockhash")
+                else active_tip["hash"]
+                if active_tip
+                else None,
+                "total": len(normalized),
+                "active_count": counts_by_status.get("active", 0),
+                "non_active_count": non_active_count,
+                "fork_count": fork_count,
+                "headers_only_count": headers_only_count,
+                "latest_non_active_height": non_active_tip["height"] if non_active_tip else None,
+                "latest_non_active_status": non_active_tip["status"] if non_active_tip else None,
+                "counts_by_status": counts_by_status,
+                "age_lookup_limited": len(candidates) > _CHAIN_TIP_HEADER_LIMIT,
+                "age_lookup_limit": _CHAIN_TIP_HEADER_LIMIT,
+                "generated_at": generated_at,
+            }
+            return {"success": True, "summary": summary, "tips": normalized, "error": None}
+        except (RpcError, TypeError, ValueError) as exc:
+            return {"success": False, "summary": None, "tips": [], "error": str(exc)}
 
     async def connect(self, address: str) -> dict[str, Any]:
         try:

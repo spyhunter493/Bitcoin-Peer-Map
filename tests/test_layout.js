@@ -183,13 +183,15 @@ async function assertTablePreferencesRestored(page) {
     });
 }
 
-async function assertRecentBlocksRequestIsolation(page) {
+async function assertFetchedModalRequestIsolation(
+    page,
+    { routePattern, buttonId, closeId, bodyId, responseFor }
+) {
     let requestNumber = 0;
     let firstRequestStarted;
     let secondRequestStarted;
     const firstStarted = new Promise(resolve => { firstRequestStarted = resolve; });
     const secondStarted = new Promise(resolve => { secondRequestStarted = resolve; });
-    const routePattern = '**/api/blocks/recent?limit=25';
 
     await page.route(routePattern, async route => {
         const current = ++requestNumber;
@@ -202,30 +204,41 @@ async function assertRecentBlocksRequestIsolation(page) {
         }
         await route.fulfill({
             contentType: 'application/json',
-            body: JSON.stringify({
-                success: true,
-                summary: { chain: 'main', tip_height: current, count: 0 },
-                blocks: [],
-                error: null,
-            }),
+            body: JSON.stringify(responseFor(current)),
         });
     });
 
-    await page.click('#btn-recent-blocks');
+    await page.click(`#${buttonId}`);
     await firstStarted;
-    await page.click('#recent-blocks-close');
-    await page.click('#btn-recent-blocks');
+    await page.click(`#${closeId}`);
+    await page.click(`#${buttonId}`);
     await secondStarted;
-    await page.waitForFunction(() => (
-        document.querySelector('#recent-blocks-body .modal-summary-val')?.textContent === '2'
-    ));
+    await page.waitForFunction(selector => (
+        document.querySelector(selector)?.textContent === '2'
+    ), `#${bodyId} .modal-summary-val`);
     await delay(550);
 
-    const finalTip = await page.locator('#recent-blocks-body .modal-summary-val').first().textContent();
-    assert.strictEqual(finalTip, '2', 'an older response replaced the current blocks modal');
+    const finalTip = await page.locator(`#${bodyId} .modal-summary-val`).first().textContent();
+    assert.strictEqual(finalTip, '2', `an older response replaced ${bodyId}`);
     assert.strictEqual(requestNumber, 2);
-    await page.click('#recent-blocks-close');
+    await page.click(`#${closeId}`);
     await page.unroute(routePattern);
+}
+
+async function assertChainTipsModal(page) {
+    await page.click('#btn-chain-tips');
+    await page.waitForSelector('#chain-tips-body .chain-tip-status');
+
+    const modal = await page.evaluate(() => ({
+        labels: Array.from(
+            document.querySelectorAll('#chain-tips-body .modal-summary-label'),
+            element => element.textContent
+        ),
+        rows: document.querySelectorAll('#chain-tips-body .chain-tip-table tbody tr').length,
+    }));
+    assert.ok(modal.labels.includes('Latest Non-active Tip'));
+    assert.strictEqual(modal.rows, 2);
+    await page.click('#chain-tips-close');
 }
 
 async function assertPeerControlsResponsive(browser, baseUrl) {
@@ -305,7 +318,31 @@ async function assertPeerControlsResponsive(browser, baseUrl) {
         await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
         await waitForDashboardReady(page);
         await assertDonutFits(page, 'initial render');
-        await assertRecentBlocksRequestIsolation(page);
+        await assertFetchedModalRequestIsolation(page, {
+            routePattern: '**/api/blocks/recent?limit=25',
+            buttonId: 'btn-recent-blocks',
+            closeId: 'recent-blocks-close',
+            bodyId: 'recent-blocks-body',
+            responseFor: current => ({
+                success: true,
+                summary: { chain: 'main', tip_height: current, count: 0 },
+                blocks: [],
+                error: null,
+            }),
+        });
+        await assertFetchedModalRequestIsolation(page, {
+            routePattern: '**/api/chain-tips',
+            buttonId: 'btn-chain-tips',
+            closeId: 'chain-tips-close',
+            bodyId: 'chain-tips-body',
+            responseFor: current => ({
+                success: true,
+                summary: { chain: 'main', best_height: current, total: 0 },
+                tips: [],
+                error: null,
+            }),
+        });
+        await assertChainTipsModal(page);
 
         await applyTablePreferences(page);
         await assertDonutFits(page, 'after row-count change');

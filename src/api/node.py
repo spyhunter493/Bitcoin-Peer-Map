@@ -43,3 +43,8 @@ def rpc_info(runtime: AppRuntime = Depends(runtime_from)):
         "network": connection.network,
         "endpoint": runtime.settings.rpc_url,
     }
+
+
+@router.get("/chain-tips")
+def chain_tips(runtime: AppRuntime = Depends(runtime_from)):
+    return runtime.node.chain_tips()
