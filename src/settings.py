@@ -50,11 +50,32 @@ def _optional_boolean(env: Mapping[str, str], name: str) -> bool | None:
     return _boolean(env, name, False)
 
 
+def _valid_build_revision(revision: str) -> bool:
+    return revision == "unknown" or bool(re.fullmatch(r"[0-9a-f]{7,40}", revision))
+
+
+def _build_revision_file(env: Mapping[str, str]) -> str:
+    revision_file = env.get("BPM_BUILD_REVISION_FILE", "").strip()
+    if not revision_file:
+        return "unknown"
+    try:
+        revision = Path(revision_file).read_text().strip().lower()
+    except OSError:
+        return "unknown"
+    if not revision:
+        return "unknown"
+    if not _valid_build_revision(revision):
+        raise ConfigurationError(
+            "BPM_BUILD_REVISION_FILE must contain unknown or a 7-40 character Git commit SHA"
+        )
+    return revision
+
+
 def _build_revision(env: Mapping[str, str]) -> str:
     revision = env.get("BPM_BUILD_REVISION", "unknown").strip().lower()
-    if revision == "unknown":
-        return revision
-    if not re.fullmatch(r"[0-9a-f]{7,40}", revision):
+    if not revision or revision == "unknown":
+        return _build_revision_file(env)
+    if not _valid_build_revision(revision):
         raise ConfigurationError("BPM_BUILD_REVISION must be a 7-40 character Git commit SHA")
     return revision
 

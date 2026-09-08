@@ -30,6 +30,45 @@ def test_settings_load_build_revision() -> None:
     assert AppSettings.from_env(environment).build_revision == "abcdef0123456789"
 
 
+def test_settings_load_build_revision_file(tmp_path: Path) -> None:
+    revision_file = tmp_path / "build-revision"
+    revision_file.write_text("1234567890ABCDEF\n")
+    environment = valid_environment()
+    environment["BPM_BUILD_REVISION_FILE"] = str(revision_file)
+
+    assert AppSettings.from_env(environment).build_revision == "1234567890abcdef"
+
+
+def test_settings_load_build_revision_file_when_env_is_blank(tmp_path: Path) -> None:
+    revision_file = tmp_path / "build-revision"
+    revision_file.write_text("1234567890abcdef\n")
+    environment = valid_environment()
+    environment["BPM_BUILD_REVISION"] = ""
+    environment["BPM_BUILD_REVISION_FILE"] = str(revision_file)
+
+    assert AppSettings.from_env(environment).build_revision == "1234567890abcdef"
+
+
+def test_settings_prefer_build_revision_env_over_file(tmp_path: Path) -> None:
+    revision_file = tmp_path / "build-revision"
+    revision_file.write_text("1234567890abcdef\n")
+    environment = valid_environment()
+    environment["BPM_BUILD_REVISION"] = "abcdef0123456789"
+    environment["BPM_BUILD_REVISION_FILE"] = str(revision_file)
+
+    assert AppSettings.from_env(environment).build_revision == "abcdef0123456789"
+
+
+def test_settings_reject_invalid_build_revision_file(tmp_path: Path) -> None:
+    revision_file = tmp_path / "build-revision"
+    revision_file.write_text("not-a-commit\n")
+    environment = valid_environment()
+    environment["BPM_BUILD_REVISION_FILE"] = str(revision_file)
+
+    with pytest.raises(ConfigurationError, match="BPM_BUILD_REVISION_FILE"):
+        AppSettings.from_env(environment)
+
+
 def test_settings_support_password_file(tmp_path: Path) -> None:
     password_file = tmp_path / "rpc-password"
     password_file.write_text("from-file\n")

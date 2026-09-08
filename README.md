@@ -135,7 +135,7 @@ RPC credentials are never written to the volume. Browser display preferences rem
 
 ## Build Revision
 
-The header displays the first seven characters of the Git commit embedded in the image and links to that exact commit on GitHub. Pass the full commit SHA whenever the image is built:
+The header displays the first seven characters of the Git commit embedded in the image and links to that exact commit on GitHub. Local builds can pass the full commit SHA explicitly:
 
 ```bash
 ./scripts/compose-local.sh build
@@ -143,8 +143,23 @@ The header displays the first seven characters of the Git commit embedded in the
 
 The helper exports `BPM_BUILD_REVISION` from the current Git checkout before running Docker Compose.
 For dirty worktrees, it uses `unknown` so locally changed static assets get a fresh content-hash
-cache key. GitHub Actions passes `GITHUB_SHA` directly to the Docker build. Images built without
-`BPM_BUILD_REVISION` display `unknown` rather than an inaccurate revision.
+cache key. GitHub Actions passes `GITHUB_SHA` directly to the Docker build.
+
+Remote Git builds can derive the revision from the cloned build context instead. For production
+Compose files that use a GitHub URL as the build context, keep the Git metadata during the build:
+
+```yaml
+services:
+  bpm:
+    build:
+      context: https://github.com/spyhunter493/Bitcoin-Peer-Map.git#main
+      args:
+        BUILDKIT_CONTEXT_KEEP_GIT_DIR: "1"
+```
+
+The image writes the detected commit to `/app/build-revision`, and the application uses that file
+when `BPM_BUILD_REVISION` is not set. Images built without either `BPM_BUILD_REVISION` or preserved
+Git metadata display `unknown` rather than an inaccurate revision.
 
 ## Container Security
 
