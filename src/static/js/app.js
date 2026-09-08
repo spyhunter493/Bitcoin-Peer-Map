@@ -106,7 +106,7 @@
         pulseDepthOut:   0.48,       // outbound pulse amplitude
         pulseSpeedIn:    50,         // slider 0-100, 50 = original speed
         pulseSpeedOut:   50,         // slider 0-100, 50 = original speed
-        // AS Diversity line settings
+        // AS Distribution line settings
         asLineWidth:     40,         // slider 0-100, 40 = ~1.8px (default — visible)
         asLineFan:       50,         // slider 0-100, 50 = 35% spread (default)
         // Land appearance
@@ -624,13 +624,17 @@
 
     // Bitcoin protocol service flag abbreviations and descriptions
     const SERVICE_FLAGS = {
-        'NETWORK':          { abbr: 'N',  desc: 'Full chain history (NODE_NETWORK)' },
-        'WITNESS':          { abbr: 'W',  desc: 'Segregated Witness support (NODE_WITNESS)' },
-        'NETWORK_LIMITED':  { abbr: 'NL', desc: 'Limited chain history, last 288 blocks (NODE_NETWORK_LIMITED)' },
-        'P2P_V2':           { abbr: 'P',  desc: 'BIP324 v2 encrypted transport (P2P_V2)' },
-        'COMPACT_FILTERS':  { abbr: 'CF', desc: 'BIP157/158 compact block filters (NODE_COMPACT_FILTERS)' },
-        'BLOOM':            { abbr: 'B',  desc: 'BIP37 Bloom filter support (NODE_BLOOM)' },
+        'NETWORK':          { abbr: 'N',  label: 'Full chain history', rpc: 'NODE_NETWORK' },
+        'WITNESS':          { abbr: 'W',  label: 'Segregated Witness', rpc: 'NODE_WITNESS' },
+        'NETWORK_LIMITED':  { abbr: 'NL', label: 'Limited chain history', rpc: 'NODE_NETWORK_LIMITED' },
+        'P2P_V2':           { abbr: 'P',  label: 'BIP324 v2 transport', rpc: 'P2P_V2' },
+        'COMPACT_FILTERS':  { abbr: 'CF', label: 'Compact block filters', rpc: 'NODE_COMPACT_FILTERS' },
+        'BLOOM':            { abbr: 'B',  label: 'Bloom filters', rpc: 'NODE_BLOOM' },
     };
+
+    function serviceFlagDescription(flag) {
+        return flag.rpc ? `${flag.label} (${flag.rpc})` : flag.label;
+    }
 
     /** Build unique short abbreviation string from services array */
     function serviceAbbrev(services) {
@@ -643,8 +647,45 @@
         if (!services || !services.length) return 'No service flags';
         return services.map(s => {
             const f = SERVICE_FLAGS[s];
-            return f ? `${f.abbr} = ${f.desc}` : s;
+            return f ? `${f.abbr} = ${serviceFlagDescription(f)}` : s;
         }).join('\n');
+    }
+
+    function escapeServiceHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, ch => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;',
+        }[ch]));
+    }
+
+    function serviceFlagFromAbbr(abbr) {
+        for (const flag of Object.values(SERVICE_FLAGS)) {
+            if (flag.abbr === abbr) return flag;
+        }
+        return null;
+    }
+
+    function renderServiceFlagList(abbrev) {
+        if (!abbrev || abbrev === '\u2014') return '\u2014';
+        const flags = abbrev.split(/\s+/).map(f => f.trim()).filter(Boolean);
+        if (!flags.length) return '\u2014';
+
+        return '<div class="service-flag-list">'
+            + flags.map(abbr => {
+                const flag = serviceFlagFromAbbr(abbr);
+                const label = flag ? flag.label : 'Unknown service flag';
+                const rpc = flag ? flag.rpc : abbr;
+                const title = flag ? serviceFlagDescription(flag) : abbr;
+                return '<div class="service-flag-row" title="' + escapeServiceHtml(title) + '">'
+                    + '<span class="service-flag-abbr">' + escapeServiceHtml(abbr) + '</span>'
+                    + '<span class="service-flag-label">' + escapeServiceHtml(label) + '</span>'
+                    + '<span class="service-flag-rpc">' + escapeServiceHtml(rpc) + '</span>'
+                    + '</div>';
+            }).join('')
+            + '</div>';
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -719,7 +760,7 @@
     let mapFilterPeerIds = null;   // Set of peer IDs to show when a map dot is clicked (null = no filter)
     let groupedNodes = null;       // Array of nodes at clicked dot (for back navigation from drill-down)
 
-    // [AS-DIVERSITY] State for AS Diversity integration
+    // [AS-DISTRIBUTION] State for AS Distribution integration
     let asFilterPeerIds = null;    // Set of peer IDs to show when AS is selected (null = no filter)
     let asLinePeerIds = null;      // Array of peer IDs to draw lines to (hover/selection)
     let asLineColor = null;        // Color string for AS lines
@@ -872,6 +913,7 @@
     // Cached flight deck counts and scores for tooltip use
     let fdCachedCounts = { ipv4: {in:0,out:0}, ipv6: {in:0,out:0}, onion: {in:0,out:0}, i2p: {in:0,out:0}, cjdns: {in:0,out:0} };
     let fdCachedScores = { ipv4: null, ipv6: null };
+    let fdCachedNetworkDetails = {};
 
     function updateFlightDeck(peerNodes) {
         const counts = { ipv4: {in:0,out:0}, ipv6: {in:0,out:0}, onion: {in:0,out:0}, i2p: {in:0,out:0}, cjdns: {in:0,out:0} };
@@ -916,6 +958,11 @@
                     dotEl.className = 'fd-net-dot disabled';
                 }
             }
+            const chipEl = document.querySelector(`.fd-net-chip[data-net="${net}"]`);
+            if (chipEl) {
+                const addresses = fdCachedNetworkDetails[net]?.localaddresses || [];
+                chipEl.classList.toggle('has-local-address', addresses.length > 0);
+            }
         }
     }
 
@@ -933,6 +980,52 @@
         i2p:   { full: 'I2P anonymous network', label: 'I2P anonymous network', isOverlay: true },
         cjdns: { full: 'CJDNS encrypted mesh network', label: 'CJDNS encrypted mesh network', isOverlay: true },
     };
+
+    function formatNodeAddress(address) {
+        if (!address || !address.address) return '';
+        const host = String(address.address);
+        const port = Number(address.port || 0);
+        if (!port) return host;
+        return host.includes(':') && !host.endsWith('.onion') && !host.endsWith('.i2p')
+            ? `[${host}]:${port}`
+            : `${host}:${port}`;
+    }
+
+    function shortNodeAddress(value) {
+        if (value.length <= 36) return value;
+        return `${value.slice(0, 16)}...${value.slice(-15)}`;
+    }
+
+    function buildNetworkIdentityRows(netKey, rowClass, mutedClass) {
+        const details = fdCachedNetworkDetails[netKey];
+        if (!details) return '';
+
+        let html = '';
+        html += `<div class="${rowClass}">Reachable: ${details.reachable ? 'Yes' : 'No'}</div>`;
+        if (details.limited) html += `<div class="${mutedClass}">Limited by node network settings</div>`;
+        if (details.proxy) {
+            const proxy = escapeServiceHtml(details.proxy);
+            html += `<div class="${rowClass}">Proxy: <span title="${proxy}">${proxy}</span></div>`;
+        }
+
+        const addresses = details.localaddresses || [];
+        if (addresses.length === 0) {
+            html += `<div class="${mutedClass}">No advertised address reported</div>`;
+            return html;
+        }
+
+        const label = PRIVATE_NETS.has(netKey) ? 'Service' : 'Advertised';
+        for (const address of addresses.slice(0, 3)) {
+            const fullAddress = formatNodeAddress(address);
+            const escapedFull = escapeServiceHtml(fullAddress);
+            const shortAddress = escapeServiceHtml(shortNodeAddress(fullAddress));
+            html += `<div class="${rowClass}">${label}: <span class="node-address" title="${escapedFull}">${shortAddress}</span></div>`;
+        }
+        if (addresses.length > 3) {
+            html += `<div class="${mutedClass}">${addresses.length - 3} more advertised addresses</div>`;
+        }
+        return html;
+    }
 
     function buildFdTooltip(netKey) {
         const info = FD_NET_INFO[netKey];
@@ -957,6 +1050,7 @@
 
         html += `<div class="fdt-row">Inbound: ${c.in} peers</div>`;
         html += `<div class="fdt-row">Outbound: ${c.out} peers</div>`;
+        html += buildNetworkIdentityRows(netKey, 'fdt-row', 'fdt-row-muted');
 
         if (info.isOverlay) {
             html += '<div class="fdt-row-muted">Overlay network (no reliable local score)</div>';
@@ -992,7 +1086,7 @@
         chip.addEventListener('mouseleave', () => {
             if (fdTooltipEl) fdTooltipEl.classList.add('hidden');
         });
-        // Click: IPv4/IPv6 → open AS diversity focused mode, Tor/I2P/CJDNS → enter private mode
+        // Click: IPv4/IPv6 → open AS distribution focused mode, Tor/I2P/CJDNS → enter private mode
         chip.addEventListener('click', (e) => {
             e.stopPropagation();
             if (fdTooltipEl) fdTooltipEl.classList.add('hidden');
@@ -1012,12 +1106,12 @@
             } else {
                 // Public network chip (ipv4/ipv6) → exit private mode if active, open network panel
                 if (privateNetMode) exitPrivateNetMode();
-                if (window.ASDiversity) {
-                    if (!window.ASDiversity.isFocusedMode()) {
-                        window.ASDiversity.enterFocusedMode();
+                if (window.ASDistribution) {
+                    if (!window.ASDistribution.isFocusedMode()) {
+                        window.ASDistribution.enterFocusedMode();
                     }
                     // Open the dedicated IPv4/IPv6 network detail panel
-                    window.ASDiversity.openNetworkPanel(netKey);
+                    window.ASDistribution.openNetworkPanel(netKey);
                 }
             }
         });
@@ -1390,7 +1484,7 @@
     // ═══════════════════════════════════════════════════════════
     // PRIVATE NETWORK MODE — Full Antarctica view for Tor/I2P/CJDNS
     // Circular donut + detail panel with cascading sub-tooltips
-    // (mirrors the AS Diversity panel pattern)
+    // (mirrors the AS Distribution panel pattern)
     // ═══════════════════════════════════════════════════════════
 
     // Donut configuration
@@ -1465,12 +1559,12 @@
         privateNetMode = true;
         document.body.classList.add('private-net-mode');
 
-        // Close any existing AS diversity panels/tooltips
-        if (window.ASDiversity) {
-            window.ASDiversity.closePeerPopup();
-            window.ASDiversity.deselect();
-            if (window.ASDiversity.isFocusedMode()) {
-                window.ASDiversity.exitFocusedMode();
+        // Close any existing AS distribution panels/tooltips
+        if (window.ASDistribution) {
+            window.ASDistribution.closePeerPopup();
+            window.ASDistribution.deselect();
+            if (window.ASDistribution.isFocusedMode()) {
+                window.ASDistribution.exitFocusedMode();
             }
         }
         hideTooltip();
@@ -1616,7 +1710,7 @@
         updatePrivateNetUI();
     }
 
-    // ── SVG Arc Path (same approach as AS diversity donut) ──
+    // ── SVG Arc Path (same approach as AS distribution donut) ──
 
     function pnDescribeArc(cx, cy, outerR, innerR, startAngle, endAngle) {
         const sweep = endAngle - startAngle;
@@ -1926,7 +2020,7 @@
         const backBtn = document.getElementById('pn-detail-back');
         if (backBtn) backBtn.classList.remove('hidden');
 
-        const ASD = window.ASDiversity;
+        const ASD = window.ASDistribution;
         const rawPeers = ASD ? ASD.getLastPeersRaw() : lastPeers;
         const netPeers = rawPeers.filter(p => p.network === net);
         const netLabel = PN_NET_LABELS[net] || net.toUpperCase();
@@ -2066,7 +2160,7 @@
         const backBtn = document.getElementById('pn-detail-back');
         if (backBtn) backBtn.classList.add('hidden');
 
-        const ASD = window.ASDiversity;
+        const ASD = window.ASDistribution;
         const rawPeers = ASD ? ASD.getLastPeersRaw() : lastPeers;
         const allPrivate = rawPeers.filter(p => PRIVATE_NETS.has(p.network));
 
@@ -2295,7 +2389,7 @@
 
     }
 
-    // ── Sub-Tooltip System (cascading from the panel, like AS diversity) ──
+    // ── Sub-Tooltip System (cascading from the panel, like AS distribution) ──
 
     /** Safely parse peer IDs from a row's data attribute */
     function parsePnPeerIds(rowEl) {
@@ -2568,11 +2662,10 @@
         // Service flag expansion for services category
         if (category === 'services' && label && label !== '\u2014') {
             html += '<div class="as-sub-tt-section">';
-            const SERVICE_FLAGS = { 'N': 'NETWORK', 'BF': 'BLOOM', 'W': 'WITNESS', 'CF': 'COMPACT_FILTERS', 'NL': 'NETWORK_LIMITED', 'P': 'P2P_V2' };
             const parts = label.split(/[\s\/]+/);
             for (const p of parts) {
-                const full = SERVICE_FLAGS[p.trim()];
-                if (full) html += '<div class="as-sub-tt-flag">' + p.trim() + ' = ' + full + '</div>';
+                const flag = serviceFlagFromAbbr(p.trim());
+                if (flag) html += '<div class="as-sub-tt-flag">' + pnEsc(p.trim()) + ' = ' + pnEsc(serviceFlagDescription(flag)) + '</div>';
             }
             html += '</div>';
         }
@@ -2846,36 +2939,57 @@
         renderPeerTable();
     }
 
-    function fitDonutStackToViewport() {
-        const container = document.getElementById('as-diversity-container');
+    function applyDonutStackFitScale(container, scale, immediate) {
+        if (!immediate) {
+            container.style.setProperty('--as-donut-fit-scale', scale);
+            return;
+        }
+
+        const previousTransition = container.style.transition;
+        container.style.transition = 'none';
+        container.style.setProperty('--as-donut-fit-scale', scale);
+        container.offsetHeight;
+        requestAnimationFrame(() => {
+            container.style.transition = previousTransition;
+        });
+    }
+
+    function fitDonutStackForPanelTop(panelTop, immediate) {
+        const container = document.getElementById('as-distribution-container');
         if (!container) return;
 
         if (privateNetMode || document.body.classList.contains('donut-focused')) {
-            container.style.setProperty('--as-donut-fit-scale', '1');
+            applyDonutStackFitScale(container, '1', immediate);
             return;
         }
 
-        const panel = document.getElementById('peer-panel');
-        if (!panel || panel.classList.contains('collapsed')) {
-            container.style.setProperty('--as-donut-fit-scale', '1');
-            return;
-        }
-
-        const panelRect = panel.getBoundingClientRect();
         const containerRect = container.getBoundingClientRect();
         const unscaledHeight = container.offsetHeight || containerRect.height;
         const top = parseFloat(getComputedStyle(container).top) || containerRect.top;
-        const availableHeight = panelRect.top - top - 12;
+        const availableHeight = panelTop - top - 18;
 
-        const minScale = 0.5;
+        const minScale = 0.45;
 
         if (unscaledHeight <= 0 || availableHeight <= 0) {
-            container.style.setProperty('--as-donut-fit-scale', String(minScale));
+            applyDonutStackFitScale(container, String(minScale), immediate);
             return;
         }
 
         const nextScale = Math.max(minScale, Math.min(1, availableHeight / unscaledHeight));
-        container.style.setProperty('--as-donut-fit-scale', nextScale.toFixed(3));
+        applyDonutStackFitScale(container, nextScale.toFixed(3), immediate);
+    }
+
+    function fitDonutStackToViewport() {
+        const container = document.getElementById('as-distribution-container');
+        if (!container) return;
+
+        const panel = document.getElementById('peer-panel');
+        if (!panel || panel.classList.contains('collapsed')) {
+            applyDonutStackFitScale(container, '1', false);
+            return;
+        }
+
+        fitDonutStackForPanelTop(panel.getBoundingClientRect().top, false);
     }
 
     function scheduleDonutStackFit() {
@@ -2925,12 +3039,15 @@
             if (counts[net] > 0) segs.push({ net, count: counts[net], color: getPnNetColor(net) });
         }
 
-        const cx = 80, cy = 80, outerR = 72, innerR = 54;
+        const cx = PN_DONUT_SIZE / 2;
+        const cy = PN_DONUT_SIZE / 2;
+        const outerR = PN_DONUT_RADIUS;
+        const innerR = PN_INNER_RADIUS;
         let html = '';
         if (segs.length === 1) {
             html += '<circle cx="' + cx + '" cy="' + cy + '" r="' + ((outerR + innerR) / 2) + '" fill="none" stroke="' + segs[0].color + '" stroke-width="' + (outerR - innerR) + '" class="pn-mini-segment" data-net="' + segs[0].net + '" style="cursor:pointer" />';
         } else if (segs.length > 1) {
-            const gap = 0.04;
+            const gap = 0.03;
             const totalGap = gap * segs.length;
             const totalAngle = 2 * Math.PI - totalGap;
             let angle = -Math.PI / 2;
@@ -3411,20 +3528,7 @@
 
         const nowSec = Math.floor(Date.now() / 1000);
 
-        // Expand service flags
-        function expandSvc(abbrev) {
-            if (!abbrev || abbrev === '\u2014') return '\u2014';
-            const SERVICE_MAP = {
-                'N': 'NETWORK', 'B': 'BLOOM', 'W': 'WITNESS', 'CF': 'COMPACT_FILTERS',
-                'NL': 'NETWORK_LIMITED', 'P': 'P2P_V2',
-            };
-            return abbrev.split(/\s+/).map(f => {
-                const t = f.trim();
-                return SERVICE_MAP[t] || t;
-            }).join('<br>');
-        }
-
-        // Build popup HTML — same structure as AS diversity peer-detail-popup
+        // Build popup HTML — same structure as AS distribution peer-detail-popup
         let html = '';
         html += `<div class="peer-popup-badge" style="border-color:${netColor};color:${netColor}">${netLabel}</div>`;
         html += '<div class="peer-popup-header">';
@@ -3469,7 +3573,7 @@
         html += '<div class="peer-popup-section-title">Software</div>';
         html += pnDetailRow('Version', pnEsc(peer.subver || '\u2014'));
         html += pnDetailRow('Protocol', peer.version || '\u2014');
-        html += pnDetailRow('Services', expandSvc(peer.services_abbrev || ''));
+        html += pnDetailRow('Services', renderServiceFlagList(peer.services_abbrev || ''));
         html += pnDetailRow('Start Height', peer.startingheight || '\u2014');
         html += pnDetailRow('Synced Hdrs', peer.synced_headers || '\u2014');
         html += pnDetailRow('Synced Blks', peer.synced_blocks || '\u2014');
@@ -3986,9 +4090,9 @@
             updateFlightDeck(nodes);
             updateHUD();
 
-            // [AS-DIVERSITY] Update AS Diversity donut with latest peer data (always active)
-            if (window.ASDiversity) {
-                window.ASDiversity.update(lastPeers);
+            // [AS-DISTRIBUTION] Update AS Distribution donut with latest peer data (always active)
+            if (window.ASDistribution) {
+                window.ASDistribution.update(lastPeers);
             }
 
             // Refresh the peer table panel
@@ -4045,6 +4149,24 @@
         dbStatusEl.style.display = 'none';
         dbStatusEl.textContent = '';
         dbStatusEl.className = 'db-update-status';
+    }
+
+    function updateNodeTrafficTotals(traffic) {
+        if (!traffic) return;
+        const inEl = document.getElementById('mo-p2p-in');
+        const outEl = document.getElementById('mo-p2p-out');
+        const downloaded = Number(traffic.download_bytes || 0);
+        const uploaded = Number(traffic.upload_bytes || 0);
+        if (inEl) {
+            inEl.textContent = traffic.download_fmt || fmtBytesShort(downloaded);
+            inEl.title = `${downloaded.toLocaleString()} bytes downloaded since Bitcoin Peer Map started`;
+            pulseOnChange('mo-p2p-in', downloaded, 'white');
+        }
+        if (outEl) {
+            outEl.textContent = traffic.upload_fmt || fmtBytesShort(uploaded);
+            outEl.title = `${uploaded.toLocaleString()} bytes uploaded since Bitcoin Peer Map started`;
+            pulseOnChange('mo-p2p-out', uploaded, 'white');
+        }
     }
 
     /** Run the DB auto-update sequence: countdown → check → result. */
@@ -4113,6 +4235,7 @@
 
             // Update BTC price in topbar
             updateBtcPricePanel(info);
+            updateNodeTrafficTotals(info.node_traffic);
 
             // Update right overlay GeoIP DB count
             if (info.geo_db_stats && info.geo_db_stats.entries != null) {
@@ -4125,6 +4248,7 @@
                 fdCachedScores.ipv4 = info.network_scores.ipv4;
                 fdCachedScores.ipv6 = info.network_scores.ipv6;
             }
+            fdCachedNetworkDetails = info.network_details || {};
 
             updateHUD();
 
@@ -4140,6 +4264,137 @@
         const vt = valueTip ? ` title="${valueTip}"` : ` title="${value}"`;
         const cls = valClass ? ` ${valClass}` : '';
         return `<div class="modal-row"><span class="modal-label"${lt}>${label}</span><span class="modal-val${cls}"${vt}>${value}</span></div>`;
+    }
+
+    function modalEscapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, ch => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;',
+        }[ch]));
+    }
+
+    function fmtModalDateTime(seconds) {
+        if (!seconds) return '\u2014';
+        return new Date(seconds * 1000).toLocaleString();
+    }
+
+    function fmtModalAge(seconds) {
+        if (seconds == null || seconds < 0) return '\u2014';
+        if (seconds < 60) return `${seconds}s`;
+        if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+        if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
+        return `${Math.floor(seconds / 86400)}d`;
+    }
+
+    function fmtModalDifficulty(value) {
+        const diff = Number(value);
+        if (!Number.isFinite(diff) || diff <= 0) return '\u2014';
+        if (diff >= 1e12) return `${(diff / 1e12).toFixed(2)}T`;
+        if (diff >= 1e9) return `${(diff / 1e9).toFixed(2)}B`;
+        if (diff >= 1e6) return `${(diff / 1e6).toFixed(2)}M`;
+        return diff.toLocaleString();
+    }
+
+    function shortModalHash(hash) {
+        if (!hash) return '\u2014';
+        if (hash.length <= 20) return hash;
+        return `${hash.substring(0, 10)}\u2026${hash.substring(hash.length - 8)}`;
+    }
+
+    function blockExplorerBlockUrl(hash, chain) {
+        if (!hash) return null;
+        const paths = {
+            main: '',
+            test: '/testnet',
+            testnet4: '/testnet4',
+            signet: '/signet',
+        };
+        const chainPath = paths[chain];
+        if (chainPath == null) return null;
+        return `https://mempool.space${chainPath}/block/${encodeURIComponent(hash)}`;
+    }
+
+    function modalSummaryItem(label, value, title) {
+        const safeValue = modalEscapeHtml(value);
+        const safeTitle = modalEscapeHtml(title || value);
+        return `<div class="modal-summary-item" title="${safeTitle}"><span class="modal-summary-label">${modalEscapeHtml(label)}</span><span class="modal-summary-val">${safeValue}</span></div>`;
+    }
+
+    function renderRecentBlocksModal(data) {
+        if (!data || data.success !== true) {
+            return `<div style="color:var(--err)">${modalEscapeHtml(data?.error || data?.detail || 'Could not load recent blocks')}</div>`;
+        }
+
+        const summary = data.summary || {};
+        const blocks = Array.isArray(data.blocks) ? data.blocks : [];
+        let html = '<div class="modal-section-title">Summary</div>';
+        html += '<div class="modal-summary-grid">';
+        html += modalSummaryItem('Tip Height', summary.tip_height != null ? summary.tip_height.toLocaleString() : '\u2014');
+        html += modalSummaryItem('Blocks', summary.count != null ? summary.count.toLocaleString() : blocks.length.toLocaleString());
+        html += modalSummaryItem('Avg Size', summary.avg_size_mb != null ? `${summary.avg_size_mb} MB` : '\u2014');
+        html += modalSummaryItem('Avg TXs', summary.avg_transactions != null ? summary.avg_transactions.toLocaleString() : '\u2014');
+        html += modalSummaryItem('Total TXs', summary.total_transactions != null ? summary.total_transactions.toLocaleString() : '\u2014');
+        html += modalSummaryItem('Latest', fmtModalDateTime(summary.latest_time));
+        html += '</div>';
+
+        html += '<div class="modal-section-title">Recent Blocks</div>';
+        if (!blocks.length) {
+            html += '<div style="color:var(--text-muted);padding:4px 0">No block data returned</div>';
+            return html;
+        }
+
+        html += '<div class="modal-table-wrap"><table class="modal-data-table">';
+        html += '<colgroup><col style="width:82px"><col style="width:170px"><col style="width:74px"><col style="width:86px"><col style="width:74px"><col style="width:82px"><col style="width:96px"></colgroup>';
+        html += '<thead><tr><th>Height</th><th>Hash</th><th>Age</th><th>Size</th><th>TXs</th><th>Version</th><th>Difficulty</th></tr></thead><tbody>';
+        for (const block of blocks) {
+            const height = block.height != null ? Number(block.height).toLocaleString() : '\u2014';
+            const hash = block.hash || '';
+            const hashText = modalEscapeHtml(shortModalHash(hash));
+            const hashTitle = modalEscapeHtml(hash);
+            const url = blockExplorerBlockUrl(hash, summary.chain);
+            const hashCell = url
+                ? `<a class="modal-link modal-mono" href="${url}" target="_blank" rel="noopener" title="${hashTitle}">${hashText}</a>`
+                : `<span class="modal-mono" title="${hashTitle}">${hashText}</span>`;
+            html += '<tr>';
+            html += `<td class="modal-mono num">${modalEscapeHtml(height)}</td>`;
+            html += `<td>${hashCell}</td>`;
+            html += `<td title="${modalEscapeHtml(fmtModalDateTime(block.time))}">${modalEscapeHtml(fmtModalAge(block.age_seconds))}</td>`;
+            html += `<td class="num">${modalEscapeHtml(fmtBytesShort(block.size || 0))}</td>`;
+            html += `<td class="modal-mono num">${modalEscapeHtml((block.tx_count || 0).toLocaleString())}</td>`;
+            html += `<td class="modal-mono num">${modalEscapeHtml(block.version ?? '\u2014')}</td>`;
+            html += `<td class="num">${modalEscapeHtml(fmtModalDifficulty(block.difficulty))}</td>`;
+            html += '</tr>';
+        }
+        html += '</tbody></table></div>';
+        return html;
+    }
+
+    function openRecentBlocksModal() {
+        const existing = document.getElementById('recent-blocks-modal');
+        if (existing) existing.remove();
+
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.id = 'recent-blocks-modal';
+        overlay.innerHTML = '<div class="modal-box" style="width:calc(100vw - 32px);max-width:900px"><div class="modal-header"><span class="modal-title">Recent Blocks</span><button class="modal-close" id="recent-blocks-close">&times;</button></div><div class="modal-body" id="recent-blocks-body"><div style="color:var(--text-muted);text-align:center;padding:16px">Loading...</div></div></div>';
+        document.body.appendChild(overlay);
+        const body = overlay.querySelector('#recent-blocks-body');
+        overlay.querySelector('#recent-blocks-close').addEventListener('click', () => overlay.remove());
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+        fetch('/api/blocks/recent?limit=25').then(response => {
+            if (!response.ok) throw new Error(`Request failed (${response.status})`);
+            return response.json();
+        }).then(data => {
+            if (overlay.isConnected) body.innerHTML = renderRecentBlocksModal(data);
+        }).catch(err => {
+            if (overlay.isConnected) {
+                body.innerHTML = `<div style="color:var(--err)">Error: ${modalEscapeHtml(err.message)}</div>`;
+            }
+        });
     }
 
     function openNodeInfoModal() {
@@ -5189,7 +5444,7 @@
         // (but always draw fading-out nodes so they dissolve gracefully)
         if (!passesNetFilter(node.net) && node.alive) return;
 
-        // [AS-DIVERSITY] Dim peers not in the selected AS
+        // [AS-DISTRIBUTION] Dim peers not in the selected AS
         let asDimFactor = 1;
         if (asFilterPeerIds && node.alive && !asFilterPeerIds.has(node.peerId)) {
             asDimFactor = 0.15;
@@ -5246,7 +5501,7 @@
         const r = CFG.nodeRadius * scale;
         const gr = CFG.glowRadius * scale * pulse;
 
-        // [AS-DIVERSITY] Apply dim factor to opacity
+        // [AS-DISTRIBUTION] Apply dim factor to opacity
         const finalOpacity = opacity * asDimFactor;
 
         // Draw at each wrap offset
@@ -5301,7 +5556,7 @@
     }
 
     // ═══════════════════════════════════════════════════════════
-    // [AS-DIVERSITY] Resolve which wrap copy of each peer to draw lines to.
+    // [AS-DISTRIBUTION] Resolve which wrap copy of each peer to draw lines to.
     // Prefers the copy visible on the current map view, breaking ties by
     // proximity to viewport center.  Falls back to closest-to-center among
     // all wrap copies when nothing is on-screen.
@@ -5366,14 +5621,14 @@
     }
 
     // ═══════════════════════════════════════════════════════════
-    // [AS-DIVERSITY] Draw lines from LEGEND DOT to peers of a hovered/selected AS
+    // [AS-DISTRIBUTION] Draw lines from LEGEND DOT to peers of a hovered/selected AS
     // Lines always originate from the legend dot, never the donut center.
     // Adapts to map pan/zoom since this runs every frame.
     // ═══════════════════════════════════════════════════════════
 
     function drawAsLines(wrapOffsets) {
         if (!asLinePeerIds || !asLineColor) return;
-        const ASD = window.ASDiversity;
+        const ASD = window.ASDistribution;
         if (!ASD) return;
 
         // Lines originate from legend dots (top-8 direct, Others for non-top-8, donut center fallback)
@@ -5469,7 +5724,7 @@
      *  Each group draws from its own legend dot in its own color. */
     function drawAsLinesAll(wrapOffsets) {
         if (!asLineGroups || asLineGroups.length === 0) return;
-        const ASD = window.ASDiversity;
+        const ASD = window.ASDistribution;
         if (!ASD) return;
 
         const canvasRect = canvas.getBoundingClientRect();
@@ -5808,8 +6063,8 @@
                     renderPeerTable();
                     hideTooltip(); // close the group list tooltip
 
-                    // [AS-DIVERSITY] Open full peer detail FIRST (before zoom)
-                    const ASD = window.ASDiversity;
+                    // [AS-DISTRIBUTION] Open full peer detail FIRST (before zoom)
+                    const ASD = window.ASDistribution;
                     if (ASD) {
                         const rawPeers = ASD.getLastPeersRaw();
                         const peerData = rawPeers.find(p => p.id === peerId);
@@ -6160,7 +6415,7 @@
     // Panel toggle (clicking the title bar)
     document.getElementById('peer-panel-handle').addEventListener('click', () => {
         panelEl.classList.toggle('collapsed');
-        // [AS-DIVERSITY] When expanding peer list, bring it on top of AS panel
+        // [AS-DISTRIBUTION] When expanding peer list, bring it on top of AS panel
         if (!panelEl.classList.contains('collapsed')) {
             document.body.classList.add('panel-focus-peers');
             document.body.classList.remove('panel-focus-as');
@@ -6168,7 +6423,7 @@
         scheduleDonutStackFit();
     });
 
-    // [AS-DIVERSITY] Clicking anywhere in peer panel body → bring peers to front
+    // [AS-DISTRIBUTION] Clicking anywhere in peer panel body → bring peers to front
     const peerPanelBody = document.querySelector('.peer-panel-body');
     if (peerPanelBody) {
         peerPanelBody.addEventListener('click', () => {
@@ -6337,7 +6592,7 @@
                 sorted = sorted.filter(p => passesNetFilter(p.network || 'ipv4'));
             }
 
-            // [AS-DIVERSITY] Apply AS filter when an AS is selected
+            // [AS-DISTRIBUTION] Apply AS filter when an AS is selected
             if (asFilterPeerIds) {
                 sorted = sorted.filter(p => asFilterPeerIds.has(p.id));
             }
@@ -6942,8 +7197,8 @@
             mapFilterPeerIds = new Set([node.peerId]);
             renderPeerTable();
 
-            // [AS-DIVERSITY] Open full peer detail in right panel + animate donut
-            const ASD = window.ASDiversity;
+            // [AS-DISTRIBUTION] Open full peer detail in right panel + animate donut
+            const ASD = window.ASDistribution;
             let bigPopupOpened = false;
             if (ASD) {
                 const rawPeers = ASD.getLastPeersRaw();
@@ -7282,7 +7537,7 @@
             drawConnectionLines(now, wrapOffsets);
         }
 
-        // [AS-DIVERSITY] 9b. Draw lines from map center to AS peers (hover/selection)
+        // [AS-DISTRIBUTION] 9b. Draw lines from map center to AS peers (hover/selection)
         if (!privateNetMode) {
             if (asLineGroups && asLineGroups.length > 0) {
                 drawAsLinesAll(wrapOffsets);
@@ -7446,7 +7701,7 @@
                 if (group.length === 1) {
                     const node = group[0];
                     // If clicking the same peer that's already shown in detail, close popup instead
-                    const ASD = window.ASDiversity;
+                    const ASD = window.ASDistribution;
                     if (pinnedNode && pinnedNode.peerId === node.peerId && ASD && ASD.isPeerDetailActive()) {
                         pinnedNode = null;
                         highlightedPeerId = null;
@@ -7464,7 +7719,7 @@
                         mapFilterPeerIds = new Set([node.peerId]);
                         renderPeerTable();
 
-                        // [AS-DIVERSITY] Open full peer detail in right panel FIRST
+                        // [AS-DISTRIBUTION] Open full peer detail in right panel FIRST
                         if (ASD) {
                             const rawPeers = ASD.getLastPeersRaw();
                             const peerData = rawPeers.find(p => p.id === node.peerId);
@@ -7507,8 +7762,8 @@
                 } else {
                     // Multi-peer dot: show small pinned selection list near the dot
                     // Close any existing peer detail popup first
-                    if (window.ASDiversity) {
-                        window.ASDiversity.closePeerPopup();
+                    if (window.ASDistribution) {
+                        window.ASDistribution.closePeerPopup();
                     }
                     pinnedNode = null;  // no single peer pinned yet
                     groupedNodes = group;
@@ -7552,9 +7807,9 @@
                         renderPnDonut();
                     }
                 }
-                // [AS-DIVERSITY] Two-stage collapse: first close sub-panels, then main panel
-                if (window.ASDiversity) {
-                    window.ASDiversity.onMapClick();
+                // [AS-DISTRIBUTION] Two-stage collapse: first close sub-panels, then main panel
+                if (window.ASDistribution) {
+                    window.ASDistribution.onMapClick();
                 }
             }
         }
@@ -7779,8 +8034,9 @@
         const total = net === 'all'
             ? aliveNodes.length
             : (counts[net] || 0);
+        const detailsForNet = net !== 'all' ? fdCachedNetworkDetails[net] : null;
 
-        if (total === 0 && net !== 'all') return null;
+        if (total === 0 && net !== 'all' && !detailsForNet) return null;
 
         const avgPing = pingCount > 0 ? Math.round(totalPing / pingCount) : '—';
         const label = net === 'all' ? 'All Networks' : (NET_DISPLAY[net] || net.toUpperCase());
@@ -7790,6 +8046,28 @@
         html += `<div class="pop-row"><span class="pop-label">Inbound</span><span class="pop-val">${inbound}</span></div>`;
         html += `<div class="pop-row"><span class="pop-label">Outbound</span><span class="pop-val">${outbound}</span></div>`;
         html += `<div class="pop-row"><span class="pop-label">Avg Ping</span><span class="pop-val">${avgPing}${avgPing !== '—' ? 'ms' : ''}</span></div>`;
+        if (net !== 'all') {
+            const details = detailsForNet;
+            if (details) {
+                html += `<div class="pop-row"><span class="pop-label">Reachable</span><span class="pop-val">${details.reachable ? 'Yes' : 'No'}</span></div>`;
+                if (details.proxy) {
+                    const proxy = escapeServiceHtml(details.proxy);
+                    html += `<div class="pop-row"><span class="pop-label">Proxy</span><span class="pop-val node-address" title="${proxy}">${proxy}</span></div>`;
+                }
+                const addresses = details.localaddresses || [];
+                const labelText = PRIVATE_NETS.has(net) ? 'Service' : 'Advertised';
+                if (addresses.length) {
+                    for (const address of addresses.slice(0, 3)) {
+                        const fullAddress = formatNodeAddress(address);
+                        const escapedFull = escapeServiceHtml(fullAddress);
+                        const shortAddress = escapeServiceHtml(shortNodeAddress(fullAddress));
+                        html += `<div class="pop-row"><span class="pop-label">${labelText}</span><span class="pop-val node-address" title="${escapedFull}">${shortAddress}</span></div>`;
+                    }
+                } else {
+                    html += '<div class="pop-row"><span class="pop-label">Advertised</span><span class="pop-val">None</span></div>';
+                }
+            }
+        }
 
         if (net === 'all') {
             // Show per-network breakdown
@@ -7835,7 +8113,7 @@
 
         // Visibility toggle items — the sections on the map
         const visItems = [
-            { id: 'as-diversity-container', label: 'Public Donut', visible: true },
+            { id: 'as-distribution-container', label: 'Public Donut', visible: true },
             { id: 'pn-mini-donut', label: 'Private Donut', visible: true },
             { id: 'btc-price-bar', label: 'Bitcoin Price', visible: true },
             { id: 'map-overlay', label: 'System Stats', visible: true },
@@ -7927,8 +8205,8 @@
                 } else {
                     target.style.display = 'none';
                     // If hiding public donut, deselect any active AS
-                    if (targetId === 'as-diversity-container' && window.ASDiversity && window.ASDiversity.getSelectedAs()) {
-                        window.ASDiversity.deselect();
+                    if (targetId === 'as-distribution-container' && window.ASDistribution && window.ASDistribution.getSelectedAs()) {
+                        window.ASDistribution.deselect();
                     }
                     // If hiding private donut, exit private mode if active
                     if (targetId === 'pn-mini-donut' && privateNetMode) {
@@ -7944,8 +8222,8 @@
             donutLegendsInput.addEventListener('change', () => {
                 advSettings.showDonutLegends = donutLegendsInput.checked;
                 saveAdvSettings();
-                // Toggle legend visibility class on the AS diversity container
-                const asCont = document.getElementById('as-diversity-container');
+                // Toggle legend visibility class on the AS distribution container
+                const asCont = document.getElementById('as-distribution-container');
                 if (asCont) {
                     if (advSettings.showDonutLegends) {
                         asCont.classList.remove('legends-hidden');
@@ -7958,9 +8236,9 @@
                 if (pnMiniLegend) {
                     pnMiniLegend.style.display = advSettings.showDonutLegends ? '' : 'none';
                 }
-                // Notify AS diversity module of the legend visibility state
-                if (window.ASDiversity && window.ASDiversity.setLegendsHidden) {
-                    window.ASDiversity.setLegendsHidden(!advSettings.showDonutLegends);
+                // Notify AS distribution module of the legend visibility state
+                if (window.ASDistribution && window.ASDistribution.setLegendsHidden) {
+                    window.ASDistribution.setLegendsHidden(!advSettings.showDonutLegends);
                 }
             });
         }
@@ -7976,14 +8254,26 @@
     function applyMaxPeerRows() {
         const panel = document.querySelector('.peer-panel');
         if (!panel) return;
+        let prefitForPanelGrowth = false;
         if (maxPeerRows > 0) {
             // handle(48) + thead(22) + rows * 22 + a tiny bit of padding
             const h = 48 + 22 + (maxPeerRows * 22) + 4;
+            const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
+            const finalPanelTop = viewportHeight - h;
+            const currentPanelTop = panel.getBoundingClientRect().top;
             panel.style.maxHeight = h + 'px';
+            if (finalPanelTop < currentPanelTop) {
+                fitDonutStackForPanelTop(finalPanelTop, true);
+                prefitForPanelGrowth = true;
+            }
         } else {
             panel.style.maxHeight = '';
         }
-        scheduleDonutStackFit();
+        if (prefitForPanelGrowth) {
+            setTimeout(fitDonutStackToViewport, 520);
+        } else {
+            scheduleDonutStackFit();
+        }
     }
 
     function closeDisplaySettingsOnOutside(e) {
@@ -8115,6 +8405,11 @@
             html += `<div class="info-row" style="margin-top:2px"><span class="info-label">Current Max</span><span class="info-val" style="font-size:10px">IN: ${formatBps(curMaxIn)} \u00b7 OUT: ${formatBps(curMaxOut)}</span></div>`;
         } else {
             html += '<div style="color:var(--text-muted);padding:4px 0">No traffic data yet</div>';
+        }
+        if (lastNodeInfo && lastNodeInfo.node_traffic) {
+            const traffic = lastNodeInfo.node_traffic;
+            html += `<div class="info-row"><span class="info-label">P2P IN \u2193</span><span class="info-val">${traffic.download_fmt || fmtBytesShort(traffic.download_bytes || 0)}</span></div>`;
+            html += `<div class="info-row"><span class="info-label">P2P OUT \u2191</span><span class="info-val">${traffic.upload_fmt || fmtBytesShort(traffic.upload_bytes || 0)}</span></div>`;
         }
 
         // ── Section 3: NET Bar Settings ──
@@ -8411,8 +8706,8 @@
         h += '</div>'; // end theme-wrap
         h += '</div>'; // end theme-section
 
-        // ── Service Provider Diversity ──
-        h += '<div class="adv-section">Service Provider Diversity</div>';
+        // ── Service Provider Distribution ──
+        h += '<div class="adv-section">Service Provider Distribution</div>';
         h += advSliderHTML('adv-as-linewidth', 'Line Thickness', advSettings.asLineWidth, 0, 100, 1);
         h += advSliderHTML('adv-as-fan', 'Line Fanning', advSettings.asLineFan, 0, 100, 1);
 
@@ -8830,18 +9125,18 @@
     }
 
     // ═══════════════════════════════════════════════════════════
-    // [AS-DIVERSITY] — Module initialization (always-on, no toggle)
+    // [AS-DISTRIBUTION] — Module initialization (always-on, no toggle)
     // ═══════════════════════════════════════════════════════════
 
-    function initAsDiversity() {
-        if (!window.ASDiversity) return;
+    function initAsDistribution() {
+        if (!window.ASDistribution) return;
 
-        const ASD = window.ASDiversity;
+        const ASD = window.ASDistribution;
         ASD.init();
 
         // Apply initial "Display Top ISP/Net" toggle state
         if (!advSettings.showDonutLegends) {
-            const asCont = document.getElementById('as-diversity-container');
+            const asCont = document.getElementById('as-distribution-container');
             if (asCont) asCont.classList.add('legends-hidden');
             const pnMiniLegend = document.getElementById('pn-mini-legend');
             if (pnMiniLegend) pnMiniLegend.style.display = 'none';
@@ -8881,7 +9176,7 @@
                 const node = nodes.find(n => n.peerId === peerId && n.alive);
                 if (!node) return;
                 // Draw line from the peer's AS legend dot to this peer
-                const ASD = window.ASDiversity;
+                const ASD = window.ASDistribution;
                 if (ASD && node.peerId !== undefined) {
                     const peer = lastPeers.find(p => p.id === peerId);
                     if (peer && peer.as) {
@@ -8959,7 +9254,7 @@
     }
 
     // ═══════════════════════════════════════════════════════════
-    // [AS-DIVERSITY] Peer panel + topbar button wiring
+    // [AS-DISTRIBUTION] Peer panel + topbar button wiring
     // ═══════════════════════════════════════════════════════════
 
     function initNewButtons() {
@@ -8967,6 +9262,12 @@
         const nodeInfoPeerBtn = document.getElementById('btn-node-info-peer');
         if (nodeInfoPeerBtn) {
             nodeInfoPeerBtn.addEventListener('click', (e) => { e.stopPropagation(); openNodeInfoModal(); });
+        }
+
+        // BLOCKS button in peer panel handle
+        const recentBlocksBtn = document.getElementById('btn-recent-blocks');
+        if (recentBlocksBtn) {
+            recentBlocksBtn.addEventListener('click', (e) => { e.stopPropagation(); openRecentBlocksModal(); });
         }
 
         // GEOIP-DB button in peer panel handle
@@ -9151,10 +9452,10 @@
         updateClock();
         setInterval(updateClock, 1000);
 
-        // [AS-DIVERSITY] Initialize AS Diversity module (always-on donut)
-        initAsDiversity();
+        // [AS-DISTRIBUTION] Initialize AS Distribution module (always-on donut)
+        initAsDistribution();
 
-        // [AS-DIVERSITY] Wire up new peer panel buttons and topbar gear
+        // [AS-DISTRIBUTION] Wire up new peer panel buttons and topbar gear
         initNewButtons();
 
         // Apply default visible row count to peer panel

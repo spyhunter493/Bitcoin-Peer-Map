@@ -95,7 +95,7 @@ async function waitForDashboardReady(page) {
 
 async function donutLayout(page) {
     return page.evaluate(() => {
-        const container = document.getElementById('as-diversity-container');
+        const container = document.getElementById('as-distribution-container');
         const panel = document.getElementById('peer-panel');
         const privateDonut = document.getElementById('pn-mini-donut');
         const containerRect = container.getBoundingClientRect();
@@ -115,7 +115,7 @@ async function donutLayout(page) {
 
 async function assertDonutFits(page, label) {
     await page.waitForFunction(() => {
-        const container = document.getElementById('as-diversity-container');
+        const container = document.getElementById('as-distribution-container');
         const panel = document.getElementById('peer-panel');
         if (!container || !panel) return false;
         const containerRect = container.getBoundingClientRect();
@@ -183,6 +183,103 @@ async function assertTablePreferencesRestored(page) {
     });
 }
 
+async function assertRecentBlocksRequestIsolation(page) {
+    let requestNumber = 0;
+    let firstRequestStarted;
+    let secondRequestStarted;
+    const firstStarted = new Promise(resolve => { firstRequestStarted = resolve; });
+    const secondStarted = new Promise(resolve => { secondRequestStarted = resolve; });
+    const routePattern = '**/api/blocks/recent?limit=25';
+
+    await page.route(routePattern, async route => {
+        const current = ++requestNumber;
+        if (current === 1) {
+            firstRequestStarted();
+            await delay(500);
+        } else {
+            secondRequestStarted();
+            await delay(25);
+        }
+        await route.fulfill({
+            contentType: 'application/json',
+            body: JSON.stringify({
+                success: true,
+                summary: { chain: 'main', tip_height: current, count: 0 },
+                blocks: [],
+                error: null,
+            }),
+        });
+    });
+
+    await page.click('#btn-recent-blocks');
+    await firstStarted;
+    await page.click('#recent-blocks-close');
+    await page.click('#btn-recent-blocks');
+    await secondStarted;
+    await page.waitForFunction(() => (
+        document.querySelector('#recent-blocks-body .modal-summary-val')?.textContent === '2'
+    ));
+    await delay(550);
+
+    const finalTip = await page.locator('#recent-blocks-body .modal-summary-val').first().textContent();
+    assert.strictEqual(finalTip, '2', 'an older response replaced the current blocks modal');
+    assert.strictEqual(requestNumber, 2);
+    await page.click('#recent-blocks-close');
+    await page.unroute(routePattern);
+}
+
+async function assertPeerControlsResponsive(browser, baseUrl) {
+    const compactContext = await browser.newContext({ viewport: { width: 1080, height: 728 } });
+    await compactContext.addInitScript(() => {
+        localStorage.setItem('bpm.antarcticaDisclaimerSeen', 'true');
+    });
+    const compactPage = await compactContext.newPage();
+    await compactPage.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await waitForDashboardReady(compactPage);
+
+    const compactLayout = await compactPage.evaluate(() => {
+        const row = document.querySelector('.handle-row1');
+        const lastButton = document.getElementById('btn-table-settings');
+        return {
+            clientWidth: row.clientWidth,
+            scrollWidth: row.scrollWidth,
+            lastRight: lastButton.getBoundingClientRect().right,
+            viewportWidth: window.innerWidth,
+        };
+    });
+    assert.ok(
+        compactLayout.scrollWidth <= compactLayout.clientWidth,
+        `compact peer controls overflow: ${compactLayout.scrollWidth} > ${compactLayout.clientWidth}`
+    );
+    assert.ok(compactLayout.lastRight <= compactLayout.viewportWidth);
+    await compactContext.close();
+
+    const narrowContext = await browser.newContext({ viewport: { width: 720, height: 728 } });
+    await narrowContext.addInitScript(() => {
+        localStorage.setItem('bpm.antarcticaDisclaimerSeen', 'true');
+    });
+    const narrowPage = await narrowContext.newPage();
+    await narrowPage.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await waitForDashboardReady(narrowPage);
+
+    const narrowLayout = await narrowPage.evaluate(() => {
+        const row = document.querySelector('.handle-row1');
+        row.scrollLeft = row.scrollWidth;
+        const lastButton = document.getElementById('btn-table-settings');
+        return {
+            overflowX: getComputedStyle(row).overflowX,
+            lastRight: lastButton.getBoundingClientRect().right,
+            viewportWidth: window.innerWidth,
+        };
+    });
+    assert.strictEqual(narrowLayout.overflowX, 'auto');
+    assert.ok(
+        narrowLayout.lastRight <= narrowLayout.viewportWidth,
+        'the final peer control should be reachable by scrolling'
+    );
+    await narrowContext.close();
+}
+
 (async () => {
     const externalBaseUrl = process.env.BPM_LAYOUT_TEST_BASE_URL;
     const port = externalBaseUrl ? null : await freePort();
@@ -208,6 +305,7 @@ async function assertTablePreferencesRestored(page) {
         await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
         await waitForDashboardReady(page);
         await assertDonutFits(page, 'initial render');
+        await assertRecentBlocksRequestIsolation(page);
 
         await applyTablePreferences(page);
         await assertDonutFits(page, 'after row-count change');
@@ -218,6 +316,7 @@ async function assertTablePreferencesRestored(page) {
         assert.deepStrictEqual(pageErrors, []);
 
         await context.close();
+        await assertPeerControlsResponsive(browser, baseUrl);
         console.log('Browser layout regression tests passed');
     } finally {
         if (browser) await browser.close();

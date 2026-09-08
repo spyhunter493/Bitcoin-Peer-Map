@@ -4,8 +4,8 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "check:js": "node --check src/static/js/app.js && node --check src/static/js/as-diversity.js && node --check tests/test_as_diversity.js && node --check tests/test_layout.js",
-    "test:js": "node tests/test_as_diversity.js",
+    "check:js": "node --check src/static/js/app.js && node --check src/static/js/as-distribution.js && node --check tests/test_as_distribution.js && node --check tests/test_layout.js",
+    "test:js": "node tests/test_as_distribution.js",
     "test:layout": "node tests/test_layout.js",
     "test:layout:docker": "scripts/test-layout-docker.sh"
   },

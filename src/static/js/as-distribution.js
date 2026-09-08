@@ -1,13 +1,13 @@
 /* ============================================================
-   AS Diversity Analysis — JavaScript Module
-   Isolated logic for the AS Diversity view.
+   AS Distribution Analysis — JavaScript Module
+   Isolated logic for the AS Distribution view.
    Delete this file to fully revert the feature.
 
-   Integration points in app.js are marked with [AS-DIVERSITY].
-   This module exposes window.ASDiversity for the main app to call.
+   Integration points in app.js are marked with [AS-DISTRIBUTION].
+   This module exposes window.ASDistribution for the main app to call.
    ============================================================ */
 
-window.ASDiversity = (function () {
+window.ASDistribution = (function () {
     'use strict';
 
     // ═══════════════════════════════════════════════════════════
@@ -41,12 +41,17 @@ window.ASDiversity = (function () {
 
     let asGroups = [];             // Aggregated AS data (sorted by count desc)
     let donutSegments = [];        // Top N + Others for donut rendering
+    let countryGroups = [];        // Aggregated country/jurisdiction data
+    let countryDonutSegments = []; // Top N + Others for country donut rendering
+    let activeDistributionLens = 'provider'; // 'provider' | 'country'
     let hoveredAs = null;          // AS number string currently hovered
     let hoveredAll = false;        // True when title or SUMMARY ANALYSIS is hovered
     let summarySelected = false;   // True when Summary Analysis panel is open
     let selectedAs = null;         // AS number string currently selected (clicked)
-    let diversityScore = 0;        // 0-10 score
+    let distributionScore = 0;        // 0-10 score
     let totalPeers = 0;
+    let countryDistributionScore = 0;
+    let countryTotalPeers = 0;
     let hasRenderedOnce = false;   // Track if we've ever rendered data
     let legendFocusAs = null;      // AS number to exclusively show in legend during panel hover
     let donutFocused = false;      // True when in focused mode (donut at top-center)
@@ -71,6 +76,7 @@ window.ASDiversity = (function () {
     let donutSvg = null;
     let donutCenter = null;
     let legendEl = null;
+    let lensToggleEl = null;
     let panelEl = null;
     let loadingEl = null;
     let focusedCloseBtn = null;
@@ -113,13 +119,17 @@ window.ASDiversity = (function () {
 
     // Service flag definitions (mirrored from app.js for hover expansion)
     var SERVICE_FLAGS = {
-        'NETWORK':          { abbr: 'N',  desc: 'Full chain history (NODE_NETWORK)' },
-        'WITNESS':          { abbr: 'W',  desc: 'Segregated Witness support (NODE_WITNESS)' },
-        'NETWORK_LIMITED':  { abbr: 'NL', desc: 'Limited chain history, last 288 blocks (NODE_NETWORK_LIMITED)' },
-        'P2P_V2':           { abbr: 'P',  desc: 'BIP324 v2 encrypted transport (P2P_V2)' },
-        'COMPACT_FILTERS':  { abbr: 'CF', desc: 'BIP157/158 compact block filters (NODE_COMPACT_FILTERS)' },
-        'BLOOM':            { abbr: 'B',  desc: 'BIP37 Bloom filter support (NODE_BLOOM)' },
+        'NETWORK':          { abbr: 'N',  label: 'Full chain history', rpc: 'NODE_NETWORK' },
+        'WITNESS':          { abbr: 'W',  label: 'Segregated Witness', rpc: 'NODE_WITNESS' },
+        'NETWORK_LIMITED':  { abbr: 'NL', label: 'Limited chain history', rpc: 'NODE_NETWORK_LIMITED' },
+        'P2P_V2':           { abbr: 'P',  label: 'BIP324 v2 transport', rpc: 'P2P_V2' },
+        'COMPACT_FILTERS':  { abbr: 'CF', label: 'Compact block filters', rpc: 'NODE_COMPACT_FILTERS' },
+        'BLOOM':            { abbr: 'B',  label: 'Bloom filters', rpc: 'NODE_BLOOM' },
     };
+
+    function serviceFlagDescription(flag) {
+        return flag.rpc ? flag.label + ' (' + flag.rpc + ')' : flag.label;
+    }
 
     // Connection type short labels
     var CONN_TYPE_LABELS = {
@@ -195,6 +205,136 @@ window.ASDiversity = (function () {
         return { level: 'low', label: '' };
     }
 
+    /** Build the shared metrics for a provider/country distribution group. */
+    function buildDistributionGroup(base, gPeers, denominator) {
+        var count = gPeers.length;
+        var pct = denominator > 0 ? (count / denominator) * 100 : 0;
+
+        var inbound = 0;
+        for (var ii = 0; ii < gPeers.length; ii++) {
+            if (gPeers[ii].direction === 'IN') inbound++;
+        }
+        var outbound = count - inbound;
+
+        var connTypes = {};
+        for (var ci = 0; ci < gPeers.length; ci++) {
+            var t = gPeers[ci].connection_type || 'unknown';
+            connTypes[t] = (connTypes[t] || 0) + 1;
+        }
+
+        var pings = [];
+        for (var pii = 0; pii < gPeers.length; pii++) {
+            if (gPeers[pii].ping_ms > 0) pings.push(gPeers[pii].ping_ms);
+        }
+        var avgPing = pings.length > 0 ? pings.reduce(function (a, b) { return a + b; }, 0) / pings.length : 0;
+
+        var nowSec = Math.floor(Date.now() / 1000);
+        var durations = [];
+        for (var di = 0; di < gPeers.length; di++) {
+            if (gPeers[di].conntime > 0) {
+                var dur = nowSec - gPeers[di].conntime;
+                if (dur > 0) durations.push(dur);
+            }
+        }
+        var avgDuration = durations.length > 0 ? durations.reduce(function (a, b) { return a + b; }, 0) / durations.length : 0;
+
+        var totalSent = 0, totalRecv = 0;
+        for (var bi = 0; bi < gPeers.length; bi++) {
+            totalSent += (gPeers[bi].bytessent || 0);
+            totalRecv += (gPeers[bi].bytesrecv || 0);
+        }
+
+        var verMap = {};
+        for (var vi = 0; vi < gPeers.length; vi++) {
+            var v = gPeers[vi].subver || 'Unknown';
+            if (!verMap[v]) verMap[v] = { count: 0, peers: [] };
+            verMap[v].count++;
+            verMap[v].peers.push(gPeers[vi]);
+        }
+        var versions = [];
+        var verKeys = Object.keys(verMap);
+        for (var vk = 0; vk < verKeys.length; vk++) {
+            versions.push({ subver: verKeys[vk], count: verMap[verKeys[vk]].count, peers: verMap[verKeys[vk]].peers });
+        }
+        versions.sort(function (a, b) { return b.count - a.count; });
+
+        var countryMap = {};
+        for (var coi = 0; coi < gPeers.length; coi++) {
+            if (!gPeers[coi].countryCode || gPeers[coi].countryCode === '') continue;
+            var ckey = gPeers[coi].countryCode;
+            if (!countryMap[ckey]) countryMap[ckey] = { code: ckey, name: gPeers[coi].country || ckey, count: 0, peers: [] };
+            countryMap[ckey].count++;
+            countryMap[ckey].peers.push(gPeers[coi]);
+        }
+        var countries = [];
+        var coKeys = Object.keys(countryMap);
+        for (var ck = 0; ck < coKeys.length; ck++) {
+            countries.push(countryMap[coKeys[ck]]);
+        }
+        countries.sort(function (a, b) { return b.count - a.count; });
+
+        var svcMap = {};
+        for (var si = 0; si < gPeers.length; si++) {
+            var s = gPeers[si].services_abbrev || '\u2014';
+            if (!svcMap[s]) svcMap[s] = { count: 0, peers: [] };
+            svcMap[s].count++;
+            svcMap[s].peers.push(gPeers[si]);
+        }
+        var servicesCombos = [];
+        var sKeys = Object.keys(svcMap);
+        for (var sk = 0; sk < sKeys.length; sk++) {
+            servicesCombos.push({ abbrev: sKeys[sk], count: svcMap[sKeys[sk]].count, peers: svcMap[sKeys[sk]].peers });
+        }
+        servicesCombos.sort(function (a, b) { return b.count - a.count; });
+
+        var connTypeMap = {};
+        for (var cti = 0; cti < gPeers.length; cti++) {
+            var ct = gPeers[cti].connection_type || 'unknown';
+            if (!connTypeMap[ct]) connTypeMap[ct] = { count: 0, peers: [] };
+            connTypeMap[ct].count++;
+            connTypeMap[ct].peers.push(gPeers[cti]);
+        }
+        var connTypesList = [];
+        var ctKeys = Object.keys(connTypeMap);
+        for (var ctk = 0; ctk < ctKeys.length; ctk++) {
+            connTypesList.push({ type: ctKeys[ctk], count: connTypeMap[ctKeys[ctk]].count, peers: connTypeMap[ctKeys[ctk]].peers });
+        }
+        connTypesList.sort(function (a, b) { return b.count - a.count; });
+
+        var risk = getRisk(pct);
+
+        return {
+            asNumber: base.asNumber,
+            asName: base.asName,
+            asShort: base.asShort,
+            countryCode: base.countryCode || '',
+            countryName: base.countryName || '',
+            isCountryGroup: !!base.isCountryGroup,
+            peerCount: count,
+            percentage: pct,
+            inboundCount: inbound,
+            outboundCount: outbound,
+            connTypes: connTypes,
+            connTypesList: connTypesList,
+            avgPingMs: avgPing,
+            avgDurationSecs: avgDuration,
+            avgDurationFmt: fmtDuration(avgDuration),
+            totalBytesSent: totalSent,
+            totalBytesRecv: totalRecv,
+            totalBytesSentFmt: fmtBytes(totalSent),
+            totalBytesRecvFmt: fmtBytes(totalRecv),
+            versions: versions,
+            countries: countries,
+            servicesCombos: servicesCombos,
+            hostingLabel: getHostingLabel(gPeers),
+            riskLevel: risk.level,
+            riskLabel: risk.label,
+            peers: gPeers,
+            peerIds: gPeers.map(function (p) { return p.id; }),
+            color: '#6e7681',
+        };
+    }
+
     /** Aggregate peer data into per-AS groups */
     function aggregatePeers(peers) {
         var map = {};
@@ -224,137 +364,7 @@ window.ASDiversity = (function () {
         var groups = [];
         for (var ki = 0; ki < keys.length; ki++) {
             var g = map[keys[ki]];
-            var gPeers = g.peers;
-            var count = gPeers.length;
-            var pct = totalPeers > 0 ? (count / totalPeers) * 100 : 0;
-
-            // Inbound / outbound
-            var inbound = 0;
-            for (var ii = 0; ii < gPeers.length; ii++) {
-                if (gPeers[ii].direction === 'IN') inbound++;
-            }
-            var outbound = count - inbound;
-
-            // Connection types
-            var connTypes = {};
-            for (var ci = 0; ci < gPeers.length; ci++) {
-                var t = gPeers[ci].connection_type || 'unknown';
-                connTypes[t] = (connTypes[t] || 0) + 1;
-            }
-
-            // Performance
-            var pings = [];
-            for (var pii = 0; pii < gPeers.length; pii++) {
-                if (gPeers[pii].ping_ms > 0) pings.push(gPeers[pii].ping_ms);
-            }
-            var avgPing = pings.length > 0 ? pings.reduce(function (a, b) { return a + b; }, 0) / pings.length : 0;
-
-            var nowSec = Math.floor(Date.now() / 1000);
-            var durations = [];
-            for (var di = 0; di < gPeers.length; di++) {
-                if (gPeers[di].conntime > 0) {
-                    var dur = nowSec - gPeers[di].conntime;
-                    if (dur > 0) durations.push(dur);
-                }
-            }
-            var avgDuration = durations.length > 0 ? durations.reduce(function (a, b) { return a + b; }, 0) / durations.length : 0;
-
-            var totalSent = 0, totalRecv = 0;
-            for (var bi = 0; bi < gPeers.length; bi++) {
-                totalSent += (gPeers[bi].bytessent || 0);
-                totalRecv += (gPeers[bi].bytesrecv || 0);
-            }
-
-            // Software versions (with peer references for hover/click)
-            var verMap = {};
-            for (var vi = 0; vi < gPeers.length; vi++) {
-                var v = gPeers[vi].subver || 'Unknown';
-                if (!verMap[v]) verMap[v] = { count: 0, peers: [] };
-                verMap[v].count++;
-                verMap[v].peers.push(gPeers[vi]);
-            }
-            var versions = [];
-            var verKeys = Object.keys(verMap);
-            for (var vk = 0; vk < verKeys.length; vk++) {
-                versions.push({ subver: verKeys[vk], count: verMap[verKeys[vk]].count, peers: verMap[verKeys[vk]].peers });
-            }
-            versions.sort(function (a, b) { return b.count - a.count; });
-
-            // Countries (with peer references for hover/click)
-            var countryMap = {};
-            for (var coi = 0; coi < gPeers.length; coi++) {
-                if (!gPeers[coi].countryCode || gPeers[coi].countryCode === '') continue;
-                var ckey = gPeers[coi].countryCode;
-                if (!countryMap[ckey]) countryMap[ckey] = { code: ckey, name: gPeers[coi].country || ckey, count: 0, peers: [] };
-                countryMap[ckey].count++;
-                countryMap[ckey].peers.push(gPeers[coi]);
-            }
-            var countries = [];
-            var coKeys = Object.keys(countryMap);
-            for (var ck = 0; ck < coKeys.length; ck++) {
-                countries.push(countryMap[coKeys[ck]]);
-            }
-            countries.sort(function (a, b) { return b.count - a.count; });
-
-            // Service flag combos (with peer references for hover/click)
-            var svcMap = {};
-            for (var si = 0; si < gPeers.length; si++) {
-                var s = gPeers[si].services_abbrev || '\u2014';
-                if (!svcMap[s]) svcMap[s] = { count: 0, peers: [] };
-                svcMap[s].count++;
-                svcMap[s].peers.push(gPeers[si]);
-            }
-            var servicesCombos = [];
-            var sKeys = Object.keys(svcMap);
-            for (var sk = 0; sk < sKeys.length; sk++) {
-                servicesCombos.push({ abbrev: sKeys[sk], count: svcMap[sKeys[sk]].count, peers: svcMap[sKeys[sk]].peers });
-            }
-            servicesCombos.sort(function (a, b) { return b.count - a.count; });
-
-            // Connection types (with peer references for hover/click)
-            var connTypeMap = {};
-            for (var cti = 0; cti < gPeers.length; cti++) {
-                var ct = gPeers[cti].connection_type || 'unknown';
-                if (!connTypeMap[ct]) connTypeMap[ct] = { count: 0, peers: [] };
-                connTypeMap[ct].count++;
-                connTypeMap[ct].peers.push(gPeers[cti]);
-            }
-            var connTypesList = [];
-            var ctKeys = Object.keys(connTypeMap);
-            for (var ctk = 0; ctk < ctKeys.length; ctk++) {
-                connTypesList.push({ type: ctKeys[ctk], count: connTypeMap[ctKeys[ctk]].count, peers: connTypeMap[ctKeys[ctk]].peers });
-            }
-            connTypesList.sort(function (a, b) { return b.count - a.count; });
-
-            var risk = getRisk(pct);
-
-            groups.push({
-                asNumber: g.asNumber,
-                asName: g.asName,
-                asShort: g.asShort,
-                peerCount: count,
-                percentage: pct,
-                inboundCount: inbound,
-                outboundCount: outbound,
-                connTypes: connTypes,
-                connTypesList: connTypesList,
-                avgPingMs: avgPing,
-                avgDurationSecs: avgDuration,
-                avgDurationFmt: fmtDuration(avgDuration),
-                totalBytesSent: totalSent,
-                totalBytesRecv: totalRecv,
-                totalBytesSentFmt: fmtBytes(totalSent),
-                totalBytesRecvFmt: fmtBytes(totalRecv),
-                versions: versions,
-                countries: countries,
-                servicesCombos: servicesCombos,
-                hostingLabel: getHostingLabel(gPeers),
-                riskLevel: risk.level,
-                riskLabel: risk.label,
-                peers: gPeers,
-                peerIds: gPeers.map(function (p) { return p.id; }),
-                color: '#6e7681',  // assigned later from palette
-            });
+            groups.push(buildDistributionGroup(g, g.peers, totalPeers));
         }
 
         // Sort by peer count descending
@@ -362,19 +372,62 @@ window.ASDiversity = (function () {
         return groups;
     }
 
-    /** Calculate Herfindahl-Hirschman diversity score (0-10) */
-    function calcDiversityScore(groups) {
-        if (totalPeers === 0) return 0;
+    /** Aggregate peer data into per-country / territory groups. */
+    function aggregateCountryPeers(peers) {
+        var map = {};
+        var locatablePeers = 0;
+
+        for (var pi = 0; pi < peers.length; pi++) {
+            var p = peers[pi];
+            var code = (p.countryCode || '').trim();
+            if (!code) continue;
+            locatablePeers++;
+
+            var key = 'country:' + code;
+            if (!map[key]) {
+                map[key] = {
+                    asNumber: key,
+                    asName: p.country || code,
+                    asShort: p.country || code,
+                    countryCode: code,
+                    countryName: p.country || code,
+                    isCountryGroup: true,
+                    peers: [],
+                };
+            }
+            map[key].peers.push(p);
+        }
+
+        countryTotalPeers = locatablePeers;
+
+        var keys = Object.keys(map);
+        var groups = [];
+        for (var ki = 0; ki < keys.length; ki++) {
+            var g = map[keys[ki]];
+            groups.push(buildDistributionGroup(g, g.peers, countryTotalPeers));
+        }
+
+        groups.sort(function (a, b) { return b.peerCount - a.peerCount; });
+        return groups;
+    }
+
+    /** Calculate Herfindahl-Hirschman distribution score (0-10) */
+    function calcDistributionScoreFor(groups, denominator) {
+        if (denominator === 0) return 0;
         var hhi = 0;
         for (var i = 0; i < groups.length; i++) {
-            var share = groups[i].peerCount / totalPeers;
+            var share = groups[i].peerCount / denominator;
             hhi += share * share;
         }
         return Math.round((1 - hhi) * 100) / 10; // 0.0 to 10.0
     }
 
+    function calcDistributionScore(groups) {
+        return calcDistributionScoreFor(groups, totalPeers);
+    }
+
     /** Build donut segments: top N + Others bucket */
-    function buildDonutSegments(groups) {
+    function buildDonutSegmentsFor(groups, denominator, othersNoun) {
         var top = groups.slice(0, MAX_SEGMENTS);
         var rest = groups.slice(MAX_SEGMENTS);
 
@@ -394,10 +447,10 @@ window.ASDiversity = (function () {
                     othersPeerIds.push(rest[ri].peerIds[rpi]);
                 }
             }
-            var othersPct = totalPeers > 0 ? (othersCount / totalPeers) * 100 : 0;
+            var othersPct = denominator > 0 ? (othersCount / denominator) * 100 : 0;
             segments.push({
                 asNumber: 'Others',
-                asName: rest.length + ' other providers',
+                asName: rest.length + ' other ' + othersNoun,
                 asShort: '',
                 peerCount: othersCount,
                 percentage: othersPct,
@@ -411,6 +464,116 @@ window.ASDiversity = (function () {
         }
 
         return segments;
+    }
+
+    function buildDonutSegments(groups) {
+        return buildDonutSegmentsFor(groups, totalPeers, 'providers');
+    }
+
+    function isCountryLens() {
+        return activeDistributionLens === 'country';
+    }
+
+    function getActiveGroups() {
+        return isCountryLens() ? countryGroups : asGroups;
+    }
+
+    function getActiveSegments() {
+        return isCountryLens() ? countryDonutSegments : donutSegments;
+    }
+
+    function getActiveTotalPeers() {
+        return isCountryLens() ? countryTotalPeers : totalPeers;
+    }
+
+    function getActiveDistributionScore() {
+        return isCountryLens() ? countryDistributionScore : distributionScore;
+    }
+
+    function getActiveEntityName(seg) {
+        if (!seg) return '';
+        if (seg.isOthers) return 'Others';
+        return seg.asShort || seg.asName || seg.asNumber;
+    }
+
+    function getActiveEntityKind() {
+        return isCountryLens() ? 'Country' : 'ISP';
+    }
+
+    function findActiveSegment(asNum) {
+        var segments = getActiveSegments();
+        return segments.find(function (s) { return s.asNumber === asNum; }) || null;
+    }
+
+    function findActiveGroup(asNum) {
+        var groups = getActiveGroups();
+        return groups.find(function (g) { return g.asNumber === asNum; }) || null;
+    }
+
+    function findActiveSegmentOrGroup(asNum) {
+        var seg = findActiveSegment(asNum);
+        if (seg) return seg;
+        var grp = findActiveGroup(asNum);
+        if (!grp) return null;
+        var othersSeg = getActiveSegments().find(function (s) { return s.isOthers; });
+        return {
+            asNumber: grp.asNumber,
+            asName: grp.asName,
+            asShort: grp.asShort,
+            countryCode: grp.countryCode || '',
+            countryName: grp.countryName || '',
+            isCountryGroup: !!grp.isCountryGroup,
+            peerCount: grp.peerCount,
+            percentage: grp.percentage,
+            color: othersSeg ? othersSeg.color : '#58a6ff',
+            riskLevel: grp.riskLevel,
+            riskLabel: grp.riskLabel,
+            peerIds: grp.peerIds,
+            isOthers: false,
+        };
+    }
+
+    function getPeerIdsForActiveEntity(asNum) {
+        var seg = findActiveSegment(asNum);
+        if (seg) return seg.peerIds;
+        var grp = findActiveGroup(asNum);
+        return grp ? grp.peerIds : [];
+    }
+
+    function getAllPeersForActiveSegment(seg) {
+        if (!seg) return [];
+        if (seg.isOthers && seg._othersGroups) {
+            var all = [];
+            for (var i = 0; i < seg._othersGroups.length; i++) {
+                for (var j = 0; j < seg._othersGroups[i].peers.length; j++) {
+                    all.push(seg._othersGroups[i].peers[j]);
+                }
+            }
+            return all;
+        }
+        var grp = findActiveGroup(seg.asNumber);
+        return grp ? grp.peers : [];
+    }
+
+    function getColorForActiveEntity(asNum) {
+        var segments = getActiveSegments();
+        for (var i = 0; i < segments.length; i++) {
+            if (segments[i].asNumber === asNum) return segments[i].color;
+            if (segments[i].isOthers && segments[i]._othersGroups) {
+                for (var j = 0; j < segments[i]._othersGroups.length; j++) {
+                    if (segments[i]._othersGroups[j].asNumber === asNum) return segments[i].color;
+                }
+            }
+        }
+        return PALETTE[PALETTE.length - 1];
+    }
+
+    function buildActiveScoreTooltip(score) {
+        var q = getQuality(score);
+        var noun = isCountryLens() ? 'countries and territories' : 'providers';
+        return 'Distribution Score: ' + score.toFixed(1) + '/10 (' + q.word + ')\n'
+             + 'Based on Herfindahl\u2013Hirschman Index (HHI)\n'
+             + 'Higher = more evenly distributed peers across ' + noun;
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -532,6 +695,33 @@ window.ASDiversity = (function () {
             function (p) { return p.countryCode || null; },
             function (p, key) { return key + '  ' + (p.country || key); }
         );
+    }
+
+    /** Aggregate a peer slice by AS provider for country detail panels. */
+    function aggregateProvidersForPeers(peers) {
+        var providerMap = {};
+        for (var i = 0; i < peers.length; i++) {
+            var p = peers[i];
+            var asNum = parseAsNumber(p.as);
+            if (!asNum) continue;
+            if (!providerMap[asNum]) {
+                providerMap[asNum] = {
+                    asNumber: asNum,
+                    name: parseAsOrg(p.as) || asNum,
+                    peerCount: 0,
+                    peerIds: [],
+                    peers: []
+                };
+            }
+            providerMap[asNum].peerCount++;
+            providerMap[asNum].peerIds.push(p.id);
+            providerMap[asNum].peers.push(p);
+        }
+        var providers = [];
+        var keys = Object.keys(providerMap);
+        for (var k = 0; k < keys.length; k++) providers.push(providerMap[keys[k]]);
+        providers.sort(function (a, b) { return b.peerCount - a.peerCount; });
+        return providers;
     }
 
     /** Aggregate peers by software version */
@@ -742,8 +932,8 @@ window.ASDiversity = (function () {
     function computeSummaryData() {
         var peers = lastPeersRaw;
         return {
-            score: diversityScore,
-            quality: getQuality(diversityScore),
+            score: distributionScore,
+            quality: getQuality(distributionScore),
             uniqueProviders: asGroups.length,
             topProvider: asGroups.length > 0 ? asGroups[0] : null,
             insights: computeInsights(),
@@ -753,6 +943,17 @@ window.ASDiversity = (function () {
             countries: aggregateSummaryCountries(peers),
             software: aggregateSummarySoftware(peers),
             services: aggregateSummaryServices(peers)
+        };
+    }
+
+    function computeCountrySummaryData() {
+        return {
+            score: countryDistributionScore,
+            quality: getQuality(countryDistributionScore),
+            uniqueCountries: countryGroups.length,
+            totalPeers: countryTotalPeers,
+            topCountry: countryGroups.length > 0 ? countryGroups[0] : null,
+            countries: countryGroups
         };
     }
 
@@ -792,6 +993,8 @@ window.ASDiversity = (function () {
         var cy = DONUT_SIZE / 2;
         var gap = 0.03; // gap between segments in radians
         var html = '';
+        var segments = getActiveSegments();
+        var activePeerTotal = getActiveTotalPeers();
 
         // SVG defs for 3D-style effects
         html += '<defs>';
@@ -822,29 +1025,29 @@ window.ASDiversity = (function () {
         // Inner decorative ring
         html += '<circle cx="' + cx + '" cy="' + cy + '" r="' + (INNER_RADIUS - 3) + '" fill="none" stroke="rgba(88,166,255,0.06)" stroke-width="0.5" />';
 
-        if (donutSegments.length === 0) {
+        if (segments.length === 0) {
             // Empty state — pulsing gray ring
             html += '<circle cx="' + cx + '" cy="' + cy + '" r="' + (DONUT_RADIUS - DONUT_WIDTH / 2) + '" fill="none" stroke="#2d333b" stroke-width="' + DONUT_WIDTH + '" opacity="0.5" />';
-        } else if (donutSegments.length === 1) {
-            var seg = donutSegments[0];
+        } else if (segments.length === 1) {
+            var seg = segments[0];
             html += '<circle cx="' + cx + '" cy="' + cy + '" r="' + (DONUT_RADIUS - DONUT_WIDTH / 2) + '" fill="none" stroke="' + seg.color + '" stroke-width="' + DONUT_WIDTH + '" class="as-donut-segment" data-as="' + seg.asNumber + '" filter="url(#donut-shadow)" />';
         } else {
-            var totalGap = gap * donutSegments.length;
+            var totalGap = gap * segments.length;
             var available = 2 * Math.PI - totalGap;
 
             // Calculate sweeps — either normal (data-proportional) or animated (expanded)
             var sweeps = [];
             var normalSweeps = [];
-            for (var si = 0; si < donutSegments.length; si++) {
-                normalSweeps.push((donutSegments[si].peerCount / totalPeers) * available);
+            for (var si = 0; si < segments.length; si++) {
+                normalSweeps.push((segments[si].peerCount / activePeerTotal) * available);
             }
 
             if ((donutAnimState === 'expanding' || donutAnimState === 'expanded' || donutAnimState === 'reverting') && donutAnimTarget) {
                 // Calculate expanded layout: target segment gets DONUT_EXPAND_RATIO, rest share the remainder
                 var expandedSweeps = [];
                 var targetIdx = -1;
-                for (var si = 0; si < donutSegments.length; si++) {
-                    if (donutSegments[si].asNumber === donutAnimTarget) {
+                for (var si = 0; si < segments.length; si++) {
+                    if (segments[si].asNumber === donutAnimTarget) {
                         targetIdx = si;
                         break;
                     }
@@ -852,12 +1055,12 @@ window.ASDiversity = (function () {
                 if (targetIdx >= 0) {
                     var expandedSweep = available * DONUT_EXPAND_RATIO;
                     var remainingSpace = available - expandedSweep;
-                    var otherTotal = totalPeers - donutSegments[targetIdx].peerCount;
-                    for (var si = 0; si < donutSegments.length; si++) {
+                    var otherTotal = activePeerTotal - segments[targetIdx].peerCount;
+                    for (var si = 0; si < segments.length; si++) {
                         if (si === targetIdx) {
                             expandedSweeps.push(expandedSweep);
                         } else {
-                            var share = otherTotal > 0 ? (donutSegments[si].peerCount / otherTotal) : (1 / (donutSegments.length - 1));
+                            var share = otherTotal > 0 ? (segments[si].peerCount / otherTotal) : (1 / (segments.length - 1));
                             expandedSweeps.push(share * remainingSpace);
                         }
                     }
@@ -869,7 +1072,7 @@ window.ASDiversity = (function () {
                 var t = donutAnimState === 'reverting' ? (1 - donutAnimProgress) : donutAnimProgress;
                 // Smooth easing
                 t = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-                for (var si = 0; si < donutSegments.length; si++) {
+                for (var si = 0; si < segments.length; si++) {
                     sweeps.push(normalSweeps[si] + (expandedSweeps[si] - normalSweeps[si]) * t);
                 }
             } else {
@@ -880,8 +1083,8 @@ window.ASDiversity = (function () {
             var renderOrder = [];
             var targetIdx = -1;
             if ((donutAnimState !== 'idle') && donutAnimTarget) {
-                for (var si = 0; si < donutSegments.length; si++) {
-                    if (donutSegments[si].asNumber === donutAnimTarget) {
+                for (var si = 0; si < segments.length; si++) {
+                    if (segments[si].asNumber === donutAnimTarget) {
                         targetIdx = si;
                     } else {
                         renderOrder.push(si);
@@ -889,7 +1092,7 @@ window.ASDiversity = (function () {
                 }
                 if (targetIdx >= 0) renderOrder.push(targetIdx);
             } else {
-                for (var si = 0; si < donutSegments.length; si++) renderOrder.push(si);
+                for (var si = 0; si < segments.length; si++) renderOrder.push(si);
             }
 
             // Layout: others at top (starting at -PI/2), target fills bottom
@@ -915,9 +1118,9 @@ window.ASDiversity = (function () {
                 animT = donutAnimState === 'reverting' ? (1 - donutAnimProgress) : donutAnimProgress;
                 animT = animT < 0.5 ? 2 * animT * animT : 1 - Math.pow(-2 * animT + 2, 2) / 2;
             }
-            for (var si = 0; si < donutSegments.length; si++) {
+            for (var si = 0; si < segments.length; si++) {
                 if (animT > 0 && donutAnimTarget) {
-                    if (donutSegments[si].asNumber === donutAnimTarget) {
+                    if (segments[si].asNumber === donutAnimTarget) {
                         segWidths.push(DONUT_WIDTH + (DONUT_WIDTH_SELECTED - DONUT_WIDTH) * animT);
                     } else {
                         segWidths.push(DONUT_WIDTH + (DONUT_WIDTH_DIMMED - DONUT_WIDTH) * animT);
@@ -929,8 +1132,8 @@ window.ASDiversity = (function () {
 
             // Group for shadow on all segments
             html += '<g filter="url(#donut-shadow)">';
-            for (var si = 0; si < donutSegments.length; si++) {
-                var seg = donutSegments[si];
+            for (var si = 0; si < segments.length; si++) {
+                var seg = segments[si];
                 if (!segAngles[si] || sweeps[si] <= 0) continue;
 
                 var segW = segWidths[si];
@@ -953,7 +1156,7 @@ window.ASDiversity = (function () {
         donutSvg.innerHTML = html;
 
         // Hide loading once we have data
-        if (donutSegments.length > 0 && loadingEl) {
+        if (segments.length > 0 && loadingEl) {
             loadingEl.style.display = 'none';
             hasRenderedOnce = true;
         }
@@ -1269,7 +1472,7 @@ window.ASDiversity = (function () {
         if (donutCenter) donutCenter.style.opacity = '';
     }
 
-    /** Get quality rating for a diversity score */
+    /** Get quality rating for a distribution score */
     function getQuality(score) {
         if (score >= 8) return { word: 'Excellent', cls: 'q-excellent' };
         if (score >= 6) return { word: 'Good', cls: 'q-good' };
@@ -1281,16 +1484,18 @@ window.ASDiversity = (function () {
     /** Build score tooltip text */
     function buildScoreTooltip(score) {
         var q = getQuality(score);
-        return 'Diversity Score: ' + score.toFixed(1) + '/10 (' + q.word + ')\n'
+        return 'Distribution Score: ' + score.toFixed(1) + '/10 (' + q.word + ')\n'
              + 'Based on Herfindahl\u2013Hirschman Index (HHI)\n'
              + 'Higher = more evenly distributed peers across providers';
     }
 
     /** Update the donut center label.
-     *  Layout: DIVERSITY | SCORE: heading | big number | quality word
+     *  Layout: DISTRIBUTION | SCORE: heading | big number | quality word
      *  When AS selected: peer count heading | AS name | percentage */
     function renderCenter() {
         if (!donutCenter) return;
+        var activePeerTotal = getActiveTotalPeers();
+        var activeScore = getActiveDistributionScore();
 
         // Clear legend-hover pointer-events lock whenever center is re-rendered
         clearLegendHoverActive();
@@ -1326,12 +1531,12 @@ window.ASDiversity = (function () {
 
         // If a summary sub-filter is active (e.g. IPv4, IPv6), show category info in donut center
         if (donutFocused && summarySelected && subFilterPeerIds && subFilterLabel && !selectedAs) {
-            var diversityEl2 = donutCenter.querySelector('.as-score-diversity');
+            var distributionEl2 = donutCenter.querySelector('.as-score-distribution');
             var headingEl2 = donutCenter.querySelector('.as-score-heading');
             var scoreVal2 = donutCenter.querySelector('.as-score-value');
             var qualityEl2 = donutCenter.querySelector('.as-score-quality');
             var scoreLbl2 = donutCenter.querySelector('.as-score-label');
-            if (diversityEl2) diversityEl2.style.display = 'none';
+            if (distributionEl2) distributionEl2.style.display = 'none';
             if (headingEl2) {
                 headingEl2.textContent = subFilterPeerIds.length + ' PEER' + (subFilterPeerIds.length !== 1 ? 'S' : '');
                 headingEl2.style.color = 'var(--accent)';
@@ -1344,7 +1549,7 @@ window.ASDiversity = (function () {
                 scoreVal2.title = subFilterLabel + ' — ' + subFilterPeerIds.length + ' peers';
             }
             if (qualityEl2) {
-                var pctOfTotal = totalPeers > 0 ? ((subFilterPeerIds.length / totalPeers) * 100).toFixed(1) : '0.0';
+                var pctOfTotal = activePeerTotal > 0 ? ((subFilterPeerIds.length / activePeerTotal) * 100).toFixed(1) : '0.0';
                 qualityEl2.textContent = pctOfTotal + '% of peers';
                 qualityEl2.className = 'as-score-quality';
                 qualityEl2.style.color = 'var(--text-secondary)';
@@ -1365,12 +1570,12 @@ window.ASDiversity = (function () {
         if (donutFocused && activeNetworkPanel && !selectedAs) {
             // If a sub-filter is active within the network panel, show that category
             if (subFilterPeerIds && subFilterLabel) {
-                var diversityEl2 = donutCenter.querySelector('.as-score-diversity');
+                var distributionEl2 = donutCenter.querySelector('.as-score-distribution');
                 var headingEl2 = donutCenter.querySelector('.as-score-heading');
                 var scoreVal2 = donutCenter.querySelector('.as-score-value');
                 var qualityEl2 = donutCenter.querySelector('.as-score-quality');
                 var scoreLbl2 = donutCenter.querySelector('.as-score-label');
-                if (diversityEl2) diversityEl2.style.display = 'none';
+                if (distributionEl2) distributionEl2.style.display = 'none';
                 if (headingEl2) {
                     headingEl2.textContent = subFilterPeerIds.length + ' PEER' + (subFilterPeerIds.length !== 1 ? 'S' : '');
                     headingEl2.style.color = 'var(--accent)';
@@ -1383,7 +1588,7 @@ window.ASDiversity = (function () {
                     scoreVal2.title = subFilterLabel + ' — ' + subFilterPeerIds.length + ' peers';
                 }
                 if (qualityEl2) {
-                    var pctOfTotal = totalPeers > 0 ? ((subFilterPeerIds.length / totalPeers) * 100).toFixed(1) : '0.0';
+                    var pctOfTotal = activePeerTotal > 0 ? ((subFilterPeerIds.length / activePeerTotal) * 100).toFixed(1) : '0.0';
                     qualityEl2.textContent = pctOfTotal + '% of peers';
                     qualityEl2.className = 'as-score-quality';
                     qualityEl2.style.color = 'var(--text-secondary)';
@@ -1400,12 +1605,12 @@ window.ASDiversity = (function () {
             var npNetPeers = lastPeersRaw.filter(function (p) {
                 return (p.network || 'ipv4') === npNetKey;
             });
-            var diversityEl3 = donutCenter.querySelector('.as-score-diversity');
+            var distributionEl3 = donutCenter.querySelector('.as-score-distribution');
             var headingEl3 = donutCenter.querySelector('.as-score-heading');
             var scoreVal3 = donutCenter.querySelector('.as-score-value');
             var qualityEl3 = donutCenter.querySelector('.as-score-quality');
             var scoreLbl3 = donutCenter.querySelector('.as-score-label');
-            if (diversityEl3) diversityEl3.style.display = 'none';
+            if (distributionEl3) distributionEl3.style.display = 'none';
             if (headingEl3) {
                 headingEl3.textContent = npNetPeers.length + ' PEER' + (npNetPeers.length !== 1 ? 'S' : '');
                 headingEl3.style.color = 'var(--accent)';
@@ -1418,7 +1623,7 @@ window.ASDiversity = (function () {
                 scoreVal3.title = npNetLabel + ' Network — ' + npNetPeers.length + ' peers';
             }
             if (qualityEl3) {
-                var pctOfTotal = totalPeers > 0 ? ((npNetPeers.length / totalPeers) * 100).toFixed(1) : '0.0';
+                var pctOfTotal = activePeerTotal > 0 ? ((npNetPeers.length / activePeerTotal) * 100).toFixed(1) : '0.0';
                 qualityEl3.textContent = pctOfTotal + '% of peers';
                 qualityEl3.className = 'as-score-quality';
                 qualityEl3.style.color = 'var(--text-secondary)';
@@ -1429,7 +1634,7 @@ window.ASDiversity = (function () {
             return;
         }
 
-        var diversityEl = donutCenter.querySelector('.as-score-diversity');
+        var distributionEl = donutCenter.querySelector('.as-score-distribution');
         var headingEl = donutCenter.querySelector('.as-score-heading');
         var scoreVal = donutCenter.querySelector('.as-score-value');
         var qualityEl = donutCenter.querySelector('.as-score-quality');
@@ -1438,38 +1643,22 @@ window.ASDiversity = (function () {
 
         // If an AS is selected, show AS info instead of score
         if (selectedAs) {
-            var seg = donutSegments.find(function (s) { return s.asNumber === selectedAs; });
-            // Fallback for Others sub-providers not in donutSegments
-            if (!seg) {
-                var grp = asGroups.find(function (g) { return g.asNumber === selectedAs; });
-                if (grp) {
-                    var othersSeg = donutSegments.find(function (s) { return s.isOthers; });
-                    seg = {
-                        asNumber: grp.asNumber,
-                        asName: grp.asName,
-                        asShort: grp.asShort,
-                        peerCount: grp.peerCount,
-                        percentage: grp.percentage,
-                        color: othersSeg ? othersSeg.color : '#58a6ff',
-                        isOthers: false,
-                    };
-                }
-            }
+            var seg = findActiveSegmentOrGroup(selectedAs);
             if (seg) {
                 var displayName = seg.isOthers ? 'Others' : (seg.asShort || seg.asName || seg.asNumber);
                 if (displayName.length > 14) displayName = displayName.substring(0, 13) + '\u2026';
 
-                // Show "← Others" back link for sub-providers, else "ISP" label
+                // Show "← Others" back link for sub-groups, else active lens label
                 var isSubProv = isOthersSubProvider(selectedAs);
-                if (diversityEl) {
+                if (distributionEl) {
                     if (isSubProv && donutFocused) {
-                        diversityEl.innerHTML = '<span class="as-others-back-link">\u2190 Others</span>';
-                        diversityEl.style.color = '';
+                        distributionEl.innerHTML = '<span class="as-others-back-link">\u2190 Others</span>';
+                        distributionEl.style.color = '';
                     } else {
-                        diversityEl.textContent = seg.isOthers ? 'Bucket:' : 'ISP';
-                        diversityEl.style.color = 'var(--logo-primary)';
+                        distributionEl.textContent = seg.isOthers ? 'Bucket:' : getActiveEntityKind();
+                        distributionEl.style.color = 'var(--logo-primary)';
                     }
-                    diversityEl.style.display = '';
+                    distributionEl.style.display = '';
                 }
                 // Hide the heading row — peer count moves to bottom label
                 if (headingEl) {
@@ -1482,7 +1671,7 @@ window.ASDiversity = (function () {
                 scoreVal.title = seg.asNumber + ' \u00b7 ' + (seg.asName || '') + '\n'
                     + seg.peerCount + ' peers (' + seg.percentage.toFixed(1) + '%)';
                 if (qualityEl) {
-                    qualityEl.textContent = seg.asNumber === 'Others' ? '' : seg.asNumber;
+                    qualityEl.textContent = seg.asNumber === 'Others' ? '' : (isCountryLens() ? (seg.countryCode || '') : seg.asNumber);
                     qualityEl.className = 'as-score-quality';
                     qualityEl.style.color = seg.color;
                 }
@@ -1500,10 +1689,10 @@ window.ASDiversity = (function () {
         // Reset any selected-mode / provider styling
         scoreVal.className = 'as-score-value';
         scoreVal.style.color = '';
-        if (diversityEl) {
-            diversityEl.textContent = 'DIVERSITY';
-            diversityEl.style.display = '';
-            diversityEl.style.color = '';
+        if (distributionEl) {
+            distributionEl.textContent = 'DISTRIBUTION';
+            distributionEl.style.display = '';
+            distributionEl.style.color = '';
         }
         if (headingEl) {
             headingEl.style.color = '';
@@ -1517,37 +1706,39 @@ window.ASDiversity = (function () {
             scoreLbl.style.color = '';
         }
 
-        // Edge case: no locatable peers (all private/tor/i2p/cjdns)
-        if (totalPeers === 0) {
-            if (diversityEl) diversityEl.style.display = 'none';
+        // Edge case: no locatable peers for the active lens.
+        if (activePeerTotal === 0) {
+            if (distributionEl) distributionEl.style.display = 'none';
             if (headingEl) headingEl.textContent = '';
             if (qualityEl) {
                 qualityEl.textContent = '';
                 qualityEl.className = 'as-score-quality q-nodata';
             }
             scoreVal.textContent = '\u2014';
-            scoreVal.title = 'No AS data available \u2014 all peers are on private or anonymous networks';
+            scoreVal.title = isCountryLens()
+                ? 'No country data available for public peers'
+                : 'No AS data available \u2014 all peers are on private or anonymous networks';
             scoreLbl.textContent = 'NO DATA';
             scoreLbl.classList.remove('as-summary-link');
             return;
         }
 
-        // Normal: show diversity score
-        var q = getQuality(diversityScore);
+        // Normal: show distribution score
+        var q = getQuality(activeScore);
 
         if (headingEl) {
             headingEl.textContent = 'SCORE:';
         }
 
-        scoreVal.textContent = diversityScore.toFixed(1);
-        scoreVal.title = buildScoreTooltip(diversityScore);
+        scoreVal.textContent = activeScore.toFixed(1);
+        scoreVal.title = buildActiveScoreTooltip(activeScore);
 
         // Remove old score classes and add new
         scoreVal.classList.remove('as-score-excellent', 'as-score-good', 'as-score-moderate', 'as-score-poor', 'as-score-critical');
-        if (diversityScore >= 8) scoreVal.classList.add('as-score-excellent');
-        else if (diversityScore >= 6) scoreVal.classList.add('as-score-good');
-        else if (diversityScore >= 4) scoreVal.classList.add('as-score-moderate');
-        else if (diversityScore >= 2) scoreVal.classList.add('as-score-poor');
+        if (activeScore >= 8) scoreVal.classList.add('as-score-excellent');
+        else if (activeScore >= 6) scoreVal.classList.add('as-score-good');
+        else if (activeScore >= 4) scoreVal.classList.add('as-score-moderate');
+        else if (activeScore >= 2) scoreVal.classList.add('as-score-poor');
         else scoreVal.classList.add('as-score-critical');
 
         if (qualityEl) {
@@ -1555,7 +1746,7 @@ window.ASDiversity = (function () {
             qualityEl.className = 'as-score-quality ' + q.cls;
         }
 
-        // Label just shows quality word below - no "DIVERSITY SUMMARY" text needed
+        // Label just shows quality word below - no "DISTRIBUTION SUMMARY" text needed
         scoreLbl.textContent = '';
         scoreLbl.classList.remove('as-summary-link');
         scoreLbl.classList.remove('as-summary-active');
@@ -1565,11 +1756,15 @@ window.ASDiversity = (function () {
     function renderLegend() {
         if (!legendEl) return;
         var html = '';
+        var segments = getActiveSegments();
+        var groups = getActiveGroups();
+        var activePeerTotal = getActiveTotalPeers();
+        var headerLabel = isCountryLens() ? 'COUNTRIES' : 'PROVIDERS';
 
         // When a provider is hovered in the panel, show only that provider in the legend
         var focusAs = legendFocusAs || (summarySelected && subSubTooltipPinned && subSubFilterAsNum ? subSubFilterAsNum : null);
         if (focusAs) {
-            var seg = donutSegments.find(function (s) { return s.asNumber === focusAs; });
+            var seg = segments.find(function (s) { return s.asNumber === focusAs; });
             if (seg) {
                 var displayName = seg.isOthers ? seg.asName : (seg.asShort || seg.asName || seg.asNumber);
                 var shortName = displayName.length > 18 ? displayName.substring(0, 17) + '\u2026' : displayName;
@@ -1581,34 +1776,34 @@ window.ASDiversity = (function () {
                 html += '</div>';
             } else {
                 // Provider is inside Others — show its actual name, not "Others"
-                var grp = asGroups.find(function (g) { return g.asNumber === focusAs; });
+                var grp = groups.find(function (g) { return g.asNumber === focusAs; });
                 if (grp) {
-                    var color = getColorForAsNum(focusAs);
+                    var color = getColorForActiveEntity(focusAs);
                     var displayName = grp.asShort || grp.asName || grp.asNumber;
                     var shortName = displayName.length > 18 ? displayName.substring(0, 17) + '\u2026' : displayName;
                     html += '<div class="as-legend-item highlighted" data-as="' + focusAs + '">';
                     html += '<span class="as-legend-dot" style="background:' + color + '"></span>';
                     html += '<span class="as-legend-name" title="' + displayName + '">' + shortName + '</span>';
                     html += '<span class="as-legend-count">' + grp.peerCount + '</span>';
-                    html += '<span class="as-legend-pct">' + (totalPeers > 0 ? (grp.peerCount / totalPeers * 100).toFixed(0) : 0) + '%</span>';
+                    html += '<span class="as-legend-pct">' + (activePeerTotal > 0 ? (grp.peerCount / activePeerTotal * 100).toFixed(0) : 0) + '%</span>';
                     html += '</div>';
                 }
             }
         } else if (selectedAs) {
             // When an AS is clicked (selected), show only that provider in the legend
-            var seg = donutSegments.find(function (s) { return s.asNumber === selectedAs; });
+            var seg = segments.find(function (s) { return s.asNumber === selectedAs; });
             if (!seg) {
                 // Selected AS might be a sub-provider inside Others
-                var grp = asGroups.find(function (g) { return g.asNumber === selectedAs; });
+                var grp = groups.find(function (g) { return g.asNumber === selectedAs; });
                 if (grp) {
-                    var color = getColorForAsNum(selectedAs);
+                    var color = getColorForActiveEntity(selectedAs);
                     var displayName = grp.asShort || grp.asName || grp.asNumber;
                     var shortName = displayName.length > 18 ? displayName.substring(0, 17) + '\u2026' : displayName;
                     html += '<div class="as-legend-item selected" data-as="' + selectedAs + '">';
                     html += '<span class="as-legend-dot" style="background:' + color + '"></span>';
                     html += '<span class="as-legend-name" title="' + displayName + '">' + shortName + '</span>';
                     html += '<span class="as-legend-count">' + grp.peerCount + '</span>';
-                    html += '<span class="as-legend-pct">' + (totalPeers > 0 ? (grp.peerCount / totalPeers * 100).toFixed(0) : 0) + '%</span>';
+                    html += '<span class="as-legend-pct">' + (activePeerTotal > 0 ? (grp.peerCount / activePeerTotal * 100).toFixed(0) : 0) + '%</span>';
                     html += '</div>';
                 }
             } else {
@@ -1623,9 +1818,9 @@ window.ASDiversity = (function () {
             }
         } else {
             // Default state: show "TOP 8" header + all segments
-            html += '<div class="as-legend-header">TOP ' + Math.min(MAX_SEGMENTS, donutSegments.length) + '</div>';
-            for (var i = 0; i < donutSegments.length; i++) {
-                var seg = donutSegments[i];
+            html += '<div class="as-legend-header">TOP ' + Math.min(MAX_SEGMENTS, segments.length) + ' ' + headerLabel + '</div>';
+            for (var i = 0; i < segments.length; i++) {
+                var seg = segments[i];
                 var displayName = seg.isOthers ? seg.asName : (seg.asShort || seg.asName || seg.asNumber);
                 var shortName = displayName.length > 18 ? displayName.substring(0, 17) + '\u2026' : displayName;
 
@@ -1667,8 +1862,140 @@ window.ASDiversity = (function () {
     // DETAIL PANEL — Right slide-in (pushes content)
     // ═══════════════════════════════════════════════════════════
 
+    function openCountryPanel(countryId) {
+        if (!panelEl) return;
+        if (peerDetailActive) closePeerPopup();
+
+        var seg = findActiveSegment(countryId);
+        var fullGroup = seg && seg.isOthers ? seg : findActiveGroup(countryId);
+        if (!seg && fullGroup) seg = findActiveSegmentOrGroup(countryId);
+        if (!seg || !fullGroup) return;
+
+        renderBackButton();
+
+        var asnEl = panelEl.querySelector('.as-detail-asn');
+        var orgEl = panelEl.querySelector('.as-detail-org');
+        var metaEl = panelEl.querySelector('.as-detail-meta');
+        var barFill = panelEl.querySelector('.as-detail-bar-fill');
+        var pctEl = panelEl.querySelector('.as-detail-pct');
+        var riskEl = panelEl.querySelector('.as-detail-risk');
+
+        var allPeers = getAllPeersForActiveSegment(seg);
+        if (seg.isOthers) {
+            fullGroup = buildDistributionGroup({
+                asNumber: 'Others',
+                asName: seg.asName,
+                asShort: '',
+                isCountryGroup: true
+            }, allPeers, countryTotalPeers);
+        }
+        var providers = aggregateProvidersForPeers(allPeers);
+        var titleCode = seg.isOthers ? 'Others' : (fullGroup.countryCode || fullGroup.asShort || 'Country');
+        var titleName = seg.isOthers ? seg.asName : (fullGroup.countryName || fullGroup.asName || titleCode);
+
+        if (asnEl) {
+            asnEl.textContent = titleCode;
+            asnEl.classList.remove('as-summary-title');
+        }
+        if (orgEl) orgEl.textContent = titleName;
+        if (metaEl) {
+            metaEl.innerHTML = '<span class="as-detail-type-badge">Jurisdiction</span>';
+        }
+
+        if (barFill) {
+            barFill.style.width = seg.percentage.toFixed(1) + '%';
+            barFill.style.background = seg.color;
+        }
+        if (pctEl) pctEl.textContent = seg.percentage.toFixed(1) + '% of geolocated peers';
+
+        if (riskEl) {
+            riskEl.className = 'as-detail-risk';
+            if (seg.riskLevel !== 'low' && seg.riskLabel) {
+                riskEl.classList.add('as-detail-risk-' + seg.riskLevel);
+                riskEl.textContent = seg.riskLabel;
+            } else {
+                riskEl.textContent = '';
+            }
+        }
+
+        var bodyEl = panelEl.querySelector('.as-detail-body');
+        if (!bodyEl) return;
+
+        var html = '';
+        html += '<div class="modal-section-title">Summary</div>';
+        html += row('Total Peers', seg.peerCount);
+        html += row('Providers', providers.length);
+        html += row('Share', seg.percentage.toFixed(1) + '%');
+
+        if (seg.isOthers && seg._othersGroups && seg._othersGroups.length > 0) {
+            html += '<div class="modal-section-title">Countries &amp; Territories</div>';
+            for (var oi = 0; oi < seg._othersGroups.length; oi++) {
+                var og = seg._othersGroups[oi];
+                var oLabel = (og.countryCode || og.asShort || '') + '  ' + (og.countryName || og.asName || og.asNumber);
+                html += interactiveRow(oLabel, og.peerCount + ' peer' + (og.peerCount !== 1 ? 's' : ''), og.peerIds, 'country-group');
+            }
+        }
+
+        if (fullGroup.connTypesList && fullGroup.connTypesList.length > 0) {
+            html += '<div class="modal-section-title">Connections</div>';
+            html += row('Inbound', seg.isOthers ? allPeers.filter(function (p) { return p.direction === 'IN'; }).length : fullGroup.inboundCount);
+            html += row('Outbound', seg.isOthers ? allPeers.filter(function (p) { return p.direction !== 'IN'; }).length : fullGroup.outboundCount);
+            for (var cti = 0; cti < fullGroup.connTypesList.length; cti++) {
+                var ctItem = fullGroup.connTypesList[cti];
+                var ctLabel = CONN_TYPE_LABELS[ctItem.type] || ctItem.type;
+                html += interactiveRow(ctLabel, ctItem.count, ctItem.peers.map(function (p) { return p.id; }), 'conntype');
+            }
+        }
+
+        html += '<div class="modal-section-title">Performance</div>';
+        html += row('Avg Duration', fullGroup.avgDurationFmt || '\u2014');
+        html += row('Avg Ping', fullGroup.avgPingMs > 0 ? Math.round(fullGroup.avgPingMs) + 'ms' : '\u2014');
+        html += row('Data Sent', fullGroup.totalBytesSentFmt || fmtBytes(0));
+        html += row('Data Recv', fullGroup.totalBytesRecvFmt || fmtBytes(0));
+
+        if (providers.length > 0) {
+            html += '<div class="modal-section-title">Providers</div>';
+            for (var pi = 0; pi < providers.length; pi++) {
+                var prov = providers[pi];
+                var pName = prov.name;
+                if (pName.length > 24) pName = pName.substring(0, 23) + '\u2026';
+                html += interactiveRow(prov.asNumber + ' \u00b7 ' + pName, prov.peerCount + ' peer' + (prov.peerCount !== 1 ? 's' : ''), prov.peerIds, 'country-provider');
+            }
+        }
+
+        if (fullGroup.versions && fullGroup.versions.length > 0) {
+            html += '<div class="modal-section-title">Software</div>';
+            for (var vi = 0; vi < fullGroup.versions.length; vi++) {
+                html += interactiveRow(fullGroup.versions[vi].subver, fullGroup.versions[vi].count + ' peer' + (fullGroup.versions[vi].count !== 1 ? 's' : ''), fullGroup.versions[vi].peers.map(function (p) { return p.id; }), 'software');
+            }
+        }
+
+        if (fullGroup.servicesCombos && fullGroup.servicesCombos.length > 0) {
+            html += '<div class="modal-section-title">Services</div>';
+            for (var si = 0; si < fullGroup.servicesCombos.length; si++) {
+                html += interactiveRow(fullGroup.servicesCombos[si].abbrev, fullGroup.servicesCombos[si].count + ' peer' + (fullGroup.servicesCombos[si].count !== 1 ? 's' : ''), fullGroup.servicesCombos[si].peers.map(function (p) { return p.id; }), 'services');
+            }
+        }
+
+        bodyEl.innerHTML = html;
+        bodyEl.scrollTop = 0;
+        attachInteractiveRowHandlers(bodyEl, seg);
+        attachPanelBlankClickHandler(bodyEl);
+
+        panelEl.classList.remove('hidden');
+        void panelEl.offsetWidth;
+        panelEl.classList.add('visible');
+        document.body.classList.add('as-panel-open');
+        document.body.classList.add('panel-focus-as');
+        document.body.classList.remove('panel-focus-peers');
+    }
+
     function openPanel(asNum) {
         if (!panelEl) return;
+        if (isCountryLens()) {
+            openCountryPanel(asNum);
+            return;
+        }
         if (peerDetailActive) closePeerPopup();
         var seg = donutSegments.find(function (s) { return s.asNumber === asNum; });
         var fullGroup;
@@ -1893,6 +2220,155 @@ window.ASDiversity = (function () {
     // ═══════════════════════════════════════════════════════════
 
     /** Open the Summary Analysis panel (reuses the same #as-detail-panel) */
+    function openLensSummaryPanel() {
+        if (isCountryLens()) openCountrySummaryPanel();
+        else openSummaryPanel();
+    }
+
+    function countrySummaryRow(group) {
+        var label = (group.countryCode || group.asShort || '') + '  ' + (group.countryName || group.asName || group.asNumber);
+        return '<div class="as-detail-sub-row as-country-summary-row" data-as="' + escHtml(group.asNumber) + '">'
+             + '<span class="as-detail-sub-label">' + escHtml(label) + '</span>'
+             + '<span class="as-detail-sub-val">' + group.peerCount + 'p / ' + group.percentage.toFixed(0) + '%</span>'
+             + '</div>';
+    }
+
+    function openCountrySummaryPanel() {
+        if (!panelEl) return;
+        if (peerDetailActive) closePeerPopup();
+        var data = computeCountrySummaryData();
+
+        renderBackButton();
+
+        var asnEl = panelEl.querySelector('.as-detail-asn');
+        var orgEl = panelEl.querySelector('.as-detail-org');
+        var metaEl = panelEl.querySelector('.as-detail-meta');
+        var barFill = panelEl.querySelector('.as-detail-bar-fill');
+        var pctEl = panelEl.querySelector('.as-detail-pct');
+        var riskEl = panelEl.querySelector('.as-detail-risk');
+
+        if (asnEl) {
+            asnEl.innerHTML = '<span style="color:var(--logo-primary, #4a90d9)">PEER COUNTRY</span><br><span style="color:var(--logo-accent, #7ec8e3)">DISTRIBUTION</span> <span style="color:var(--logo-primary, #4a90d9)">SUMMARY</span>';
+            asnEl.classList.add('as-summary-title');
+        }
+        if (orgEl) {
+            orgEl.textContent = data.uniqueCountries + ' countries / territories';
+        }
+        if (metaEl) {
+            metaEl.innerHTML = '<span class="as-detail-type-badge">' + data.quality.word + '</span>';
+        }
+        var scorePct = (data.score / 10) * 100;
+        if (barFill) {
+            barFill.style.width = scorePct.toFixed(1) + '%';
+            barFill.style.background = data.score >= 8 ? 'var(--ok)' : data.score >= 6 ? 'var(--ok-bright)' : data.score >= 4 ? 'var(--warn)' : 'var(--err)';
+        }
+        if (pctEl) {
+            pctEl.textContent = 'Score: ' + data.score.toFixed(1) + ' / 10';
+            pctEl.title = buildActiveScoreTooltip(data.score);
+        }
+        if (riskEl) {
+            riskEl.className = 'as-detail-risk';
+            riskEl.textContent = '';
+        }
+
+        var bodyEl = panelEl.querySelector('.as-detail-body');
+        if (!bodyEl) return;
+
+        var html = '';
+        html += '<div class="modal-section-title" title="Distribution score based on Herfindahl-Hirschman Index (HHI). Higher score = more evenly distributed peers across countries and territories.">Score &amp; Concentration</div>';
+        html += row('Jurisdiction Score', data.score.toFixed(1) + ' / 10');
+        html += row('Quality', data.quality.word);
+        html += row('Geolocated Peers', data.totalPeers);
+        html += row('Countries', data.uniqueCountries);
+        if (data.topCountry) {
+            var topLabel = (data.topCountry.countryCode || data.topCountry.asShort || '') + '  ' + (data.topCountry.countryName || data.topCountry.asName);
+            html += row('Top Country', escHtml(topLabel) + ' (' + data.topCountry.peerCount + ')');
+        }
+
+        html += '<div class="modal-section-title" title="Click a country to inspect the providers, connection types, software, and services behind that slice.">Countries &amp; Territories</div>';
+        if (data.countries.length === 0) {
+            html += '<div class="pn-panel-empty">No country data available</div>';
+        } else {
+            for (var ci = 0; ci < data.countries.length; ci++) {
+                html += countrySummaryRow(data.countries[ci]);
+            }
+        }
+
+        bodyEl.innerHTML = html;
+        bodyEl.scrollTop = 0;
+        attachCountrySummaryRowHandlers(bodyEl);
+        attachPanelBlankClickHandler(bodyEl);
+
+        panelEl.classList.remove('hidden');
+        void panelEl.offsetWidth;
+        panelEl.classList.add('visible');
+        document.body.classList.add('as-panel-open');
+        document.body.classList.add('panel-focus-as');
+        document.body.classList.remove('panel-focus-peers');
+    }
+
+    function attachCountrySummaryRowHandlers(bodyEl) {
+        var rows = bodyEl.querySelectorAll('.as-country-summary-row');
+        for (var ri = 0; ri < rows.length; ri++) {
+            (function (rowEl) {
+                rowEl.addEventListener('mouseenter', function () {
+                    if (subTooltipPinned || peerDetailActive) return;
+                    var countryId = rowEl.dataset.as;
+                    var seg = findActiveSegmentOrGroup(countryId);
+                    if (!seg) return;
+                    highlightLegendItem(countryId);
+                    if (_filterPeerTable) _filterPeerTable(seg.peerIds);
+                    if (_dimMapPeers) _dimMapPeers(seg.peerIds);
+                    if (_drawLinesForAs) _drawLinesForAs(countryId, seg.peerIds, seg.color);
+                    if (donutFocused) {
+                        focusedHoverAs = countryId;
+                        showFocusedCenterText(countryId);
+                    }
+                });
+                rowEl.addEventListener('mouseleave', function () {
+                    if (subTooltipPinned || peerDetailActive) return;
+                    focusedHoverAs = null;
+                    clearLegendHighlight();
+                    if (summarySelected) {
+                        if (_filterPeerTable) _filterPeerTable(null);
+                        if (_dimMapPeers) _dimMapPeers(null);
+                        activateHoverAll();
+                    } else {
+                        if (_clearAsLines) _clearAsLines();
+                    }
+                    renderCenter();
+                });
+                rowEl.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    if (peerDetailActive) closePeerPopup();
+                    var countryId = rowEl.dataset.as;
+                    var seg = findActiveSegmentOrGroup(countryId);
+                    if (!seg) return;
+
+                    var scrollTop = bodyEl ? bodyEl.scrollTop : 0;
+                    panelHistory = [{ type: 'summary', scrollTop: scrollTop }];
+                    summarySelected = false;
+                    selectedAs = countryId;
+                    subFilterPeerIds = null;
+                    subFilterLabel = null;
+                    subFilterCategory = null;
+                    hideSubTooltip();
+                    hideSubSubTooltip();
+
+                    openPanel(countryId);
+                    if (_filterPeerTable) _filterPeerTable(seg.peerIds);
+                    if (_dimMapPeers) _dimMapPeers(seg.peerIds);
+                    if (_drawLinesForAs) _drawLinesForAs(countryId, seg.peerIds, seg.color);
+                    animateDonutExpand(countryId);
+                    if (containerEl) containerEl.classList.add('as-legend-visible');
+                    renderCenter();
+                    renderLegend();
+                    if (_resetMapZoom) _resetMapZoom();
+                });
+            })(rows[ri]);
+        }
+    }
+
     function openSummaryPanel() {
         if (!panelEl) return;
         if (peerDetailActive) closePeerPopup();
@@ -1910,7 +2386,7 @@ window.ASDiversity = (function () {
         var riskEl = panelEl.querySelector('.as-detail-risk');
 
         if (asnEl) {
-            asnEl.innerHTML = '<span style="color:var(--logo-primary, #4a90d9)">PEER ISP</span><br><span style="color:var(--logo-accent, #7ec8e3)">DIVERSITY</span> <span style="color:var(--logo-primary, #4a90d9)">SUMMARY</span>';
+            asnEl.innerHTML = '<span style="color:var(--logo-primary, #4a90d9)">PEER ISP</span><br><span style="color:var(--logo-accent, #7ec8e3)">DISTRIBUTION</span> <span style="color:var(--logo-primary, #4a90d9)">SUMMARY</span>';
             asnEl.classList.add('as-summary-title');
         }
         // Clickable provider count in header (no peer count)
@@ -1923,7 +2399,7 @@ window.ASDiversity = (function () {
             metaEl.innerHTML = '<span class="as-detail-type-badge">' + data.quality.word + '</span>';
         }
 
-        // Score bar (diversity score 0-10 → percentage 0-100)
+        // Score bar (distribution score 0-10 → percentage 0-100)
         var scorePct = (data.score / 10) * 100;
         var scoreTooltip = buildScoreTooltip(data.score);
         if (barFill) {
@@ -1943,9 +2419,9 @@ window.ASDiversity = (function () {
         var html = '';
 
         // ── Section 1: Score + Insights ──
-        html += '<div class="modal-section-title" title="Diversity score based on Herfindahl\u2013Hirschman Index (HHI). Higher score = more evenly distributed peers across providers.">Score &amp; Insights</div>';
-        html += '<div class="modal-row"><span class="modal-label" title="' + scoreTooltip.replace(/"/g, '&quot;') + '">Diversity Score</span><span class="modal-val">' + data.score.toFixed(1) + ' / 10</span></div>';
-        html += '<div class="modal-row"><span class="modal-label" title="Quality rating based on the diversity score">Quality</span><span class="modal-val">' + data.quality.word + '</span></div>';
+        html += '<div class="modal-section-title" title="Distribution score based on Herfindahl\u2013Hirschman Index (HHI). Higher score = more evenly distributed peers across providers.">Score &amp; Insights</div>';
+        html += '<div class="modal-row"><span class="modal-label" title="' + scoreTooltip.replace(/"/g, '&quot;') + '">Distribution Score</span><span class="modal-val">' + data.score.toFixed(1) + ' / 10</span></div>';
+        html += '<div class="modal-row"><span class="modal-label" title="Quality rating based on the distribution score">Quality</span><span class="modal-val">' + data.quality.word + '</span></div>';
         html += '<div class="modal-row"><span class="modal-label" title="Number of distinct Autonomous Systems (AS/ISPs) your peers connect through">Unique Providers</span>'
              + '<span class="modal-val as-panel-link as-all-providers-link" title="View all providers">' + data.uniqueProviders + '</span></div>';
         if (data.topProvider) {
@@ -2104,7 +2580,7 @@ window.ASDiversity = (function () {
     /** Build a compact hover summary for a set of peers */
     function buildPeerSummaryHtml(peerIds, category, label) {
         // Find the actual peer objects from the current AS group
-        var seg = selectedAs ? donutSegments.find(function (s) { return s.asNumber === selectedAs; }) : null;
+        var seg = selectedAs ? findActiveSegment(selectedAs) : null;
         var allPeers = [];
         if (seg) {
             if (seg.isOthers && seg._othersGroups) {
@@ -2114,12 +2590,12 @@ window.ASDiversity = (function () {
                     }
                 }
             } else {
-                var grp = asGroups.find(function (g) { return g.asNumber === selectedAs; });
+                var grp = findActiveGroup(selectedAs);
                 if (grp) allPeers = grp.peers;
             }
         } else if (selectedAs) {
-            // Fallback for Others sub-providers not in donutSegments
-            var grp = asGroups.find(function (g) { return g.asNumber === selectedAs; });
+            // Fallback for sub-groups not in top donut segments.
+            var grp = findActiveGroup(selectedAs);
             if (grp) allPeers = grp.peers;
         }
 
@@ -2140,12 +2616,12 @@ window.ASDiversity = (function () {
                 var found = false;
                 for (var fk in SERVICE_FLAGS) {
                     if (SERVICE_FLAGS.hasOwnProperty(fk) && SERVICE_FLAGS[fk].abbr === abbrs[ai]) {
-                        html += '<div class="as-sub-tt-flag">' + abbrs[ai] + ' = ' + SERVICE_FLAGS[fk].desc + '</div>';
+                        html += '<div class="as-sub-tt-flag">' + escHtml(abbrs[ai]) + ' = ' + escHtml(serviceFlagDescription(SERVICE_FLAGS[fk])) + '</div>';
                         found = true;
                         break;
                     }
                 }
-                if (!found) html += '<div class="as-sub-tt-flag">' + abbrs[ai] + '</div>';
+                if (!found) html += '<div class="as-sub-tt-flag">' + escHtml(abbrs[ai]) + '</div>';
             }
             html += '</div>';
         }
@@ -2592,7 +3068,7 @@ window.ASDiversity = (function () {
             for (var ai = 0; ai < abbrs.length; ai++) {
                 for (var fk in SERVICE_FLAGS) {
                     if (SERVICE_FLAGS.hasOwnProperty(fk) && SERVICE_FLAGS[fk].abbr === abbrs[ai]) {
-                        html += '<div class="as-sub-tt-flag" style="font-size:10px; color:var(--text-secondary)">' + abbrs[ai] + ' = ' + SERVICE_FLAGS[fk].desc + '</div>';
+                        html += '<div class="as-sub-tt-flag" style="font-size:10px; color:var(--text-secondary)">' + escHtml(abbrs[ai]) + ' = ' + escHtml(serviceFlagDescription(SERVICE_FLAGS[fk])) + '</div>';
                         break;
                     }
                 }
@@ -2668,7 +3144,7 @@ window.ASDiversity = (function () {
 
     /** Restore the donut visual state after a hover preview ends.
      *  Checks for active sub-filters, insights, or selections and restores appropriately
-     *  instead of blindly reverting to the default diversity score display. */
+     *  instead of blindly reverting to the default distribution score display. */
     function restoreDonutAfterPreview() {
         summaryPreviewPeerIds = null;
         summaryPreviewLabel = null;
@@ -2731,7 +3207,7 @@ window.ASDiversity = (function () {
         if (_filterPeerTable) _filterPeerTable(peerIds);
         if (_dimMapPeers) _dimMapPeers(peerIds);
         if (selectedAs && _drawLinesForAs) {
-            var color = getColorForAsNum(selectedAs);
+            var color = getColorForActiveEntity(selectedAs);
             _drawLinesForAs(selectedAs, peerIds, color);
         }
     }
@@ -2742,13 +3218,13 @@ window.ASDiversity = (function () {
         if (!donutFocused || !donutCenter) return;
         summaryPreviewPeerIds = peerIds;
         summaryPreviewLabel = label;
-        var diversityEl = donutCenter.querySelector('.as-score-diversity');
+        var distributionEl = donutCenter.querySelector('.as-score-distribution');
         var headingEl = donutCenter.querySelector('.as-score-heading');
         var scoreVal = donutCenter.querySelector('.as-score-value');
         var qualityEl = donutCenter.querySelector('.as-score-quality');
         var scoreLbl = donutCenter.querySelector('.as-score-label');
 
-        if (diversityEl) { diversityEl.style.display = 'none'; }
+        if (distributionEl) { distributionEl.style.display = 'none'; }
         if (headingEl) {
             headingEl.textContent = peerIds.length + ' PEER' + (peerIds.length !== 1 ? 'S' : '');
             headingEl.style.color = 'var(--accent)';
@@ -2844,8 +3320,8 @@ window.ASDiversity = (function () {
         if (subFilterPeerIds && subFilterPeerIds.length > 0) {
             previewProviderLines(subFilterPeerIds);
         } else if (selectedAs) {
-            var allPeerIds = getPeerIdsForAnyAs(selectedAs);
-            var color = getColorForAsNum(selectedAs);
+            var allPeerIds = getPeerIdsForActiveEntity(selectedAs);
+            var color = getColorForActiveEntity(selectedAs);
             if (_filterPeerTable) _filterPeerTable(allPeerIds);
             if (_dimMapPeers) _dimMapPeers(allPeerIds);
             if (_drawLinesForAs) _drawLinesForAs(selectedAs, allPeerIds, color);
@@ -4337,7 +4813,7 @@ window.ASDiversity = (function () {
         activateHoverAll();
 
         // Open the summary panel
-        openSummaryPanel();
+        openLensSummaryPanel();
 
         // Update donut center to show SUMMARY ANALYSIS as active
         renderCenter();
@@ -4419,7 +4895,7 @@ window.ASDiversity = (function () {
         if (_resetMapZoom) _resetMapZoom();
     }
 
-    /** Navigate back — always returns to diversity summary */
+    /** Navigate back — always returns to distribution summary */
     function navigateBack() {
         // Close any open map peer tooltip when navigating back
         if (_hideMapTooltip) _hideMapTooltip();
@@ -4427,7 +4903,7 @@ window.ASDiversity = (function () {
         // Close Others popup if open
         if (othersListOpen) closeOthersListInDonut();
 
-        // Always go back to diversity summary (clear all state)
+        // Always go back to distribution summary (clear all state)
         activeNetworkPanel = null;
         peerDetailActive = false;
         selectedAs = null;
@@ -4443,7 +4919,7 @@ window.ASDiversity = (function () {
 
         if (donutFocused) {
             summarySelected = true;
-            openSummaryPanel();
+            openLensSummaryPanel();
             animateDonutRevert();
             activateHoverAll();
             if (_filterPeerTable) _filterPeerTable(null);
@@ -4503,7 +4979,7 @@ window.ASDiversity = (function () {
             // Return to summary view
             summarySelected = true;
             panelHistory = [];
-            openSummaryPanel();
+            openLensSummaryPanel();
             if (_filterPeerTable) _filterPeerTable(null);
             if (_dimMapPeers) _dimMapPeers(null);
             activateHoverAll();
@@ -4601,11 +5077,11 @@ window.ASDiversity = (function () {
         if (_dimMapPeers) _dimMapPeers(peerIds);
 
         // Draw lines for sub-filtered peers
-        var seg = selectedAs ? donutSegments.find(function (s) { return s.asNumber === selectedAs; }) : null;
+        var seg = selectedAs ? findActiveSegment(selectedAs) : null;
         if (!seg && selectedAs) {
-            var grp = asGroups.find(function (g) { return g.asNumber === selectedAs; });
+            var grp = findActiveGroup(selectedAs);
             if (grp) {
-                var othersSeg = donutSegments.find(function (s) { return s.isOthers; });
+                var othersSeg = getActiveSegments().find(function (s) { return s.isOthers; });
                 seg = { asNumber: selectedAs, peerIds: grp.peerIds, color: othersSeg ? othersSeg.color : '#58a6ff' };
             }
         }
@@ -4641,11 +5117,11 @@ window.ASDiversity = (function () {
         hideSubTooltip();
         // Restore to full AS filter
         if (selectedAs) {
-            var seg = donutSegments.find(function (s) { return s.asNumber === selectedAs; });
+            var seg = findActiveSegment(selectedAs);
             if (!seg) {
-                var grp = asGroups.find(function (g) { return g.asNumber === selectedAs; });
+                var grp = findActiveGroup(selectedAs);
                 if (grp) {
-                    var othersSeg = donutSegments.find(function (s) { return s.isOthers; });
+                    var othersSeg = getActiveSegments().find(function (s) { return s.isOthers; });
                     seg = { asNumber: selectedAs, peerIds: grp.peerIds, color: othersSeg ? othersSeg.color : '#58a6ff' };
                 }
             }
@@ -4669,7 +5145,7 @@ window.ASDiversity = (function () {
      *  This allows sub-filters to survive data refreshes — new peers matching the
      *  criteria get included, disconnected peers drop out. */
     function findPeerIdsByCategoryLabel(seg, category, label) {
-        var fullGroup = seg.isOthers ? seg : asGroups.find(function (g) { return g.asNumber === seg.asNumber; });
+        var fullGroup = seg.isOthers ? seg : findActiveGroup(seg.asNumber);
         if (!fullGroup) return null;
 
         if (category === 'software' && fullGroup.versions) {
@@ -4728,6 +5204,24 @@ window.ASDiversity = (function () {
                     return g.peerIds;
                 }
             }
+        } else if (category === 'country-group' && seg.isOthers && seg._othersGroups) {
+            for (var i = 0; i < seg._othersGroups.length; i++) {
+                var cg = seg._othersGroups[i];
+                var cLabel = (cg.countryCode || cg.asShort || '') + '  ' + (cg.countryName || cg.asName || cg.asNumber);
+                if (cLabel === label) {
+                    return cg.peerIds;
+                }
+            }
+        } else if (category === 'country-provider' && fullGroup.peers) {
+            var providers = aggregateProvidersForPeers(fullGroup.peers);
+            for (var i = 0; i < providers.length; i++) {
+                var prov = providers[i];
+                var pName = prov.name;
+                if (pName.length > 24) pName = pName.substring(0, 23) + '\u2026';
+                if (prov.asNumber + ' \u00b7 ' + pName === label) {
+                    return prov.peerIds;
+                }
+            }
         }
         return null;
     }
@@ -4739,16 +5233,16 @@ window.ASDiversity = (function () {
     /** Check if an AS number belongs to an Others sub-provider (not in top-8 donut segments) */
     function isOthersSubProvider(asNum) {
         if (!asNum) return false;
-        var inDonut = donutSegments.find(function (s) { return s.asNumber === asNum; });
+        var inDonut = findActiveSegment(asNum);
         if (inDonut) return false;
-        // Check if it exists in asGroups (it's a real provider, just not top-8)
-        var grp = asGroups.find(function (g) { return g.asNumber === asNum; });
+        // Check if it exists in the active groups (real item, just not top-8)
+        var grp = findActiveGroup(asNum);
         return !!grp;
     }
 
     /** Go back from an Others sub-provider to the Others segment with popup open */
     function backToOthersList() {
-        var othersSeg = donutSegments.find(function (s) { return s.isOthers; });
+        var othersSeg = getActiveSegments().find(function (s) { return s.isOthers; });
         if (!othersSeg) return;
         // Clear sub-filters
         subFilterPeerIds = null;
@@ -4784,26 +5278,10 @@ window.ASDiversity = (function () {
      *  Handles multi-line display for long names with dashes. */
     function showFocusedCenterText(asNum) {
         if (!donutCenter) return;
-        var seg = donutSegments.find(function (s) { return s.asNumber === asNum; });
-        // Fallback for Others sub-providers not in donutSegments
-        if (!seg) {
-            var grp = asGroups.find(function (g) { return g.asNumber === asNum; });
-            if (grp) {
-                var othersSeg = donutSegments.find(function (s) { return s.isOthers; });
-                seg = {
-                    asNumber: grp.asNumber,
-                    asName: grp.asName,
-                    asShort: grp.asShort,
-                    peerCount: grp.peerCount,
-                    percentage: grp.percentage,
-                    color: othersSeg ? othersSeg.color : '#58a6ff',
-                    isOthers: false,
-                };
-            }
-        }
+        var seg = findActiveSegmentOrGroup(asNum);
         if (!seg) return;
 
-        var diversityEl = donutCenter.querySelector('.as-score-diversity');
+        var distributionEl = donutCenter.querySelector('.as-score-distribution');
         var headingEl = donutCenter.querySelector('.as-score-heading');
         var scoreVal = donutCenter.querySelector('.as-score-value');
         var qualityEl = donutCenter.querySelector('.as-score-quality');
@@ -4811,15 +5289,15 @@ window.ASDiversity = (function () {
 
         // Show "← Others" back link for sub-providers, else "ISP" label
         var isSubProv = isOthersSubProvider(asNum);
-        if (diversityEl) {
+        if (distributionEl) {
             if (isSubProv) {
-                diversityEl.innerHTML = '<span class="as-others-back-link">\u2190 Others</span>';
-                diversityEl.style.color = '';
+                distributionEl.innerHTML = '<span class="as-others-back-link">\u2190 Others</span>';
+                distributionEl.style.color = '';
             } else {
-                diversityEl.textContent = seg.isOthers ? 'Bucket:' : 'ISP';
-                diversityEl.style.color = 'var(--logo-primary)';
+                distributionEl.textContent = seg.isOthers ? 'Bucket:' : getActiveEntityKind();
+                distributionEl.style.color = 'var(--logo-primary)';
             }
-            diversityEl.style.display = '';
+            distributionEl.style.display = '';
         }
 
         // Hide the heading row — peer count moves to bottom label
@@ -4839,7 +5317,7 @@ window.ASDiversity = (function () {
             scoreVal.title = (seg.asName || seg.asNumber) + '\n' + seg.peerCount + ' peers (' + seg.percentage.toFixed(1) + '%)';
         }
         if (qualityEl) {
-            qualityEl.textContent = seg.asNumber === 'Others' ? (seg.asName || '') : seg.asNumber;
+            qualityEl.textContent = seg.asNumber === 'Others' ? (seg.asName || '') : (isCountryLens() ? (seg.countryCode || '') : seg.asNumber);
             qualityEl.className = 'as-score-quality';
             qualityEl.style.color = seg.color;
         }
@@ -4856,7 +5334,7 @@ window.ASDiversity = (function () {
      *  Uses title-matching font (Cinzel 15px uppercase) to stay inside donut hole. */
     function showLegendHoverCenterText(asNum) {
         if (!donutCenter) return;
-        var seg = donutSegments.find(function (s) { return s.asNumber === asNum; });
+        var seg = findActiveSegment(asNum);
         if (!seg) return;
 
         // Disable pointer-events on center so it doesn't steal hover from segments
@@ -4864,33 +5342,34 @@ window.ASDiversity = (function () {
 
         // Determine rank (1-based position in donutSegments, excluding Others)
         var rank = 0;
-        for (var i = 0; i < donutSegments.length; i++) {
-            if (!donutSegments[i].isOthers) {
+        var segments = getActiveSegments();
+        for (var i = 0; i < segments.length; i++) {
+            if (!segments[i].isOthers) {
                 rank++;
-                if (donutSegments[i].asNumber === asNum) break;
+                if (segments[i].asNumber === asNum) break;
             }
         }
 
-        var diversityEl = donutCenter.querySelector('.as-score-diversity');
+        var distributionEl = donutCenter.querySelector('.as-score-distribution');
         var headingEl = donutCenter.querySelector('.as-score-heading');
         var scoreVal = donutCenter.querySelector('.as-score-value');
         var qualityEl = donutCenter.querySelector('.as-score-quality');
         var scoreLbl = donutCenter.querySelector('.as-score-label');
 
         // Top line: "Rank #N" or "Bucket:" for Others
-        if (diversityEl) {
+        if (distributionEl) {
             if (seg.isOthers) {
-                diversityEl.textContent = 'Bucket:';
+                distributionEl.textContent = 'Bucket:';
             } else {
-                diversityEl.textContent = 'Rank #' + rank;
+                distributionEl.textContent = 'Rank #' + rank;
             }
-            diversityEl.style.color = '#d4a017';
-            diversityEl.style.display = '';
+            distributionEl.style.color = '#d4a017';
+            distributionEl.style.display = '';
         }
 
         // Second line: "ISP" label
         if (headingEl) {
-            headingEl.textContent = seg.isOthers ? '' : 'ISP';
+            headingEl.textContent = seg.isOthers ? '' : getActiveEntityKind();
             headingEl.style.color = 'var(--logo-primary)';
             headingEl.style.display = seg.isOthers ? 'none' : '';
         }
@@ -4907,7 +5386,7 @@ window.ASDiversity = (function () {
 
         // AS number
         if (qualityEl) {
-            qualityEl.textContent = seg.asNumber === 'Others' ? (seg.asName || '') : seg.asNumber;
+            qualityEl.textContent = seg.asNumber === 'Others' ? (seg.asName || '') : (isCountryLens() ? (seg.countryCode || '') : seg.asNumber);
             qualityEl.className = 'as-score-quality';
             qualityEl.style.color = seg.color;
         }
@@ -4928,7 +5407,7 @@ window.ASDiversity = (function () {
     /** Show scrollable Others provider list as a floating popup to the right of the donut.
      *  Each item is hoverable (preview lines) and clickable (opens provider panel). */
     function showOthersListInDonut() {
-        var othersSeg = donutSegments.find(function (s) { return s.isOthers; });
+        var othersSeg = getActiveSegments().find(function (s) { return s.isOthers; });
         if (!othersSeg || !othersSeg._othersGroups) return;
 
         othersListOpen = true;
@@ -4945,7 +5424,7 @@ window.ASDiversity = (function () {
         // Header
         var header = document.createElement('div');
         header.className = 'as-others-popup-header';
-        header.textContent = 'Others (' + othersSeg._othersGroups.length + ' providers)';
+        header.textContent = 'Others (' + othersSeg._othersGroups.length + (isCountryLens() ? ' countries)' : ' providers)');
         popup.appendChild(header);
 
         // Scrollable list
@@ -4967,7 +5446,7 @@ window.ASDiversity = (function () {
                 countSpan.textContent = g.peerCount;
                 item.appendChild(nameSpan);
                 item.appendChild(countSpan);
-                item.title = g.asNumber + ' \u00b7 ' + (g.asName || g.asShort || '') + ' \u00b7 ' + g.peerCount + ' peer' + (g.peerCount !== 1 ? 's' : '');
+                item.title = (isCountryLens() ? (g.countryCode || '') : g.asNumber) + ' \u00b7 ' + (g.asName || g.asShort || '') + ' \u00b7 ' + g.peerCount + ' peer' + (g.peerCount !== 1 ? 's' : '');
 
                 // Hover: preview lines and donut center for this provider's peers
                 item.addEventListener('mouseenter', function () {
@@ -5003,8 +5482,18 @@ window.ASDiversity = (function () {
                         // Toggle off — go back to Others list
                         backToOthersList();
                     } else {
-                        // Select this sub-provider (keep popup open)
-                        navigateToProvider(g.asNumber);
+                        if (isCountryLens()) {
+                            selectedAs = g.asNumber;
+                            openPanel(g.asNumber);
+                            if (_filterPeerTable) _filterPeerTable(g.peerIds);
+                            if (_dimMapPeers) _dimMapPeers(g.peerIds);
+                            if (_drawLinesForAs) _drawLinesForAs(g.asNumber, g.peerIds, othersSeg.color);
+                            renderCenter();
+                            renderLegend();
+                        } else {
+                            // Select this sub-provider (keep popup open)
+                            navigateToProvider(g.asNumber);
+                        }
                         animateDonutExpand(g.asNumber);
                         updateOthersPopupHighlight();
                     }
@@ -5119,7 +5608,7 @@ window.ASDiversity = (function () {
 
         // Draw hover lines if nothing is selected, or if summary is selected (temporary override)
         if (!selectedAs) {
-            var seg = donutSegments.find(function (s) { return s.asNumber === asNum; });
+            var seg = findActiveSegment(asNum);
             if (seg && _drawLinesForAs) {
                 _drawLinesForAs(asNum, seg.peerIds, seg.color);
                 if (_filterPeerTable) _filterPeerTable(seg.peerIds);
@@ -5196,10 +5685,11 @@ window.ASDiversity = (function () {
         if (containerEl) containerEl.classList.add('as-all-hovered');
         if (containerEl) containerEl.classList.add('as-legend-visible');
         // Build groups array and draw all lines
-        if (_drawLinesForAllAs && donutSegments.length > 0) {
+        var segments = getActiveSegments();
+        if (_drawLinesForAllAs && segments.length > 0) {
             var groups = [];
-            for (var i = 0; i < donutSegments.length; i++) {
-                var seg = donutSegments[i];
+            for (var i = 0; i < segments.length; i++) {
+                var seg = segments[i];
                 if (seg.peerIds && seg.peerIds.length > 0) {
                     groups.push({ asNum: seg.asNumber, peerIds: seg.peerIds, color: seg.color });
                 }
@@ -5276,7 +5766,7 @@ window.ASDiversity = (function () {
             hideSubTooltip();
             if (othersListOpen) closeOthersListInDonut();
             selectedAs = asNum;
-            var seg = donutSegments.find(function (s) { return s.asNumber === asNum; });
+            var seg = findActiveSegment(asNum);
             if (seg) {
                 openPanel(asNum);
                 if (_filterPeerTable) _filterPeerTable(seg.peerIds);
@@ -5387,7 +5877,7 @@ window.ASDiversity = (function () {
                 }
                 summarySelected = true;
                 panelHistory = [];
-                openSummaryPanel();
+                openLensSummaryPanel();
                 if (_filterPeerTable) _filterPeerTable(null);
                 if (_dimMapPeers) _dimMapPeers(null);
                 activateHoverAll();
@@ -5786,7 +6276,7 @@ window.ASDiversity = (function () {
         html += '<div class="peer-popup-section-title">Software</div>';
         html += peerDetailRow('Version', peer.subver || '\u2014');
         html += peerDetailRow('Protocol', peer.version || '\u2014');
-        html += peerDetailRow('Services', expandServiceFlags(peer.services_abbrev || ''));
+        html += peerDetailRow('Services', renderServiceFlagList(peer.services_abbrev || ''), true);
         html += peerDetailRow('Start Height', peer.startingheight || '\u2014');
         html += peerDetailRow('Synced Hdrs', peer.synced_headers || '\u2014');
         html += peerDetailRow('Synced Blks', peer.synced_blocks || '\u2014');
@@ -6010,13 +6500,13 @@ window.ASDiversity = (function () {
     /** Show peer ID and provider in donut center */
     function showPeerInDonutCenter(peer, color) {
         if (!donutCenter) return;
-        var diversityEl = donutCenter.querySelector('.as-score-diversity');
+        var distributionEl = donutCenter.querySelector('.as-score-distribution');
         var headingEl = donutCenter.querySelector('.as-score-heading');
         var scoreVal = donutCenter.querySelector('.as-score-value');
         var qualityEl = donutCenter.querySelector('.as-score-quality');
         var scoreLbl = donutCenter.querySelector('.as-score-label');
 
-        if (diversityEl) diversityEl.style.display = 'none';
+        if (distributionEl) distributionEl.style.display = 'none';
         if (headingEl) {
             headingEl.textContent = 'PEER #' + peer.id;
             headingEl.style.color = color;
@@ -6051,38 +6541,117 @@ window.ASDiversity = (function () {
         return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
 
-    /** Expand service flag abbreviations to full descriptions */
-    function expandServiceFlags(abbrev) {
+    function serviceFlagFromAbbr(abbr) {
+        for (var key in SERVICE_FLAGS) {
+            if (Object.prototype.hasOwnProperty.call(SERVICE_FLAGS, key) && SERVICE_FLAGS[key].abbr === abbr) {
+                return SERVICE_FLAGS[key];
+            }
+        }
+        return null;
+    }
+
+    /** Render service flag abbreviations as compact detail rows */
+    function renderServiceFlagList(abbrev) {
         if (!abbrev || abbrev === '\u2014') return '\u2014';
         var flags = abbrev.split(/\s+/);
-        var expanded = [];
+        var html = '<div class="service-flag-list">';
         for (var i = 0; i < flags.length; i++) {
             var flag = flags[i].trim();
-            var found = false;
-            for (var key in SERVICE_FLAGS) {
-                if (SERVICE_FLAGS[key].abbr === flag) {
-                    expanded.push(SERVICE_FLAGS[key].desc);
-                    found = true;
-                    break;
-                }
-            }
-            if (!found) expanded.push(flag);
+            if (!flag) continue;
+            var details = serviceFlagFromAbbr(flag);
+            var label = details ? details.label : 'Unknown service flag';
+            var rpc = details ? details.rpc : flag;
+            var title = details ? serviceFlagDescription(details) : flag;
+            html += '<div class="service-flag-row" title="' + escHtml(title) + '">'
+                + '<span class="service-flag-abbr">' + escHtml(flag) + '</span>'
+                + '<span class="service-flag-label">' + escHtml(label) + '</span>'
+                + '<span class="service-flag-rpc">' + escHtml(rpc) + '</span>'
+                + '</div>';
         }
-        return expanded.join('<br>');
+        html += '</div>';
+        return html;
     }
 
     // ═══════════════════════════════════════════════════════════
     // PUBLIC API — Called by app.js
     // ═══════════════════════════════════════════════════════════
 
+    function updateLensChrome() {
+        if (containerEl) {
+            containerEl.dataset.lens = activeDistributionLens;
+        }
+        if (titleEl) {
+            if (isCountryLens()) {
+                titleEl.innerHTML = '<span class="as-title-peer">Peer</span> <span class="as-title-provider">Countries</span><span class="as-title-subtitle" id="as-title-subtitle">(jurisdiction risk)</span>';
+                titleEl.title = 'Country and territory peer distribution analysis';
+            } else {
+                titleEl.innerHTML = '<span class="as-title-peer">Peer</span> <span class="as-title-provider">Service Providers</span><span class="as-title-subtitle" id="as-title-subtitle">(IPv4/IPv6)</span>';
+                titleEl.title = 'Autonomous System Peer Distribution Analysis';
+            }
+        }
+        if (!lensToggleEl) return;
+        var buttons = lensToggleEl.querySelectorAll('.as-lens-btn');
+        for (var i = 0; i < buttons.length; i++) {
+            var active = buttons[i].dataset.lens === activeDistributionLens;
+            buttons[i].classList.toggle('active', active);
+            buttons[i].setAttribute('aria-selected', active ? 'true' : 'false');
+        }
+    }
+
+    function clearSelectionForLensSwitch() {
+        selectedAs = null;
+        hoveredAs = null;
+        hoveredAll = false;
+        focusedHoverAs = null;
+        summarySelected = false;
+        activeNetworkPanel = null;
+        legendFocusAs = null;
+        panelHistory = [];
+        subFilterPeerIds = null;
+        subFilterLabel = null;
+        subFilterCategory = null;
+        insightActiveAsNum = null;
+        insightActiveData = null;
+        insightActiveType = null;
+        peerDetailActive = false;
+        if (othersListOpen) closeOthersListInDonut();
+        hideSubTooltip();
+        hideSubSubTooltip();
+        hideInsightRect();
+        closePanel();
+        deactivateHoverAll();
+        stopDonutAnimation();
+        if (_filterPeerTable) _filterPeerTable(null);
+        if (_dimMapPeers) _dimMapPeers(null);
+        if (_clearAsLines) _clearAsLines();
+        if (containerEl) containerEl.classList.remove('as-legend-visible');
+    }
+
+    function setDistributionLens(lens) {
+        if (lens !== 'provider' && lens !== 'country') return;
+        if (activeDistributionLens === lens) return;
+        var wasFocused = donutFocused;
+        clearSelectionForLensSwitch();
+        activeDistributionLens = lens;
+        updateLensChrome();
+        renderDonut();
+        renderCenter();
+        renderLegend();
+        if (wasFocused) {
+            selectSummary();
+            renderLegend();
+        }
+    }
+
     /** Initialize — cache DOM refs and attach events. Call once on page load. */
     function init() {
-        containerEl = document.getElementById('as-diversity-container');
+        containerEl = document.getElementById('as-distribution-container');
         titleEl = document.getElementById('as-donut-title');
         donutWrapEl = document.getElementById('as-donut-wrap');
         donutSvg = document.getElementById('as-donut');
         donutCenter = document.getElementById('as-donut-center');
         legendEl = document.getElementById('as-legend');
+        lensToggleEl = document.getElementById('as-lens-toggle');
         panelEl = document.getElementById('as-detail-panel');
         loadingEl = containerEl ? containerEl.querySelector('.as-loading') : null;
         focusedCloseBtn = document.getElementById('as-focused-close');
@@ -6123,6 +6692,16 @@ window.ASDiversity = (function () {
             });
         }
 
+        if (lensToggleEl) {
+            var lensButtons = lensToggleEl.querySelectorAll('.as-lens-btn');
+            for (var lbi = 0; lbi < lensButtons.length; lbi++) {
+                lensButtons[lbi].addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    setDistributionLens(e.currentTarget.dataset.lens);
+                });
+            }
+        }
+
         // Close button on detail panel — exit fully
         var closeBtn = panelEl ? panelEl.querySelector('.as-detail-close') : null;
         if (closeBtn) {
@@ -6157,6 +6736,7 @@ window.ASDiversity = (function () {
             }
         });
 
+        updateLensChrome();
     }
 
     /** Register integration callbacks from app.js */
@@ -6196,8 +6776,11 @@ window.ASDiversity = (function () {
         }
 
         asGroups = aggregatePeers(peers);
-        diversityScore = calcDiversityScore(asGroups);
+        distributionScore = calcDistributionScore(asGroups);
         donutSegments = buildDonutSegments(asGroups);
+        countryGroups = aggregateCountryPeers(peers);
+        countryDistributionScore = calcDistributionScoreFor(countryGroups, countryTotalPeers);
+        countryDonutSegments = buildDonutSegmentsFor(countryGroups, countryTotalPeers, 'countries');
 
         // If peer detail popup is open, skip all visual re-rendering to preserve
         // the donut expansion, lines, and center text for the selected peer.
@@ -6248,7 +6831,7 @@ window.ASDiversity = (function () {
 
         // Toggle no-data state on the container
         if (containerEl) {
-            if (totalPeers === 0 && !isGeoLoading) containerEl.classList.add('no-data');
+            if (getActiveTotalPeers() === 0 && !isGeoLoading) containerEl.classList.add('no-data');
             else containerEl.classList.remove('no-data');
         }
 
@@ -6268,15 +6851,7 @@ window.ASDiversity = (function () {
             var savedCategory = subFilterCategory;
             var savedLabel = subFilterLabel;
 
-            var seg = donutSegments.find(function (s) { return s.asNumber === selectedAs; });
-            // If not in top-8 donut segments, check full asGroups (e.g. provider inside "Others" bucket)
-            if (!seg) {
-                var grp = asGroups.find(function (g) { return g.asNumber === selectedAs; });
-                if (grp) {
-                    var othersSeg = donutSegments.find(function (s) { return s.isOthers; });
-                    seg = { asNumber: selectedAs, peerIds: grp.peerIds, color: othersSeg ? othersSeg.color : '#58a6ff', isOthers: false, _synthetic: true };
-                }
-            }
+            var seg = findActiveSegmentOrGroup(selectedAs);
             if (seg) {
                 if (subTooltipPinned || subSubTooltipPinned) {
                     // Sub-tooltip is open — DON'T rebuild panel DOM or change filters.
@@ -6360,6 +6935,18 @@ window.ASDiversity = (function () {
         // sub-tooltip is pinned (that destroys pinnedSubTooltipSrc and resets state).
         // Instead, just refresh lines/filters with fresh peer data.
         if (summarySelected) {
+            if (isCountryLens()) {
+                var countrySumBodyEl = panelEl ? panelEl.querySelector('.as-detail-body') : null;
+                var countrySumScroll = countrySumBodyEl ? countrySumBodyEl.scrollTop : 0;
+                openCountrySummaryPanel();
+                if (countrySumBodyEl && countrySumScroll > 0) countrySumBodyEl.scrollTop = countrySumScroll;
+                if (_filterPeerTable) _filterPeerTable(null);
+                if (_dimMapPeers) _dimMapPeers(null);
+                activateHoverAll();
+                renderCenter();
+                renderLegend();
+                return;
+            }
             if (subTooltipPinned || subSubTooltipPinned) {
                 // Sub-tooltip is open — preserve DOM. Refresh lines/filters with fresh peer data.
 
@@ -6814,9 +7401,10 @@ window.ASDiversity = (function () {
         if (direct) return direct;
 
         // Second: check if this AS is inside the "Others" bucket
-        if (donutSegments) {
-            for (var i = 0; i < donutSegments.length; i++) {
-                var seg = donutSegments[i];
+        var segments = getActiveSegments();
+        if (segments) {
+            for (var i = 0; i < segments.length; i++) {
+                var seg = segments[i];
                 if (seg.isOthers && seg._othersGroups) {
                     for (var j = 0; j < seg._othersGroups.length; j++) {
                         if (seg._othersGroups[j].asNumber === asNum) {

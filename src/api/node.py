@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from runtime import AppRuntime
 
@@ -24,6 +24,13 @@ def mempool(currency: str = "USD", runtime: AppRuntime = Depends(runtime_from)):
 @router.get("/blockchain")
 def blockchain(runtime: AppRuntime = Depends(runtime_from)):
     return runtime.node.blockchain()
+
+
+@router.get("/blocks/recent")
+def recent_blocks(
+    limit: int = Query(25, ge=1, le=100), runtime: AppRuntime = Depends(runtime_from)
+):
+    return runtime.node.recent_blocks(limit)
 
 
 @router.get("/rpc-info")

@@ -1,3 +1,30 @@
+# syntax=docker/dockerfile:1
+
+FROM alpine:3.22 AS build-revision
+
+ARG BPM_BUILD_REVISION=unknown
+
+WORKDIR /source
+
+RUN --mount=target=. <<'EOF'
+set -eu
+
+revision="$(printf '%s' "${BPM_BUILD_REVISION}" | tr '[:upper:]' '[:lower:]')"
+if [ "${revision}" = "" ] || [ "${revision}" = "unknown" ]; then
+    if [ -e .git ]; then
+        apk add --no-cache git >/dev/null
+        revision="$(git rev-parse HEAD 2>/dev/null || true)"
+    fi
+    revision="$(printf '%s' "${revision}" | tr '[:upper:]' '[:lower:]')"
+fi
+
+if ! printf '%s' "${revision}" | grep -Eq '^(unknown|[0-9a-f]{7,40})$'; then
+    revision="unknown"
+fi
+
+printf '%s\n' "${revision:-unknown}" > /build-revision
+EOF
+
 FROM python:3.12-alpine3.22
 
 ARG BPM_BUILD_REVISION=unknown
@@ -10,7 +37,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     BPM_DATA_DIR=/var/lib/bitcoin-peer-map \
-    BPM_BUILD_REVISION=${BPM_BUILD_REVISION}
+    BPM_BUILD_REVISION=${BPM_BUILD_REVISION} \
+    BPM_BUILD_REVISION_FILE=/app/build-revision
 
 RUN addgroup -S -g 10001 bpm \
     && adduser -S -D -H -u 10001 -h /app -G bpm bpm
@@ -24,6 +52,7 @@ RUN python -m pip install --no-cache-dir --requirement requirements.txt \
     && chown -R bpm:bpm /var/lib/bitcoin-peer-map
 
 COPY --chown=bpm:bpm src ./src
+COPY --from=build-revision --chown=bpm:bpm /build-revision ./build-revision
 
 USER bpm
 

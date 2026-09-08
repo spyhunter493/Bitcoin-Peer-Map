@@ -345,6 +345,17 @@ body.map-camera-moving .peer-panel-body {
     position: relative;
     cursor: default;
 }
+.fd-net-chip.has-local-address::after {
+    content: "";
+    position: absolute;
+    top: 4px;
+    right: 3px;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--title-accent);
+    box-shadow: 0 0 5px rgba(232, 197, 71, 0.8);
+}
 .fd-net-dot {
     width: 7px;
     height: 7px;
@@ -404,6 +415,13 @@ body.map-camera-moving .peer-panel-body {
 .fd-tooltip .fdt-row { color: var(--text-secondary); font-size: 11px; }
 .fd-tooltip .fdt-row-muted { color: var(--text-muted); font-size: 10px; font-style: italic; margin-top: 4px; }
 .fd-tooltip .fdt-warn { color: var(--warn); font-size: 10px; margin-top: 4px; line-height: 1.4; }
+.fd-tooltip .node-address {
+    display: inline-block;
+    max-width: 210px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: bottom;
+}
 
 /* ==========================================================
    5. PULSE ANIMATIONS — number change effects
@@ -615,6 +633,15 @@ body.map-camera-moving .peer-panel-body {
     min-width: 60px;
     text-align: right;
 }
+.mo-p2p-row {
+    gap: 8px;
+}
+.mo-p2p-value {
+    min-width: 72px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    text-align: right;
+}
 /* HUD solid backgrounds — toggled via body.hud-solid class */
 body.hud-solid .map-overlay {
     background: rgba(var(--surface-overlay-rgb), 0.72);
@@ -653,7 +680,7 @@ body.theme-light .ro-rate {
 /* Map controls — below system stats on the left */
 .map-controls {
     position: fixed;
-    top: 210px;
+    top: 250px;
     left: 18px;
     transform: none;
     z-index: 290;
@@ -686,7 +713,7 @@ body.donut-focused .map-overlay {
 
 /* Map controls: adjust for focused mode stats shift */
 body.donut-focused .map-controls {
-    top: 206px;
+    top: 246px;
 }
 
 /* ==========================================================
@@ -713,6 +740,13 @@ body.donut-focused .map-controls {
 .net-popover .pop-row { display: flex; justify-content: space-between; padding: 1px 0; gap: 12px; }
 .net-popover .pop-label { color: var(--text-muted); font-size: 9px; text-transform: uppercase; letter-spacing: 0.6px; }
 .net-popover .pop-val { color: var(--text-secondary); font-weight: 600; }
+.net-popover .node-address {
+    display: block;
+    min-width: 0;
+    max-width: 190px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
 
 /* ==========================================================
    8. ANTARCTICA MODAL
@@ -1341,6 +1375,79 @@ body.donut-focused .map-controls {
     border-top: 1px solid rgba(88, 166, 255, 0.06);
 }
 .modal-section-title:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+
+.modal-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 8px;
+    margin: 6px 0 10px;
+}
+.modal-summary-item {
+    min-width: 0;
+    padding: 7px 9px;
+    background: rgba(88, 166, 255, 0.06);
+    border: 1px solid rgba(88, 166, 255, 0.12);
+    border-radius: 6px;
+}
+.modal-summary-label {
+    display: block;
+    color: var(--text-secondary);
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+}
+.modal-summary-val {
+    display: block;
+    margin-top: 3px;
+    color: var(--text-primary);
+    font-size: 13px;
+    font-weight: 700;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.modal-table-wrap {
+    margin-top: 6px;
+    overflow-x: auto;
+    border: 1px solid rgba(88, 166, 255, 0.12);
+    border-radius: 6px;
+}
+.modal-data-table {
+    width: 100%;
+    min-width: 720px;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 11px;
+}
+.modal-data-table th,
+.modal-data-table td {
+    padding: 7px 9px;
+    border-bottom: 1px solid rgba(88, 166, 255, 0.08);
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.modal-data-table th {
+    color: var(--text-secondary);
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    background: rgba(88, 166, 255, 0.05);
+}
+.modal-data-table tr:last-child td { border-bottom: none; }
+.modal-data-table td.num { text-align: right; }
+.modal-link {
+    color: var(--accent);
+    text-decoration: none;
+}
+.modal-link:hover { color: #8ac7ff; }
+.modal-mono {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+}
 
 /* Info rows inside modals */
 .info-row {
@@ -2502,6 +2609,33 @@ body.donut-focused .map-controls {
     .topbar-center {
         display: none;
     }
+    .handle-row1 {
+        gap: 4px;
+        padding-inline: 8px;
+        overflow-x: auto;
+        overscroll-behavior-inline: contain;
+        scrollbar-width: thin;
+    }
+    .handle-row1::-webkit-scrollbar {
+        height: 4px;
+    }
+    .handle-show-label {
+        display: none;
+    }
+    .handle-nets {
+        flex-shrink: 0;
+        gap: 2px;
+    }
+    .handle-nets .net-badge {
+        gap: 2px;
+        padding-inline: 6px;
+        font-size: 11px;
+    }
+    .handle-btn {
+        flex-shrink: 0;
+        padding-inline: 4px;
+        font-size: 10px;
+    }
 }
 
 @media (max-width: 720px) {
@@ -2516,5 +2650,8 @@ body.donut-focused .map-controls {
     .revision,
     .topbar-right > :not(.topbar-dots):not(.topbar-gear) {
         display: none !important;
+    }
+    .handle-title {
+        display: none;
     }
 }
