@@ -44,6 +44,7 @@ function loadScript(sandbox, path) {
     loadScript(sandbox, 'src/static/js/features/world-map.js');
     loadScript(sandbox, 'src/static/js/features/distribution-data.js');
     loadScript(sandbox, 'src/static/js/features/distribution-peer-detail.js');
+    loadScript(sandbox, 'src/static/js/features/distribution-network-panel.js');
 
     assert.strictEqual(typeof sandbox.window.BPMDisplaySettings.create, 'function');
 
@@ -203,6 +204,44 @@ function loadScript(sandbox, path) {
     assert.strictEqual(countrySummary.uniqueCountries, 2);
     assert.strictEqual(countrySummary.totalPeers, 3);
     assert.strictEqual(countrySummary.topCountry.countryCode, 'NZ');
+
+    const networkPanel = sandbox.window.BPMDistributionNetworkPanel;
+    const ipv4Panel = networkPanel.computeNetworkPanelData(peers, 'ipv4', segments);
+    assert.strictEqual(ipv4Panel.network.label, 'IPv4');
+    assert.strictEqual(ipv4Panel.peerCount, 2);
+    assert.strictEqual(ipv4Panel.inboundCount, 2);
+    assert.strictEqual(ipv4Panel.outboundCount, 0);
+    assert.strictEqual(ipv4Panel.averagePing, 20);
+    assert.strictEqual(ipv4Panel.totalBytesSent, 1024);
+    assert.strictEqual(ipv4Panel.totalBytesReceived, 2048);
+    assert.strictEqual(ipv4Panel.providers.length, 1);
+    assert.strictEqual(ipv4Panel.providerCategory.peerIds.length, 2);
+    assert.strictEqual(ipv4Panel.software[0].label, '/Satoshi:27.0/');
+
+    const ipv6Panel = networkPanel.computeNetworkPanelData(peers, 'ipv6', segments);
+    assert.strictEqual(ipv6Panel.peerCount, 1);
+    assert.strictEqual(ipv6Panel.inboundCount, 0);
+    assert.strictEqual(ipv6Panel.outboundCount, 1);
+    assert.strictEqual(ipv6Panel.averagePing, 40);
+
+    const networkPanelHtml = networkPanel.renderNetworkPanelBody(ipv4Panel);
+    assert.ok(networkPanelHtml.includes('IPv4 Connections by Provider'));
+    assert.ok(networkPanelHtml.includes('role="button"'));
+    assert.ok(networkPanelHtml.includes('tabindex="0"'));
+    assert.ok(networkPanelHtml.includes('Bytes Recv'));
+
+    const safeNetworkRow = networkPanel.renderInteractiveRow(hostile, hostile, {
+        peerIds: [1],
+        providers: [{
+            asNumber: 'AS64500',
+            name: hostile,
+            color: '#111111',
+            peerCount: 1,
+            peerIds: [1],
+        }],
+    });
+    assert.ok(safeNetworkRow.includes(escaped));
+    assert.ok(!safeNetworkRow.includes('<img'));
 
     console.log('Frontend module tests passed');
 })().catch(error => {

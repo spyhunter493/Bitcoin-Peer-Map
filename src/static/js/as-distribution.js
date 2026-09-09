@@ -161,6 +161,7 @@ window.ASDistribution = (function () {
     const fmtDuration = distributionData.fmtDuration;
     const buildDistributionGroup = distributionData.buildDistributionGroup;
     const escHtml = window.BPMModal.escapeHtml;
+    const distributionNetworkPanel = window.BPMDistributionNetworkPanel;
 
     function aggregatePeers(peers) {
         const aggregation = distributionData.aggregateProviders(peers);
@@ -309,15 +310,6 @@ window.ASDistribution = (function () {
             asNum,
             donutSegments,
             PALETTE[PALETTE.length - 1]
-        );
-    }
-
-    function aggregateSummaryByCategory(peers, getKey, getLabel) {
-        return distributionData.aggregateSummaryByCategory(
-            peers,
-            getKey,
-            getLabel,
-            donutSegments
         );
     }
 
@@ -1942,14 +1934,24 @@ window.ASDistribution = (function () {
     /** Build a summary interactive row that drills down to providers.
      *  Stores provider data in a data attribute for the click handler. */
     function summaryInteractiveRow(label, value, catData) {
-        var providersJson = JSON.stringify(catData.providers.map(function (prov) {
-            return { a: prov.asNumber, n: prov.name, c: prov.color, pc: prov.peerCount, pi: prov.peerIds };
-        })).replace(/"/g, '&quot;');
-        var peerIdsJson = JSON.stringify(catData.peerIds).replace(/"/g, '&quot;');
-        return '<div class="as-detail-sub-row as-interactive-row as-summary-row" data-peer-ids="' + peerIdsJson + '" data-providers="' + providersJson + '" data-cat-label="' + label.replace(/"/g, '&quot;') + '">'
-             + '<span class="as-detail-sub-label">' + label + '</span>'
-             + '<span class="as-detail-sub-val">' + value + '</span>'
-             + '</div>';
+        var providersJson = escHtml(JSON.stringify(catData.providers.map(function (prov) {
+            return {
+                a: prov.asNumber,
+                n: prov.name,
+                c: prov.color,
+                pc: prov.peerCount,
+                pi: prov.peerIds
+            };
+        })));
+        var peerIdsJson = escHtml(JSON.stringify(catData.peerIds));
+        var safeLabel = escHtml(label);
+        var safeValue = escHtml(value);
+        return '<div class="as-detail-sub-row as-interactive-row as-summary-row" ' +
+            'role="button" tabindex="0" aria-label="' + safeLabel + ': ' + safeValue + '" ' +
+            'data-peer-ids="' + peerIdsJson + '" data-providers="' + providersJson +
+            '" data-cat-label="' + safeLabel + '">' +
+            '<span class="as-detail-sub-label">' + safeLabel + '</span>' +
+            '<span class="as-detail-sub-val">' + safeValue + '</span></div>';
     }
 
     function row(label, value) {
@@ -2776,6 +2778,11 @@ window.ASDistribution = (function () {
                     showSubTooltip(html, e);
                     pinSubTooltip(rowEl);
                     attachProviderClickHandlers(document.getElementById('as-sub-tooltip'));
+                });
+                rowEl.addEventListener('keydown', function (e) {
+                    if (e.key !== 'Enter' && e.key !== ' ') return;
+                    e.preventDefault();
+                    rowEl.click();
                 });
             })(rows[ri]);
         }
@@ -5728,15 +5735,12 @@ window.ASDistribution = (function () {
             renderDonut();
             renderCenter();
             renderLegend();
-            // Update the header peer count (displayed in .as-detail-org)
-            var netKey = activeNetworkPanel;
-            var refreshPeers = lastPeersRaw.filter(function (p) {
-                return (p.network || 'ipv4') === netKey;
-            });
-            var orgRefresh = panelEl ? panelEl.querySelector('.as-detail-org') : null;
-            if (orgRefresh) {
-                orgRefresh.textContent = refreshPeers.length + ' peer' + (refreshPeers.length !== 1 ? 's' : '') + ' connected';
-            }
+            // Update the header peer count without replacing the drill-down DOM.
+            var networkRefresh = distributionNetworkPanel.refreshHeader(
+                panelEl,
+                lastPeersRaw,
+                activeNetworkPanel
+            );
             // Re-apply the correct dim/filter state: if a sub-filter is active
             // (user drilled into a country/provider/etc), preserve that narrow set.
             // Otherwise dim to the full network peer list.
@@ -5753,9 +5757,8 @@ window.ASDistribution = (function () {
                 if (_dimMapPeers) _dimMapPeers(subFilterPeerIds);
                 previewSummaryLines(subFilterPeerIds);
             } else {
-                var refreshIds = refreshPeers.map(function (p) { return p.id; });
-                if (_filterPeerTable) _filterPeerTable(refreshIds);
-                if (_dimMapPeers) _dimMapPeers(refreshIds);
+                if (_filterPeerTable) _filterPeerTable(networkRefresh.peerIds);
+                if (_dimMapPeers) _dimMapPeers(networkRefresh.peerIds);
             }
             return;
         }
@@ -6380,197 +6383,35 @@ window.ASDistribution = (function () {
         if (peerDetailActive) closePeerPopup();
 
         var isRefresh = (activeNetworkPanel === netKey);
-
-        // Enter focused mode if not already
         if (!donutFocused) {
             donutFocused = true;
             document.body.classList.add('donut-focused');
         }
 
         activeNetworkPanel = netKey;
-        var netLabel = netKey === 'ipv4' ? 'IPv4' : 'IPv6';
-        var netColor = netKey === 'ipv4' ? 'var(--net-ipv4, #e3b341)' : 'var(--net-ipv6, #f07178)';
-
-        // Filter peers to this network
-        var netPeers = lastPeersRaw.filter(function (p) {
-            return (p.network || 'ipv4') === netKey;
-        });
-
-        // Only set panel history on initial open, not on refresh
         if (!isRefresh) {
             panelHistory = [{ type: 'summary', scrollTop: 0 }];
             renderBackButton();
         }
 
-        // --- Header ---
-        var asnEl = panelEl.querySelector('.as-detail-asn');
-        var orgEl = panelEl.querySelector('.as-detail-org');
-        var metaEl = panelEl.querySelector('.as-detail-meta');
-        var barFill = panelEl.querySelector('.as-detail-bar-fill');
-        var pctEl = panelEl.querySelector('.as-detail-pct');
-        var riskEl = panelEl.querySelector('.as-detail-risk');
+        var result = distributionNetworkPanel.render({
+            panelElement: panelEl,
+            peers: lastPeersRaw,
+            segments: donutSegments,
+            networkKey: netKey,
+            isRefresh: isRefresh,
+        });
+        if (!result.bodyElement || !result.data.peerCount) return;
 
-        if (asnEl) {
-            asnEl.innerHTML = '<span style="color:' + netColor + '">' + netLabel + '</span> <span style="color:var(--logo-primary, #4a90d9)">Network</span>';
-            asnEl.classList.remove('as-summary-title');
-        }
-        if (orgEl) {
-            orgEl.textContent = netPeers.length + ' peer' + (netPeers.length !== 1 ? 's' : '') + ' connected';
-        }
-        if (metaEl) metaEl.innerHTML = '';
-        if (barFill) barFill.style.width = '0%';
-        if (pctEl) pctEl.textContent = '';
-        if (riskEl) { riskEl.className = 'as-detail-risk'; riskEl.textContent = ''; }
+        attachSummaryRowHandlers(result.bodyElement);
+        attachGridHandlers(result.bodyElement);
+        attachSummaryLinkHandlers(result.bodyElement);
+        attachPanelBlankClickHandler(result.bodyElement);
 
-        // --- Body ---
-        var bodyEl = panelEl.querySelector('.as-detail-body');
-        if (!bodyEl) return;
-        var html = '';
-
-        if (netPeers.length === 0) {
-            html += '<div class="pn-panel-empty">No ' + netLabel + ' peers connected</div>';
-            bodyEl.innerHTML = html;
-            bodyEl.scrollTop = 0;
-            showNetworkPanel();
-            return;
-        }
-
-        // ── Section 1: Stats ──
-        var inbound = 0, outbound = 0, totalPing = 0, pingCount = 0;
-        var totalBytesSent = 0, totalBytesRecv = 0;
-        for (var si = 0; si < netPeers.length; si++) {
-            var sp = netPeers[si];
-            if (sp.direction === 'IN') inbound++; else outbound++;
-            if (sp.ping_ms > 0) { totalPing += sp.ping_ms; pingCount++; }
-            totalBytesSent += (sp.bytessent || 0);
-            totalBytesRecv += (sp.bytesrecv || 0);
-        }
-        var avgPing = pingCount > 0 ? Math.round(totalPing / pingCount) : null;
-
-        html += '<div class="modal-section-title">Stats</div>';
-        html += row('Total Peers', netPeers.length);
-        html += row('Inbound', inbound);
-        html += row('Outbound', outbound);
-        if (avgPing !== null) html += row('Avg Ping', avgPing + ' ms');
-        html += row('Bytes Sent', fmtBytes(totalBytesSent));
-        html += row('Bytes Recv', fmtBytes(totalBytesRecv));
-
-        // ── Section 2: Connections by Provider — collapsed "See providers" link ──
-        // Build provider data for the drill-down sub-tooltip
-        var providerMap = {};
-        for (var ci = 0; ci < netPeers.length; ci++) {
-            var cp = netPeers[ci];
-            var cpAsNum = parseAsNumber(cp.as);
-            if (!cpAsNum) continue;
-            if (!providerMap[cpAsNum]) {
-                providerMap[cpAsNum] = {
-                    asNumber: cpAsNum,
-                    name: parseAsOrg(cp.as) || cpAsNum,
-                    color: getColorForAsNum(cpAsNum),
-                    peerCount: 0,
-                    peerIds: [],
-                    peers: []
-                };
-            }
-            providerMap[cpAsNum].peerCount++;
-            providerMap[cpAsNum].peerIds.push(cp.id);
-            providerMap[cpAsNum].peers.push(cp);
-        }
-        var npProviders = [];
-        var npProvKeys = Object.keys(providerMap);
-        for (var npk = 0; npk < npProvKeys.length; npk++) npProviders.push(providerMap[npProvKeys[npk]]);
-        npProviders.sort(function (a, b) { return b.peerCount - a.peerCount; });
-
-        // Use a single interactive row that opens the provider list (same as summary Networks rows)
-        var allNetPeerIds = netPeers.map(function (p) { return p.id; });
-        var npCatData = {
-            label: netLabel + ' Connections by Provider',
-            peerCount: netPeers.length,
-            providerCount: npProviders.length,
-            peerIds: allNetPeerIds,
-            providers: npProviders
-        };
-        html += '<div class="modal-section-title" title="' + netLabel + ' peer connections grouped by AS provider">' + netLabel + ' Connections by Provider</div>';
-        html += summaryInteractiveRow('See providers (' + npProviders.length + ')', netPeers.length + 'p / ' + npProviders.length + 'prov', npCatData);
-
-        // ── Section 3: Hosting ──
-        var hostingData = aggregateSummaryByCategory(netPeers,
-            function (p) {
-                if (p.hosting) return 'cloud';
-                if (p.proxy) return 'proxy';
-                if (p.mobile) return 'mobile';
-                return 'residential';
-            },
-            function (p, key) {
-                var labels = { 'cloud': 'Cloud / Hosting', 'proxy': 'Proxy / VPN', 'mobile': 'Mobile', 'residential': 'Residential' };
-                return labels[key] || key;
-            }
-        );
-        html += '<div class="modal-section-title" title="Peer connections grouped by hosting type">Hosting</div>';
-        for (var hi = 0; hi < hostingData.length; hi++) {
-            html += summaryInteractiveRow(hostingData[hi].label, hostingData[hi].peerCount + 'p / ' + hostingData[hi].providerCount + 'prov', hostingData[hi]);
-        }
-
-        // ── Section 4: Countries ──
-        var countryData = aggregateSummaryByCategory(netPeers,
-            function (p) { return p.countryCode || null; },
-            function (p, key) { return key + '  ' + (p.country || key); }
-        );
-        html += '<div class="modal-section-title" title="Geographic distribution of ' + netLabel + ' peers by country">Countries</div>';
-        for (var coi = 0; coi < countryData.length; coi++) {
-            html += summaryInteractiveRow(countryData[coi].label, countryData[coi].peerCount + 'p / ' + countryData[coi].providerCount + 'prov', countryData[coi]);
-        }
-
-        // ── Section 5: Software ──
-        var swData = aggregateSummaryByCategory(netPeers,
-            function (p) { return p.subver || 'Unknown'; },
-            null
-        );
-        html += '<div class="modal-section-title" title="Bitcoin Core client versions on ' + netLabel + ' peers">Software</div>';
-        for (var swi = 0; swi < swData.length; swi++) {
-            html += summaryInteractiveRow(swData[swi].label, swData[swi].peerCount + 'p / ' + swData[swi].providerCount + 'prov', swData[swi]);
-        }
-
-        // ── Section 6: Services ──
-        var svcData = aggregateSummaryByCategory(netPeers,
-            function (p) { return p.services_abbrev || '\u2014'; },
-            null
-        );
-        html += '<div class="modal-section-title" title="Service flags on ' + netLabel + ' peers">Services</div>';
-        for (var svci = 0; svci < svcData.length; svci++) {
-            html += summaryInteractiveRow(svcData[svci].label, svcData[svci].peerCount + 'p / ' + svcData[svci].providerCount + 'prov', svcData[svci]);
-        }
-
-        bodyEl.innerHTML = html;
-        if (!isRefresh) bodyEl.scrollTop = 0;
-
-        // Attach drill-down handlers (reuse summary pattern)
-        attachSummaryRowHandlers(bodyEl);
-        attachGridHandlers(bodyEl);
-        attachSummaryLinkHandlers(bodyEl);
-        attachPanelBlankClickHandler(bodyEl);
-
-        showNetworkPanel();
-
-        // Filter peer table and map to show only this network's peers
-        var netPeerIds = netPeers.map(function (p) { return p.id; });
-        if (_filterPeerTable) _filterPeerTable(netPeerIds);
-        if (_dimMapPeers) _dimMapPeers(netPeerIds);
+        if (_filterPeerTable) _filterPeerTable(result.data.peerIds);
+        if (_dimMapPeers) _dimMapPeers(result.data.peerIds);
         activateHoverAll();
-
-        // Update donut center to show network info (IPv4/IPv6 label, peer count, %)
         renderCenter();
-    }
-
-    /** Show the network panel (reuses #as-detail-panel) */
-    function showNetworkPanel() {
-        if (!panelEl) return;
-        panelEl.classList.remove('hidden');
-        void panelEl.offsetWidth;
-        panelEl.classList.add('visible');
-        document.body.classList.add('as-panel-open');
-        document.body.classList.add('panel-focus-as');
-        document.body.classList.remove('panel-focus-peers');
     }
 
     return {

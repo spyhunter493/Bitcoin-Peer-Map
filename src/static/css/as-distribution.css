@@ -968,6 +968,11 @@ body.theme-light .as-loading { color: var(--text-secondary); }
     background: rgba(88, 166, 255, 0.1);
     border-left-color: var(--accent);
 }
+.as-interactive-row:focus-visible {
+    outline: 2px solid var(--accent, #58a6ff);
+    outline-offset: 1px;
+    background: rgba(88, 166, 255, 0.1);
+}
 .as-interactive-row.sub-filter-active {
     background: rgba(88, 166, 255, 0.16);
     border-left-color: var(--accent);

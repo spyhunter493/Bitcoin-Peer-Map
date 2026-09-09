@@ -385,6 +385,57 @@ async function assertDistributionPeerDetailInteractions(page) {
     await page.waitForSelector('.peer-detail-popup', { state: 'detached' });
 }
 
+async function assertDistributionNetworkPanelInteractions(page) {
+    await page.click('.fd-net-chip[data-net="ipv4"]');
+    await page.waitForFunction(() => {
+        const panel = document.getElementById('as-detail-panel');
+        return panel?.classList.contains('visible') &&
+            panel.querySelector('.as-detail-asn')?.textContent.includes('IPv4');
+    });
+
+    const panel = await page.evaluate(() => {
+        const element = document.getElementById('as-detail-panel');
+        const firstRow = element.querySelector('.as-summary-row');
+        return {
+            heading: element.querySelector('.as-detail-asn')?.textContent.trim(),
+            peerCount: element.querySelector('.as-detail-org')?.textContent.trim(),
+            sections: Array.from(
+                element.querySelectorAll('.modal-section-title'),
+                section => section.textContent.trim()
+            ),
+            rowRole: firstRow?.getAttribute('role'),
+            rowTabIndex: firstRow?.getAttribute('tabindex'),
+        };
+    });
+    assert.strictEqual(panel.heading, 'IPv4 Network');
+    assert.match(panel.peerCount, /^\d+ peers? connected$/);
+    assert.deepStrictEqual(panel.sections, [
+        'Stats',
+        'IPv4 Connections by Provider',
+        'Hosting',
+        'Countries',
+        'Software',
+        'Services',
+    ]);
+    assert.strictEqual(panel.rowRole, 'button');
+    assert.strictEqual(panel.rowTabIndex, '0');
+
+    const firstRow = page.locator('#as-detail-panel .as-summary-row').first();
+    await firstRow.focus();
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('#as-sub-tooltip', { state: 'visible' });
+    assert.strictEqual(await firstRow.evaluate(row => row.classList.contains('sub-filter-active')), true);
+
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => (
+        document.getElementById('as-sub-tooltip')?.style.display === 'none'
+    ));
+    assert.strictEqual(await firstRow.evaluate(row => row.classList.contains('sub-filter-active')), false);
+
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('#as-detail-panel .as-detail-asn.as-summary-title');
+}
+
 async function assertAdvancedDisplaySettings(page) {
     await page.click('#topbar-gear');
     await page.waitForSelector('#display-settings-popup');
@@ -528,6 +579,7 @@ async function assertPeerControlsResponsive(browser, baseUrl) {
             }),
         });
         await assertChainTipsModal(page);
+        await assertDistributionNetworkPanelInteractions(page);
         await assertDistributionPeerDetailInteractions(page);
         await assertPeerActionInteractions(page);
         await assertAdvancedDisplaySettings(page);

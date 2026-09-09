@@ -17,6 +17,7 @@ const sandbox = {
 loadScript(sandbox, 'src/static/js/core/modal.js');
 loadScript(sandbox, 'src/static/js/features/distribution-data.js');
 loadScript(sandbox, 'src/static/js/features/distribution-peer-detail.js');
+loadScript(sandbox, 'src/static/js/features/distribution-network-panel.js');
 
 const peerDetail = sandbox.window.BPMDistributionPeerDetail;
 const escapeHtml = sandbox.window.BPMModal.escapeHtml;
