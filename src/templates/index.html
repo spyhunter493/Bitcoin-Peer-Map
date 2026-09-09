@@ -86,6 +86,8 @@
     <!-- Left map overlay — peers + system stats -->
     <div id="map-overlay" class="map-overlay">
         <div class="mo-row mo-sys-row" id="mo-row-peers"><span class="mo-label">Peers</span> <span class="mo-value" id="mo-peers" title="Total connected peers">0</span></div>
+        <div class="mo-row peer-data-row"><span class="mo-label">Peer data</span> <span id="peer-data-status" role="status">Connecting…</span></div>
+        <div class="mo-row peer-data-row"><span class="mo-label">Updated</span> <span id="peer-data-age">Never</span></div>
         <div class="mo-row mo-sys-row" id="mo-row-cpu" title="CPU utilization — click for system details"><span class="mo-label">CPU</span> <span class="mo-value" id="ro-cpu">&mdash;</span></div>
         <div class="mo-row mo-sys-row" id="mo-row-ram" title="Memory usage — click for system details"><span class="mo-label">RAM</span> <span class="mo-value" id="ro-ram">&mdash;</span></div>
         <div class="mo-row mo-sys-row ro-traffic-row" id="mo-row-netin" title="Network download — click for system details">
@@ -260,6 +262,8 @@
     <script src="/static/js/core/modal.js?v={{ asset_revision }}"></script>
     <script src="/static/js/features/node-monitor.js?v={{ asset_revision }}"></script>
     <script src="/static/js/features/peer-actions.js?v={{ asset_revision }}"></script>
+    <script src="/static/js/core/polling.js?v={{ asset_revision }}"></script>
+    <script src="/static/js/features/peer-refresh.js?v={{ asset_revision }}"></script>
     <script src="/static/js/features/display-settings.js?v={{ asset_revision }}"></script>
     <script src="/static/js/features/world-map.js?v={{ asset_revision }}"></script>
     <script src="/static/js/features/distribution-state.js?v={{ asset_revision }}"></script>
@@ -272,6 +276,11 @@
     <script src="/static/js/features/distribution-summary-insights.js?v={{ asset_revision }}"></script>
     <script src="/static/js/features/distribution-summary.js?v={{ asset_revision }}"></script>
     <script src="/static/js/as-distribution.js?v={{ asset_revision }}"></script><!-- [AS-DISTRIBUTION] loaded before app.js -->
+    <script src="/static/js/features/private-network-state.js?v={{ asset_revision }}"></script>
+    <script src="/static/js/features/private-network-panel.js?v={{ asset_revision }}"></script>
+    <script src="/static/js/features/private-peer-detail.js?v={{ asset_revision }}"></script>
+    <script src="/static/js/features/peer-table-model.js?v={{ asset_revision }}"></script>
+    <script src="/static/js/features/peer-table.js?v={{ asset_revision }}"></script>
     <script src="/static/js/app.js?v={{ asset_revision }}"></script>
 </body>
 </html>

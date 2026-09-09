@@ -251,6 +251,19 @@ class FakePeers:
     def list_peers(self) -> list[dict[str, Any]]:
         return PEERS
 
+    def snapshot(self) -> dict[str, Any]:
+        return {
+            "peers": self.list_peers(),
+            "status": {
+                "connected": True,
+                "last_success_at": time.time(),
+                "last_attempt_at": time.time(),
+                "age_seconds": 0,
+                "error": None,
+                "stale_after_seconds": 30,
+            },
+        }
+
 
 class FakeNode:
     def dashboard_info(self, currency: str = "USD") -> dict[str, Any]:

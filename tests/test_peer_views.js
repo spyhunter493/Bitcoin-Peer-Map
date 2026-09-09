@@ -1,0 +1,158 @@
+'use strict';
+const assert = require('assert');
+
+module.exports = async function assertPeerViews(browser, baseUrl) {
+    const context = await browser.newContext({ viewport: { width: 1638, height: 900 } });
+    await context.addInitScript(() => {
+        localStorage.setItem('bpm.antarcticaDisclaimerSeen', 'true');
+        const original = window.setInterval;
+        window.setInterval = (handler, interval, ...args) => {
+            if (interval === 10000) {
+                window.__testPeerPoll = handler;
+                return original(handler, 3600000, ...args);
+            }
+            return original(handler, interval, ...args);
+        };
+    });
+    const page = await context.newPage();
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    const response = await page.request.get(`${baseUrl}/api/peers?include_status=true`);
+    const seed = await response.json();
+    const hostile = `<b class="bpm-probe">text & " '</b><img src="bpm-probe" onerror="window.__unsafePeerText=true">`;
+    let peers = seed.peers.map(peer => ({ ...peer, subver: hostile, asname: hostile,
+        as: `${peer.as.split(' ')[0]} ${hostile}`, isp: hostile, city: '<b>Town</b>',
+        country: '<b>Country</b>', connection_type: hostile, transport_protocol_type: hostile,
+        permissions: [hostile], session_id: hostile,
+    }));
+    const privatePeers = peers.filter(peer => ['onion', 'i2p', 'cjdns'].includes(peer.network));
+    privatePeers[0].subver = 'constructor';
+    await page.route('**/api/peers?include_status=true', route => route.fulfill({
+        json: { peers, status: { ...seed.status, last_success_at: Date.now() / 1000, age_seconds: 0 } },
+    }));
+    async function safe(scope = 'body') {
+        assert.strictEqual(await page.locator(`${scope} .bpm-probe, ${scope} img[src="bpm-probe"]`).count(), 0);
+        assert.strictEqual(await page.evaluate(() => window.__unsafePeerText), undefined);
+        assert.deepStrictEqual(errors, []);
+    }
+    async function poll() {
+        const received = page.waitForResponse(response => response.url().includes('/api/peers?include_status=true'));
+        await page.evaluate(() => window.__testPeerPoll());
+        await received;
+        await page.waitForTimeout(100);
+    }
+    try {
+        await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+        await page.waitForFunction(() => document.querySelectorAll('#peer-tbody tr').length >= 10);
+        assert.strictEqual(await page.locator('#peer-tbody tr').first().locator('td').nth(5).textContent(), hostile);
+        assert.strictEqual(await page.locator('#peer-tbody tr').first().locator('td').nth(5).getAttribute('title'), hostile);
+        await safe();
+
+        await page.evaluate(() => window.ASDistribution.enterFocusedMode());
+        await page.waitForSelector('#as-detail-panel .as-summary-row');
+        const software = page.locator('#as-detail-panel .as-summary-row').filter({ hasText: hostile }).first();
+        await software.click();
+        await page.waitForSelector('#as-sub-tooltip .as-provider-row');
+        assert.ok((await page.locator('#as-sub-tooltip').textContent()).includes(hostile));
+        await safe();
+        await page.locator('#as-sub-tooltip .as-provider-row').first().click();
+        await page.waitForSelector('#as-sub-sub-tooltip .as-sub-tt-peer');
+        await safe();
+        assert.strictEqual(await page.locator('#as-sub-sub-tooltip b').count(), 0);
+        await page.keyboard.press('Escape');
+        await page.keyboard.press('Escape');
+
+        // Provider panels escape software/type labels; each insight escapes provider names.
+        await page.locator('#as-detail-panel .as-conn-prov-row').first().click();
+        await page.waitForSelector('#as-sub-tooltip');
+        await safe();
+        await page.keyboard.press('Escape');
+        for (const selector of ['.as-stable-link', '.as-fastest-link', '.as-data-providers-link[data-field="bytessent"]']) {
+            await page.locator('#as-detail-panel ' + selector).click();
+            await page.waitForSelector('#as-sub-tooltip');
+            await safe();
+            await page.keyboard.press('Escape');
+        }
+        await page.evaluate(() => {
+            window.ASDistribution.exitFocusedMode();
+            window.ASDistribution.enterFocusedMode();
+        });
+        // Assert table contents, not just counts, through both connection-direction filters.
+        for (const [selector, direction] of [['.as-conn-dir-row', 'IN'], ['.as-conn-out-row', 'OUT']]) {
+            const row = page.locator('#as-detail-panel ' + selector).first();
+            const provider = await row.getAttribute('data-as');
+            const matches = peer => peer.as.split(' ')[0] === provider && peer.direction === direction;
+            const expected = () => peers.filter(matches).map(peer => peer.id).sort((a, b) => a - b);
+            await row.click();
+            const tableIds = () => page.locator('#peer-tbody tr').evaluateAll(rows => rows.map(row => Number(row.dataset.id)));
+            assert.deepStrictEqual(await tableIds(), expected());
+            const replaced = peers.find(matches);
+            const replacementId = direction === 'IN' ? 901 : 902;
+            peers = peers.filter(peer => peer.id !== replaced.id).concat({ ...replaced, id: replacementId });
+            await poll();
+            assert.deepStrictEqual(await tableIds(), expected());
+            peers = peers.filter(peer => !matches(peer));
+            await poll();
+            assert.deepStrictEqual(await tableIds(), []);
+            await page.keyboard.press('Escape');
+        }
+
+        await page.evaluate(() => {
+            const peer = window.ASDistribution.getLastPeersRaw().find(p => p.network === 'ipv4');
+            window.ASDistribution.openPeerDetailPanel(peer, 'peer-table');
+        });
+        await page.waitForSelector('.peer-detail-popup.visible');
+        await safe();
+        assert.ok((await page.locator('.peer-detail-popup').textContent()).includes(hostile));
+        await page.keyboard.press('Escape');
+        await page.evaluate(() => window.ASDistribution.exitFocusedMode());
+
+        // Private overview, software drill-down, network panel, and full peer details.
+        await page.click('#pn-mini-donut');
+        await page.waitForSelector('#pn-detail-panel.visible');
+        await safe();
+        assert.ok((await page.locator('#pn-detail-body').textContent()).includes('constructor'));
+        const privateSoftware = page.locator('#pn-detail-body .pn-interactive-row[data-category="software"]')
+            .filter({ hasText: hostile });
+        await privateSoftware.click();
+        await page.waitForSelector('#pn-sub-tooltip .as-sub-tt-peer');
+        await safe();
+        const selectedIds = await page.locator('#pn-sub-tooltip .pn-sub-tt-id-link').evaluateAll(rows => rows.map(r => Number(r.dataset.peerId)));
+        assert.ok(selectedIds.length > 0);
+        const replacement = { ...peers.find(p => p.id === selectedIds[0]), id: 900 };
+        peers = peers.filter(peer => !selectedIds.includes(peer.id)).concat(replacement);
+        await poll();
+        await page.waitForFunction(() => {
+            const rows = document.querySelectorAll('#pn-sub-tooltip .pn-sub-tt-id-link');
+            return rows.length === 1 && rows[0].dataset.peerId === '900';
+        });
+        await safe();
+        peers = peers.filter(peer => peer.id !== 900);
+        await poll();
+        await page.waitForSelector('#pn-sub-tooltip', { state: 'hidden' });
+
+        // A departed insight peer must release its pinned rectangle and lines.
+        await page.locator('#pn-detail-body .pn-insight-row').first().click();
+        await page.waitForSelector('#pn-insight-rect.visible');
+        const remainingPrivate = peers.filter(peer => ['onion', 'i2p', 'cjdns'].includes(peer.network));
+        peers = peers.filter(peer => !remainingPrivate.includes(peer));
+        await poll();
+        await page.waitForFunction(() => !document.getElementById('pn-insight-rect').classList.contains('visible'));
+        peers = peers.concat(remainingPrivate);
+        await poll();
+        await page.locator('#pn-donut-svg .pn-donut-segment').first().dispatchEvent('click');
+        await page.waitForSelector('#pn-detail-back:not(.hidden)');
+        await safe();
+        await page.locator('#peer-tbody tr').first().click();
+        await page.waitForSelector('.peer-detail-popup.visible');
+        await safe();
+        assert.ok((await page.locator('.peer-detail-popup').textContent()).includes(hostile));
+        peers = peers.filter(peer => !['onion', 'i2p', 'cjdns'].includes(peer.network));
+        await poll();
+        await page.waitForSelector('.peer-detail-popup', { state: 'detached' });
+        assert.strictEqual(await page.locator('#peer-tbody tr').count(), 0);
+        await safe();
+    } finally {
+        await context.close();
+    }
+};

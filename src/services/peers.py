@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import queue
 import threading
 import time
@@ -31,6 +32,7 @@ GEO_API_FIELDS = (
 )
 REFRESH_INTERVAL_SECONDS = 10
 GEO_API_DELAY_SECONDS = 1.5
+logger = logging.getLogger(__name__)
 
 
 class PeerService:
@@ -48,6 +50,9 @@ class PeerService:
 
         self._peers: list[dict[str, Any]] = []
         self._peers_lock = threading.Lock()
+        self._last_success_at: float | None = None
+        self._last_attempt_at: float | None = None
+        self._last_error: str | None = None
         self._geo_queue: queue.Queue[tuple[str, str]] = queue.Queue()
         self._pending: set[str] = set()
         self._pending_lock = threading.Lock()
@@ -71,11 +76,38 @@ class PeerService:
             thread.join(timeout=2)
 
     def raw_peers(self) -> list[dict[str, Any]]:
+        peers = self.rpc.call("getpeerinfo")
+        if not isinstance(peers, list) or any(not isinstance(peer, dict) for peer in peers):
+            raise RpcError("getpeerinfo returned an unexpected response")
+        return peers
+
+    def refresh_once(self) -> bool:
+        """Replace the snapshot only after a successful RPC poll, including zero peers."""
         try:
-            peers = self.rpc.call("getpeerinfo")
-            return peers if isinstance(peers, list) else []
-        except RpcError:
-            return []
+            peers = self.raw_peers()
+        except RpcError as exc:
+            with self._peers_lock:
+                self._last_attempt_at = time.time()
+                self._last_error = "Could not refresh peers from the Bitcoin node"
+            logger.warning("Peer refresh failed: %s", exc)
+            return False
+
+        with self._peers_lock:
+            self._peers = peers
+            self._last_success_at = time.time()
+            self._last_attempt_at = self._last_success_at
+            self._last_error = None
+
+        for peer in peers:
+            address = peer.get("addr", "")
+            peer_network = peer.get("network", network_type(address))
+            host, _ = split_peer_address(address)
+            if self.cached_geo(host) is None:
+                if is_public_address(peer_network, host):
+                    self.queue_geo_lookup(host, peer_network)
+                else:
+                    self._cache_private_address(host)
+        return True
 
     def refresh_known_addresses(self) -> None:
         try:
@@ -93,25 +125,12 @@ class PeerService:
     def _refresh_loop(self) -> None:
         address_refreshes = 0
         while not self.stop_event.is_set():
-            peers = self.raw_peers()
-            with self._peers_lock:
-                self._peers = peers
+            self.refresh_once()
 
             address_refreshes += 1
             if address_refreshes >= 6:
                 self.refresh_known_addresses()
                 address_refreshes = 0
-
-            for peer in peers:
-                address = peer.get("addr", "")
-                peer_network = peer.get("network", network_type(address))
-                host, _ = split_peer_address(address)
-
-                if self.cached_geo(host) is None:
-                    if is_public_address(peer_network, host):
-                        self.queue_geo_lookup(host, peer_network)
-                    else:
-                        self._cache_private_address(host)
 
             self.stop_event.wait(REFRESH_INTERVAL_SECONDS)
 
@@ -225,8 +244,33 @@ class PeerService:
                 self.stop_event.wait(GEO_API_DELAY_SECONDS)
 
     def list_peers(self) -> list[dict[str, Any]]:
+        return self.snapshot()["peers"]
+
+    def snapshot(self) -> dict[str, Any]:
+        """Read peers and polling status together so their timestamps cannot disagree."""
         with self._peers_lock:
             peers = list(self._peers)
+            last_success_at = self._last_success_at
+            status = {
+                "connected": None if self._last_attempt_at is None else self._last_error is None,
+                "last_success_at": last_success_at,
+                "last_attempt_at": self._last_attempt_at,
+                "age_seconds": (
+                    max(0, time.time() - last_success_at) if last_success_at is not None else None
+                ),
+                "error": self._last_error,
+                "stale_after_seconds": REFRESH_INTERVAL_SECONDS * 3,
+            }
+        return {
+            "peers": self._serialize_peers(
+                peers, last_success_at if last_success_at is not None else time.time()
+            ),
+            "status": status,
+        }
+
+    def _serialize_peers(
+        self, peers: list[dict[str, Any]], observed_at: float
+    ) -> list[dict[str, Any]]:
         result: list[dict[str, Any]] = []
         service_names = {
             "NETWORK": "N",
@@ -254,7 +298,7 @@ class PeerService:
             services = peer.get("servicesnames", [])
             connected_at = peer.get("conntime", 0)
             connected_for = (
-                format_duration(int(time.time()) - connected_at) if connected_at else "-"
+                format_duration(int(observed_at) - connected_at) if connected_at else "-"
             )
             result.append(
                 {

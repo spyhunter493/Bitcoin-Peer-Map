@@ -1,9 +1,11 @@
+import threading
 from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
 
 from app import create_app
+from services.peers import PeerService
 from settings import AppSettings
 
 
@@ -170,3 +172,19 @@ def test_application_factory_serves_health_dashboard_and_assets(tmp_path: Path) 
         assert client.get("/api/update-check").status_code == 404
 
     assert runtime.stopped is True
+
+
+def test_peer_snapshot_status_is_optional_and_not_cached(tmp_path: Path) -> None:
+    app_settings = settings(tmp_path)
+    runtime: Any = FakeRuntime(app_settings)
+    runtime.peers = PeerService(None, None, None, threading.Event())
+    with TestClient(create_app(app_settings, runtime)) as client:
+        legacy = client.get("/api/peers")
+        assert legacy.json() == []
+        assert legacy.headers["cache-control"] == "no-store"
+        snapshot = client.get("/api/peers?include_status=true")
+        assert snapshot.status_code == 200
+        assert snapshot.headers["cache-control"] == "no-store"
+        assert snapshot.json()["peers"] == []
+        assert snapshot.json()["status"]["connected"] is None
+        assert snapshot.json()["status"]["last_success_at"] is None

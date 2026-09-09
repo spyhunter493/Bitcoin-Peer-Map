@@ -382,8 +382,8 @@
     function buildConnectionGrid(segments, groups, connectionTypeLabels) {
         return segments.map(segment => {
             const peers = peersForSegment(segment, groups);
-            const inboundPeers = peers.filter(peer => peer.connection_type === 'inbound');
-            const outboundPeers = peers.filter(peer => peer.connection_type !== 'inbound');
+            const inboundPeers = peers.filter(peer => peer.direction === 'IN');
+            const outboundPeers = peers.filter(peer => peer.direction === 'OUT');
             const subtypeGroups = Object.create(null);
             for (const peer of outboundPeers) {
                 const type = peer.connection_type || 'unknown';
@@ -392,7 +392,7 @@
             }
             const outboundSubtypes = Object.entries(subtypeGroups).map(([type, subtypePeers]) => ({
                 type,
-                label: connectionTypeLabels[type] || type,
+                label: (Object.hasOwn(connectionTypeLabels, type) ? connectionTypeLabels[type] : null) || type,
                 count: subtypePeers.length,
                 peerIds: subtypePeers.map(peer => peer.id),
             }));

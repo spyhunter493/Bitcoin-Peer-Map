@@ -7,6 +7,7 @@ const path = require('path');
 const { once } = require('events');
 const { spawn } = require('child_process');
 const { chromium } = require('playwright');
+const assertPeerViews = require('./test_peer_views');
 
 const repoRoot = path.resolve(__dirname, '..');
 
@@ -636,6 +637,60 @@ async function assertPeerControlsResponsive(browser, baseUrl) {
     await narrowContext.close();
 }
 
+async function assertPeerRefreshReliability(browser, baseUrl) {
+    const context = await browser.newContext({ viewport: { width: 1638, height: 728 } });
+    await context.addInitScript(() => {
+        localStorage.setItem('bpm.antarcticaDisclaimerSeen', 'true');
+        const original = window.setInterval;
+        window.setInterval = (handler, interval, ...args) =>
+            original(handler, interval === 10000 ? 100 : interval, ...args);
+    });
+    const page = await context.newPage();
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    const response = await page.request.get(`${baseUrl}/api/peers?include_status=true`);
+    const seed = await response.json();
+    let phase = 'live';
+    await page.route('**/api/peers?include_status=true', route => {
+        if (phase === 'dashboard-down') {
+            return route.fulfill({ status: 503, json: { detail: 'Unavailable' } });
+        }
+        return route.fulfill({ json: {
+            peers: phase === 'empty' ? [] : seed.peers,
+            status: {
+                ...seed.status,
+                connected: phase !== 'node-down',
+                age_seconds: phase === 'node-down' ? 120 : 0,
+                last_success_at: phase === 'empty' ? seed.status.last_success_at + 10 : seed.status.last_success_at,
+            },
+        } });
+    });
+    try {
+        await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+        await waitForDashboardReady(page);
+        await page.waitForSelector('#peer-data-status[data-state="live"]');
+        const peerCount = await page.locator('#peer-tbody tr').count();
+        phase = 'node-down';
+        await page.waitForSelector('#peer-data-status[data-state="node-unavailable"]');
+        assert.strictEqual(await page.locator('#peer-tbody tr').count(), peerCount);
+        assert.match(await page.locator('#peer-data-age').textContent(), /2m .*\(cached\)/);
+        await page.locator('#peer-tbody tr').first().evaluate(row => { row.dataset.preserved = 'yes'; });
+        phase = 'dashboard-down';
+        await page.waitForSelector('#peer-data-status[data-state="dashboard-unavailable"]');
+        assert.strictEqual(await page.locator('#peer-tbody tr').first().getAttribute('data-preserved'), 'yes');
+        const age = await page.locator('#peer-data-age').textContent();
+        await page.waitForFunction(previous => document.getElementById('peer-data-age').textContent !== previous, age);
+        phase = 'empty';
+        await page.waitForSelector('#peer-data-status[data-state="live"]');
+        await page.waitForFunction(() => document.querySelectorAll('#peer-tbody tr').length === 0);
+        assert.strictEqual(await page.locator('#status-dot').evaluate(dot => dot.classList.contains('online')), true);
+        assert.strictEqual(await page.locator('#peer-data-age').getAttribute('data-stale'), 'false');
+        assert.deepStrictEqual(errors, []);
+    } finally {
+        await context.close();
+    }
+}
+
 (async () => {
     const externalBaseUrl = process.env.BPM_LAYOUT_TEST_BASE_URL;
     const port = externalBaseUrl ? null : await freePort();
@@ -702,6 +757,8 @@ async function assertPeerControlsResponsive(browser, baseUrl) {
 
         await context.close();
         await assertPeerControlsResponsive(browser, baseUrl);
+        await assertPeerRefreshReliability(browser, baseUrl);
+        await assertPeerViews(browser, baseUrl);
         console.log('Browser layout regression tests passed');
     } finally {
         if (browser) await browser.close();

@@ -671,7 +671,7 @@ window.ASDistribution = (function () {
             html += summaryController.view.row('Outbound', seg.isOthers ? allPeers.filter(function (p) { return p.direction !== 'IN'; }).length : fullGroup.outboundCount);
             for (var cti = 0; cti < fullGroup.connTypesList.length; cti++) {
                 var ctItem = fullGroup.connTypesList[cti];
-                var ctLabel = CONN_TYPE_LABELS[ctItem.type] || ctItem.type;
+                var ctLabel = (Object.hasOwn(CONN_TYPE_LABELS, ctItem.type) ? CONN_TYPE_LABELS[ctItem.type] : null) || ctItem.type;
                 html += summaryController.view.interactiveRow(ctLabel, ctItem.count, ctItem.peers.map(function (p) { return p.id; }), 'conntype');
             }
         }
@@ -819,7 +819,7 @@ window.ASDistribution = (function () {
             html += summaryController.view.row('Share', seg.percentage.toFixed(1) + '%');
 
             // Connection type breakdown for Others
-            var otherConnMap = {};
+            var otherConnMap = Object.create(null);
             for (var oci = 0; oci < allOtherPeers.length; oci++) {
                 var oct = allOtherPeers[oci].connection_type || 'unknown';
                 if (!otherConnMap[oct]) otherConnMap[oct] = { count: 0, peers: [] };
@@ -829,7 +829,7 @@ window.ASDistribution = (function () {
             var otherConnKeys = Object.keys(otherConnMap);
             for (var ock = 0; ock < otherConnKeys.length; ock++) {
                 var octKey = otherConnKeys[ock];
-                var octLabel = CONN_TYPE_LABELS[octKey] || octKey;
+                var octLabel = (Object.hasOwn(CONN_TYPE_LABELS, octKey) ? CONN_TYPE_LABELS[octKey] : null) || octKey;
                 var octPeerIds = otherConnMap[octKey].peers.map(function (p) { return p.id; });
                 html += summaryController.view.interactiveRow(octLabel, otherConnMap[octKey].count, octPeerIds, 'conntype');
             }
@@ -878,7 +878,7 @@ window.ASDistribution = (function () {
             if (fullGroup.connTypesList && fullGroup.connTypesList.length > 0) {
                 for (var cti = 0; cti < fullGroup.connTypesList.length; cti++) {
                     var ctItem = fullGroup.connTypesList[cti];
-                    var ctLabel = CONN_TYPE_LABELS[ctItem.type] || ctItem.type;
+                    var ctLabel = (Object.hasOwn(CONN_TYPE_LABELS, ctItem.type) ? CONN_TYPE_LABELS[ctItem.type] : null) || ctItem.type;
                     var ctPeerIds = ctItem.peers.map(function (p) { return p.id; });
                     html += summaryController.view.interactiveRow(ctLabel, ctItem.count, ctPeerIds, 'conntype');
                 }

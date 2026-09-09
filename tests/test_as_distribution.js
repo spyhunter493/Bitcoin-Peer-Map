@@ -162,7 +162,56 @@ assert.ok(summaryRow.includes('data-cat-label="' + escaped + '"'));
 assert.ok(summaryRow.includes('data-peer-ids="[7,8]"'));
 assert.ok(!summaryRow.includes('<img'));
 
+// Every drill-down renderer receives raw labels, including strings decoded from data attributes.
+const unsafePeer = { id: 7, connection_type: hostile, city: '<b>Town</b>', country: '<b>C</b>',
+    as: 'AS64500', ping_ms: 20, bytessent: 1234, bytesrecv: 4567 };
+const unsafeProvider = { asNumber: 'AS64500', name: hostile, peerIds: [7], peerCount: 1, color: '#58a6ff' };
+for (const html of [
+    summary.view.row(hostile, hostile),
+    summary.view.interactiveRow(hostile, hostile, [7], 'software'),
+    summary.view.buildProviderListHtml([unsafeProvider], hostile, 'AS64500'),
+    summary.view.buildPeerSummaryHtml([unsafePeer], 'conntype', hostile),
+    summary.view.buildPeerListHtmlForSubSub([unsafePeer]),
+    summary.view.buildPingPeerListHtml([unsafePeer]),
+    summary.view.buildDataPeerListHtml([unsafePeer], 'bytessent'),
+]) {
+    assert.ok(!html.includes('<img'), 'peer markup must be escaped in every drill-down');
+    assert.ok(!html.includes('<b>'), 'short location markup must also remain text');
+    assert.ok(html.includes('&lt;'), 'the label should remain visible as literal text');
+}
+
 loadScript(sandbox, 'src/static/js/as-distribution.js');
 assert.strictEqual(typeof sandbox.window.ASDistribution.openPeerDetailPanel, 'function');
+
+for (const direction of ['IN', 'OUT']) {
+    const state = sandbox.window.BPMDistributionState.create({
+        summarySelected: true, subTooltipPinned: true,
+        filterCategory: direction === 'IN' ? 'conn-in' : 'conn-out',
+        filterLabel: 'AS64500', filterPeerIds: [7],
+    });
+    const current = { groups: [{ asNumber: 'AS64500', peers: [
+        { id: 7, direction }, { id: 8, direction: direction === 'IN' ? 'OUT' : 'IN' },
+    ] }] };
+    let visible, lines;
+    const controller = sandbox.window.BPMDistributionSummary.create({
+        state, data: current, elements: { panel: null },
+        actions: { isCountryLens: () => false, getColorForAsNum: () => '#58a6ff' },
+        hooks: {
+            filterPeerTable: ids => { visible = Array.from(ids); },
+            drawLinesForAs: (_as, ids) => { lines = Array.from(ids); },
+        },
+    });
+    controller.refresh();
+    assert.deepStrictEqual(visible, [7]);
+    assert.deepStrictEqual(lines, [7]);
+    current.groups[0].peers = [{ id: 9, direction }];
+    controller.refresh();
+    assert.deepStrictEqual(Array.from(state.filterPeerIds), [9]);
+    assert.deepStrictEqual(visible, [9]);
+    current.groups = [];
+    controller.refresh();
+    assert.deepStrictEqual(visible, []);
+    assert.deepStrictEqual(lines, []);
+}
 
 console.log('Distribution feature module tests passed');

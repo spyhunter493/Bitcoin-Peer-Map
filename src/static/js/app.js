@@ -31,6 +31,7 @@
     const repositoryDiscussionsUrl = `${repositoryUrl}/discussions`;
     const assetRevision = document.body.dataset.assetRevision;
     const mrow = window.BPMModal.row;
+    const escapeHtml = window.BPMModal.escapeHtml;
 
     function staticAssetUrl(filename) {
         return `/static/assets/${filename}?v=${encodeURIComponent(assetRevision)}`;
@@ -588,7 +589,7 @@
             {},
             readSavedDisplaySettings(),
             advSettings,
-            currentTableDisplaySettings()
+            peerTable.currentTableDisplaySettings()
         ));
     }
 
@@ -628,26 +629,16 @@
     /** Build unique short abbreviation string from services array */
     function serviceAbbrev(services) {
         if (!services || !services.length) return '\u2014';
-        return services.map(s => (SERVICE_FLAGS[s] ? SERVICE_FLAGS[s].abbr : s.charAt(0))).join(' ');
+        return services.map(s => (Object.hasOwn(SERVICE_FLAGS, s) ? SERVICE_FLAGS[s].abbr : s.charAt(0))).join(' ');
     }
 
     /** Build full hover description from services array */
     function serviceHover(services) {
         if (!services || !services.length) return 'No service flags';
         return services.map(s => {
-            const f = SERVICE_FLAGS[s];
+            const f = Object.hasOwn(SERVICE_FLAGS, s) ? SERVICE_FLAGS[s] : null;
             return f ? `${f.abbr} = ${serviceFlagDescription(f)}` : s;
         }).join('\n');
-    }
-
-    function escapeServiceHtml(value) {
-        return String(value ?? '').replace(/[&<>"']/g, ch => ({
-            '&': '&amp;',
-            '<': '&lt;',
-            '>': '&gt;',
-            '"': '&quot;',
-            "'": '&#39;',
-        }[ch]));
     }
 
     function serviceFlagFromAbbr(abbr) {
@@ -668,10 +659,10 @@
                 const label = flag ? flag.label : 'Unknown service flag';
                 const rpc = flag ? flag.rpc : abbr;
                 const title = flag ? serviceFlagDescription(flag) : abbr;
-                return '<div class="service-flag-row" title="' + escapeServiceHtml(title) + '">'
-                    + '<span class="service-flag-abbr">' + escapeServiceHtml(abbr) + '</span>'
-                    + '<span class="service-flag-label">' + escapeServiceHtml(label) + '</span>'
-                    + '<span class="service-flag-rpc">' + escapeServiceHtml(rpc) + '</span>'
+                return '<div class="service-flag-row" title="' + escapeHtml(title) + '">'
+                    + '<span class="service-flag-abbr">' + escapeHtml(abbr) + '</span>'
+                    + '<span class="service-flag-label">' + escapeHtml(label) + '</span>'
+                    + '<span class="service-flag-rpc">' + escapeHtml(rpc) + '</span>'
                     + '</div>';
             }).join('')
             + '</div>';
@@ -737,22 +728,9 @@
     let asLineAsNum = null;        // AS number for legend dot lookup
     let asLineGroups = null;       // Array of {asNum, peerIds, color} for hover-all mode
 
-    // [PRIVATE-NET] State for private network view mode
-    let privateNetMode = false;          // true when viewing private networks in Antarctica
-    let privateNetSelectedPeer = null;   // node object of selected private peer (or null)
-    let privateNetLinePeer = null;       // peer ID to draw line to in private mode
-    let pnBigPopupEl = null;             // DOM element for the private peer big detail popup
-    let pnMiniHover = false;             // true when hovering the mini donut in default view (draws lines)
-    let pnPreviewPeerIds = null;         // peer IDs to preview lines for (panel row hover)
-    let pnMiniHoverNet = null;           // which network segment is hovered on the mini donut
-    const PRIVATE_NETS = new Set(['onion', 'i2p', 'cjdns']);
+    const privateState = window.BPMPrivateNetworkState.create();
 
-    // [PRIVATE-NET] Insight rectangle state (mirrors public AS insight rect)
-    let pnInsightRectEl = null;          // DOM ref for PN insight rectangle overlay
-    let pnInsightRectVisible = false;    // Whether the PN insight rectangle is currently shown
-    let pnInsightActiveType = null;      // 'stable' | 'fastest' | 'data-bytessent' | 'data-bytesrecv'
-    let pnInsightActivePeerId = null;    // Peer ID of the active (selected) insight
-    let pnInsightActiveData = null;      // Full data object for the active insight
+    const PRIVATE_NETS = new Set(['onion', 'i2p', 'cjdns']);
 
     // Network filter: Set of enabled network keys. When ALL networks are enabled, equivalent to "All".
     const ALL_NETS = new Set(['ipv4', 'ipv6', 'onion', 'i2p', 'cjdns']);
@@ -970,7 +948,7 @@
         html += `<div class="${rowClass}">Reachable: ${details.reachable ? 'Yes' : 'No'}</div>`;
         if (details.limited) html += `<div class="${mutedClass}">Limited by node network settings</div>`;
         if (details.proxy) {
-            const proxy = escapeServiceHtml(details.proxy);
+            const proxy = escapeHtml(details.proxy);
             html += `<div class="${rowClass}">Proxy: <span title="${proxy}">${proxy}</span></div>`;
         }
 
@@ -983,8 +961,8 @@
         const label = PRIVATE_NETS.has(netKey) ? 'Service' : 'Advertised';
         for (const address of addresses.slice(0, 3)) {
             const fullAddress = formatNodeAddress(address);
-            const escapedFull = escapeServiceHtml(fullAddress);
-            const shortAddress = escapeServiceHtml(shortNodeAddress(fullAddress));
+            const escapedFull = escapeHtml(fullAddress);
+            const shortAddress = escapeHtml(shortNodeAddress(fullAddress));
             html += `<div class="${rowClass}">${label}: <span class="node-address" title="${escapedFull}">${shortAddress}</span></div>`;
         }
         if (addresses.length > 3) {
@@ -1059,19 +1037,19 @@
             const netKey = chip.dataset.net;
             if (PRIVATE_NETS.has(netKey)) {
                 // Private network chip → enter private mode + open that network's panel
-                if (!privateNetMode) {
+                if (!privateState.privateNetMode) {
                     enterPrivateNetMode(null, netKey);
                 } else {
                     // Already in private mode — just switch to this network
-                    pnSelectedNet = netKey;
+                    privateState.pnSelectedNet = netKey;
                     cachePnElements();
-                    if (pnContainerEl) pnContainerEl.classList.add('pn-focused');
-                    openPnDetailPanel(netKey);
+                    if (privateState.pnContainerEl) privateState.pnContainerEl.classList.add('pn-focused');
+                    privatePanel.openPnDetailPanel(netKey);
                     updatePrivateNetUI();
                 }
             } else {
                 // Public network chip (ipv4/ipv6) → exit private mode if active, open network panel
-                if (privateNetMode) exitPrivateNetMode();
+                if (privateState.privateNetMode) exitPrivateNetMode();
                 if (window.ASDistribution) {
                     if (!window.ASDistribution.isFocusedMode()) {
                         window.ASDistribution.enterFocusedMode();
@@ -1109,7 +1087,10 @@
 
     let btcCurrency = 'USD';
     let btcPriceInterval = 10;  // seconds
-    let btcPriceTimer = null;
+    const infoPolling = window.BPMPolling.create({
+        task: refreshNodeInfo,
+        intervalMs: CFG.infoPollInterval,
+    });
 
     // ═══════════════════════════════════════════════════════════
     // CURRENCY SELECTOR DROPDOWN
@@ -1155,7 +1136,7 @@
         html += `<div class="curr-freq"><span>Update every</span><input type="number" id="curr-freq-input" value="${btcPriceInterval}" min="5" max="99"><span>sec</span></div>`;
         // Show last price error if any
         if (lastNodeInfo && lastNodeInfo.last_price_error) {
-            html += `<div class="curr-error" style="color:var(--text-muted);font-size:9px;padding:6px 8px 2px;border-top:1px solid rgba(255,255,255,0.06)">${lastNodeInfo.last_price_error}</div>`;
+            html += `<div class="curr-error" style="color:var(--text-muted);font-size:9px;padding:6px 8px 2px;border-top:1px solid rgba(255,255,255,0.06)">${escapeHtml(lastNodeInfo.last_price_error)}</div>`;
         }
         dd.innerHTML = html;
         document.body.appendChild(dd);
@@ -1187,8 +1168,7 @@
                 freqInput.value = v;
                 btcPriceInterval = v;
                 // Restart info poll with new interval
-                if (btcPriceTimer) clearInterval(btcPriceTimer);
-                btcPriceTimer = setInterval(fetchInfo, btcPriceInterval * 1000);
+                infoPolling.setIntervalMs(btcPriceInterval * 1000);
             });
         }
 
@@ -1237,7 +1217,7 @@
             const statusText = stats.status || 'unknown';
             const statusCls = statusText === 'ok' ? 'ok' : (statusText === 'disabled' ? 'disabled' : 'error');
             let html = '';
-            html += `<div class="modal-row"><span class="modal-label" title="Database health status">Status</span><span class="geodb-status-badge ${statusCls}" title="${statusText.toUpperCase()}">${statusText.toUpperCase()}</span></div>`;
+            html += `<div class="modal-row"><span class="modal-label" title="Database health status">Status</span><span class="geodb-status-badge ${statusCls}" title="${escapeHtml(statusText.toUpperCase())}">${escapeHtml(statusText.toUpperCase())}</span></div>`;
             if (stats.entries != null) html += mrow('Entries', stats.entries.toLocaleString(), 'Total number of IP geolocation records in the database', `${stats.entries.toLocaleString()} records`);
             if (stats.size_bytes != null) html += mrow('Size', (stats.size_bytes / 1e6).toFixed(1) + ' MB', 'Database file size on disk', `${(stats.size_bytes / 1e6).toFixed(1)} MB`);
             if (stats.newest_age_seconds != null) {
@@ -1261,7 +1241,7 @@
                 html += mrow('Newest Entry', stats.newest_age_days + ' days', 'Age of the newest geolocation record', `${stats.newest_age_days} days old`);
             }
             if (stats.oldest_age_days != null) html += mrow('Oldest Entry', stats.oldest_age_days + ' days', 'Age of the oldest geolocation record', `${stats.oldest_age_days} days old`);
-            if (stats.path) html += `<div class="modal-row"><span class="modal-label" title="File system path to the database">Path</span><span class="modal-val" style="font-size:9px;max-width:260px" title="${stats.path}">${stats.path}</span></div>`;
+            if (stats.path) html += `<div class="modal-row"><span class="modal-label" title="File system path to the database">Path</span><span class="modal-val" style="font-size:9px;max-width:260px" title="${escapeHtml(stats.path)}">${escapeHtml(stats.path)}</span></div>`;
             const alVal = stats.auto_lookup ? 'On' : 'Off';
             html += mrow('Auto-resolve', alVal, 'Master switch — enables the GeoIP system that resolves peer IPs to locations on the map', alVal, stats.auto_lookup ? 'modal-val-ok' : 'modal-val-warn');
             // Auto-update toggle switch (persists to settings.json)
@@ -1453,6 +1433,49 @@
     // (mirrors the AS Distribution panel pattern)
     // ═══════════════════════════════════════════════════════════
 
+    const privatePanel = window.BPMPrivateNetworkPanel.create({
+        state: privateState,
+        data: {
+            get lastPeers() { return lastPeers; },
+            get PN_NET_LABELS() { return PN_NET_LABELS; },
+            get PRIVATE_NETS() { return PRIVATE_NETS; },
+            get nodes() { return nodes; },
+            get highlightedPeerId() { return highlightedPeerId; },
+            set highlightedPeerId(value) { highlightedPeerId = value; },
+        },
+        actions: {
+            cachePnElements,
+            getPnNetColor,
+            pnEsc: escapeHtml,
+            pnFmtDuration,
+            selectPrivatePeer,
+            renderPnDonut,
+            serviceFlagFromAbbr,
+            serviceFlagDescription,
+        },
+    });
+
+    const privatePopup = window.BPMPrivatePeerDetail.create({
+        state: privateState,
+        data: {
+            get lastPeers() { return lastPeers; },
+            get PN_CONN_TYPE_FULL() { return PN_CONN_TYPE_FULL; },
+            get highlightedPeerId() { return highlightedPeerId; },
+            set highlightedPeerId(value) { highlightedPeerId = value; },
+            get pinnedNode() { return pinnedNode; },
+            set pinnedNode(value) { pinnedNode = value; },
+        },
+        actions: {
+            pnEsc: escapeHtml,
+            pnFmtDuration,
+            pnFmtBytes,
+            renderServiceFlagList,
+            cachePnElements,
+            updatePrivateNetUI,
+            showDisconnectDialog,
+        },
+    });
+
     // Donut configuration
     const PN_DONUT_SIZE = 260;
     const PN_DONUT_RADIUS = 116;
@@ -1461,53 +1484,29 @@
     const PN_DONUT_WIDTH_DIMMED = 14;
     const PN_INNER_RADIUS = PN_DONUT_RADIUS - PN_DONUT_WIDTH;
 
-    // DOM refs (cached after first use)
-    let pnContainerEl = null;
-    let pnDonutSvg = null;
-    let pnCenterCount = null;
-    let pnCenterLabel = null;
-    let pnCenterSub = null;
-    let pnDetailPanelEl = null;
-    let pnDetailBodyEl = null;
-    let pnDetailBodyHandlerAttached = false;  // guard against re-registering click handler
-    let pnDetailNetNameEl = null;
-    let pnDetailMetaEl = null;
-
-    // Donut state
-    let pnSegments = [];           // Array of { net, count, color, label }
-    let pnSelectedNet = null;      // Currently selected donut segment (null = overview/all)
-    let pnHoveredNet = null;       // Network type hovered on the donut (for peer preview/dimming)
-    let pnPopupTimer = null;       // Timer ID for pending popup show (prevents race conditions)
-
-    // Sub-tooltip state
-    let pnSubTooltipPinned = false;
-    let pnPinnedSubSrc = null;
-    let pnCenterPreviewLabel = null;   // Label of active PN center preview (for data refresh preservation)
-    let pnCenterPreviewPeerIds = null; // Peer IDs of active PN center preview
-
     function cachePnElements() {
-        if (!pnContainerEl) {
-            pnContainerEl = document.getElementById('pn-container');
-            pnDonutSvg = document.getElementById('pn-donut-svg');
-            pnCenterCount = document.getElementById('pn-center-count');
-            pnCenterLabel = document.getElementById('pn-center-label');
-            pnCenterSub = document.getElementById('pn-center-sub');
-            pnDetailPanelEl = document.getElementById('pn-detail-panel');
-            pnDetailBodyEl = document.getElementById('pn-detail-body');
-            pnDetailNetNameEl = document.getElementById('pn-detail-net-name');
-            pnDetailMetaEl = document.getElementById('pn-detail-meta');
-            pnInsightRectEl = document.getElementById('pn-insight-rect');
+        if (!privateState.pnContainerEl) {
+            privateState.pnContainerEl = document.getElementById('pn-container');
+            privateState.pnDonutSvg = document.getElementById('pn-donut-svg');
+            privateState.pnCenterCount = document.getElementById('pn-center-count');
+            privateState.pnCenterLabel = document.getElementById('pn-center-label');
+            privateState.pnCenterSub = document.getElementById('pn-center-sub');
+            privateState.pnDetailPanelEl = document.getElementById('pn-detail-panel');
+            privateState.pnDetailBodyEl = document.getElementById('pn-detail-body');
+            privateState.pnDetailNetNameEl = document.getElementById('pn-detail-net-name');
+            privateState.pnDetailMetaEl = document.getElementById('pn-detail-meta');
+            privateState.pnInsightRectEl = document.getElementById('pn-insight-rect');
         }
         // Attach blank-space click handler once on pnDetailBodyEl (dismiss sub-tooltips)
-        if (pnDetailBodyEl && !pnDetailBodyHandlerAttached) {
-            pnDetailBodyHandlerAttached = true;
-            pnDetailBodyEl.addEventListener('click', (e) => {
-                if (e.target === pnDetailBodyEl || e.target.classList.contains('modal-section-title') ||
+        if (privateState.pnDetailBodyEl && !privateState.pnDetailBodyHandlerAttached) {
+            privateState.pnDetailBodyHandlerAttached = true;
+            privateState.pnDetailBodyEl.addEventListener('click', (e) => {
+                if (e.target === privateState.pnDetailBodyEl || e.target.classList.contains('modal-section-title') ||
                     e.target.classList.contains('modal-row') || e.target.classList.contains('modal-label') ||
                     e.target.classList.contains('modal-val')) {
-                    if (pnSubTooltipPinned) {
-                        hidePnSubTooltip();
-                        pnDetailBodyEl.querySelectorAll('.pn-sub-filter-active').forEach(r => r.classList.remove('pn-sub-filter-active'));
+                    if (privateState.pnSubTooltipPinned) {
+                        privatePanel.hidePnSubTooltip();
+                        privateState.pnDetailBodyEl.querySelectorAll('.pn-sub-filter-active').forEach(r => r.classList.remove('pn-sub-filter-active'));
                     }
                 }
             });
@@ -1518,11 +1517,11 @@
     /** Enter private network mode: zoom to Antarctica, show circular donut.
      *  If targetNet is provided, skip overview and go directly to that net's panel. */
     function enterPrivateNetMode(selectedPeerId, targetNet) {
-        if (privateNetMode) {
+        if (privateState.privateNetMode) {
             if (selectedPeerId) selectPrivatePeer(selectedPeerId);
             return;
         }
-        privateNetMode = true;
+        privateState.privateNetMode = true;
         document.body.classList.add('private-net-mode');
 
         // Close any existing AS distribution panels/tooltips
@@ -1539,9 +1538,9 @@
         pinnedNode = null;
 
         // Reset state — but apply targetNet if provided
-        pnSelectedNet = targetNet || null;
-        hidePnSubTooltip();
-        pnMiniHover = false;
+        privateState.pnSelectedNet = targetNet || null;
+        privatePanel.hidePnSubTooltip();
+        privateState.pnMiniHover = false;
 
         // Switch badge filters to only active private networks
         const activePrivateNets = new Set();
@@ -1553,10 +1552,10 @@
 
         // Show donut container — centered at top with panel open
         cachePnElements();
-        if (pnContainerEl) {
-            pnContainerEl.classList.remove('hidden');
+        if (privateState.pnContainerEl) {
+            privateState.pnContainerEl.classList.remove('hidden');
             requestAnimationFrame(() => {
-                pnContainerEl.classList.add('visible', 'pn-focused');
+                privateState.pnContainerEl.classList.add('visible', 'pn-focused');
             });
         }
 
@@ -1570,9 +1569,9 @@
         updatePrivateNetUI();
         if (targetNet) {
             // Go directly to the target network's detail panel
-            setTimeout(() => openPnDetailPanel(targetNet), 200);
+            setTimeout(() => privatePanel.openPnDetailPanel(targetNet), 200);
         } else {
-            setTimeout(() => openPnOverviewPanel(), 200);
+            setTimeout(() => privatePanel.openPnOverviewPanel(), 200);
         }
 
         // Select the triggering peer if provided
@@ -1583,39 +1582,39 @@
 
     /** Exit private network mode: return to normal public view */
     function exitPrivateNetMode() {
-        if (!privateNetMode) return;
-        privateNetMode = false;
-        privateNetSelectedPeer = null;
-        privateNetLinePeer = null;
-        pnSelectedNet = null;
-        pnHoveredNet = null;
-        pnPreviewPeerIds = null;
+        if (!privateState.privateNetMode) return;
+        privateState.privateNetMode = false;
+        privateState.privateNetSelectedPeer = null;
+        privateState.privateNetLinePeer = null;
+        privateState.pnSelectedNet = null;
+        privateState.pnHoveredNet = null;
+        privateState.pnPreviewPeerIds = null;
 
         // Clear insight rect state
-        hidePnInsightRect();
-        pnInsightActiveType = null;
-        pnInsightActivePeerId = null;
-        pnInsightActiveData = null;
+        privatePanel.hidePnInsightRect();
+        privateState.pnInsightActiveType = null;
+        privateState.pnInsightActivePeerId = null;
+        privateState.pnInsightActiveData = null;
 
         document.body.classList.remove('private-net-mode', 'pn-panel-open');
 
         // Hide sub-tooltips
-        hidePnSubTooltip();
+        privatePanel.hidePnSubTooltip();
 
         // Hide private network UI
         cachePnElements();
-        if (pnContainerEl) {
-            pnContainerEl.classList.remove('visible', 'pn-focused');
-            setTimeout(() => pnContainerEl.classList.add('hidden'), 500);
+        if (privateState.pnContainerEl) {
+            privateState.pnContainerEl.classList.remove('visible', 'pn-focused');
+            setTimeout(() => privateState.pnContainerEl.classList.add('hidden'), 500);
         }
-        if (pnDetailPanelEl) {
-            pnDetailPanelEl.classList.remove('visible');
-            setTimeout(() => pnDetailPanelEl.classList.add('hidden'), 350);
+        if (privateState.pnDetailPanelEl) {
+            privateState.pnDetailPanelEl.classList.remove('visible');
+            setTimeout(() => privateState.pnDetailPanelEl.classList.add('hidden'), 350);
         }
 
         // Clear state
         hideTooltip();
-        closePnBigPopup();
+        privatePopup.closePnBigPopup();
         clearMapDotFilter();
         highlightedPeerId = null;
         pinnedNode = null;
@@ -1631,7 +1630,7 @@
 
         // Immediately re-show the mini donut (don't wait for next poll cycle)
         renderPnMiniDonut();
-        renderPeerTable();
+        peerTable.renderPeerTable();
     }
 
     /** Select a specific private peer in Antarctica view */
@@ -1639,8 +1638,8 @@
         const node = nodes.find(n => n.peerId === peerId && n.alive);
         if (!node) return;
 
-        privateNetSelectedPeer = node;
-        privateNetLinePeer = peerId;
+        privateState.privateNetSelectedPeer = node;
+        privateState.privateNetLinePeer = peerId;
         highlightedPeerId = peerId;
         pinnedNode = node;
 
@@ -1652,25 +1651,25 @@
         targetView.zoom = 2.5;
 
         hideTooltip();
-        hidePnSubTooltip();
+        privatePanel.hidePnSubTooltip();
 
         // Dismiss insight rect if selecting a different peer than the active insight's peer
-        if (pnInsightRectVisible && pnInsightActivePeerId !== peerId) {
-            hidePnInsightRect();
-            clearPnInsightState();
+        if (privateState.pnInsightRectVisible && privateState.pnInsightActivePeerId !== peerId) {
+            privatePanel.hidePnInsightRect();
+            privatePanel.clearPnInsightState();
         }
 
         // Move donut to top-center (focused state)
         cachePnElements();
-        if (pnContainerEl) pnContainerEl.classList.add('pn-focused');
+        if (privateState.pnContainerEl) privateState.pnContainerEl.classList.add('pn-focused');
 
         // Cancel any pending popup timer, close existing popup immediately (sync),
         // then schedule the new one
-        if (pnPopupTimer) clearTimeout(pnPopupTimer);
-        closePnBigPopupSync();
-        pnPopupTimer = setTimeout(() => {
-            pnPopupTimer = null;
-            showPnBigPopup(node);
+        if (privateState.pnPopupTimer) clearTimeout(privateState.pnPopupTimer);
+        privatePopup.closePnBigPopupSync();
+        privateState.pnPopupTimer = setTimeout(() => {
+            privateState.pnPopupTimer = null;
+            privatePopup.showPnBigPopup(node);
         }, 350);
 
         updatePrivateNetUI();
@@ -1718,7 +1717,7 @@
 
     function renderPnDonut() {
         cachePnElements();
-        if (!pnDonutSvg) return;
+        if (!privateState.pnDonutSvg) return;
 
         const privateNodes = nodes.filter(n => n.alive && PRIVATE_NETS.has(n.net));
         const counts = { onion: 0, i2p: 0, cjdns: 0 };
@@ -1728,69 +1727,69 @@
         const total = privateNodes.length;
 
         // Build segments
-        pnSegments = [];
+        privateState.pnSegments = [];
         for (const net of ['onion', 'i2p', 'cjdns']) {
             if (counts[net] > 0) {
-                pnSegments.push({ net, count: counts[net], color: getPnNetColor(net), label: PN_NET_LABELS[net] });
+                privateState.pnSegments.push({ net, count: counts[net], color: getPnNetColor(net), label: PN_NET_LABELS[net] });
             }
         }
 
         // Update center text
-        if (pnCenterLabel && pnCenterCount && pnCenterSub) {
+        if (privateState.pnCenterLabel && privateState.pnCenterCount && privateState.pnCenterSub) {
             // If a peer row is hovered in a sub-tooltip, preserve that peer's info
-            if (highlightedPeerId && pnSubTooltipPinned) {
+            if (highlightedPeerId && privateState.pnSubTooltipPinned) {
                 var peer = lastPeers.find(function(p) { return p.id === highlightedPeerId; });
                 if (peer) {
                     var netLabel = PN_NET_LABELS[peer.network] || peer.network || 'PEER';
                     var netColor = getPnNetColor(peer.network);
-                    pnCenterLabel.textContent = netLabel.toUpperCase();
-                    pnCenterLabel.style.color = netColor;
-                    pnCenterCount.textContent = '#' + highlightedPeerId;
-                    pnCenterCount.style.fontSize = '22px';
-                    pnCenterCount.style.fontFamily = '';
-                    pnCenterCount.style.color = netColor;
-                    pnCenterSub.textContent = peer.direction === 'IN' ? 'inbound' : 'outbound';
+                    privateState.pnCenterLabel.textContent = netLabel.toUpperCase();
+                    privateState.pnCenterLabel.style.color = netColor;
+                    privateState.pnCenterCount.textContent = '#' + highlightedPeerId;
+                    privateState.pnCenterCount.style.fontSize = '22px';
+                    privateState.pnCenterCount.style.fontFamily = '';
+                    privateState.pnCenterCount.style.color = netColor;
+                    privateState.pnCenterSub.textContent = peer.direction === 'IN' ? 'inbound' : 'outbound';
                 }
             // If a category row preview is active (hover or pinned), preserve it across refresh
-            } else if (pnCenterPreviewLabel && pnCenterPreviewPeerIds) {
-                var cnt = pnCenterPreviewPeerIds.length;
-                pnCenterLabel.textContent = cnt + ' PEER' + (cnt !== 1 ? 'S' : '');
-                pnCenterLabel.style.color = 'var(--logo-accent, #7ec8e3)';
-                pnCenterCount.textContent = pnCenterPreviewLabel.toUpperCase();
-                pnCenterCount.style.fontSize = '17px';
-                pnCenterCount.style.fontFamily = 'var(--font-display, Cinzel, serif)';
-                pnCenterCount.style.color = '';
+            } else if (privateState.pnCenterPreviewLabel && privateState.pnCenterPreviewPeerIds) {
+                var cnt = privateState.pnCenterPreviewPeerIds.length;
+                privateState.pnCenterLabel.textContent = cnt + ' PEER' + (cnt !== 1 ? 'S' : '');
+                privateState.pnCenterLabel.style.color = 'var(--logo-accent, #7ec8e3)';
+                privateState.pnCenterCount.textContent = privateState.pnCenterPreviewLabel.toUpperCase();
+                privateState.pnCenterCount.style.fontSize = '17px';
+                privateState.pnCenterCount.style.fontFamily = 'var(--font-display, Cinzel, serif)';
+                privateState.pnCenterCount.style.color = '';
                 var pct = total > 0 ? Math.round((cnt / total) * 100) : 0;
-                pnCenterSub.innerHTML = pct + '% of anonymous<br>peers';
-            } else if (privateNetSelectedPeer) {
-                pnCenterLabel.textContent = PN_NET_LABELS[privateNetSelectedPeer.net] || 'PEER';
-                pnCenterLabel.style.color = '';
-                pnCenterCount.textContent = '#' + privateNetSelectedPeer.peerId;
-                pnCenterCount.style.fontSize = '22px';
-                pnCenterCount.style.fontFamily = '';
-                pnCenterCount.style.color = '';
-                pnCenterSub.textContent = privateNetSelectedPeer.direction === 'IN' ? 'inbound' : 'outbound';
-            } else if (pnSelectedNet) {
-                const seg = pnSegments.find(s => s.net === pnSelectedNet);
+                privateState.pnCenterSub.innerHTML = pct + '% of anonymous<br>peers';
+            } else if (privateState.privateNetSelectedPeer) {
+                privateState.pnCenterLabel.textContent = PN_NET_LABELS[privateState.privateNetSelectedPeer.net] || 'PEER';
+                privateState.pnCenterLabel.style.color = '';
+                privateState.pnCenterCount.textContent = '#' + privateState.privateNetSelectedPeer.peerId;
+                privateState.pnCenterCount.style.fontSize = '22px';
+                privateState.pnCenterCount.style.fontFamily = '';
+                privateState.pnCenterCount.style.color = '';
+                privateState.pnCenterSub.textContent = privateState.privateNetSelectedPeer.direction === 'IN' ? 'inbound' : 'outbound';
+            } else if (privateState.pnSelectedNet) {
+                const seg = privateState.pnSegments.find(s => s.net === privateState.pnSelectedNet);
                 var netCount = seg ? seg.count : 0;
                 var netPct = total > 0 ? Math.round((netCount / total) * 100) : 0;
-                pnCenterLabel.textContent = netCount + ' PEER' + (netCount !== 1 ? 'S' : '');
-                pnCenterLabel.style.color = 'var(--logo-accent, #7ec8e3)';
-                pnCenterCount.textContent = (PN_NET_LABELS[pnSelectedNet] || pnSelectedNet).toUpperCase();
-                pnCenterCount.style.fontSize = '22px';
-                pnCenterCount.style.fontFamily = 'var(--font-display, Cinzel, serif)';
-                pnCenterCount.style.color = seg ? seg.color : '';
-                pnCenterSub.innerHTML = netPct + '% of anonymous<br>peers';
+                privateState.pnCenterLabel.textContent = netCount + ' PEER' + (netCount !== 1 ? 'S' : '');
+                privateState.pnCenterLabel.style.color = 'var(--logo-accent, #7ec8e3)';
+                privateState.pnCenterCount.textContent = (PN_NET_LABELS[privateState.pnSelectedNet] || privateState.pnSelectedNet).toUpperCase();
+                privateState.pnCenterCount.style.fontSize = '22px';
+                privateState.pnCenterCount.style.fontFamily = 'var(--font-display, Cinzel, serif)';
+                privateState.pnCenterCount.style.color = seg ? seg.color : '';
+                privateState.pnCenterSub.innerHTML = netPct + '% of anonymous<br>peers';
             } else {
                 var totalAllPeers = lastPeers.length || total;
                 var pnPct = totalAllPeers > 0 ? Math.round((total / totalAllPeers) * 100) : 0;
-                pnCenterLabel.textContent = total + ' PEER' + (total !== 1 ? 'S' : '');
-                pnCenterLabel.style.color = 'var(--logo-accent, #7ec8e3)';
-                pnCenterCount.textContent = 'PRIVATE NETWORKS';
-                pnCenterCount.style.fontSize = '13px';
-                pnCenterCount.style.fontFamily = 'var(--font-display, Cinzel, serif)';
-                pnCenterCount.style.color = '';
-                pnCenterSub.innerHTML = pnPct + '% of total<br>connections';
+                privateState.pnCenterLabel.textContent = total + ' PEER' + (total !== 1 ? 'S' : '');
+                privateState.pnCenterLabel.style.color = 'var(--logo-accent, #7ec8e3)';
+                privateState.pnCenterCount.textContent = 'PRIVATE NETWORKS';
+                privateState.pnCenterCount.style.fontSize = '13px';
+                privateState.pnCenterCount.style.fontFamily = 'var(--font-display, Cinzel, serif)';
+                privateState.pnCenterCount.style.color = '';
+                privateState.pnCenterSub.innerHTML = pnPct + '% of total<br>connections';
             }
         }
 
@@ -1819,21 +1818,21 @@
         // Inner decorative ring
         html += '<circle cx="' + cx + '" cy="' + cy + '" r="' + (PN_INNER_RADIUS - 3) + '" fill="none" stroke="rgba(240,136,62,0.06)" stroke-width="0.5" />';
 
-        if (pnSegments.length === 0) {
+        if (privateState.pnSegments.length === 0) {
             // Empty state
             html += '<circle cx="' + cx + '" cy="' + cy + '" r="' + (PN_DONUT_RADIUS - PN_DONUT_WIDTH / 2) + '" fill="none" stroke="#2d333b" stroke-width="' + PN_DONUT_WIDTH + '" opacity="0.5" />';
-        } else if (pnSegments.length === 1) {
-            const seg = pnSegments[0];
-            const w = (pnSelectedNet === seg.net) ? PN_DONUT_WIDTH_SELECTED : PN_DONUT_WIDTH;
+        } else if (privateState.pnSegments.length === 1) {
+            const seg = privateState.pnSegments[0];
+            const w = (privateState.pnSelectedNet === seg.net) ? PN_DONUT_WIDTH_SELECTED : PN_DONUT_WIDTH;
             html += '<circle cx="' + cx + '" cy="' + cy + '" r="' + (PN_DONUT_RADIUS - PN_DONUT_WIDTH / 2) + '" fill="none" stroke="' + seg.color + '" stroke-width="' + w + '" class="pn-donut-segment" data-net="' + seg.net + '" filter="url(#pn-donut-shadow)" style="cursor:pointer" />';
         } else {
-            const totalGap = gap * pnSegments.length;
+            const totalGap = gap * privateState.pnSegments.length;
             const available = 2 * Math.PI - totalGap;
             let angle = -Math.PI / 2;
-            const highlightNet = pnSelectedNet || (privateNetSelectedPeer ? privateNetSelectedPeer.net : null);
+            const highlightNet = privateState.pnSelectedNet || (privateState.privateNetSelectedPeer ? privateState.privateNetSelectedPeer.net : null);
 
             html += '<g filter="url(#pn-donut-shadow)">';
-            for (const seg of pnSegments) {
+            for (const seg of privateState.pnSegments) {
                 const sweep = (seg.count / total) * available;
                 if (sweep <= 0) continue;
 
@@ -1860,11 +1859,11 @@
             html += '<circle cx="' + cx + '" cy="' + cy + '" r="' + (PN_DONUT_RADIUS - PN_DONUT_WIDTH / 2) + '" fill="none" stroke="url(#pn-donut-highlight)" stroke-width="' + PN_DONUT_WIDTH + '" pointer-events="none" />';
         }
 
-        pnDonutSvg.innerHTML = html;
+        privateState.pnDonutSvg.innerHTML = html;
 
         // Attach segment event handlers (hover preview + click)
         // Safe: innerHTML above replaced all children, so old listeners are GC'd with old elements
-        pnDonutSvg.querySelectorAll('.pn-donut-segment').forEach(el => {
+        privateState.pnDonutSvg.querySelectorAll('.pn-donut-segment').forEach(el => {
             el.addEventListener('click', onPnSegmentClick);
             el.addEventListener('mouseenter', onPnSegmentHover);
             el.addEventListener('mouseleave', onPnSegmentLeave);
@@ -1873,21 +1872,21 @@
 
     /** Hover over a donut segment → preview network, dim others, draw lines to that net's peers */
     function onPnSegmentHover(e) {
-        if (pnSelectedNet || privateNetSelectedPeer) return;
+        if (privateState.pnSelectedNet || privateState.privateNetSelectedPeer) return;
         const net = e.currentTarget.dataset.net;
-        const seg = pnSegments.find(s => s.net === net);
+        const seg = privateState.pnSegments.find(s => s.net === net);
         if (!seg) return;
-        pnHoveredNet = net;
-        if (pnCenterLabel) pnCenterLabel.textContent = seg.label.toUpperCase();
-        if (pnCenterCount) {
-            pnCenterCount.textContent = seg.count;
-            pnCenterCount.style.color = seg.color;
+        privateState.pnHoveredNet = net;
+        if (privateState.pnCenterLabel) privateState.pnCenterLabel.textContent = seg.label.toUpperCase();
+        if (privateState.pnCenterCount) {
+            privateState.pnCenterCount.textContent = seg.count;
+            privateState.pnCenterCount.style.color = seg.color;
         }
-        if (pnCenterSub) pnCenterSub.textContent = 'peers';
+        if (privateState.pnCenterSub) privateState.pnCenterSub.textContent = 'peers';
 
         // Dim non-matching donut segments
-        if (pnDonutSvg) {
-            pnDonutSvg.querySelectorAll('.pn-donut-segment').forEach(el => {
+        if (privateState.pnDonutSvg) {
+            privateState.pnDonutSvg.querySelectorAll('.pn-donut-segment').forEach(el => {
                 if (el.dataset.net !== net) el.classList.add('dimmed');
                 else el.classList.remove('dimmed');
             });
@@ -1896,26 +1895,26 @@
 
     /** Leave a donut segment → restore center, undim, clear hover lines */
     function onPnSegmentLeave() {
-        if (pnSelectedNet || privateNetSelectedPeer) return;
-        pnHoveredNet = null;
-        const total = pnSegments.reduce((s, seg) => s + seg.count, 0);
+        if (privateState.pnSelectedNet || privateState.privateNetSelectedPeer) return;
+        privateState.pnHoveredNet = null;
+        const total = privateState.pnSegments.reduce((s, seg) => s + seg.count, 0);
         var totalAllPeers = lastPeers.length || total;
         var pnPct = totalAllPeers > 0 ? Math.round((total / totalAllPeers) * 100) : 0;
-        if (pnCenterLabel) {
-            pnCenterLabel.textContent = total + ' PEER' + (total !== 1 ? 'S' : '');
-            pnCenterLabel.style.color = 'var(--logo-accent, #7ec8e3)';
+        if (privateState.pnCenterLabel) {
+            privateState.pnCenterLabel.textContent = total + ' PEER' + (total !== 1 ? 'S' : '');
+            privateState.pnCenterLabel.style.color = 'var(--logo-accent, #7ec8e3)';
         }
-        if (pnCenterCount) {
-            pnCenterCount.textContent = 'PRIVATE NETWORKS';
-            pnCenterCount.style.fontSize = '13px';
-            pnCenterCount.style.fontFamily = 'var(--font-display, Cinzel, serif)';
-            pnCenterCount.style.color = '';
+        if (privateState.pnCenterCount) {
+            privateState.pnCenterCount.textContent = 'PRIVATE NETWORKS';
+            privateState.pnCenterCount.style.fontSize = '13px';
+            privateState.pnCenterCount.style.fontFamily = 'var(--font-display, Cinzel, serif)';
+            privateState.pnCenterCount.style.color = '';
         }
-        if (pnCenterSub) pnCenterSub.innerHTML = pnPct + '% of total<br>connections';
+        if (privateState.pnCenterSub) privateState.pnCenterSub.innerHTML = pnPct + '% of total<br>connections';
 
         // Undim all segments
-        if (pnDonutSvg) {
-            pnDonutSvg.querySelectorAll('.pn-donut-segment').forEach(el => {
+        if (privateState.pnDonutSvg) {
+            privateState.pnDonutSvg.querySelectorAll('.pn-donut-segment').forEach(el => {
                 el.classList.remove('dimmed');
             });
         }
@@ -1928,972 +1927,97 @@
         if (!net) return;
 
         // Dismiss insight rect when switching to a network selection
-        if (pnInsightRectVisible) {
-            hidePnInsightRect();
-            clearPnInsightState();
+        if (privateState.pnInsightRectVisible) {
+            privatePanel.hidePnInsightRect();
+            privatePanel.clearPnInsightState();
         }
 
         // Toggle: click same segment deselects
-        if (pnSelectedNet === net) {
-            pnSelectedNet = null;
-            closePnDetailPanel();
+        if (privateState.pnSelectedNet === net) {
+            privateState.pnSelectedNet = null;
+            privatePanel.closePnDetailPanel();
             document.body.classList.remove('pn-panel-open');
             // In private mode, donut always stays centered at top
-            if (!privateNetMode) {
+            if (!privateState.privateNetMode) {
                 cachePnElements();
-                if (pnContainerEl) pnContainerEl.classList.remove('pn-focused');
+                if (privateState.pnContainerEl) privateState.pnContainerEl.classList.remove('pn-focused');
             }
         } else {
-            pnSelectedNet = net;
+            privateState.pnSelectedNet = net;
             cachePnElements();
-            if (pnContainerEl) pnContainerEl.classList.add('pn-focused');
-            openPnDetailPanel(net);
+            if (privateState.pnContainerEl) privateState.pnContainerEl.classList.add('pn-focused');
+            privatePanel.openPnDetailPanel(net);
         }
         updatePrivateNetUI();
-    }
-
-    // ── Detail Panel (slides in from right, like AS detail panel) ──
-
-    function openPnDetailPanel(net) {
-        cachePnElements();
-        if (!pnDetailPanelEl || !pnDetailBodyEl) return;
-
-        document.body.classList.add('pn-panel-open');
-        pnDetailPanelEl.classList.remove('hidden');
-        requestAnimationFrame(() => pnDetailPanelEl.classList.add('visible'));
-
-        updatePnDetailPanel(net);
-    }
-
-    function closePnDetailPanel() {
-        hidePnSubTooltip();
-        cachePnElements();
-        if (pnDetailPanelEl) {
-            pnDetailPanelEl.classList.remove('visible');
-            setTimeout(() => {
-                pnDetailPanelEl.classList.add('hidden');
-                document.body.classList.remove('pn-panel-open');
-            }, 350);
-        }
-    }
-
-    /** Build and populate the detail panel for a specific network */
-    function updatePnDetailPanel(net) {
-        cachePnElements();
-        if (!pnDetailBodyEl) return;
-
-        // Show back button when viewing a specific network
-        const backBtn = document.getElementById('pn-detail-back');
-        if (backBtn) backBtn.classList.remove('hidden');
-
-        const ASD = window.ASDistribution;
-        const rawPeers = ASD ? ASD.getLastPeersRaw() : lastPeers;
-        const netPeers = rawPeers.filter(p => p.network === net);
-        const netLabel = PN_NET_LABELS[net] || net.toUpperCase();
-        const netColor = getPnNetColor(net);
-
-        // Update header
-        if (pnDetailNetNameEl) {
-            pnDetailNetNameEl.innerHTML = '<span style="color:' + netColor + '">' + netLabel + '</span> Network';
-        }
-        if (pnDetailMetaEl) {
-            pnDetailMetaEl.textContent = netPeers.length + ' peer' + (netPeers.length !== 1 ? 's' : '') + ' connected';
-        }
-
-        if (netPeers.length === 0) {
-            pnDetailBodyEl.innerHTML = '<div class="pn-panel-empty">No ' + netLabel + ' peers connected</div>';
-            return;
-        }
-
-        // Calculate stats
-        let inbound = 0, outbound = 0, totalPing = 0, pingCount = 0;
-        let totalBytesSent = 0, totalBytesRecv = 0;
-        const softwareMap = {};
-        const servicesMap = {};
-        const connTypeMap = {};
-
-        for (const p of netPeers) {
-            if (p.direction === 'IN') inbound++; else outbound++;
-            if (p.ping_ms > 0) { totalPing += p.ping_ms; pingCount++; }
-            totalBytesSent += (p.bytessent || 0);
-            totalBytesRecv += (p.bytesrecv || 0);
-            const sw = p.subver || 'Unknown';
-            softwareMap[sw] = softwareMap[sw] || [];
-            softwareMap[sw].push(p);
-            const svc = p.services_abbrev || '\u2014';
-            servicesMap[svc] = servicesMap[svc] || [];
-            servicesMap[svc].push(p);
-            const ct = p.connection_type || 'unknown';
-            connTypeMap[ct] = connTypeMap[ct] || [];
-            connTypeMap[ct].push(p);
-        }
-
-        const avgPing = pingCount > 0 ? Math.round(totalPing / pingCount) : null;
-
-        let html = '';
-
-        // ── Peers section (Overview) ──
-        html += '<div class="modal-section-title">Peers</div>';
-        html += pnStaticRow('Total', netPeers.length);
-        html += pnStaticRow('Inbound', inbound);
-        html += pnStaticRow('Outbound', outbound);
-
-        // ── Performance ──
-        html += '<div class="modal-section-title">Performance</div>';
-        if (avgPing !== null) html += pnStaticRow('Avg Ping', avgPing + ' ms');
-        html += pnStaticRow('Bytes Sent', fmtBytesShort(totalBytesSent));
-        html += pnStaticRow('Bytes Recv', fmtBytesShort(totalBytesRecv));
-
-        // ── Connection Types (interactive) ──
-        const ctEntries = Object.entries(connTypeMap).sort((a, b) => b[1].length - a[1].length);
-        if (ctEntries.length > 0) {
-            html += '<div class="modal-section-title">Connection Types</div>';
-            for (const [ct, peers] of ctEntries) {
-                const PN_CT_LABELS = {
-                    'outbound-full-relay': 'Full Relay',
-                    'block-relay-only': 'Block Relay',
-                    'manual': 'Manual',
-                    'addr-fetch': 'Addr Fetch',
-                    'feeler': 'Feeler',
-                    'inbound': 'Inbound',
-                };
-                const ctLabel = PN_CT_LABELS[ct] || ct;
-                const peerIds = JSON.stringify(peers.map(p => p.id));
-                html += pnInteractiveRow(ctLabel, peers.length, peerIds, 'conntype');
-            }
-        }
-
-        // ── Software (interactive) ──
-        const swEntries = Object.entries(softwareMap).sort((a, b) => b[1].length - a[1].length);
-        if (swEntries.length > 0) {
-            html += '<div class="modal-section-title">Software</div>';
-            for (const [sw, peers] of swEntries) {
-                const peerIds = JSON.stringify(peers.map(p => p.id));
-                html += pnInteractiveRow(pnEsc(sw), peers.length, peerIds, 'software');
-            }
-        }
-
-        // ── Services (interactive) ──
-        const svcEntries = Object.entries(servicesMap).sort((a, b) => b[1].length - a[1].length);
-        if (svcEntries.length > 0) {
-            html += '<div class="modal-section-title">Services</div>';
-            for (const [svc, peers] of svcEntries) {
-                const peerIds = JSON.stringify(peers.map(p => p.id));
-                html += pnInteractiveRow(pnEsc(svc), peers.length, peerIds, 'services');
-            }
-        }
-
-        pnDetailBodyEl.innerHTML = html;
-
-        // Attach interactive row handlers
-        attachPnInteractiveRowHandlers(pnDetailBodyEl, netPeers);
-    }
-
-    /** Build a static (non-interactive) row */
-    function pnStaticRow(label, value) {
-        return '<div class="modal-row"><span class="modal-label">' + label + '</span><span class="modal-val">' + value + '</span></div>';
-    }
-
-    /** Build an interactive row (hover + click for sub-tooltip) */
-    function pnInteractiveRow(label, count, peerIdsJson, category) {
-        return '<div class="as-detail-sub-row pn-interactive-row" data-peer-ids=\'' + peerIdsJson + '\' data-category="' + category + '">'
-             + '<span class="as-detail-sub-label">' + label + '</span>'
-             + '<span class="as-detail-sub-val">' + count + '</span>'
-             + '</div>';
-    }
-
-    // ── Overview Panel (all private networks combined — insights + search + tabs) ──
-
-    /** Build and show the overview panel when user clicks the donut center (no specific net) */
-    function openPnOverviewPanel() {
-        cachePnElements();
-        if (!pnDetailPanelEl || !pnDetailBodyEl) return;
-
-        pnSelectedNet = null; // overview = no specific net
-        document.body.classList.add('pn-panel-open');
-        pnDetailPanelEl.classList.remove('hidden');
-        requestAnimationFrame(() => pnDetailPanelEl.classList.add('visible'));
-
-        updatePnOverviewPanel();
-    }
-
-    /** Populate the overview panel with insights, search, and category tabs */
-    function updatePnOverviewPanel() {
-        cachePnElements();
-        if (!pnDetailBodyEl) return;
-
-        // Hide back button in overview
-        const backBtn = document.getElementById('pn-detail-back');
-        if (backBtn) backBtn.classList.add('hidden');
-
-        const ASD = window.ASDistribution;
-        const rawPeers = ASD ? ASD.getLastPeersRaw() : lastPeers;
-        const allPrivate = rawPeers.filter(p => PRIVATE_NETS.has(p.network));
-
-        // Header
-        if (pnDetailNetNameEl) {
-            pnDetailNetNameEl.innerHTML = '<span style="color:var(--logo-primary, #f0883e)">Private</span> Networks';
-        }
-        if (pnDetailMetaEl) {
-            pnDetailMetaEl.textContent = allPrivate.length + ' peer' + (allPrivate.length !== 1 ? 's' : '') + ' across ' + pnSegments.length + ' network' + (pnSegments.length !== 1 ? 's' : '');
-        }
-
-        if (allPrivate.length === 0) {
-            pnDetailBodyEl.innerHTML = '<div class="pn-panel-empty">No private peers connected</div>';
-            return;
-        }
-
-        let html = '';
-
-        // ── Search bar ──
-        html += '<div class="pn-search-wrap"><input type="text" class="pn-search-input" id="pn-overview-search" placeholder="Search peers..." autocomplete="off" spellcheck="false"></div>';
-
-        // ── Insights section ──
-        html += '<div class="modal-section-title">Scores and Insights</div>';
-        const nowSec = Math.floor(Date.now() / 1000);
-
-        // Most Stable — longest average connection
-        let bestStablePeer = null, bestStableDur = 0;
-        for (const p of allPrivate) {
-            if (p.conntime > 0) {
-                const dur = nowSec - p.conntime;
-                if (dur > bestStableDur) { bestStableDur = dur; bestStablePeer = p; }
-            }
-        }
-        if (bestStablePeer) {
-            html += '<div class="pn-insight-row" data-peer-id="' + bestStablePeer.id + '" data-insight-type="stable" data-peer-net="' + (bestStablePeer.network || 'onion') + '">';
-            html += '<span class="pn-insight-icon">\u23f3</span>';
-            html += '<span class="pn-insight-label">Most Stable</span>';
-            html += '<span class="pn-insight-val">#' + bestStablePeer.id + ' \u2014 ' + pnFmtDuration(bestStableDur) + '</span>';
-            html += '</div>';
-        }
-
-        // Fastest — lowest ping
-        let bestPingPeer = null, bestPing = Infinity;
-        for (const p of allPrivate) {
-            if (p.ping_ms > 0 && p.ping_ms < bestPing) {
-                bestPing = p.ping_ms; bestPingPeer = p;
-            }
-        }
-        if (bestPingPeer) {
-            html += '<div class="pn-insight-row" data-peer-id="' + bestPingPeer.id + '" data-insight-type="fastest" data-peer-net="' + (bestPingPeer.network || 'onion') + '">';
-            html += '<span class="pn-insight-icon">\u26a1</span>';
-            html += '<span class="pn-insight-label">Fastest</span>';
-            html += '<span class="pn-insight-val">#' + bestPingPeer.id + ' \u2014 ' + bestPing.toFixed(1) + ' ms</span>';
-            html += '</div>';
-        }
-
-        // Most Bytes Sent
-        let bestSentPeer = null, bestSent = 0;
-        for (const p of allPrivate) {
-            if ((p.bytessent || 0) > bestSent) {
-                bestSent = p.bytessent; bestSentPeer = p;
-            }
-        }
-        if (bestSentPeer) {
-            html += '<div class="pn-insight-row" data-peer-id="' + bestSentPeer.id + '" data-insight-type="data-bytessent" data-peer-net="' + (bestSentPeer.network || 'onion') + '">';
-            html += '<span class="pn-insight-icon">\u2b06</span>';
-            html += '<span class="pn-insight-label">Most Bytes Sent</span>';
-            html += '<span class="pn-insight-val">#' + bestSentPeer.id + ' \u2014 ' + fmtBytesShort(bestSent) + '</span>';
-            html += '</div>';
-        }
-
-        // Most Bytes Received
-        let bestRecvPeer = null, bestRecv = 0;
-        for (const p of allPrivate) {
-            if ((p.bytesrecv || 0) > bestRecv) {
-                bestRecv = p.bytesrecv; bestRecvPeer = p;
-            }
-        }
-        if (bestRecvPeer) {
-            html += '<div class="pn-insight-row" data-peer-id="' + bestRecvPeer.id + '" data-insight-type="data-bytesrecv" data-peer-net="' + (bestRecvPeer.network || 'onion') + '">';
-            html += '<span class="pn-insight-icon">\u2b07</span>';
-            html += '<span class="pn-insight-label">Most Bytes Recv</span>';
-            html += '<span class="pn-insight-val">#' + bestRecvPeer.id + ' \u2014 ' + fmtBytesShort(bestRecv) + '</span>';
-            html += '</div>';
-        }
-
-        // ── Networks breakdown (clickable to go to per-network panel) ──
-        html += '<div class="modal-section-title">Networks</div>';
-        for (const seg of pnSegments) {
-            const peerIds = JSON.stringify(allPrivate.filter(p => p.network === seg.net).map(p => p.id));
-            html += '<div class="pn-interactive-row pn-net-link-row" data-net="' + seg.net + '" data-peer-ids=\'' + peerIds + '\' data-category="network">';
-            html += '<span class="as-detail-sub-label">' + seg.label + '</span>';
-            html += '<span class="as-detail-sub-val">' + seg.count + '</span>';
-            html += '</div>';
-        }
-
-        // ── Software (combined across all private peers) ──
-        const softwareMap = {};
-        for (const p of allPrivate) {
-            const sw = p.subver || 'Unknown';
-            softwareMap[sw] = softwareMap[sw] || [];
-            softwareMap[sw].push(p);
-        }
-        const swEntries = Object.entries(softwareMap).sort((a, b) => b[1].length - a[1].length);
-        if (swEntries.length > 0) {
-            html += '<div class="modal-section-title">Software</div>';
-            for (const [sw, peers] of swEntries) {
-                const peerIds = JSON.stringify(peers.map(p => p.id));
-                html += pnInteractiveRow(pnEsc(sw), peers.length, peerIds, 'software');
-            }
-        }
-
-        // ── Services ──
-        const servicesMap = {};
-        for (const p of allPrivate) {
-            const svc = p.services_abbrev || '\u2014';
-            servicesMap[svc] = servicesMap[svc] || [];
-            servicesMap[svc].push(p);
-        }
-        const svcEntries = Object.entries(servicesMap).sort((a, b) => b[1].length - a[1].length);
-        if (svcEntries.length > 0) {
-            html += '<div class="modal-section-title">Services</div>';
-            for (const [svc, peers] of svcEntries) {
-                const peerIds = JSON.stringify(peers.map(p => p.id));
-                html += pnInteractiveRow(pnEsc(svc), peers.length, peerIds, 'services');
-            }
-        }
-
-        pnDetailBodyEl.innerHTML = html;
-
-        // Attach interactive row handlers
-        attachPnInteractiveRowHandlers(pnDetailBodyEl, allPrivate);
-
-        // Network link rows — click to navigate to per-network panel
-        // Network link rows: handled by generic pn-interactive-row handler
-        // (shows submenu with peers in that network on hover/click)
-
-        // Insight rows — hover to preview in rectangle, click to select/pin
-        pnDetailBodyEl.querySelectorAll('.pn-insight-row').forEach(row => {
-            row.addEventListener('mouseenter', () => {
-                if (pnInsightActiveType) return; // Don't override a pinned selection
-                if (pnSubTooltipPinned) return;  // Don't preview when sub-tooltip is open
-                const peerId = parseInt(row.dataset.peerId);
-                const insightType = row.dataset.insightType;
-                if (!peerId || !insightType) return;
-
-                // Find the peer in current data
-                const allPN = nodes.filter(n => n.alive && PRIVATE_NETS.has(n.net));
-                const rawPeers = allPN.map(n => lastPeers.find(p => p.id === n.peerId)).filter(Boolean);
-                const peer = rawPeers.find(p => p.id === peerId);
-                if (!peer) return;
-
-                row.classList.add('pn-insight-hover');
-
-                // Preview: show rectangle, draw line to this peer
-                var data = buildPnInsightData(peer, insightType);
-                showPnInsightRect(insightType, data);
-                pnPreviewPeerIds = [peerId];
-                privateNetLinePeer = peerId;
-            });
-
-            row.addEventListener('mouseleave', () => {
-                if (pnInsightActiveType) return; // Don't dismiss if pinned
-                if (pnSubTooltipPinned) return;  // Was suppressed on enter
-                row.classList.remove('pn-insight-hover');
-                hidePnInsightRect();
-                pnPreviewPeerIds = null;
-                privateNetLinePeer = null;
-            });
-
-            row.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const peerId = parseInt(row.dataset.peerId);
-                const insightType = row.dataset.insightType;
-                if (!peerId || !insightType) return;
-
-                // If clicking the already-active insight, deselect
-                if (pnInsightActiveType === insightType && pnInsightActivePeerId === peerId) {
-                    hidePnInsightRect();
-                    clearPnInsightState();
-                    return;
-                }
-
-                // Find the peer in current data
-                const allPN = nodes.filter(n => n.alive && PRIVATE_NETS.has(n.net));
-                const rawPeers = allPN.map(n => lastPeers.find(p => p.id === n.peerId)).filter(Boolean);
-                const peer = rawPeers.find(p => p.id === peerId);
-                if (!peer) return;
-
-                // Clear any previous active
-                pnDetailBodyEl.querySelectorAll('.pn-insight-row').forEach(r => {
-                    r.classList.remove('pn-insight-active', 'pn-insight-hover');
-                });
-
-                // Pin this insight
-                pnInsightActiveType = insightType;
-                pnInsightActivePeerId = peerId;
-                pnInsightActiveData = buildPnInsightData(peer, insightType);
-                row.classList.add('pn-insight-active');
-
-                // Show rectangle and set line
-                showPnInsightRect(insightType, pnInsightActiveData);
-                privateNetLinePeer = peerId;
-                pnPreviewPeerIds = [peerId];
-
-                // Select the peer (zoom to it, etc.)
-                selectPrivatePeer(peerId);
-            });
-        });
-
-        // Search — filter all rows as user types
-        const searchInput = document.getElementById('pn-overview-search');
-        if (searchInput) {
-            searchInput.addEventListener('input', () => {
-                const q = searchInput.value.toLowerCase().trim();
-                pnDetailBodyEl.querySelectorAll('.pn-interactive-row, .pn-insight-row, .pn-net-link-row').forEach(row => {
-                    if (!q) {
-                        row.style.display = '';
-                    } else {
-                        const text = row.textContent.toLowerCase();
-                        row.style.display = text.includes(q) ? '' : 'none';
-                    }
-                });
-            });
-        }
-
-    }
-
-    // ── Sub-Tooltip System (cascading from the panel, like AS distribution) ──
-
-    /** Safely parse peer IDs from a row's data attribute */
-    function parsePnPeerIds(rowEl) {
-        try { return JSON.parse(rowEl.dataset.peerIds); }
-        catch (_) { return []; }
-    }
-
-    /** Attach hover/click to interactive rows in the detail panel */
-    function attachPnInteractiveRowHandlers(bodyEl, allNetPeers) {
-        bodyEl.querySelectorAll('.pn-interactive-row').forEach(rowEl => {
-            rowEl.addEventListener('mouseenter', (e) => {
-                if (pnSubTooltipPinned) return;
-                if (pnInsightActiveType) return; // Don't preview when insight is selected
-                const peerIds = parsePnPeerIds(rowEl);
-                const category = rowEl.dataset.category;
-                const label = rowEl.querySelector('.as-detail-sub-label').textContent;
-                const html = buildPnPeerListHtml(peerIds, allNetPeers, category, label);
-                showPnSubTooltip(html, e);
-                // Preview lines to these peers
-                pnPreviewPeerIds = peerIds;
-                // Preview category info in PN donut center
-                previewPnCenterText(peerIds, label, allNetPeers.length);
-            });
-            rowEl.addEventListener('mousemove', (e) => {
-                if (!pnSubTooltipPinned) positionPnSubTooltip(e);
-            });
-            rowEl.addEventListener('mouseleave', () => {
-                if (pnSubTooltipPinned) return;
-                if (pnInsightActiveType) return; // Was suppressed on enter
-                hidePnSubTooltip();
-                pnPreviewPeerIds = null;
-                // Restore PN donut center to its previous state
-                restorePnCenterText();
-            });
-            rowEl.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const peerIds = parsePnPeerIds(rowEl);
-                const category = rowEl.dataset.category;
-                const label = rowEl.querySelector('.as-detail-sub-label').textContent;
-
-                // Dismiss insight rect if switching to a non-insight selection
-                if (pnInsightRectVisible) {
-                    hidePnInsightRect();
-                    clearPnInsightState();
-                }
-
-                // Toggle: clicking same row unpins
-                if (pnSubTooltipPinned && pnPinnedSubSrc === rowEl) {
-                    hidePnSubTooltip();
-                    rowEl.classList.remove('pn-sub-filter-active');
-                    pnPreviewPeerIds = null;  // Unlock lines
-                    // Restore PN donut center
-                    restorePnCenterText();
-                    return;
-                }
-
-                // Remove active from previous
-                bodyEl.querySelectorAll('.pn-sub-filter-active').forEach(r => r.classList.remove('pn-sub-filter-active'));
-                rowEl.classList.add('pn-sub-filter-active');
-
-                const html = buildPnPeerListHtml(peerIds, allNetPeers, category, label);
-                showPnSubTooltip(html, e);
-                pinPnSubTooltip(html, rowEl);
-                // Lock preview lines to this row's peers
-                pnPreviewPeerIds = peerIds;
-                // Show category info in PN donut center (stays while pinned)
-                previewPnCenterText(peerIds, label, allNetPeers.length);
-            });
-        });
-    }
-
-    /** Preview category info in the PN donut center (label, count, percentage) */
-    function previewPnCenterText(peerIds, label, totalNetPeers) {
-        cachePnElements();
-        if (!pnCenterLabel || !pnCenterCount || !pnCenterSub) return;
-        pnCenterPreviewLabel = label;
-        pnCenterPreviewPeerIds = peerIds;
-        var cnt = peerIds.length;
-        pnCenterLabel.textContent = cnt + ' PEER' + (cnt !== 1 ? 'S' : '');
-        pnCenterLabel.style.color = 'var(--logo-accent, #7ec8e3)';
-        pnCenterCount.textContent = label.toUpperCase();
-        pnCenterCount.style.fontSize = '17px';
-        pnCenterCount.style.fontFamily = 'var(--font-display, Cinzel, serif)';
-        pnCenterCount.style.color = '';
-        var pct = totalNetPeers > 0 ? Math.round((cnt / totalNetPeers) * 100) : 0;
-        pnCenterSub.innerHTML = pct + '% of anonymous<br>peers';
-    }
-
-    /** Restore the PN donut center to its current state (selected net, selected peer, or default) */
-    function restorePnCenterText() {
-        cachePnElements();
-        pnCenterPreviewLabel = null;
-        pnCenterPreviewPeerIds = null;
-        if (!pnCenterLabel || !pnCenterCount || !pnCenterSub) return;
-        if (privateNetSelectedPeer) {
-            pnCenterLabel.textContent = PN_NET_LABELS[privateNetSelectedPeer.net] || 'PEER';
-            pnCenterLabel.style.color = '';
-            pnCenterCount.textContent = '#' + privateNetSelectedPeer.peerId;
-            pnCenterCount.style.fontSize = '22px';
-            pnCenterCount.style.fontFamily = '';
-            pnCenterCount.style.color = '';
-            pnCenterSub.textContent = privateNetSelectedPeer.direction === 'IN' ? 'inbound' : 'outbound';
-        } else if (pnSelectedNet) {
-            var seg = pnSegments.find(function (s) { return s.net === pnSelectedNet; });
-            var netCount = seg ? seg.count : 0;
-            var totalAll = pnSegments.reduce(function (s, sg) { return s + sg.count; }, 0);
-            var netPct = totalAll > 0 ? Math.round((netCount / totalAll) * 100) : 0;
-            pnCenterLabel.textContent = netCount + ' PEER' + (netCount !== 1 ? 'S' : '');
-            pnCenterLabel.style.color = 'var(--logo-accent, #7ec8e3)';
-            pnCenterCount.textContent = (PN_NET_LABELS[pnSelectedNet] || pnSelectedNet).toUpperCase();
-            pnCenterCount.style.fontSize = '22px';
-            pnCenterCount.style.fontFamily = 'var(--font-display, Cinzel, serif)';
-            pnCenterCount.style.color = seg ? seg.color : '';
-            pnCenterSub.innerHTML = netPct + '% of anonymous<br>peers';
-        } else {
-            var total = pnSegments.reduce(function (s, seg) { return s + seg.count; }, 0);
-            var totalAllPeers = lastPeers.length || total;
-            var pnPct = totalAllPeers > 0 ? Math.round((total / totalAllPeers) * 100) : 0;
-            pnCenterLabel.textContent = total + ' PEER' + (total !== 1 ? 'S' : '');
-            pnCenterLabel.style.color = 'var(--logo-accent, #7ec8e3)';
-            pnCenterCount.textContent = 'PRIVATE NETWORKS';
-            pnCenterCount.style.fontSize = '13px';
-            pnCenterCount.style.fontFamily = 'var(--font-display, Cinzel, serif)';
-            pnCenterCount.style.color = '';
-            pnCenterSub.innerHTML = pnPct + '% of total<br>connections';
-        }
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // PRIVATE NET INSIGHT RECTANGLE — replaces donut for Scores & Insights selections
-    // ═══════════════════════════════════════════════════════════
-
-    /** Show the PN insight rectangle overlay, hiding the donut SVG and center text.
-     *  @param {string} type — 'stable' | 'fastest' | 'data-bytessent' | 'data-bytesrecv'
-     *  @param {Object} data — { peerId, peerNet, icon, title, statText, network label } */
-    function showPnInsightRect(type, data) {
-        cachePnElements();
-        if (!pnInsightRectEl) return;
-
-        var netColor = getPnNetColor(data.peerNet || 'onion');
-
-        var icon = '', title = '';
-        if (type === 'stable') {
-            icon = '\u23f3';
-            title = 'Most Stable Connection';
-        } else if (type === 'fastest') {
-            icon = '\u26a1';
-            title = 'Fastest Connection';
-        } else if (type === 'data-bytessent') {
-            icon = '\u2b06\ufe0f';
-            title = 'Most Data Sent To';
-        } else if (type === 'data-bytesrecv') {
-            icon = '\u2b07\ufe0f';
-            title = 'Most Data Recv By';
-        }
-
-        var networkLabel = PN_NET_LABELS[data.peerNet] || data.peerNet || 'Unknown';
-
-        var html = '';
-        html += '<div class="pn-insight-rect-inner">';
-        html += '<div class="pn-insight-rect-badge">Scores &amp; Insights</div>';
-        html += '<button class="pn-insight-rect-close" title="Back">\u2190</button>';
-        html += '<div class="pn-insight-rect-content">';
-        html += '<div class="pn-insight-rect-icon">' + icon + '</div>';
-        html += '<div class="pn-insight-rect-title">' + pnEsc(title) + '</div>';
-        html += '<div class="pn-insight-rect-rank" style="color:' + netColor + '">Rank #1</div>';
-        html += '<div class="pn-insight-rect-network" style="color:' + netColor + '">' + pnEsc(networkLabel) + '</div>';
-        html += '<div class="pn-insight-rect-meta">Peer #' + data.peerId + '</div>';
-        if (data.statText) {
-            html += '<div class="pn-insight-rect-stat" style="color:' + netColor + '">' + pnEsc(data.statText) + '</div>';
-        }
-        html += '</div>';
-        html += '<div class="pn-insight-rect-origin" style="background:' + netColor + '; border-color:' + netColor + '; box-shadow: 0 0 8px ' + netColor + '80, 0 0 16px ' + netColor + '33"></div>';
-        html += '</div>';
-
-        pnInsightRectEl.innerHTML = html;
-
-        // Hide donut SVG and center, show rectangle
-        if (pnDonutSvg) pnDonutSvg.style.opacity = '0';
-        var pnDonutCenter = document.getElementById('pn-donut-center');
-        if (pnDonutCenter) pnDonutCenter.style.opacity = '0';
-        pnInsightRectEl.classList.add('visible');
-        pnInsightRectVisible = true;
-        document.body.classList.add('pn-insight-rect-active');
-
-        // Bind close button
-        var closeBtn = pnInsightRectEl.querySelector('.pn-insight-rect-close');
-        if (closeBtn) {
-            closeBtn.addEventListener('click', function (e) {
-                e.stopPropagation();
-                hidePnInsightRect();
-                clearPnInsightState();
-            });
-        }
-    }
-
-    /** Hide the PN insight rectangle and restore the donut SVG + center text */
-    function hidePnInsightRect() {
-        cachePnElements();
-        if (!pnInsightRectEl) return;
-        pnInsightRectEl.classList.remove('visible');
-        pnInsightRectVisible = false;
-        document.body.classList.remove('pn-insight-rect-active');
-        // Show donut SVG and center
-        if (pnDonutSvg) pnDonutSvg.style.opacity = '';
-        var pnDonutCenter = document.getElementById('pn-donut-center');
-        if (pnDonutCenter) pnDonutCenter.style.opacity = '';
-    }
-
-    /** Clear all insight selection state */
-    function clearPnInsightState() {
-        pnInsightActiveType = null;
-        pnInsightActivePeerId = null;
-        pnInsightActiveData = null;
-        privateNetLinePeer = null;
-        privateNetSelectedPeer = null;
-        pnPreviewPeerIds = null;
-        // Remove active class from insight rows
-        if (pnDetailBodyEl) {
-            pnDetailBodyEl.querySelectorAll('.pn-insight-row').forEach(function(r) {
-                r.classList.remove('pn-insight-active', 'pn-insight-hover');
-            });
-        }
-        renderPnDonut();
-    }
-
-    /** Get the position of the PN insight rect origin circle (bottom center dot).
-     *  Returns {x, y} in page coordinates, or null. */
-    function getPnInsightRectOrigin() {
-        if (!pnInsightRectEl || !pnInsightRectVisible) return null;
-        var originDot = pnInsightRectEl.querySelector('.pn-insight-rect-origin');
-        if (originDot) {
-            var rect = originDot.getBoundingClientRect();
-            if (rect.width > 0 && rect.height > 0) {
-                return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-            }
-        }
-        return null;
-    }
-
-    /** Build the insight data object for a given peer and type */
-    function buildPnInsightData(peer, type) {
-        var nowSec = Math.floor(Date.now() / 1000);
-        var data = {
-            peerId: peer.id,
-            peerNet: peer.network || 'onion'
-        };
-        if (type === 'stable') {
-            var dur = peer.conntime > 0 ? (nowSec - peer.conntime) : 0;
-            data.statText = pnFmtDuration(dur);
-        } else if (type === 'fastest') {
-            data.statText = peer.ping_ms > 0 ? peer.ping_ms.toFixed(1) + ' ms' : '\u2014';
-        } else if (type === 'data-bytessent') {
-            data.statText = fmtBytesShort(peer.bytessent || 0) + ' sent';
-        } else if (type === 'data-bytesrecv') {
-            data.statText = fmtBytesShort(peer.bytesrecv || 0) + ' recv';
-        }
-        return data;
-    }
-
-    /** Build peer list HTML for the sub-tooltip */
-    function buildPnPeerListHtml(peerIds, allNetPeers, category, label) {
-        const idSet = new Set(peerIds);
-        const matched = allNetPeers.filter(p => idSet.has(p.id));
-
-        let html = '';
-        // Title
-        html += '<div class="pn-sub-tt-title">' + pnEsc(label) + '</div>';
-
-        // Service flag expansion for services category
-        if (category === 'services' && label && label !== '\u2014') {
-            html += '<div class="as-sub-tt-section">';
-            const parts = label.split(/[\s\/]+/);
-            for (const p of parts) {
-                const flag = serviceFlagFromAbbr(p.trim());
-                if (flag) html += '<div class="as-sub-tt-flag">' + pnEsc(p.trim()) + ' = ' + pnEsc(serviceFlagDescription(flag)) + '</div>';
-            }
-            html += '</div>';
-        }
-
-        const initialShow = 6;
-        html += '<div class="as-sub-tt-scroll">';
-        for (let i = 0; i < matched.length; i++) {
-            const p = matched[i];
-            const dir = p.direction === 'IN' ? 'Inbound' : 'Outbound';
-            let addr = p.addr || '';
-            if (addr.length > 20) addr = addr.substring(0, 17) + '\u2026';
-            const extraCls = i >= initialShow ? ' as-sub-tt-peer-extra' : '';
-            const extraStyle = i >= initialShow ? ' style="display:none"' : '';
-            html += '<div class="as-sub-tt-peer' + extraCls + '" data-peer-id="' + p.id + '"' + extraStyle + '>';
-            html += '<span class="as-sub-tt-id pn-sub-tt-id-link" data-peer-id="' + p.id + '">ID\u00a0' + p.id + '</span>';
-            html += '<span class="as-sub-tt-type">' + dir + '</span>';
-            if (addr) html += '<span class="as-sub-tt-loc">' + pnEsc(addr) + '</span>';
-            html += '</div>';
-        }
-        html += '</div>';
-        if (matched.length > initialShow) {
-            const remaining = matched.length - initialShow;
-            html += '<div class="as-sub-tt-more pn-sub-tt-show-more">+' + remaining + ' more <span class="as-sub-tt-toggle">(show)</span></div>';
-            html += '<div class="as-sub-tt-more pn-sub-tt-show-less" style="display:none"><span class="as-sub-tt-toggle">(less)</span></div>';
-        }
-        return html;
-    }
-
-    /** Show the sub-tooltip (positioned to the left of the detail panel) */
-    function showPnSubTooltip(html, event) {
-        hidePnSubSubTooltip();
-        let tip = document.getElementById('pn-sub-tooltip');
-        if (!tip) {
-            tip = document.createElement('div');
-            tip.id = 'pn-sub-tooltip';
-            tip.className = 'as-sub-tooltip pn-sub-tooltip';
-            document.body.appendChild(tip);
-        }
-        tip.innerHTML = html;
-        tip.classList.remove('hidden');
-        tip.style.display = '';
-        positionPnSubTooltip(event);
-        attachPnSubTooltipHandlers(tip);
-    }
-
-    function positionPnSubTooltip(event) {
-        const tip = document.getElementById('pn-sub-tooltip');
-        if (!tip) return;
-        const rect = tip.getBoundingClientRect();
-        const pad = 12;
-        const panelRect = pnDetailPanelEl ? pnDetailPanelEl.getBoundingClientRect() : { left: window.innerWidth };
-        let x = panelRect.left - rect.width - pad;
-        if (x < pad) x = pad;
-        let y = event.clientY - rect.height / 2;
-        if (y < pad) y = pad;
-        if (y + rect.height > window.innerHeight - pad) y = window.innerHeight - rect.height - pad;
-        tip.style.left = x + 'px';
-        tip.style.top = y + 'px';
-    }
-
-    function hidePnSubTooltip() {
-        const tip = document.getElementById('pn-sub-tooltip');
-        if (tip) {
-            // Clear saved preview state BEFORE hiding, so deferred mouseleave
-            // events (triggered by display:none) can't restore stale peer IDs
-            // or stale donut center text (category label/peerIds)
-            tip._savedPreviewPeerIds = null;
-            tip._savedCenterLabel = null;
-            tip._savedCenterPeerIds = null;
-            tip.classList.add('hidden');
-            tip.style.display = 'none';
-            tip.style.pointerEvents = 'none';
-        }
-        pnSubTooltipPinned = false;
-        pnPinnedSubSrc = null;
-        pnPreviewPeerIds = null;
-        // Clear PN center preview state so stale category text doesn't persist
-        // across refreshes when the tooltip is dismissed without restorePnCenterText()
-        pnCenterPreviewLabel = null;
-        pnCenterPreviewPeerIds = null;
-        hidePnSubSubTooltip();
-    }
-
-    function pinPnSubTooltip(html, srcEl) {
-        pnSubTooltipPinned = true;
-        pnPinnedSubSrc = srcEl || null;
-        const tip = document.getElementById('pn-sub-tooltip');
-        if (tip) tip.style.pointerEvents = 'auto';
-    }
-
-    /** Attach handlers to peer rows inside the sub-tooltip */
-    function attachPnSubTooltipHandlers(tip) {
-        // Peer ID click → select that peer on the map
-        tip.querySelectorAll('.pn-sub-tt-id-link').forEach(link => {
-            link.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const peerId = parseInt(link.dataset.peerId);
-                if (isNaN(peerId)) return;
-                selectPrivatePeer(peerId);
-            });
-        });
-
-        // Peer row hover → preview individual peer line + donut center
-        tip.querySelectorAll('.as-sub-tt-peer[data-peer-id]').forEach(row => {
-            row.addEventListener('mouseenter', () => {
-                const peerId = parseInt(row.dataset.peerId);
-                if (!isNaN(peerId)) {
-                    highlightedPeerId = peerId;
-                    // Save current preview (from parent row hover) and show single peer
-                    if (!tip._savedPreviewPeerIds) tip._savedPreviewPeerIds = pnPreviewPeerIds;
-                    if (!tip._savedCenterLabel) tip._savedCenterLabel = pnCenterPreviewLabel;
-                    if (!tip._savedCenterPeerIds) tip._savedCenterPeerIds = pnCenterPreviewPeerIds;
-                    pnPreviewPeerIds = [peerId];
-                    // Preview this peer's info in the PN donut center
-                    const peer = lastPeers.find(p => p.id === peerId);
-                    if (peer && pnCenterLabel && pnCenterCount && pnCenterSub) {
-                        const netLabel = PN_NET_LABELS[peer.network] || peer.network || 'PEER';
-                        const netColor = getPnNetColor(peer.network);
-                        pnCenterLabel.textContent = netLabel.toUpperCase();
-                        pnCenterLabel.style.color = netColor;
-                        pnCenterCount.textContent = '#' + peerId;
-                        pnCenterCount.style.fontSize = '22px';
-                        pnCenterCount.style.fontFamily = '';
-                        pnCenterCount.style.color = netColor;
-                        pnCenterSub.textContent = peer.direction === 'IN' ? 'inbound' : 'outbound';
-                    }
-                }
-            });
-            row.addEventListener('mouseleave', () => {
-                // Preserve highlight if a peer is actively selected
-                highlightedPeerId = privateNetSelectedPeer ? privateNetSelectedPeer.peerId : null;
-                // Restore parent row preview (unless already cleared by hidePnSubTooltip)
-                pnPreviewPeerIds = tip._savedPreviewPeerIds || null;
-                tip._savedPreviewPeerIds = null;
-                // Restore parent donut center text
-                if (tip._savedCenterLabel && tip._savedCenterPeerIds) {
-                    const allPN = nodes.filter(n => n.alive && PRIVATE_NETS.has(n.net));
-                    previewPnCenterText(tip._savedCenterPeerIds, tip._savedCenterLabel, allPN.length);
-                } else {
-                    restorePnCenterText();
-                }
-                tip._savedCenterLabel = null;
-                tip._savedCenterPeerIds = null;
-            });
-        });
-
-        // Expand/collapse
-        const showMore = tip.querySelector('.pn-sub-tt-show-more');
-        const showLess = tip.querySelector('.pn-sub-tt-show-less');
-        if (showMore && showLess) {
-            showMore.addEventListener('click', (e) => {
-                e.stopPropagation();
-                tip.querySelectorAll('.as-sub-tt-peer-extra').forEach(el => el.style.display = '');
-                showMore.style.display = 'none';
-                showLess.style.display = '';
-                const scroll = tip.querySelector('.as-sub-tt-scroll');
-                if (scroll) scroll.classList.add('as-sub-tt-expanded');
-            });
-            showLess.addEventListener('click', (e) => {
-                e.stopPropagation();
-                tip.querySelectorAll('.as-sub-tt-peer-extra').forEach(el => el.style.display = 'none');
-                showLess.style.display = 'none';
-                showMore.style.display = '';
-                const scroll = tip.querySelector('.as-sub-tt-scroll');
-                if (scroll) scroll.classList.remove('as-sub-tt-expanded');
-            });
-        }
-    }
-
-    function hidePnSubSubTooltip() {
-        const tip = document.getElementById('pn-sub-sub-tooltip');
-        if (tip) {
-            // Clear saved preview state BEFORE hiding (same deferred mouseleave fix)
-            // Also clear saved center label/peerIds so deferred mouseleave can't
-            // restore stale category text over the selected peer's donut info
-            tip._savedPreviewPeerIds = null;
-            tip._savedCenterLabel = null;
-            tip._savedCenterPeerIds = null;
-            tip.classList.add('hidden');
-            tip.style.display = 'none';
-            tip.style.pointerEvents = 'none';
-        }
-    }
-
-    // ── Utility helpers ──
-
-    function fmtBytesShort(bytes) {
-        if (!bytes || bytes <= 0) return '0 B';
-        const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-        let i = 0, v = bytes;
-        while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
-        return v.toFixed(i === 0 ? 0 : 1) + ' ' + units[i];
     }
 
     /** Update all private network UI (donut + panel if open).
      *  Preserves donut visual state (selected/hovered segment, center text)
      *  so the 10-second poll refresh doesn't reset the UI. */
     function updatePrivateNetUI() {
-        if (!privateNetMode) return;
+        if (!privateState.privateNetMode) return;
 
         // Save donut state before rebuild
-        const savedSelectedNet = pnSelectedNet;
-        const savedHoveredNet = pnHoveredNet;
+        const savedSelectedNet = privateState.pnSelectedNet;
+        const savedHoveredNet = privateState.pnHoveredNet;
         // Save insight rect state before rebuild
-        const savedInsightType = pnInsightActiveType;
-        const savedInsightPeerId = pnInsightActivePeerId;
-        const savedInsightData = pnInsightActiveData;
-        const savedInsightRectVisible = pnInsightRectVisible;
+        const savedInsightType = privateState.pnInsightActiveType;
+        const savedInsightPeerId = privateState.pnInsightActivePeerId;
+        const savedInsightRectVisible = privateState.pnInsightRectVisible;
 
         renderPnDonut();
 
         // Restore donut visual state after SVG rebuild
         // (renderPnDonut resets innerHTML, losing DOM classes)
-        if (savedSelectedNet && pnDonutSvg) {
-            pnDonutSvg.querySelectorAll('.pn-donut-segment').forEach(el => {
+        if (savedSelectedNet && privateState.pnDonutSvg) {
+            privateState.pnDonutSvg.querySelectorAll('.pn-donut-segment').forEach(el => {
                 if (el.dataset.net === savedSelectedNet) el.classList.add('selected');
                 else el.classList.add('dimmed');
             });
-        } else if (savedHoveredNet && pnDonutSvg) {
-            pnDonutSvg.querySelectorAll('.pn-donut-segment').forEach(el => {
+        } else if (savedHoveredNet && privateState.pnDonutSvg) {
+            privateState.pnDonutSvg.querySelectorAll('.pn-donut-segment').forEach(el => {
                 if (el.dataset.net !== savedHoveredNet) el.classList.add('dimmed');
             });
         }
 
         // If insight rect was visible, re-hide the donut SVG/center (renderPnDonut restores them)
         if (savedInsightRectVisible && savedInsightType) {
-            if (pnDonutSvg) pnDonutSvg.style.opacity = '0';
+            if (privateState.pnDonutSvg) privateState.pnDonutSvg.style.opacity = '0';
             var pnDonutCenter = document.getElementById('pn-donut-center');
             if (pnDonutCenter) pnDonutCenter.style.opacity = '0';
         }
 
         // Only update detail panel content — do NOT close/reopen it
-        if (pnDetailPanelEl && pnDetailPanelEl.classList.contains('visible')) {
-            if (pnSelectedNet) {
-                updatePnDetailPanel(pnSelectedNet);
+        if (privateState.pnDetailPanelEl && privateState.pnDetailPanelEl.classList.contains('visible')) {
+            if (privateState.pnSelectedNet) {
+                privatePanel.updatePnDetailPanel(privateState.pnSelectedNet);
             } else {
-                updatePnOverviewPanel();
+                privatePanel.updatePnOverviewPanel();
             }
         }
 
         // Restore insight rect state after panel rebuild (updatePnOverviewPanel rebuilds HTML)
-        if (savedInsightType && savedInsightPeerId) {
-            pnInsightActiveType = savedInsightType;
-            pnInsightActivePeerId = savedInsightPeerId;
-            privateNetLinePeer = savedInsightPeerId;
-            pnPreviewPeerIds = [savedInsightPeerId];
+        if (savedInsightType && savedInsightPeerId !== null) {
+            privateState.pnInsightActiveType = savedInsightType;
+            privateState.pnInsightActivePeerId = savedInsightPeerId;
+            privateState.privateNetLinePeer = savedInsightPeerId;
+            privateState.pnPreviewPeerIds = [savedInsightPeerId];
 
             // Try to find the updated peer data for a fresh stat
             const allPN = nodes.filter(n => n.alive && PRIVATE_NETS.has(n.net));
             const rawPeers = allPN.map(n => lastPeers.find(p => p.id === n.peerId)).filter(Boolean);
             const updatedPeer = rawPeers.find(p => p.id === savedInsightPeerId);
             if (updatedPeer) {
-                pnInsightActiveData = buildPnInsightData(updatedPeer, savedInsightType);
-                showPnInsightRect(savedInsightType, pnInsightActiveData);
-            } else if (savedInsightData) {
-                pnInsightActiveData = savedInsightData;
-                showPnInsightRect(savedInsightType, savedInsightData);
+                privateState.pnInsightActiveData = privatePanel.buildPnInsightData(updatedPeer, savedInsightType);
+                privatePanel.showPnInsightRect(savedInsightType, privateState.pnInsightActiveData);
+            } else {
+                privatePanel.hidePnInsightRect();
+                privatePanel.clearPnInsightState();
             }
 
             // Re-highlight the active insight row in the rebuilt panel
-            if (pnDetailBodyEl) {
-                pnDetailBodyEl.querySelectorAll('.pn-insight-row').forEach(r => {
+            if (privateState.pnDetailBodyEl) {
+                privateState.pnDetailBodyEl.querySelectorAll('.pn-insight-row').forEach(r => {
                     if (r.dataset.insightType === savedInsightType &&
                         parseInt(r.dataset.peerId) === savedInsightPeerId) {
                         r.classList.add('pn-insight-active');
@@ -2902,7 +2026,8 @@
             }
         }
 
-        renderPeerTable();
+        privatePanel.refreshPinnedPreview();
+        peerTable.renderPeerTable();
     }
 
     function applyDonutStackFitScale(container, scale, immediate) {
@@ -2924,7 +2049,7 @@
         const container = document.getElementById('as-distribution-container');
         if (!container) return;
 
-        if (privateNetMode || document.body.classList.contains('donut-focused')) {
+        if (privateState.privateNetMode || document.body.classList.contains('donut-focused')) {
             applyDonutStackFitScale(container, '1', immediate);
             return;
         }
@@ -2966,7 +2091,6 @@
         setTimeout(fitDonutStackToViewport, 480);
     }
 
-
     /** Render the mini private donut below the public AS donut (when private peers exist) */
     function renderPnMiniDonut() {
         const miniWrap = document.getElementById('pn-mini-donut');
@@ -2978,7 +2102,7 @@
         const privateNodes = nodes.filter(n => n.alive && PRIVATE_NETS.has(n.net));
         const total = privateNodes.length;
 
-        if (total === 0 || privateNetMode) {
+        if (total === 0 || privateState.privateNetMode) {
             miniWrap.classList.remove('visible');
             if (!miniWrap.classList.contains('hidden')) miniWrap.classList.add('hidden');
             scheduleDonutStackFit();
@@ -3032,8 +2156,8 @@
             el.addEventListener('mouseenter', (e) => {
                 e.stopPropagation();
                 const net = el.dataset.net;
-                pnMiniHoverNet = net;
-                pnMiniHover = true;
+                privateState.pnMiniHoverNet = net;
+                privateState.pnMiniHover = true;
                 // Dim other segments
                 miniSvg.querySelectorAll('.pn-mini-segment').forEach(s => {
                     if (s.dataset.net !== net) s.style.opacity = '0.3';
@@ -3066,7 +2190,7 @@
                 }
             });
             el.addEventListener('mouseleave', () => {
-                pnMiniHoverNet = null;
+                privateState.pnMiniHoverNet = null;
                 // Undim all segments
                 miniSvg.querySelectorAll('.pn-mini-segment').forEach(s => s.style.opacity = '');
                 const miniLegendEl = document.getElementById('pn-mini-legend');
@@ -3094,8 +2218,8 @@
             el.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const net = el.dataset.net;
-                pnMiniHover = false;
-                pnMiniHoverNet = null;
+                privateState.pnMiniHover = false;
+                privateState.pnMiniHoverNet = null;
                 enterPrivateNetMode(null, net);
             });
         });
@@ -3119,8 +2243,8 @@
             miniLegendEl.querySelectorAll('.pn-mini-legend-item').forEach(item => {
                 item.addEventListener('mouseenter', () => {
                     const net = item.dataset.net;
-                    pnMiniHoverNet = net;
-                    pnMiniHover = true;
+                    privateState.pnMiniHoverNet = net;
+                    privateState.pnMiniHover = true;
                     // Dim other segments
                     miniSvg.querySelectorAll('.pn-mini-segment').forEach(s => {
                         s.style.opacity = s.dataset.net !== net ? '0.3' : '1';
@@ -3132,7 +2256,7 @@
                     });
                 });
                 item.addEventListener('mouseleave', () => {
-                    pnMiniHoverNet = null;
+                    privateState.pnMiniHoverNet = null;
                     miniSvg.querySelectorAll('.pn-mini-segment').forEach(s => s.style.opacity = '');
                     miniLegendEl.querySelectorAll('.pn-mini-legend-item').forEach(li => {
                         li.classList.remove('dimmed', 'highlighted');
@@ -3141,8 +2265,8 @@
                 item.addEventListener('click', (e) => {
                     e.stopPropagation();
                     const net = item.dataset.net;
-                    pnMiniHover = false;
-                    pnMiniHoverNet = null;
+                    privateState.pnMiniHover = false;
+                    privateState.pnMiniHoverNet = null;
                     enterPrivateNetMode(null, net);
                 });
             });
@@ -3152,7 +2276,7 @@
 
     /** Draw "PRIVATE NETWORKS" text tiled across Antarctica on the canvas */
     function drawPrivateNetworksText() {
-        if (!privateNetMode) return;
+        if (!privateState.privateNetMode) return;
 
         const fontSize1 = Math.max(12, Math.min(48, 18 * view.zoom));
         const fontSize2 = Math.max(10, Math.min(40, 15 * view.zoom));
@@ -3252,12 +2376,12 @@
      *  6. pnMiniHover (default view) → lines from mini legend dots to private peers
      *  7. pnMiniHoverNet (default view segment hover) → lines from that legend dot */
     function drawPrivateNetLines(wrapOffsets) {
-        if (!privateNetMode && !pnMiniHover) return;
+        if (!privateState.privateNetMode && !privateState.pnMiniHover) return;
 
         const canvasRect = canvas.getBoundingClientRect();
 
         // Determine a fallback donut center origin
-        const originElId = privateNetMode ? 'pn-donut-wrap' : 'pn-mini-donut';
+        const originElId = privateState.privateNetMode ? 'pn-donut-wrap' : 'pn-mini-donut';
         const originEl = document.getElementById(originElId);
         if (!originEl) return;
         const fallbackRect = originEl.getBoundingClientRect();
@@ -3266,29 +2390,29 @@
 
         // Determine which nodes to draw lines to (priority chain)
         let privateNodes;
-        const selectedId = privateNetLinePeer;
+        const selectedId = privateState.privateNetLinePeer;
 
-        if (privateNetMode && pnPreviewPeerIds && pnPreviewPeerIds.length > 0) {
+        if (privateState.privateNetMode && privateState.pnPreviewPeerIds && privateState.pnPreviewPeerIds.length > 0) {
             // Panel row hover preview → specific peer IDs
-            const idSet = new Set(pnPreviewPeerIds);
+            const idSet = new Set(privateState.pnPreviewPeerIds);
             privateNodes = nodes.filter(n => n.alive && idSet.has(n.peerId));
-        } else if (privateNetMode && selectedId) {
+        } else if (privateState.privateNetMode && selectedId) {
             // Selected peer → only that peer
             const selectedNode = nodes.find(n => n.peerId === selectedId && n.alive);
             privateNodes = selectedNode ? [selectedNode] : [];
-        } else if (privateNetMode && pnHoveredNet) {
+        } else if (privateState.privateNetMode && privateState.pnHoveredNet) {
             // Hovered donut segment → that network's peers
-            privateNodes = nodes.filter(n => n.alive && n.net === pnHoveredNet);
-        } else if (privateNetMode && pnSelectedNet) {
+            privateNodes = nodes.filter(n => n.alive && n.net === privateState.pnHoveredNet);
+        } else if (privateState.privateNetMode && privateState.pnSelectedNet) {
             // Selected donut segment → that network's peers
-            privateNodes = nodes.filter(n => n.alive && n.net === pnSelectedNet);
-        } else if (privateNetMode) {
+            privateNodes = nodes.filter(n => n.alive && n.net === privateState.pnSelectedNet);
+        } else if (privateState.privateNetMode) {
             // No selection/hover → ALL private peers
             privateNodes = nodes.filter(n => n.alive && PRIVATE_NETS.has(n.net));
-        } else if (pnMiniHover && pnMiniHoverNet) {
+        } else if (privateState.pnMiniHover && privateState.pnMiniHoverNet) {
             // Mini donut segment hover → that network's peers
-            privateNodes = nodes.filter(n => n.alive && n.net === pnMiniHoverNet);
-        } else if (pnMiniHover) {
+            privateNodes = nodes.filter(n => n.alive && n.net === privateState.pnMiniHoverNet);
+        } else if (privateState.pnMiniHover) {
             // Mini donut hover → all private peers
             privateNodes = nodes.filter(n => n.alive && PRIVATE_NETS.has(n.net));
         } else {
@@ -3304,14 +2428,14 @@
             // Determine origin: insight rect, mini legend dot, or donut center.
             let originX = fallbackOriginX;
             let originY = fallbackOriginY;
-            if (pnInsightRectVisible && privateNetMode) {
+            if (privateState.pnInsightRectVisible && privateState.privateNetMode) {
                 // When insight rect is visible, lines come from the origin circle at the bottom
-                const iro = getPnInsightRectOrigin();
+                const iro = privatePanel.getPnInsightRectOrigin();
                 if (iro) {
                     originX = (iro.x - canvasRect.left) * (W / canvasRect.width);
                     originY = (iro.y - canvasRect.top) * (H / canvasRect.height);
                 }
-            } else if (pnMiniHover && !privateNetMode) {
+            } else if (privateState.pnMiniHover && !privateState.privateNetMode) {
                 const dotPos = getPnMiniLegendDotPos(node.net);
                 if (dotPos) {
                     originX = (dotPos.x - canvasRect.left) * (W / canvasRect.width);
@@ -3369,10 +2493,10 @@
             const netLabel = NET_DISPLAY[node.net] || node.net.toUpperCase();
             const netColor = rgba(node.color, 0.9);
             const addr = shortenAddr(node);
-            html += `<div class="tt-row tt-group-row tt-group-clickable" data-peer-id="${node.peerId}">`;
+            html += `<div class="tt-row tt-group-row tt-group-clickable" data-peer-id="${escapeHtml(node.peerId)}">`;
             html += `<span class="tt-label" style="min-width:16px">${i + 1}.</span>`;
-            html += `<span class="tt-net" style="color:${netColor};min-width:36px">${netLabel}</span>`;
-            html += `<span class="tt-val" style="flex:1">${addr}</span>`;
+            html += `<span class="tt-net" style="color:${netColor};min-width:36px">${escapeHtml(netLabel)}</span>`;
+            html += `<span class="tt-val" style="flex:1">${escapeHtml(addr)}</span>`;
             html += `</div>`;
         });
         html += `</div>`;
@@ -3392,7 +2516,7 @@
                 groupedNodes = null;
                 highlightedPeerId = null;
                 hideTooltip();
-                highlightTableRow(null);
+                peerTable.highlightTableRow(null);
                 clearMapDotFilter();
             });
         }
@@ -3422,10 +2546,6 @@
         'inbound': 'Inbound',
     };
 
-    function pnEsc(s) {
-        if (!s) return '';
-        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-    }
 
     function pnFmtBytes(b) {
         if (b == null || isNaN(b)) return '\u2014';
@@ -3443,236 +2563,6 @@
         if (d > 0) return d + 'd ' + h + 'h';
         if (h > 0) return h + 'h ' + m + 'm';
         return m + 'm';
-    }
-
-    function pnDetailRow(label, value) {
-        return '<div class="as-detail-sub-row"><span class="as-detail-sub-label">' + pnEsc(label) + '</span><span class="as-detail-sub-val">' + value + '</span></div>';
-    }
-
-    /** Close any existing private peer big popup (with fade-out animation) */
-    function closePnBigPopup() {
-        if (pnPopupTimer) { clearTimeout(pnPopupTimer); pnPopupTimer = null; }
-        if (pnBigPopupEl && pnBigPopupEl.parentNode) {
-            pnBigPopupEl.classList.remove('visible');
-            const el = pnBigPopupEl;
-            pnBigPopupEl = null;
-            setTimeout(() => {
-                if (el && el.parentNode) el.parentNode.removeChild(el);
-            }, 250);
-        } else {
-            pnBigPopupEl = null;
-        }
-    }
-
-    /** Close popup immediately (no animation) — used before opening a new one */
-    function closePnBigPopupSync() {
-        if (pnBigPopupEl && pnBigPopupEl.parentNode) {
-            pnBigPopupEl.parentNode.removeChild(pnBigPopupEl);
-        }
-        pnBigPopupEl = null;
-    }
-
-    /** Show full peer detail popup for a private network peer */
-    function showPnBigPopup(node) {
-        // Remove any existing popup immediately (no animation delay)
-        closePnBigPopupSync();
-
-        // Find raw peer data for full details
-        const peer = lastPeers.find(p => p.id === node.peerId);
-        if (!peer) return;
-
-        // Network display
-        const netColorMap = {
-            onion: 'var(--net-tor, #1565c0)',
-            i2p:   'var(--net-i2p, #d29922)',
-            cjdns: 'var(--net-cjdns, #bc8cff)',
-        };
-        const netLabelMap = { onion: 'Tor', i2p: 'I2P', cjdns: 'CJDNS' };
-        const netKey = (peer.network || 'onion').toLowerCase();
-        const netColor = netColorMap[netKey] || 'var(--accent, #58a6ff)';
-        const netLabel = netLabelMap[netKey] || netKey.toUpperCase();
-
-        const nowSec = Math.floor(Date.now() / 1000);
-
-        // Build popup HTML — same structure as AS distribution peer-detail-popup
-        let html = '';
-        html += `<div class="peer-popup-badge" style="border-color:${netColor};color:${netColor}">${netLabel}</div>`;
-        html += '<div class="peer-popup-header">';
-        html += `<div class="peer-popup-circle" style="background:${netColor}"></div>`;
-        html += '<div class="peer-popup-title">';
-        html += `<div class="peer-popup-name" style="color:${netColor}">Peer #${peer.id}</div>`;
-        html += `<div class="peer-popup-addr">${pnEsc(peer.addr || '')}</div>`;
-        html += `<div class="peer-popup-meta">${netLabel} \u00b7 ${peer.direction === 'IN' ? 'Inbound' : 'Outbound'}</div>`;
-        html += '</div>';
-        html += '</div>';
-
-        html += '<div class="peer-popup-scroll">';
-
-        // Identity
-        html += '<div class="peer-popup-section">';
-        html += '<div class="peer-popup-section-title">Identity</div>';
-        html += pnDetailRow('Peer ID', '#' + peer.id);
-        html += pnDetailRow('Address', pnEsc(peer.addr || '\u2014'));
-        html += pnDetailRow('Network', netLabel);
-        html += pnDetailRow('Direction', peer.direction === 'IN' ? 'Inbound' : 'Outbound');
-        html += pnDetailRow('Conn Type', PN_CONN_TYPE_FULL[peer.connection_type] || peer.connection_type || '\u2014');
-        if (peer.addrlocal) html += pnDetailRow('Your Addr', pnEsc(peer.addrlocal));
-        html += '</div>';
-
-        // Performance
-        html += '<div class="peer-popup-section">';
-        html += '<div class="peer-popup-section-title">Performance</div>';
-        html += pnDetailRow('Ping', peer.ping_ms ? peer.ping_ms + ' ms' : '\u2014');
-        html += pnDetailRow('Min Ping', peer.minping ? (peer.minping * 1000).toFixed(1) + ' ms' : '\u2014');
-        html += pnDetailRow('Connected', peer.conntime_fmt || pnFmtDuration(peer.conntime ? (nowSec - peer.conntime) : 0));
-        html += pnDetailRow('Last Send', peer.lastsend ? pnFmtDuration(nowSec - peer.lastsend) + ' ago' : '\u2014');
-        html += pnDetailRow('Last Recv', peer.lastrecv ? pnFmtDuration(nowSec - peer.lastrecv) + ' ago' : '\u2014');
-        html += pnDetailRow('Last Block', peer.last_block ? pnFmtDuration(nowSec - peer.last_block) + ' ago' : '\u2014');
-        html += pnDetailRow('Last Tx', peer.last_transaction ? pnFmtDuration(nowSec - peer.last_transaction) + ' ago' : '\u2014');
-        html += pnDetailRow('Bytes Sent', peer.bytessent_fmt || pnFmtBytes(peer.bytessent));
-        html += pnDetailRow('Bytes Recv', peer.bytesrecv_fmt || pnFmtBytes(peer.bytesrecv));
-        html += pnDetailRow('Time Offset', peer.timeoffset != null ? (peer.timeoffset === 0 ? '0s (synced)' : peer.timeoffset + 's') : '\u2014');
-        html += '</div>';
-
-        // Software
-        html += '<div class="peer-popup-section">';
-        html += '<div class="peer-popup-section-title">Software</div>';
-        html += pnDetailRow('Version', pnEsc(peer.subver || '\u2014'));
-        html += pnDetailRow('Protocol', peer.version || '\u2014');
-        html += pnDetailRow('Services', renderServiceFlagList(peer.services_abbrev || ''));
-        html += pnDetailRow('Start Height', peer.startingheight || '\u2014');
-        html += pnDetailRow('Synced Hdrs', peer.synced_headers || '\u2014');
-        html += pnDetailRow('Synced Blks', peer.synced_blocks || '\u2014');
-        if (peer.transport_protocol_type) html += pnDetailRow('Transport', peer.transport_protocol_type === 'v2' ? 'v2 (BIP324 encrypted)' : peer.transport_protocol_type);
-        if (peer.session_id) html += pnDetailRow('Session ID', '<span style="font-size:9px;word-break:break-all">' + pnEsc(peer.session_id) + '</span>');
-        if (peer.minfeefilter != null) html += pnDetailRow('Min Fee Filter', peer.minfeefilter > 0 ? (peer.minfeefilter * 100000000).toFixed(0) + ' sat/kvB' : 'None');
-        html += '</div>';
-
-        // Privacy / Status
-        html += '<div class="peer-popup-section">';
-        html += '<div class="peer-popup-section-title">Privacy & Status</div>';
-        html += pnDetailRow('Location', '<span style="color:var(--text-muted)">Private Network</span>');
-        html += pnDetailRow('Relay Txs', peer.relaytxes != null ? (peer.relaytxes ? 'Yes' : 'No') : '\u2014');
-        html += pnDetailRow('Addrman', peer.in_addrman ? 'Yes' : 'No');
-        html += pnDetailRow('Addr Relay', peer.addr_relay_enabled != null ? (peer.addr_relay_enabled ? 'Yes' : 'No') : '\u2014');
-        if (peer.addr_processed || peer.addr_rate_limited) html += pnDetailRow('Addr Stats', (peer.addr_processed || 0) + ' processed, ' + (peer.addr_rate_limited || 0) + ' limited');
-        const hbParts = [];
-        if (peer.bip152_hb_from) hbParts.push('From: Yes');
-        if (peer.bip152_hb_to) hbParts.push('To: Yes');
-        html += pnDetailRow('BIP152 HB', hbParts.length > 0 ? hbParts.join(', ') : 'No');
-        if (peer.permissions && peer.permissions.length > 0) html += pnDetailRow('Permissions', peer.permissions.join(', '));
-        html += '</div>';
-
-        html += '</div>'; // end peer-popup-scroll
-
-        // Footer buttons
-        html += '<div class="peer-popup-footer">';
-        html += `<button class="peer-popup-disconnect" data-peer-id="${peer.id}">\u2716 Disconnect</button>`;
-        html += '<button class="peer-popup-close">Close</button>';
-        html += '</div>';
-        html += '<div class="peer-popup-resize-handle"></div>';
-
-        // Create DOM element
-        const popup = document.createElement('div');
-        popup.className = 'peer-detail-popup pn-big-popup';
-        popup.style.borderColor = netColor;
-        popup.innerHTML = html;
-        document.body.appendChild(popup);
-        pnBigPopupEl = popup;
-
-        // Animate in
-        requestAnimationFrame(() => popup.classList.add('visible'));
-
-        // Prevent map clicks
-        popup.addEventListener('click', e => e.stopPropagation());
-
-        // Draggable header
-        const header = popup.querySelector('.peer-popup-header');
-        if (header) {
-            header.style.cursor = 'grab';
-            let isDragging = false, startX = 0, startY = 0, startLeft = 0, startTop = 0;
-            header.addEventListener('mousedown', e => {
-                if (e.target.closest('button, a')) return;
-                isDragging = true;
-                startX = e.clientX;
-                startY = e.clientY;
-                const rect = popup.getBoundingClientRect();
-                startLeft = rect.left;
-                startTop = rect.top;
-                popup.classList.add('dragging');
-                header.style.cursor = 'grabbing';
-                e.preventDefault();
-            });
-            document.addEventListener('mousemove', e => {
-                if (!isDragging) return;
-                popup.style.left = (startLeft + e.clientX - startX) + 'px';
-                popup.style.top = (startTop + e.clientY - startY) + 'px';
-                popup.style.transform = 'none';
-            });
-            document.addEventListener('mouseup', () => {
-                if (!isDragging) return;
-                isDragging = false;
-                popup.classList.remove('dragging');
-                header.style.cursor = 'grab';
-            });
-        }
-
-        // Resizable
-        const handle = popup.querySelector('.peer-popup-resize-handle');
-        if (handle) {
-            let isResizing = false, rStartX, rStartY, rStartW, rStartH;
-            handle.addEventListener('mousedown', e => {
-                isResizing = true;
-                rStartX = e.clientX;
-                rStartY = e.clientY;
-                const r = popup.getBoundingClientRect();
-                rStartW = r.width;
-                rStartH = r.height;
-                popup.classList.add('resizing');
-                e.preventDefault();
-                e.stopPropagation();
-            });
-            document.addEventListener('mousemove', e => {
-                if (!isResizing) return;
-                popup.style.width = Math.max(260, rStartW + (e.clientX - rStartX)) + 'px';
-                popup.style.maxHeight = 'none';
-                popup.style.height = Math.max(200, rStartH + (e.clientY - rStartY)) + 'px';
-            });
-            document.addEventListener('mouseup', () => {
-                if (!isResizing) return;
-                isResizing = false;
-                popup.classList.remove('resizing');
-            });
-        }
-
-        // Close button
-        const closeBtn = popup.querySelector('.peer-popup-close');
-        if (closeBtn) {
-            closeBtn.addEventListener('click', () => {
-                closePnBigPopup();
-                privateNetSelectedPeer = null;
-                privateNetLinePeer = null;
-                highlightedPeerId = null;
-                pinnedNode = null;
-                // In private mode, donut stays centered; otherwise return to corner
-                if (!privateNetMode && !pnSelectedNet) {
-                    cachePnElements();
-                    if (pnContainerEl) pnContainerEl.classList.remove('pn-focused');
-                }
-                updatePrivateNetUI();
-            });
-        }
-
-        // Disconnect button
-        const disconnBtn = popup.querySelector('.peer-popup-disconnect');
-        if (disconnBtn) {
-            disconnBtn.addEventListener('click', e => {
-                e.stopPropagation();
-                const peerId = parseInt(disconnBtn.dataset.peerId);
-                if (isNaN(peerId)) return;
-                showDisconnectDialog(peerId, netKey);
-            });
-        }
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -3768,160 +2658,163 @@
      * - Existing nodes that are no longer in the response start fading out
      * - New nodes fade in with a spawn animation
      */
-    async function fetchPeers() {
-        try {
-            const resp = await fetch('/api/peers');
-            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-            const peers = await resp.json();
-            lastPeers = peers;
+    const peerRefresh = window.BPMPeerRefresh.create({
+        onPeers: applyPeerSnapshot,
+        onStatus: renderPeerDataStatus,
+    });
 
-            const now = Date.now();
+    function fetchPeers() {
+        return peerRefresh.refresh().then(() => { lastPeerFetchTime = Date.now(); });
+    }
 
-            // Build a set of peer IDs from this response
-            const currentIds = new Set();
-            for (const p of peers) currentIds.add(p.id);
+    function applyPeerSnapshot(peers) {
+        lastPeers = peers;
 
-            const aliveNodesByPeerId = new Map();
-            for (const node of nodes) {
-                if (node.alive) aliveNodesByPeerId.set(node.peerId, node);
-            }
+        const now = Date.now();
 
-            // ── Mark departed peers for fade-out ──
-            // If a node was alive and is no longer in the response, start its fade-out
-            for (const node of nodes) {
-                if (node.alive && !currentIds.has(node.peerId)) {
-                    node.alive = false;
-                    node.fadeOutStart = now;
-                }
-            }
+        // Build a set of peer IDs from this response
+        const currentIds = new Set();
+        for (const p of peers) currentIds.add(p.id);
 
-            // ── Add or update existing peers ──
-            for (const peer of peers) {
-                const existing = aliveNodesByPeerId.get(peer.id);
-
-                // Determine map coordinates
-                let lat, lon;
-                const isPrivate = (
-                    peer.location_status === 'private' ||
-                    peer.location_status === 'unavailable' ||
-                    peer.location_status === 'pending'
-                );
-
-                if (isPrivate || (peer.lat === 0 && peer.lon === 0)) {
-                    // Place in Antarctica with stable position
-                    const pos = getAntarcticaPosition(peer.addr || `peer-${peer.id}`);
-                    lat = pos.lat;
-                    lon = pos.lon;
-                } else {
-                    lat = peer.lat;
-                    lon = peer.lon;
-                }
-
-                // Resolve network colour
-                const netKey = peer.network || 'ipv4';
-                const color = NET_COLORS[netKey] || NET_COLOR_UNKNOWN;
-
-                if (existing) {
-                    // ── Update in place (peer still connected) ──
-                    existing.lat = lat;
-                    existing.lon = lon;
-                    existing.net = netKey;      // always use authoritative API value
-                    existing.color = color;     // keep colour in sync with network
-                    existing.ping = peer.ping_ms || 0;
-                    existing.city = peer.city || '';
-                    existing.regionName = peer.regionName || '';
-                    existing.country = peer.country || peer.countryCode || '';
-                    existing.subver = peer.subver || '';
-                    existing.direction = peer.direction || '';
-                    existing.conntime = peer.conntime || 0;
-                    existing.conntime_fmt = peer.conntime_fmt || '';
-                    existing.isp = peer.isp || '';
-                    existing.connection_type = peer.connection_type || '';
-                    existing.in_addrman = peer.in_addrman || false;
-                    existing.ip = peer.ip || '';
-                    existing.port = peer.port || '';
-                    existing.isPrivate = isPrivate;
-                    existing.location_status = peer.location_status;
-                } else {
-                    // ── New peer — create node with spawn animation ──
-                    const newNode = {
-                        peerId: peer.id,
-                        lat,
-                        lon,
-                        net: netKey,
-                        color,
-                        city: peer.city || '',
-                        regionName: peer.regionName || '',
-                        country: peer.country || peer.countryCode || '',
-                        subver: peer.subver || '',
-                        direction: peer.direction || '',
-                        ping: peer.ping_ms || 0,
-                        conntime: peer.conntime || 0,
-                        conntime_fmt: peer.conntime_fmt || '',
-                        isp: peer.isp || '',
-                        connection_type: peer.connection_type || '',
-                        in_addrman: peer.in_addrman || false,
-                        isPrivate,
-                        location_status: peer.location_status,
-                        addr: peer.addr || '',
-                        ip: peer.ip || '',
-                        port: peer.port || '',
-                        // Animation state
-                        phase: Math.random() * Math.PI * 2,  // random pulse phase
-                        spawnTime: now,                       // triggers fade-in animation
-                        alive: true,
-                        fadeOutStart: null,
-                    };
-                    nodes.push(newNode);
-                    aliveNodesByPeerId.set(peer.id, newNode);
-                }
-            }
-
-            // ── Garbage collect fully faded-out nodes ──
-            nodes = nodes.filter(n => {
-                if (!n.alive && n.fadeOutStart) {
-                    return (now - n.fadeOutStart) < CFG.fadeOutDuration;
-                }
-                return true;
-            });
-
-            // Update connection status in the topbar
-            updateConnectionStatus(peers.length > 0);
-
-            // Update flight deck network counts
-            updateFlightDeck(nodes);
-            updateHUD();
-
-            // [AS-DISTRIBUTION] Update AS Distribution donut with latest peer data (always active)
-            if (window.ASDistribution) {
-                window.ASDistribution.update(lastPeers);
-            }
-
-            // Refresh the peer table panel
-            renderPeerTable();
-
-            // [PRIVATE-NET] Update private network UI if in that mode
-            updatePrivateNetUI();
-
-            // [PRIVATE-NET] Auto-enter private mode if user only has private peers
-            if (!privateNetMode && lastPeers.length > 0) {
-                const publicPeers = lastPeers.filter(p => !PRIVATE_NETS.has(p.network));
-                const privatePeers = lastPeers.filter(p => PRIVATE_NETS.has(p.network));
-                if (publicPeers.length === 0 && privatePeers.length > 0) {
-                    enterPrivateNetMode();
-                }
-            }
-
-            // [PRIVATE-NET] Update mini donut below public donut
-            renderPnMiniDonut();
-
-            // Reset countdown timer
-            lastPeerFetchTime = Date.now();
-
-        } catch (err) {
-            console.error('[Bitcoin Peer Map] Failed to fetch peers:', err);
-            updateConnectionStatus(false);
+        const aliveNodesByPeerId = new Map();
+        for (const node of nodes) {
+            if (node.alive) aliveNodesByPeerId.set(node.peerId, node);
         }
+
+        // ── Mark departed peers for fade-out ──
+        // If a node was alive and is no longer in the response, start its fade-out
+        for (const node of nodes) {
+            if (node.alive && !currentIds.has(node.peerId)) {
+                node.alive = false;
+                node.fadeOutStart = now;
+            }
+        }
+
+        if (privateState.privateNetSelectedPeer && !currentIds.has(privateState.privateNetSelectedPeer.peerId)) {
+            privateState.privateNetSelectedPeer = null;
+            privateState.privateNetLinePeer = null;
+            highlightedPeerId = null;
+            pinnedNode = null;
+            privatePopup.closePnBigPopup();
+        }
+
+        // ── Add or update existing peers ──
+        for (const peer of peers) {
+            const existing = aliveNodesByPeerId.get(peer.id);
+
+            // Determine map coordinates
+            let lat, lon;
+            const isPrivate = (
+                peer.location_status === 'private' ||
+                peer.location_status === 'unavailable' ||
+                peer.location_status === 'pending'
+            );
+
+            if (isPrivate || (peer.lat === 0 && peer.lon === 0)) {
+                // Place in Antarctica with stable position
+                const pos = getAntarcticaPosition(peer.addr || `peer-${peer.id}`);
+                lat = pos.lat;
+                lon = pos.lon;
+            } else {
+                lat = peer.lat;
+                lon = peer.lon;
+            }
+
+            // Resolve network colour
+            const netKey = peer.network || 'ipv4';
+            const color = NET_COLORS[netKey] || NET_COLOR_UNKNOWN;
+
+            if (existing) {
+                // ── Update in place (peer still connected) ──
+                existing.lat = lat;
+                existing.lon = lon;
+                existing.net = netKey;      // always use authoritative API value
+                existing.color = color;     // keep colour in sync with network
+                existing.ping = peer.ping_ms || 0;
+                existing.city = peer.city || '';
+                existing.regionName = peer.regionName || '';
+                existing.country = peer.country || peer.countryCode || '';
+                existing.subver = peer.subver || '';
+                existing.direction = peer.direction || '';
+                existing.conntime = peer.conntime || 0;
+                existing.conntime_fmt = peer.conntime_fmt || '';
+                existing.isp = peer.isp || '';
+                existing.connection_type = peer.connection_type || '';
+                existing.in_addrman = peer.in_addrman || false;
+                existing.ip = peer.ip || '';
+                existing.port = peer.port || '';
+                existing.isPrivate = isPrivate;
+                existing.location_status = peer.location_status;
+            } else {
+                // ── New peer — create node with spawn animation ──
+                const newNode = {
+                    peerId: peer.id,
+                    lat,
+                    lon,
+                    net: netKey,
+                    color,
+                    city: peer.city || '',
+                    regionName: peer.regionName || '',
+                    country: peer.country || peer.countryCode || '',
+                    subver: peer.subver || '',
+                    direction: peer.direction || '',
+                    ping: peer.ping_ms || 0,
+                    conntime: peer.conntime || 0,
+                    conntime_fmt: peer.conntime_fmt || '',
+                    isp: peer.isp || '',
+                    connection_type: peer.connection_type || '',
+                    in_addrman: peer.in_addrman || false,
+                    isPrivate,
+                    location_status: peer.location_status,
+                    addr: peer.addr || '',
+                    ip: peer.ip || '',
+                    port: peer.port || '',
+                    // Animation state
+                    phase: Math.random() * Math.PI * 2,  // random pulse phase
+                    spawnTime: now,                       // triggers fade-in animation
+                    alive: true,
+                    fadeOutStart: null,
+                };
+                nodes.push(newNode);
+                aliveNodesByPeerId.set(peer.id, newNode);
+            }
+        }
+
+        // ── Garbage collect fully faded-out nodes ──
+        nodes = nodes.filter(n => {
+            if (!n.alive && n.fadeOutStart) {
+                return (now - n.fadeOutStart) < CFG.fadeOutDuration;
+            }
+            return true;
+        });
+
+        // Update flight deck network counts
+        updateFlightDeck(nodes);
+        updateHUD();
+
+        // [AS-DISTRIBUTION] Update AS Distribution donut with latest peer data (always active)
+        if (window.ASDistribution) {
+            window.ASDistribution.update(lastPeers);
+        }
+
+        // Refresh the peer table panel
+        peerTable.renderPeerTable();
+
+        // [PRIVATE-NET] Update private network UI if in that mode
+        updatePrivateNetUI();
+
+        // [PRIVATE-NET] Auto-enter private mode if user only has private peers
+        if (!privateState.privateNetMode && lastPeers.length > 0) {
+            const publicPeers = lastPeers.filter(p => !PRIVATE_NETS.has(p.network));
+            const privatePeers = lastPeers.filter(p => PRIVATE_NETS.has(p.network));
+            if (publicPeers.length === 0 && privatePeers.length > 0) {
+                enterPrivateNetMode();
+            }
+        }
+
+        // [PRIVATE-NET] Update mini donut below public donut
+        renderPnMiniDonut();
+
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -3960,12 +2853,12 @@
         const downloaded = Number(traffic.download_bytes || 0);
         const uploaded = Number(traffic.upload_bytes || 0);
         if (inEl) {
-            inEl.textContent = traffic.download_fmt || fmtBytesShort(downloaded);
+            inEl.textContent = traffic.download_fmt || privatePanel.fmtBytesShort(downloaded);
             inEl.title = `${downloaded.toLocaleString()} bytes downloaded since Bitcoin Peer Map started`;
             pulseOnChange('mo-p2p-in', downloaded, 'white');
         }
         if (outEl) {
-            outEl.textContent = traffic.upload_fmt || fmtBytesShort(uploaded);
+            outEl.textContent = traffic.upload_fmt || privatePanel.fmtBytesShort(uploaded);
             outEl.title = `${uploaded.toLocaleString()} bytes uploaded since Bitcoin Peer Map started`;
             pulseOnChange('mo-p2p-out', uploaded, 'white');
         }
@@ -4008,7 +2901,11 @@
         }
     }
 
-    async function fetchInfo() {
+    function fetchInfo() {
+        return infoPolling.run();
+    }
+
+    async function refreshNodeInfo() {
         try {
             const resp = await fetch(`/api/info?currency=${btcCurrency}`);
             if (!resp.ok) return;
@@ -4063,7 +2960,7 @@
         getNodeInfo: () => lastNodeInfo,
         getCurrency: () => btcCurrency,
         currencyMeta: CURRENCY_META,
-        formatBytes: fmtBytesShort,
+        formatBytes: privatePanel.fmtBytesShort,
     });
 
     function openRecentBlocksModal() {
@@ -4140,16 +3037,42 @@
     // CONNECTION STATUS (topbar dot + text)
     // ═══════════════════════════════════════════════════════════
 
-    function updateConnectionStatus(connected) {
+    function renderPeerDataStatus(status) {
+        const labels = {
+            live: 'Live',
+            connecting: 'Connecting…',
+            'node-unavailable': 'Node unavailable',
+            'dashboard-unavailable': 'Dashboard unavailable',
+            delayed: 'Refresh delayed',
+        };
+        const label = labels[status.state];
+        const statusEl = document.getElementById('peer-data-status');
+        const ageEl = document.getElementById('peer-data-age');
         const dot = document.getElementById('status-dot');
-        if (!dot) return;
-        if (connected) {
-            dot.classList.add('online');
-            dot.title = 'Bitcoin Peer Map is running and connected';
-        } else {
-            dot.classList.remove('online');
-            dot.title = 'Bitcoin Peer Map service is not responding';
+        if (statusEl) {
+            statusEl.dataset.state = status.state;
+            if (statusEl.textContent !== label) statusEl.textContent = label;
+            statusEl.title = status.stale
+                ? 'Showing the last successful peer snapshot. Refresh will retry automatically.'
+                : 'Connection status for peer data from your Bitcoin node';
         }
+        if (ageEl) {
+            const seconds = status.ageSeconds === null ? null : Math.floor(status.ageSeconds);
+            const age = seconds === null ? 'Never' : seconds < 60 ? seconds + 's ago'
+                : seconds < 3600 ? Math.floor(seconds / 60) + 'm ' + (seconds % 60) + 's ago'
+                : Math.floor(seconds / 3600) + 'h ' + Math.floor(seconds % 3600 / 60) + 'm ago';
+            ageEl.textContent = age + (status.stale ? ' (cached)' : '');
+            ageEl.dataset.stale = String(status.stale);
+            ageEl.title = status.lastSuccessAt === null ? 'No successful peer snapshot yet'
+                : 'Last successful peer snapshot: ' + new Date(status.lastSuccessAt * 1000).toLocaleString();
+        }
+        if (dot) {
+            dot.classList.toggle('online', status.state === 'live');
+            dot.classList.toggle('pending', status.state === 'connecting' || status.state === 'delayed');
+            dot.title = label;
+        }
+        const peerCount = document.getElementById('mo-peers');
+        if (peerCount) peerCount.title = status.stale ? 'Peers in the last successful snapshot' : 'Total connected peers';
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -4849,8 +3772,8 @@
             asDimFactor = 0.15;
         }
         // [PRIVATE-NET] Dim peers not matching selected or hovered network segment
-        if (privateNetMode && node.alive && PRIVATE_NETS.has(node.net)) {
-            const activeNet = pnSelectedNet || pnHoveredNet;
+        if (privateState.privateNetMode && node.alive && PRIVATE_NETS.has(node.net)) {
+            const activeNet = privateState.pnSelectedNet || privateState.pnHoveredNet;
             if (activeNet && node.net !== activeNet) asDimFactor = 0.15;
         }
 
@@ -5215,11 +4138,15 @@
     let lastPeerFetchTime = 0;
     let countdownInterval = null;
     // Poll timer IDs (stored so they can be restarted when settings change)
-    let peerPollTimer = null;
+    const peerPolling = window.BPMPolling.create({
+        task: fetchPeers,
+        intervalMs: CFG.pollInterval,
+    });
 
     function startCountdownTimer() {
         if (countdownInterval) clearInterval(countdownInterval);
         countdownInterval = setInterval(() => {
+            peerRefresh.renderStatus();
             const cdEl = document.getElementById('mo-countdown');
             if (!cdEl) return;
             const elapsed = Date.now() - lastPeerFetchTime;
@@ -5354,7 +4281,7 @@
     /** Build a tooltip row: label + value, skipping empty values */
     function ttRow(label, value) {
         if (!value && value !== 0 && value !== false) return '';
-        return `<div class="tt-row"><span class="tt-label">${label}</span><span class="tt-val">${value}</span></div>`;
+        return `<div class="tt-row"><span class="tt-label">${escapeHtml(label)}</span><span class="tt-val">${escapeHtml(value)}</span></div>`;
     }
 
     /** Shorten an address for compact display (e.g. group list) */
@@ -5398,8 +4325,8 @@
                 const addr = shortenAddr(node);
                 html += `<div class="tt-row tt-group-row">`;
                 html += `<span class="tt-label" style="min-width:16px">${i + 1}.</span>`;
-                html += `<span class="tt-net" style="color:${netColor};min-width:36px">${netLabel}</span>`;
-                html += `<span class="tt-val" style="flex:1">${addr}</span>`;
+                html += `<span class="tt-net" style="color:${netColor};min-width:36px">${escapeHtml(netLabel)}</span>`;
+                html += `<span class="tt-val" style="flex:1">${escapeHtml(addr)}</span>`;
                 html += `</div>`;
             });
             html += `</div>`;
@@ -5420,10 +4347,10 @@
             const netLabel = NET_DISPLAY[node.net] || node.net.toUpperCase();
             const netColor = rgba(node.color, 0.9);
             const addr = shortenAddr(node);
-            html += `<div class="tt-row tt-group-row tt-group-clickable" data-peer-id="${node.peerId}">`;
+            html += `<div class="tt-row tt-group-row tt-group-clickable" data-peer-id="${escapeHtml(node.peerId)}">`;
             html += `<span class="tt-label" style="min-width:16px">${i + 1}.</span>`;
-            html += `<span class="tt-net" style="color:${netColor};min-width:36px">${netLabel}</span>`;
-            html += `<span class="tt-val" style="flex:1">${addr}</span>`;
+            html += `<span class="tt-net" style="color:${netColor};min-width:36px">${escapeHtml(netLabel)}</span>`;
+            html += `<span class="tt-val" style="flex:1">${escapeHtml(addr)}</span>`;
             html += `</div>`;
         });
         html += `</div>`;
@@ -5443,7 +4370,7 @@
                 groupedNodes = null;
                 highlightedPeerId = null;
                 hideTooltip();
-                highlightTableRow(null);
+                peerTable.highlightTableRow(null);
                 clearMapDotFilter();
             });
         }
@@ -5459,7 +4386,7 @@
                     clearMapDotFilter();
                     groupedNodes = null;
                     mapFilterPeerIds = new Set([peerId]);
-                    renderPeerTable();
+                    peerTable.renderPeerTable();
                     hideTooltip(); // close the group list tooltip
 
                     // [AS-DISTRIBUTION] Open full peer detail FIRST (before zoom)
@@ -5475,7 +4402,7 @@
                     // Zoom to peer (same as table-row and single-dot click)
                     const p = project(node.lon, node.lat);
                     const topbarH2 = 40;
-                    const panelH2 = panelEl.classList.contains('collapsed') ? 32 : 340;
+                    const panelH2 = peerTable.panelEl.classList.contains('collapsed') ? 32 : 340;
                     const visibleH2 = (H - panelH2) - topbarH2;
                     const targetSY = topbarH2 + visibleH2 * 0.35;
                     let z = 3;
@@ -5499,8 +4426,8 @@
                     highlightedPeerId = peerId;
                     pinnedNode = node;
 
-                    if (!panelEl.classList.contains('collapsed')) {
-                        highlightTableRow(peerId, true);
+                    if (!peerTable.panelEl.classList.contains('collapsed')) {
+                        peerTable.highlightTableRow(peerId, true);
                     }
                 }
             });
@@ -5533,7 +4460,7 @@
             if (node.country) locationParts.push(node.country);
         }
         const locationStr = locationParts.length > 0
-            ? locationParts.join(', ')
+            ? escapeHtml(locationParts.join(', '))
             : '<span class="tt-muted">Private Network</span>';
 
         // Addrman
@@ -5551,8 +4478,8 @@
         } else {
             html += `<span class="tt-back-link"></span>`;
         }
-        html += `<span class="tt-peer-id">#${node.peerId}</span>`;
-        html += `<span class="tt-net" style="color:${netColor}">${netLabel}</span>`;
+        html += `<span class="tt-peer-id">#${escapeHtml(node.peerId)}</span>`;
+        html += `<span class="tt-net" style="color:${netColor}">${escapeHtml(netLabel)}</span>`;
         html += `</div>`;
 
         // ── Identity / Connection ──
@@ -5578,7 +4505,7 @@
         // ── Actions (only when pinned) ──
         if (pinned) {
             html += `<div class="tt-actions">`;
-            html += `<button class="tt-action-btn tt-disconnect" data-id="${node.peerId}" data-net="${node.net}">Disconnect</button>`;
+            html += `<button class="tt-action-btn tt-disconnect" data-id="${escapeHtml(node.peerId)}" data-net="${escapeHtml(node.net)}">Disconnect</button>`;
             html += `</div>`;
         }
 
@@ -5613,7 +4540,7 @@
                     // Go back to group selection list
                     pinnedNode = null;
                     mapFilterPeerIds = new Set(groupedNodes.map(n => n.peerId));
-                    renderPeerTable();
+                    peerTable.renderPeerTable();
                     showGroupSelectionList(groupedNodes, mx, my);
                 } else {
                     // Exit: clear everything
@@ -5622,7 +4549,7 @@
                     hoveredNode = null;
                     clearMapDotFilter();
                     hideTooltip();
-                    highlightTableRow(null);
+                    peerTable.highlightTableRow(null);
                 }
             });
         }
@@ -5640,715 +4567,37 @@
     function clearMapDotFilter() {
         mapFilterPeerIds = null;
         groupedNodes = null;
-        renderPeerTable();
-    }
-
-    /** Highlight a table row by peer ID (map node hover → table row).
-     *  Visual highlight only — never scrolls the table on hover.
-     *  Pass scrollIntoView=true for click-driven selection. */
-    function highlightTableRow(peerId, scrollIntoView) {
-        // Remove previous highlight
-        const prev = tbodyEl.querySelector('.row-highlight');
-        if (prev) prev.classList.remove('row-highlight');
-
-        if (peerId === null) return;
-
-        const row = tbodyEl.querySelector(`tr[data-id="${peerId}"]`);
-        if (row) {
-            row.classList.add('row-highlight');
-            if (scrollIntoView && !panelEl.classList.contains('collapsed')) {
-                row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-            }
-        }
+        peerTable.renderPeerTable();
     }
 
     // ═══════════════════════════════════════════════════════════
     // BOTTOM PEER PANEL — Full peer table with all columns
     // ═══════════════════════════════════════════════════════════
 
-    // Connection type acronyms: short form + full description for hover
-    const CONN_TYPE_SHORT = {
-        'outbound-full-relay': 'OFR',
-        'block-relay-only': 'BRO',
-        'manual': 'MAN',
-        'addr-fetch': 'AF',
-        'feeler': 'FLR',
-        'inbound': 'IN',
-    };
-    /** Get short type string for a peer and its full description */
-    function peerTypeShort(p) {
-        const dir = p.direction === 'IN' ? 'IN' : 'OUT';
-        if (!p.connection_type) return dir;
-        const ct = CONN_TYPE_SHORT[p.connection_type] || p.connection_type;
-        return p.direction === 'IN' ? ct : `${dir}/${ct}`;
-    }
-    function peerTypeFull(p) {
-        const dir = p.direction === 'IN' ? 'Inbound' : 'Outbound';
-        return p.connection_type ? `${dir} / ${p.connection_type}` : dir;
-    }
-
-    // Column definitions: { key, label, get(short), full(hover), vis, width }
-    // width: preferred width in px for fixed layout. min is enforced via CSS.
-    const COLUMNS = [
-        { key: 'id',              label: 'ID',       get: p => p.id,                                      full: null,  vis: true,  w: 40  },
-        { key: 'network',         label: 'Net',      get: p => (NET_DISPLAY[p.network] || p.network),     full: null,  vis: true,  w: 45  },
-        { key: 'conntime_fmt',    label: 'Duration', get: p => p.conntime_fmt || '—',                     full: null,  vis: true,  w: 75  },
-        { key: 'connection_type', label: 'Type',     get: p => peerTypeShort(p),                           full: p => peerTypeFull(p), vis: true, w: 70 },
-        { key: 'addr',            label: 'IP:Port',  get: p => p.addr || `${p.ip}:${p.port}`,             full: null,  vis: true,  w: 130 },
-        { key: 'subver',          label: 'Software', get: p => p.subver || '—',                            full: null,  vis: true,  w: 90  },
-        { key: 'services_abbrev', label: 'Services', get: p => serviceAbbrev(p.services),                    full: p => serviceHover(p.services),  vis: true,  w: 70  },
-        { key: 'city',            label: 'City',     get: p => p.city || '—',                              full: null,  vis: true,  w: 60  },
-        { key: 'regionName',      label: 'Region',   get: p => p.regionName || '—',                        full: null,  vis: true,  w: 55  },
-        { key: 'country',         label: 'Country',  get: p => p.country || '—',                           full: null,  vis: true,  w: 70  },
-        { key: 'continent',       label: 'Cont.',    get: p => p.continent || '—',                         full: null,  vis: true,  w: 60  },
-        { key: 'isp',             label: 'ISP',      get: p => p.isp || '—',                               full: null,  vis: true,  w: 110 },
-        { key: 'ping_ms',         label: 'Ping',     get: p => p.ping_ms != null ? p.ping_ms + 'ms' : '—', full: null, vis: true,  w: 50  },
-        { key: 'bytessent_fmt',   label: 'Sent',     get: p => p.bytessent_fmt || '—',                     full: null,  vis: true,  w: 60  },
-        { key: 'bytesrecv_fmt',   label: 'Recv',     get: p => p.bytesrecv_fmt || '—',                     full: null,  vis: true,  w: 60  },
-        { key: 'in_addrman',      label: 'Addrman',  get: p => p.in_addrman ? 'Yes' : 'No',                full: null,  vis: true,  w: 55  },
-        // Advanced columns (hidden by default)
-        { key: 'direction',       label: 'Dir',      get: p => p.direction === 'IN' ? 'IN' : 'OUT',        full: p => p.direction === 'IN' ? 'Inbound' : 'Outbound', vis: false, w: 40 },
-        { key: 'countryCode',     label: 'CC',       get: p => p.countryCode || '—',                       full: null,  vis: false, w: 35  },
-        { key: 'continentCode',   label: 'CntC',     get: p => p.continentCode || '—',                     full: null,  vis: false, w: 40  },
-        { key: 'lat',             label: 'Lat',      get: p => p.lat != null ? p.lat.toFixed(2) : '—',     full: null,  vis: false, w: 55  },
-        { key: 'lon',             label: 'Lon',      get: p => p.lon != null ? p.lon.toFixed(2) : '—',     full: null,  vis: false, w: 55  },
-        { key: 'region',          label: 'Rgn',      get: p => p.region || '—',                             full: null,  vis: false, w: 60  },
-        { key: 'as',              label: 'AS',        get: p => p.as || '—',                                full: null,  vis: false, w: 80  },
-        { key: 'asname',          label: 'AS Name',   get: p => p.asname || '—',                            full: null,  vis: false, w: 100 },
-        { key: 'district',        label: 'District',  get: p => p.district || '—',                          full: null,  vis: false, w: 80  },
-        { key: 'mobile',          label: 'Mob',       get: p => p.mobile ? 'Y' : 'N',                       full: p => p.mobile ? 'Yes' : 'No', vis: false, w: 35 },
-        { key: 'org',             label: 'Org',       get: p => p.org || '—',                               full: null,  vis: false, w: 100 },
-        { key: 'timezone',        label: 'TZ',        get: p => p.timezone || '—',                          full: null,  vis: false, w: 70  },
-        { key: 'currency',        label: 'Curr',      get: p => p.currency || '—',                          full: null,  vis: false, w: 45  },
-        { key: 'hosting',         label: 'Host',      get: p => p.hosting ? 'Y' : 'N',                      full: p => p.hosting ? 'Yes' : 'No', vis: false, w: 35 },
-        { key: 'offset',          label: 'UTC',        get: p => p.offset != null ? p.offset : '—',         full: null,  vis: false, w: 45  },
-        { key: 'proxy',           label: 'Proxy',      get: p => p.proxy ? 'Y' : 'N',                       full: p => p.proxy ? 'Yes' : 'No', vis: false, w: 40 },
-        { key: 'zip',             label: 'ZIP',        get: p => p.zip || '—',                              full: null,  vis: false, w: 55  },
-    ];
-
-    // Visible column keys (start with defaults, can be toggled later)
-    const DEFAULT_VISIBLE_COLUMNS = COLUMNS.filter(c => c.vis).map(c => c.key);
-    let visibleColumns = [...DEFAULT_VISIBLE_COLUMNS];
-
-    // Sort state
-    let sortKey = 'id';
-    let sortAsc = true;
-
-    // Auto-fit column state: ON by default, OFF when user resizes
-    let autoFitColumns = true;
-    let userColumnWidths = {};  // key -> px width (only used when autoFit OFF)
-    let panelOpacity = 0;       // 0 = invisible, 100 = opaque
-    let maxPeerRows = 10;       // visible rows in peer table
-    let showAntarcticaPeers = true;
-    const TABLE_COLUMN_KEYS = new Set(COLUMNS.map(c => c.key));
-
-    function normalizeVisibleColumns(columns) {
-        if (!Array.isArray(columns)) return [...DEFAULT_VISIBLE_COLUMNS];
-        const normalized = [];
-        for (const key of columns) {
-            if (typeof key === 'string' && TABLE_COLUMN_KEYS.has(key) && !normalized.includes(key)) {
-                normalized.push(key);
-            }
-        }
-        return normalized.length > 0 ? normalized : [...DEFAULT_VISIBLE_COLUMNS];
-    }
-
-    function normalizeColumnWidths(widths) {
-        const normalized = {};
-        if (!widths || typeof widths !== 'object' || Array.isArray(widths)) return normalized;
-        for (const [key, rawWidth] of Object.entries(widths)) {
-            if (!TABLE_COLUMN_KEYS.has(key)) continue;
-            const width = Number(rawWidth);
-            if (Number.isFinite(width)) normalized[key] = Math.round(clamp(width, 30, 400));
-        }
-        return normalized;
-    }
-
-    function currentTableDisplaySettings() {
-        return {
-            visibleColumns: [...visibleColumns],
-            autoFitColumns,
-            userColumnWidths: normalizeColumnWidths(userColumnWidths),
-            panelOpacity,
-            maxPeerRows,
-            showAntarcticaPeers,
-        };
-    }
-
-    function saveTableDisplaySettings() {
-        writeSavedDisplaySettings(Object.assign(
-            {},
-            readSavedDisplaySettings(),
-            currentTableDisplaySettings()
-        ));
-    }
-
-    function loadTableDisplaySettings() {
-        const saved = readSavedDisplaySettings();
-
-        visibleColumns = normalizeVisibleColumns(saved.visibleColumns);
-
-        if (typeof saved.autoFitColumns === 'boolean') {
-            autoFitColumns = saved.autoFitColumns;
-        }
-        userColumnWidths = normalizeColumnWidths(saved.userColumnWidths);
-        if (autoFitColumns) userColumnWidths = {};
-
-        if (Number.isFinite(Number(saved.panelOpacity))) {
-            panelOpacity = Math.round(clamp(Number(saved.panelOpacity), 0, 100));
-        }
-        if (Number.isFinite(Number(saved.maxPeerRows))) {
-            maxPeerRows = Math.round(clamp(Number(saved.maxPeerRows), 3, 40));
-        }
-        if (typeof saved.showAntarcticaPeers === 'boolean') {
-            showAntarcticaPeers = saved.showAntarcticaPeers;
-        }
-    }
-
-    // Panel DOM (let because ban list view replaces and restores them)
-    const panelEl = document.getElementById('peer-panel');
-    let theadEl = document.getElementById('peer-thead');
-    let tbodyEl = document.getElementById('peer-tbody');
-    const handleCountEl = { textContent: '' };  // peer count now shown in badge only
-
-    // Panel toggle (clicking the title bar)
-    document.getElementById('peer-panel-handle').addEventListener('click', () => {
-        panelEl.classList.toggle('collapsed');
-        // [AS-DISTRIBUTION] When expanding peer list, bring it on top of AS panel
-        if (!panelEl.classList.contains('collapsed')) {
-            document.body.classList.add('panel-focus-peers');
-            document.body.classList.remove('panel-focus-as');
-        }
-        scheduleDonutStackFit();
+    const peerTable = window.BPMPeerTable.create({
+        state: privateState,
+        data: {
+            get NET_DISPLAY() { return NET_DISPLAY; },
+            get clamp() { return clamp; },
+            get lastPeers() { return lastPeers; },
+            get W() { return W; },
+            get PRIVATE_NETS() { return PRIVATE_NETS; },
+            get asFilterPeerIds() { return asFilterPeerIds; },
+            get mapFilterPeerIds() { return mapFilterPeerIds; },
+            get highlightedPeerId() { return highlightedPeerId; },
+            set highlightedPeerId(value) { highlightedPeerId = value; },
+        },
+        actions: {
+            serviceAbbrev,
+            serviceHover,
+            writeSavedDisplaySettings,
+            readSavedDisplaySettings,
+            scheduleDonutStackFit,
+            passesNetFilter,
+            fitDonutStackForPanelTop,
+            fitDonutStackToViewport,
+        },
     });
-
-    // [AS-DISTRIBUTION] Clicking anywhere in peer panel body → bring peers to front
-    const peerPanelBody = document.querySelector('.peer-panel-body');
-    if (peerPanelBody) {
-        peerPanelBody.addEventListener('click', () => {
-            document.body.classList.add('panel-focus-peers');
-            document.body.classList.remove('panel-focus-as');
-        });
-    }
-
-    /** Get sorted copy of lastPeers based on current sort state.
-     *  sortKey=null means unsorted (original peer order). */
-    function getSortedPeers() {
-        if (!sortKey) return [...lastPeers];  // unsorted — original order
-        const col = COLUMNS.find(c => c.key === sortKey);
-        if (!col) return [...lastPeers];
-        return [...lastPeers].sort((a, b) => {
-            let va = col.get(a);
-            let vb = col.get(b);
-            // Numeric-aware sort for known numeric fields
-            if (typeof va === 'number' && typeof vb === 'number') {
-                return sortAsc ? va - vb : vb - va;
-            }
-            // Strip 'ms' for ping column
-            if (sortKey === 'ping_ms') {
-                va = parseInt(va) || 0;
-                vb = parseInt(vb) || 0;
-                return sortAsc ? va - vb : vb - va;
-            }
-            // Sort Sent/Recv by raw byte count, not formatted string
-            if (sortKey === 'bytessent_fmt') {
-                va = a.bytessent || 0;
-                vb = b.bytessent || 0;
-                return sortAsc ? va - vb : vb - va;
-            }
-            if (sortKey === 'bytesrecv_fmt') {
-                va = a.bytesrecv || 0;
-                vb = b.bytesrecv || 0;
-                return sortAsc ? va - vb : vb - va;
-            }
-            // Sort Duration by raw conntime (unix timestamp — lower = connected longer)
-            if (sortKey === 'conntime_fmt') {
-                va = a.conntime || 0;
-                vb = b.conntime || 0;
-                // Lower conntime = connected longer = "more" duration
-                return sortAsc ? vb - va : va - vb;
-            }
-            va = String(va);
-            vb = String(vb);
-            return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
-        });
-    }
-
-    /** Build colgroup with column widths.
-     *  Auto-fit ON: compute widths from data distribution (~95th percentile of value lengths),
-     *  then scale proportionally to fill the viewport.
-     *  Auto-fit OFF: use reasonable default widths from column definitions. */
-    function renderColgroup() {
-        const table = document.getElementById('peer-table');
-        // Remove old colgroup if present
-        const old = table.querySelector('colgroup');
-        if (old) old.remove();
-
-        if (autoFitColumns) {
-            // ── Auto-fit: size columns to fit viewport based on data ──
-            table.style.tableLayout = 'fixed';
-            const cg = document.createElement('colgroup');
-            const charPx = 7;  // approximate px per character at font-size 11px
-            const headerPad = 28; // padding + sort arrow
-            const colPad = 16;   // cell padding (8px each side)
-            const actionsW = 80; // fixed actions column
-
-            // Measure available width
-            const tableWrap = table.closest('.peer-table-wrap');
-            const availW = (tableWrap ? tableWrap.clientWidth : W) - actionsW;
-
-            const widths = [];
-            for (const key of visibleColumns) {
-                const col = COLUMNS.find(c => c.key === key);
-                if (!col) { widths.push(60); continue; }
-
-                // Minimum: header label width
-                const headerW = col.label.length * charPx + headerPad;
-
-                if (lastPeers.length === 0) {
-                    widths.push(Math.max(headerW, col.w));
-                    continue;
-                }
-
-                // Gather string lengths for all values
-                const lens = lastPeers.map(p => String(col.get(p)).length);
-                lens.sort((a, b) => a - b);
-
-                // Use ~95th percentile to ignore extreme outliers (e.g. Tor/I2P addresses)
-                const p95Idx = Math.min(Math.floor(lens.length * 0.95), lens.length - 1);
-                const p95Len = lens[p95Idx];
-                const dataW = p95Len * charPx + colPad;
-
-                widths.push(Math.max(headerW, Math.min(dataW, 250)));
-            }
-
-            // Scale proportionally to fill available width
-            const totalNatural = widths.reduce((s, w) => s + w, 0);
-            const scale = totalNatural > 0 ? Math.max(availW / totalNatural, 0.5) : 1;
-
-            for (const w of widths) {
-                const colEl = document.createElement('col');
-                colEl.style.width = Math.round(w * scale) + 'px';
-                cg.appendChild(colEl);
-            }
-            // Actions column
-            const actCol = document.createElement('col');
-            actCol.style.width = actionsW + 'px';
-            cg.appendChild(actCol);
-            table.insertBefore(cg, table.firstChild);
-            return;
-        }
-
-        // ── Auto-fit OFF: use reasonable default widths from column definitions ──
-        table.style.tableLayout = 'fixed';
-        const cg = document.createElement('colgroup');
-        for (const key of visibleColumns) {
-            const col = COLUMNS.find(c => c.key === key);
-            const colEl = document.createElement('col');
-            const w = userColumnWidths[key] || (col ? col.w : 80);
-            colEl.style.width = w + 'px';
-            cg.appendChild(colEl);
-        }
-        // Actions column (single Disconnect button)
-        const actCol = document.createElement('col');
-        actCol.style.width = '80px';
-        cg.appendChild(actCol);
-        table.insertBefore(cg, table.firstChild);
-    }
-
-    /** Build table header row with resize handles */
-    function renderPeerTableHead() {
-        let html = '<tr>';
-        for (const key of visibleColumns) {
-            const col = COLUMNS.find(c => c.key === key);
-            if (!col) continue;
-            const isActive = sortKey === key;
-            // 3-state: no sortKey = unsorted (dim arrow), asc = ▲, desc = ▼
-            const arrow = isActive ? (sortAsc ? '&#9650;' : '&#9660;') : '';
-            const cls = isActive ? 'sort-arrow active' : 'sort-arrow';
-            html += `<th data-sort="${key}"><span class="th-text">${col.label} <span class="${cls}">${arrow}</span></span><span class="th-resize" data-col="${key}"></span></th>`;
-        }
-        html += '<th>Actions</th>';
-        html += '</tr>';
-        theadEl.innerHTML = html;
-        renderColgroup();
-    }
-
-    /** Build table body from lastPeers (filtered by active network filter) */
-    function renderPeerTable() {
-        if (!tbodyEl) return;
-        let sorted = getSortedPeers();
-
-        // [PRIVATE-NET] In private net mode, bypass badge/AS/map filters and only show private peers
-        if (privateNetMode) {
-            sorted = sorted.filter(p => PRIVATE_NETS.has(p.network));
-            if (pnSelectedNet) {
-                sorted = sorted.filter(p => p.network === pnSelectedNet);
-            }
-        } else {
-            // Apply network filter to table as well
-            if (!isAllNetsEnabled()) {
-                sorted = sorted.filter(p => passesNetFilter(p.network || 'ipv4'));
-            }
-
-            // [AS-DISTRIBUTION] Apply AS filter when an AS is selected
-            if (asFilterPeerIds) {
-                sorted = sorted.filter(p => asFilterPeerIds.has(p.id));
-            }
-
-            // [MAP DOT FILTER] Apply map dot filter when a dot is clicked
-            if (mapFilterPeerIds) {
-                sorted = sorted.filter(p => mapFilterPeerIds.has(p.id));
-            }
-        }
-
-        handleCountEl.textContent = sorted.length;
-
-        let html = '';
-        for (const peer of sorted) {
-            const isHighlighted = highlightedPeerId === peer.id;
-            const cls = isHighlighted ? ' class="row-highlight"' : '';
-            const net = peer.network || 'ipv4';
-            html += `<tr data-id="${peer.id}" data-net="${net}"${cls}>`;
-            for (const key of visibleColumns) {
-                const col = COLUMNS.find(c => c.key === key);
-                if (!col) continue;
-                const val = col.get(peer);
-                const hoverVal = col.full ? col.full(peer) : val;
-                html += `<td title="${String(hoverVal).replace(/"/g, '&quot;')}">${val}</td>`;
-            }
-            // Action buttons — single Disconnect button opens confirmation dialog
-            html += '<td>';
-            html += `<button class="peer-action-btn" data-action="disconnect" data-id="${peer.id}" data-net="${net}">Disconnect</button>`;
-            html += '</td>';
-            html += '</tr>';
-        }
-        tbodyEl.innerHTML = html;
-    }
-
-    // Initial header render
-    renderPeerTableHead();
-
-    // ── Named event handlers (for reattachment after ban list close) ──
-
-    let resizingColumn = false;  // suppress sort click when resize drag occurred
-    let draggingColumn = false;  // suppress sort click when column reorder drag occurred
-
-    function handleTheadClick(e) {
-        // Suppress sort if this click followed a column resize or reorder drag
-        if (resizingColumn) { resizingColumn = false; return; }
-        if (draggingColumn) { draggingColumn = false; return; }
-        // Ignore clicks on resize handles
-        if (e.target.closest('.th-resize')) return;
-        const th = e.target.closest('th[data-sort]');
-        if (!th) return;
-        const key = th.dataset.sort;
-        // 3-state sort cycle: unsorted → ascending → descending → unsorted
-        if (sortKey === key) {
-            if (sortAsc) {
-                sortAsc = false;  // asc → desc
-            } else {
-                sortKey = null;   // desc → unsorted
-                sortAsc = true;
-            }
-        } else {
-            sortKey = key;
-            sortAsc = true;       // new column → ascending
-        }
-        renderPeerTableHead();
-        renderPeerTable();
-    }
-
-    let resizeState = null;
-    function handleTheadResize(e) {
-        const handle = e.target.closest('.th-resize');
-        if (!handle) return;
-        e.preventDefault();
-        e.stopPropagation();
-        const colKey = handle.dataset.col;
-        const th = handle.parentElement;
-        const startX = e.clientX;
-        const startW = th.offsetWidth;
-
-        resizeState = { colKey, th, startX, startW };
-
-        const onMove = (me) => {
-            if (!resizeState) return;
-            resizingColumn = true;  // flag to suppress subsequent sort click
-            const delta = me.clientX - resizeState.startX;
-            const newW = Math.max(30, resizeState.startW + delta);
-            if (autoFitColumns) {
-                autoFitColumns = false;
-                const ths = theadEl.querySelectorAll('th[data-sort]');
-                ths.forEach(t => {
-                    const key = t.dataset.sort;
-                    if (key) userColumnWidths[key] = t.offsetWidth;
-                });
-                updateAutoFitBtn();
-            }
-            userColumnWidths[resizeState.colKey] = newW;
-            renderColgroup();
-        };
-        const onUp = () => {
-            resizeState = null;
-            saveTableDisplaySettings();
-            window.removeEventListener('mousemove', onMove);
-            window.removeEventListener('mouseup', onUp);
-        };
-        window.addEventListener('mousemove', onMove);
-        window.addEventListener('mouseup', onUp);
-    }
-
-    // ── Column drag-to-reorder ──
-    let colDragIndicator = null;
-
-    function handleTheadDragStart(e) {
-        // Only start column drag on th text area (not resize handle)
-        if (e.target.closest('.th-resize')) return;
-        const th = e.target.closest('th[data-sort]');
-        if (!th) return;
-
-        const key = th.dataset.sort;
-        const startX = e.clientX;
-        const thRect = th.getBoundingClientRect();
-        let moved = false;
-
-        const onMove = (me) => {
-            const dx = me.clientX - startX;
-            // Only activate drag after 10px horizontal movement
-            if (!moved && Math.abs(dx) < 10) return;
-            if (!moved) {
-                moved = true;
-                draggingColumn = true;
-                // Create floating indicator
-                colDragIndicator = document.createElement('div');
-                colDragIndicator.className = 'col-drag-indicator';
-                colDragIndicator.textContent = th.querySelector('.th-text') ? th.querySelector('.th-text').textContent.trim() : key;
-                colDragIndicator.style.width = thRect.width + 'px';
-                document.body.appendChild(colDragIndicator);
-            }
-            if (colDragIndicator) {
-                colDragIndicator.style.left = (me.clientX - thRect.width / 2) + 'px';
-                colDragIndicator.style.top = (thRect.top - 2) + 'px';
-            }
-            // Highlight drop target
-            const allThs = Array.from(theadEl.querySelectorAll('th[data-sort]'));
-            allThs.forEach(t => t.classList.remove('col-drag-over'));
-            const targetTh = document.elementFromPoint(me.clientX, thRect.top + thRect.height / 2);
-            const dropTh = targetTh ? targetTh.closest('th[data-sort]') : null;
-            if (dropTh && dropTh !== th) dropTh.classList.add('col-drag-over');
-        };
-
-        const onUp = (me) => {
-            window.removeEventListener('mousemove', onMove);
-            window.removeEventListener('mouseup', onUp);
-            if (colDragIndicator) { colDragIndicator.remove(); colDragIndicator = null; }
-            // Clean up highlight
-            theadEl.querySelectorAll('.col-drag-over').forEach(t => t.classList.remove('col-drag-over'));
-
-            if (!moved) return;
-            // Find drop target
-            const targetEl = document.elementFromPoint(me.clientX, thRect.top + thRect.height / 2);
-            const dropTh = targetEl ? targetEl.closest('th[data-sort]') : null;
-            if (dropTh && dropTh.dataset.sort !== key) {
-                const fromIdx = visibleColumns.indexOf(key);
-                const toIdx = visibleColumns.indexOf(dropTh.dataset.sort);
-                if (fromIdx !== -1 && toIdx !== -1) {
-                    // Move column in visibleColumns array
-                    visibleColumns.splice(fromIdx, 1);
-                    visibleColumns.splice(toIdx, 0, key);
-                    renderColgroup();
-                    renderPeerTableHead();
-                    renderPeerTable();
-                    saveTableDisplaySettings();
-                }
-            }
-        };
-
-        window.addEventListener('mousemove', onMove);
-        window.addEventListener('mouseup', onUp);
-    }
-
-    theadEl.addEventListener('mousedown', handleTheadDragStart);
-
-    // Sort on column header click
-    theadEl.addEventListener('click', handleTheadClick);
-    // Column resize via drag on th-resize handles
-    theadEl.addEventListener('mousedown', handleTheadResize);
-
-    // ── Auto-fit toggle button ──
-    const autoFitBtn = document.getElementById('btn-autofit');
-    function updateAutoFitBtn() {
-        autoFitBtn.classList.toggle('active', autoFitColumns);
-    }
-    updateAutoFitBtn();
-    autoFitBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        autoFitColumns = !autoFitColumns;
-        if (autoFitColumns) userColumnWidths = {};
-        updateAutoFitBtn();
-        renderColgroup();
-        saveTableDisplaySettings();
-    });
-
-    // ── Table Settings gear popup (column toggles + transparency) ──
-    const tableSettingsBtn = document.getElementById('btn-table-settings');
-    let tableSettingsEl = null;
-
-    if (tableSettingsBtn) {
-        tableSettingsBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (tableSettingsEl) { closeTableSettings(); return; }
-            openTableSettings();
-        });
-    }
-
-    function openTableSettings() {
-        closeTableSettings();
-        const popup = document.createElement('div');
-        popup.className = 'table-settings-popup';
-        popup.id = 'table-settings-popup';
-
-        let html = '<div class="tsp-header"><span class="tsp-title">Table Settings</span><button class="tsp-defaults-btn" id="tsp-defaults">Defaults</button></div>';
-
-        // ── Transparency slider ──
-        html += '<div class="tsp-section">Transparency</div>';
-        html += `<div class="tsp-slider-row"><input type="range" class="tsp-slider" id="tsp-opacity" min="0" max="100" value="${panelOpacity}"><span class="tsp-slider-val" id="tsp-opacity-val">${panelOpacity}%</span></div>`;
-
-        // ── Visible rows ──
-        html += '<div class="tsp-section">Visible Rows</div>';
-        html += `<div class="tsp-slider-row"><input type="range" class="tsp-slider" id="tsp-rows" min="3" max="40" value="${maxPeerRows}"><span class="tsp-slider-val" id="tsp-rows-val">${maxPeerRows}</span></div>`;
-
-        // ── Column toggles ──
-        html += '<div class="tsp-section">Columns</div>';
-        html += '<div class="tsp-col-grid">';
-        for (const col of COLUMNS) {
-            const checked = visibleColumns.includes(col.key) ? 'checked' : '';
-            html += `<label class="tsp-col-item"><input type="checkbox" data-col="${col.key}" ${checked}>${col.label}</label>`;
-        }
-        html += '</div>';
-
-        // ── Antarctica setting ──
-        html += '<div class="tsp-section">Private Networks</div>';
-        html += `<label class="tsp-col-item"><input type="checkbox" id="tsp-antarctica" ${showAntarcticaPeers ? 'checked' : ''}>Show in Antarctica</label>`;
-
-        popup.innerHTML = html;
-        document.body.appendChild(popup);
-        tableSettingsEl = popup;
-
-        // Position below the gear button
-        if (tableSettingsBtn) {
-            const rect = tableSettingsBtn.getBoundingClientRect();
-            popup.style.right = (window.innerWidth - rect.right) + 'px';
-            popup.style.bottom = (window.innerHeight - rect.top + 6) + 'px';
-        }
-
-        // Bind opacity slider
-        const opacitySlider = document.getElementById('tsp-opacity');
-        const opacityVal = document.getElementById('tsp-opacity-val');
-        if (opacitySlider) {
-            opacitySlider.addEventListener('input', () => {
-                panelOpacity = parseInt(opacitySlider.value);
-                opacityVal.textContent = panelOpacity + '%';
-                applyPanelOpacity();
-                saveTableDisplaySettings();
-            });
-        }
-
-        // Bind visible rows slider
-        const rowsSlider = document.getElementById('tsp-rows');
-        const rowsVal = document.getElementById('tsp-rows-val');
-        if (rowsSlider) {
-            rowsSlider.addEventListener('input', () => {
-                maxPeerRows = parseInt(rowsSlider.value);
-                if (rowsVal) rowsVal.textContent = maxPeerRows;
-                applyMaxPeerRows();
-                saveTableDisplaySettings();
-            });
-        }
-
-        // Bind column toggles
-        popup.querySelectorAll('input[data-col]').forEach(cb => {
-            cb.addEventListener('change', () => {
-                const key = cb.dataset.col;
-                if (cb.checked) {
-                    if (!visibleColumns.includes(key)) {
-                        visibleColumns.push(key);
-                    }
-                } else {
-                    // Don't allow removing all columns
-                    const remaining = visibleColumns.filter(k => k !== key);
-                    if (remaining.length === 0) { cb.checked = true; return; }
-                    visibleColumns = remaining;
-                }
-                renderColgroup();
-                renderPeerTableHead();
-                renderPeerTable();
-                saveTableDisplaySettings();
-            });
-        });
-
-        // Bind Antarctica toggle
-        const antToggle = document.getElementById('tsp-antarctica');
-        if (antToggle) {
-            antToggle.addEventListener('change', () => {
-                showAntarcticaPeers = antToggle.checked;
-                saveTableDisplaySettings();
-            });
-        }
-
-        // Bind Defaults button
-        const defaultsBtn = document.getElementById('tsp-defaults');
-        if (defaultsBtn) {
-            defaultsBtn.addEventListener('click', () => {
-                // Reset columns to defaults
-                visibleColumns = [...DEFAULT_VISIBLE_COLUMNS];
-                // Reset transparency to 0%
-                panelOpacity = 0;
-                applyPanelOpacity();
-                // Reset Antarctica setting
-                showAntarcticaPeers = true;
-                // Reset visible rows to default
-                maxPeerRows = 10;
-                applyMaxPeerRows();
-                // Reset auto-fit
-                autoFitColumns = true;
-                userColumnWidths = {};
-                updateAutoFitBtn();
-                // Re-render table
-                renderColgroup();
-                renderPeerTableHead();
-                renderPeerTable();
-                saveTableDisplaySettings();
-                // Refresh the popup to reflect changes
-                closeTableSettings();
-                openTableSettings();
-            });
-        }
-
-        setTimeout(() => {
-            document.addEventListener('click', closeTableSettingsOnOutside);
-        }, 0);
-    }
-
-    function applyPanelOpacity() {
-        const alpha = panelOpacity / 100;
-        const handle = document.querySelector('.peer-panel-handle');
-        const body = document.querySelector('.peer-panel-body');
-        if (handle) handle.style.background = `rgba(10, 14, 20, ${alpha})`;
-        if (body) body.style.background = `rgba(10, 14, 20, ${alpha})`;
-    }
-
-    function closeTableSettingsOnOutside(e) {
-        if (tableSettingsEl && !tableSettingsEl.contains(e.target) && e.target !== tableSettingsBtn) {
-            closeTableSettings();
-        }
-    }
-
-    function closeTableSettings() {
-        if (tableSettingsEl) { tableSettingsEl.remove(); tableSettingsEl = null; }
-        document.removeEventListener('click', closeTableSettingsOnOutside);
-    }
 
     // ── Ban list modal (overlay — peer table stays visible underneath) ──
     const bansBtn = document.getElementById('btn-bans');
@@ -6365,13 +4614,13 @@
         const p = project(node.lon, node.lat);
 
         // For southern peers (lat < -30), auto-collapse the panel so they're visible
-        if (node.lat < -30 && !panelEl.classList.contains('collapsed')) {
-            panelEl.classList.add('collapsed');
+        if (node.lat < -30 && !peerTable.panelEl.classList.contains('collapsed')) {
+            peerTable.panelEl.classList.add('collapsed');
         }
 
         // Calculate visible map area
         const topbarH = 40;
-        const panelH = panelEl.classList.contains('collapsed') ? 32 : 340;
+        const panelH = peerTable.panelEl.classList.contains('collapsed') ? 32 : 340;
         const visibleTop = topbarH;
         const visibleBot = H - panelH;
         const visibleH = visibleBot - visibleTop;
@@ -6445,7 +4694,7 @@
         const isPrivateNet = (rowNet === 'onion' || rowNet === 'i2p' || rowNet === 'cjdns');
         if (isPrivateNet) {
             enterPrivateNetMode(peerId);
-            highlightTableRow(peerId, true);
+            peerTable.highlightTableRow(peerId, true);
             row.classList.add('row-selected');
             setTimeout(() => row.classList.remove('row-selected'), 1500);
             return;
@@ -6457,7 +4706,7 @@
             clearMapDotFilter();
             groupedNodes = null;
             mapFilterPeerIds = new Set([node.peerId]);
-            renderPeerTable();
+            peerTable.renderPeerTable();
 
             // [AS-DISTRIBUTION] Open full peer detail in right panel + animate donut
             const ASD = window.ASDistribution;
@@ -6475,7 +4724,7 @@
                 // Zoom without opening small tooltip — big popup handles peer info
                 const p = project(node.lon, node.lat);
                 const topbarH2 = 40;
-                const panelH2 = panelEl.classList.contains('collapsed') ? 32 : 340;
+                const panelH2 = peerTable.panelEl.classList.contains('collapsed') ? 32 : 340;
                 const visibleH2 = (H - panelH2) - topbarH2;
                 const targetSY = topbarH2 + visibleH2 * 0.35;
                 let z2 = 3;
@@ -6501,7 +4750,7 @@
             } else {
                 zoomToPeer(node);
             }
-            highlightTableRow(peerId, true);  // scroll into view on click
+            peerTable.highlightTableRow(peerId, true);  // scroll into view on click
 
             row.classList.add('row-selected');
             setTimeout(() => row.classList.remove('row-selected'), 1500);
@@ -6519,9 +4768,9 @@
         highlightedPeerId = null;
     }
 
-    tbodyEl.addEventListener('click', handleTbodyClick);
-    tbodyEl.addEventListener('mouseover', handleTbodyHover);
-    tbodyEl.addEventListener('mouseleave', handleTbodyLeave);
+    peerTable.tbodyEl.addEventListener('click', handleTbodyClick);
+    peerTable.tbodyEl.addEventListener('mouseover', handleTbodyHover);
+    peerTable.tbodyEl.addEventListener('mouseleave', handleTbodyLeave);
 
     /** Show a confirmation dialog for disconnect with optional ban */
     function showDisconnectDialog(peerId, net) {
@@ -6624,7 +4873,7 @@
 
             // [PRIVATE-NET] In private mode, relax south bound so camera can center
             // on Antarctica, and tighten north bound so user stays near the pole
-            if (privateNetMode) {
+            if (privateState.privateNetMode) {
                 // Allow the view to push past the normal south edge (ocean beyond -85°)
                 // so Antarctica can actually be centered on screen at moderate zoom
                 const extraSouth = H * 0.35;
@@ -6697,17 +4946,17 @@
         const wrapOffsets = getWrapOffsets();
 
         // [PRIVATE-NET] Draw "PRIVATE NETWORKS" text across Antarctica
-        if (privateNetMode) {
+        if (privateState.privateNetMode) {
             drawPrivateNetworksText();
         }
 
         // 9. Connection mesh lines between nearby peers (skip in private net mode)
-        if (!privateNetMode) {
+        if (!privateState.privateNetMode) {
             drawConnectionLines(now, wrapOffsets);
         }
 
         // [AS-DISTRIBUTION] 9b. Draw lines from map center to AS peers (hover/selection)
-        if (!privateNetMode) {
+        if (!privateState.privateNetMode) {
             if (asLineGroups && asLineGroups.length > 0) {
                 drawAsLinesAll(wrapOffsets);
             } else if (asLinePeerIds && asLinePeerIds.length > 0 && asLineColor) {
@@ -6716,14 +4965,14 @@
         }
 
         // [PRIVATE-NET] Draw lines from donut to all private peers
-        if (privateNetMode || pnMiniHover) {
+        if (privateState.privateNetMode || privateState.pnMiniHover) {
             drawPrivateNetLines(wrapOffsets);
         }
 
         // 10. Peer nodes (alive + fading out)
         for (const node of nodes) {
             // In private net mode, only draw private network peers
-            if (privateNetMode && !PRIVATE_NETS.has(node.net)) continue;
+            if (privateState.privateNetMode && !PRIVATE_NETS.has(node.net)) continue;
             drawNode(node, now, wrapOffsets);
         }
 
@@ -6786,7 +5035,7 @@
             if (e.target !== canvas) {
                 if (hoveredNode && !pinnedNode && !groupedNodes) {
                     hideTooltip();
-                    highlightTableRow(null);
+                    peerTable.highlightTableRow(null);
                     canvas.style.cursor = 'grab';
                 }
                 return;
@@ -6800,11 +5049,11 @@
                     showGroupHoverTooltip(group, e.clientX, e.clientY);
                 }
                 hoveredNode = group[0];
-                if (!hasPinned) highlightTableRow(group[0].peerId);
+                if (!hasPinned) peerTable.highlightTableRow(group[0].peerId);
                 canvas.style.cursor = 'pointer';
             } else if (hoveredNode && !hasPinned) {
                 hideTooltip();
-                highlightTableRow(null);
+                peerTable.highlightTableRow(null);
                 canvas.style.cursor = 'grab';
             } else if (!hasPinned) {
                 canvas.style.cursor = 'grab';
@@ -6816,7 +5065,7 @@
         setMapInteraction(false);
         if (dragging && !dragMoved) {
             // [PRIVATE-NET] In private net mode, handle clicks on private peers
-            if (privateNetMode) {
+            if (privateState.privateNetMode) {
                 const group = findNodesAtScreen(e.clientX, e.clientY);
                 const privateGroup = group.filter(n => PRIVATE_NETS.has(n.net));
                 if (privateGroup.length > 1) {
@@ -6824,28 +5073,28 @@
                     pinnedNode = null;
                     groupedNodes = privateGroup;
                     mapFilterPeerIds = new Set(privateGroup.map(n => n.peerId));
-                    renderPeerTable();
+                    peerTable.renderPeerTable();
                     showPnGroupSelectionList(privateGroup, e.clientX, e.clientY);
                 } else if (privateGroup.length === 1) {
                     selectPrivatePeer(privateGroup[0].peerId);
                 } else {
                     // Clicked empty space in private mode — deselect peer
-                    privateNetSelectedPeer = null;
-                    privateNetLinePeer = null;
+                    privateState.privateNetSelectedPeer = null;
+                    privateState.privateNetLinePeer = null;
                     pinnedNode = null;
                     highlightedPeerId = null;
                     hideTooltip();
-                    closePnBigPopup();
-                    hidePnSubTooltip();
+                    privatePopup.closePnBigPopup();
+                    privatePanel.hidePnSubTooltip();
                     // Dismiss insight rect if active
-                    if (pnInsightRectVisible) {
-                        hidePnInsightRect();
-                        clearPnInsightState();
+                    if (privateState.pnInsightRectVisible) {
+                        privatePanel.hidePnInsightRect();
+                        privatePanel.clearPnInsightState();
                     }
                     // In private mode, donut stays centered; otherwise un-focus if no panel
-                    if (!privateNetMode && !pnSelectedNet) {
+                    if (!privateState.privateNetMode && !privateState.pnSelectedNet) {
                         cachePnElements();
-                        if (pnContainerEl) pnContainerEl.classList.remove('pn-focused');
+                        if (privateState.pnContainerEl) privateState.pnContainerEl.classList.remove('pn-focused');
                     }
                     updatePrivateNetUI();
                 }
@@ -6876,7 +5125,7 @@
                         highlightedPeerId = null;
                         hoveredNode = null;
                         hideTooltip();
-                        highlightTableRow(null);
+                        peerTable.highlightTableRow(null);
                         clearMapDotFilter();
                         ASD.closePeerPopup();
                     } else {
@@ -6886,7 +5135,7 @@
                         clearMapDotFilter();
                         groupedNodes = null;
                         mapFilterPeerIds = new Set([node.peerId]);
-                        renderPeerTable();
+                        peerTable.renderPeerTable();
 
                         // [AS-DISTRIBUTION] Open full peer detail in right panel FIRST
                         if (ASD) {
@@ -6900,7 +5149,7 @@
                         // Zoom to peer (same code path as table-row click)
                         const p = project(node.lon, node.lat);
                         const topbarH2 = 40;
-                        const panelH2 = panelEl.classList.contains('collapsed') ? 32 : 340;
+                        const panelH2 = peerTable.panelEl.classList.contains('collapsed') ? 32 : 340;
                         const visibleH2 = (H - panelH2) - topbarH2;
                         const targetSY = topbarH2 + visibleH2 * 0.35;
                         let z = 3;
@@ -6924,8 +5173,8 @@
                         highlightedPeerId = node.peerId;
                         pinnedNode = node;
 
-                        if (!panelEl.classList.contains('collapsed')) {
-                            highlightTableRow(node.peerId, true);
+                        if (!peerTable.panelEl.classList.contains('collapsed')) {
+                            peerTable.highlightTableRow(node.peerId, true);
                         }
                     }
                 } else {
@@ -6937,7 +5186,7 @@
                     pinnedNode = null;  // no single peer pinned yet
                     groupedNodes = group;
                     mapFilterPeerIds = new Set(group.map(n => n.peerId));
-                    renderPeerTable();
+                    peerTable.renderPeerTable();
                     showGroupSelectionList(group, e.clientX, e.clientY);
                 }
             } else {
@@ -6947,16 +5196,16 @@
                     highlightedPeerId = null;
                     hoveredNode = null;
                     hideTooltip();
-                    highlightTableRow(null);
+                    peerTable.highlightTableRow(null);
                     clearMapDotFilter();
                 }
                 // [PRIVATE-NET] Two-stage deselect: first deselect peer, then deselect segment → overview
-                if (privateNetMode) {
-                    if (privateNetSelectedPeer || privateNetLinePeer) {
+                if (privateState.privateNetMode) {
+                    if (privateState.privateNetSelectedPeer || privateState.privateNetLinePeer) {
                         // Stage 1: deselect peer, go back to segment/overview view
-                        privateNetSelectedPeer = null;
-                        privateNetLinePeer = null;
-                        closePnBigPopup();
+                        privateState.privateNetSelectedPeer = null;
+                        privateState.privateNetLinePeer = null;
+                        privatePopup.closePnBigPopup();
                         highlightedPeerId = null;
                         // Zoom back to Antarctica overview
                         const antCenter = project(40, -75);
@@ -6964,15 +5213,15 @@
                         targetView.y = (antCenter.y - 0.5) * H;
                         targetView.zoom = 1.8;
                         renderPnDonut();
-                    } else if (pnSelectedNet) {
+                    } else if (privateState.pnSelectedNet) {
                         // Stage 2: deselect segment → go to overview
-                        pnSelectedNet = null;
-                        pnHoveredNet = null;
-                        hidePnSubTooltip();
-                        pnPreviewPeerIds = null;
-                        closePnDetailPanel();
+                        privateState.pnSelectedNet = null;
+                        privateState.pnHoveredNet = null;
+                        privatePanel.hidePnSubTooltip();
+                        privateState.pnPreviewPeerIds = null;
+                        privatePanel.closePnDetailPanel();
                         document.body.classList.remove('pn-panel-open');
-                        openPnOverviewPanel();
+                        privatePanel.openPnOverviewPanel();
                         renderPnDonut();
                     }
                 }
@@ -6993,7 +5242,7 @@
         }
         if (hoveredNode && !pinnedNode && !groupedNodes) {
             hideTooltip();
-            highlightTableRow(null);
+            peerTable.highlightTableRow(null);
             canvas.style.cursor = 'grab';
             hoveredNode = null;
         }
@@ -7074,7 +5323,7 @@
         targetView.zoom = clamp(targetView.zoom / CFG.zoomStep, CFG.minZoom, CFG.maxZoom);
     });
     document.getElementById('zoom-reset').addEventListener('click', () => {
-        if (privateNetMode) {
+        if (privateState.privateNetMode) {
             exitPrivateNetMode();
         } else {
             targetView.x = 0;
@@ -7136,7 +5385,7 @@
                 }
             }
             updateBadgeStates();
-            renderPeerTable();
+            peerTable.renderPeerTable();
         });
 
         // Hover to show network stats popover (positioned above the badge)
@@ -7172,7 +5421,7 @@
     }
 
     function showAntarcticaDisclaimerOnce() {
-        if (!showAntarcticaPeers || !antOverlay) return;
+        if (!peerTable.showAntarcticaPeers || !antOverlay) return;
 
         try {
             if (localStorage.getItem(STORAGE_KEYS.antarcticaDisclaimerSeen) === 'true') return;
@@ -7220,7 +5469,7 @@
             if (details) {
                 html += `<div class="pop-row"><span class="pop-label">Reachable</span><span class="pop-val">${details.reachable ? 'Yes' : 'No'}</span></div>`;
                 if (details.proxy) {
-                    const proxy = escapeServiceHtml(details.proxy);
+                    const proxy = escapeHtml(details.proxy);
                     html += `<div class="pop-row"><span class="pop-label">Proxy</span><span class="pop-val node-address" title="${proxy}">${proxy}</span></div>`;
                 }
                 const addresses = details.localaddresses || [];
@@ -7228,8 +5477,8 @@
                 if (addresses.length) {
                     for (const address of addresses.slice(0, 3)) {
                         const fullAddress = formatNodeAddress(address);
-                        const escapedFull = escapeServiceHtml(fullAddress);
-                        const shortAddress = escapeServiceHtml(shortNodeAddress(fullAddress));
+                        const escapedFull = escapeHtml(fullAddress);
+                        const shortAddress = escapeHtml(shortNodeAddress(fullAddress));
                         html += `<div class="pop-row"><span class="pop-label">${labelText}</span><span class="pop-val node-address" title="${escapedFull}">${shortAddress}</span></div>`;
                     }
                 } else {
@@ -7310,7 +5559,7 @@
         });
         html += `<div class="dsp-row"><span class="dsp-label" title="Animate donuts to display top 8 ISP or anonymous networks on hover">Display Top ISP/Net</span><label class="dsp-toggle"><input type="checkbox" id="dsp-donut-legends" ${advSettings.showDonutLegends ? 'checked' : ''}><span class="dsp-toggle-slider"></span></label></div>`;
         html += '<button class="dsp-advanced-btn" id="dsp-advanced-btn">Advanced &#9881;</button>';
-        html += `<a class="dsp-feedback-link" href="${repositoryDiscussionsUrl}" target="_blank" rel="noopener" title="Open the project discussions">Suggestions &amp; Bug Reports &#8599;</a>`;
+        html += `<a class="dsp-feedback-link" href="${escapeHtml(repositoryDiscussionsUrl)}" target="_blank" rel="noopener" title="Open the project discussions">Suggestions &amp; Bug Reports &#8599;</a>`;
         popup.innerHTML = html;
         document.body.appendChild(popup);
         displaySettingsEl = popup;
@@ -7340,8 +5589,7 @@
                 pollInput.value = v;
                 CFG.pollInterval = v * 1000;
                 // Restart the peer poll timer at the new interval
-                if (peerPollTimer) clearInterval(peerPollTimer);
-                peerPollTimer = setInterval(fetchPeers, CFG.pollInterval);
+                peerPolling.setIntervalMs(CFG.pollInterval);
                 // Restart countdown display so it uses the new interval
                 lastPeerFetchTime = Date.now();
                 startCountdownTimer();
@@ -7354,8 +5602,7 @@
                 infoInput.value = v;
                 CFG.infoPollInterval = v * 1000;
                 // Restart info poll timer at the new interval
-                if (btcPriceTimer) clearInterval(btcPriceTimer);
-                btcPriceTimer = setInterval(fetchInfo, CFG.infoPollInterval);
+                infoPolling.setIntervalMs(CFG.infoPollInterval);
             });
         }
 
@@ -7378,7 +5625,7 @@
                         window.ASDistribution.deselect();
                     }
                     // If hiding private donut, exit private mode if active
-                    if (targetId === 'pn-mini-donut' && privateNetMode) {
+                    if (targetId === 'pn-mini-donut' && privateState.privateNetMode) {
                         exitPrivateNetMode();
                     }
                 }
@@ -7416,33 +5663,6 @@
         setTimeout(() => {
             document.addEventListener('click', closeDisplaySettingsOnOutside);
         }, 0);
-    }
-
-    /** Apply max peer rows setting — resizes the peer panel to show N rows.
-     *  The handle is ~48px, thead ~22px, each body row ~22px. */
-    function applyMaxPeerRows() {
-        const panel = document.querySelector('.peer-panel');
-        if (!panel) return;
-        let prefitForPanelGrowth = false;
-        if (maxPeerRows > 0) {
-            // handle(48) + thead(22) + rows * 22 + a tiny bit of padding
-            const h = 48 + 22 + (maxPeerRows * 22) + 4;
-            const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
-            const finalPanelTop = viewportHeight - h;
-            const currentPanelTop = panel.getBoundingClientRect().top;
-            panel.style.maxHeight = h + 'px';
-            if (finalPanelTop < currentPanelTop) {
-                fitDonutStackForPanelTop(finalPanelTop, true);
-                prefitForPanelGrowth = true;
-            }
-        } else {
-            panel.style.maxHeight = '';
-        }
-        if (prefitForPanelGrowth) {
-            setTimeout(fitDonutStackToViewport, 520);
-        } else {
-            scheduleDonutStackFit();
-        }
     }
 
     function closeDisplaySettingsOnOutside(e) {
@@ -7548,7 +5768,7 @@
         html += '</div>';
         // Uptime
         if (stats.uptime) {
-            html += `<div class="info-row"><span class="info-label">Uptime</span><span class="info-val">${stats.uptime}</span></div>`;
+            html += `<div class="info-row"><span class="info-label">Uptime</span><span class="info-val">${escapeHtml(stats.uptime)}</span></div>`;
         }
         // Load average
         if (stats.load_1 != null) {
@@ -7577,8 +5797,8 @@
         }
         if (lastNodeInfo && lastNodeInfo.node_traffic) {
             const traffic = lastNodeInfo.node_traffic;
-            html += `<div class="info-row"><span class="info-label">P2P IN \u2193</span><span class="info-val">${traffic.download_fmt || fmtBytesShort(traffic.download_bytes || 0)}</span></div>`;
-            html += `<div class="info-row"><span class="info-label">P2P OUT \u2191</span><span class="info-val">${traffic.upload_fmt || fmtBytesShort(traffic.upload_bytes || 0)}</span></div>`;
+            html += `<div class="info-row"><span class="info-label">P2P IN \u2193</span><span class="info-val">${escapeHtml(traffic.download_fmt || privatePanel.fmtBytesShort(traffic.download_bytes || 0))}</span></div>`;
+            html += `<div class="info-row"><span class="info-label">P2P OUT \u2191</span><span class="info-val">${escapeHtml(traffic.upload_fmt || privatePanel.fmtBytesShort(traffic.upload_bytes || 0))}</span></div>`;
         }
 
         // ── Section 3: NET Bar Settings ──
@@ -7888,7 +6108,7 @@
             },
             filterPeerTable: function (peerIds) {
                 asFilterPeerIds = peerIds ? new Set(peerIds) : null;
-                renderPeerTable();
+                peerTable.renderPeerTable();
             },
             dimMapPeers: function (peerIds) {
                 asFilterPeerIds = peerIds ? new Set(peerIds) : null;
@@ -7914,7 +6134,7 @@
                 // Zoom to peer but suppress the small map tooltip (big popup handles it)
                 const p = project(node.lon, node.lat);
                 const topbarH2 = 40;
-                const panelH2 = panelEl.classList.contains('collapsed') ? 32 : 340;
+                const panelH2 = peerTable.panelEl.classList.contains('collapsed') ? 32 : 340;
                 const visibleH2 = (H - panelH2) - topbarH2;
                 const targetSY = topbarH2 + visibleH2 * 0.35;
                 let z = 3;
@@ -7938,7 +6158,7 @@
                 highlightedPeerId = node.peerId;
                 pinnedNode = node;
                 // Don't show the small map tooltip — the big peer popup is being used instead
-                highlightTableRow(node.peerId);
+                peerTable.highlightTableRow(node.peerId);
             },
             resetMapZoom: function () {
                 // Smoothly zoom the map back to default view
@@ -8043,11 +6263,11 @@
                 enterPrivateNetMode();
             });
             pnMiniDonut.addEventListener('mouseenter', () => {
-                if (!privateNetMode) pnMiniHover = true;
+                if (!privateState.privateNetMode) privateState.pnMiniHover = true;
             });
             pnMiniDonut.addEventListener('mouseleave', () => {
-                pnMiniHover = false;
-                pnMiniHoverNet = null;
+                privateState.pnMiniHover = false;
+                privateState.pnMiniHoverNet = null;
             });
         }
 
@@ -8068,17 +6288,17 @@
             pnDonutCenterEl.addEventListener('click', (e) => {
                 e.stopPropagation();
                 // If a peer is selected, deselect it first
-                if (privateNetSelectedPeer) {
-                    privateNetSelectedPeer = null;
-                    privateNetLinePeer = null;
+                if (privateState.privateNetSelectedPeer) {
+                    privateState.privateNetSelectedPeer = null;
+                    privateState.privateNetLinePeer = null;
                     pinnedNode = null;
                     highlightedPeerId = null;
-                    closePnBigPopup();
+                    privatePopup.closePnBigPopup();
                 }
                 // Move donut to center and open overview panel
                 cachePnElements();
-                if (pnContainerEl) pnContainerEl.classList.add('pn-focused');
-                openPnOverviewPanel();
+                if (privateState.pnContainerEl) privateState.pnContainerEl.classList.add('pn-focused');
+                privatePanel.openPnOverviewPanel();
                 updatePrivateNetUI();
             });
         }
@@ -8097,9 +6317,9 @@
         if (pnDetailBack) {
             pnDetailBack.addEventListener('click', (e) => {
                 e.stopPropagation();
-                pnSelectedNet = null;
-                hidePnSubTooltip();
-                updatePnOverviewPanel();
+                privateState.pnSelectedNet = null;
+                privatePanel.hidePnSubTooltip();
+                privatePanel.updatePnOverviewPanel();
                 updatePrivateNetUI();
                 // Show/hide back button
                 pnDetailBack.classList.add('hidden');
@@ -8108,7 +6328,7 @@
 
         // [PRIVATE-NET] Double-click on canvas to exit private net mode
         canvas.addEventListener('dblclick', (e) => {
-            if (privateNetMode) {
+            if (privateState.privateNetMode) {
                 e.preventDefault();
                 e.stopPropagation();
                 exitPrivateNetMode();
@@ -8132,11 +6352,11 @@
         loadTheme();
 
         // Restore table layout preferences before peer rows render.
-        loadTableDisplaySettings();
-        applyPanelOpacity();
-        updateAutoFitBtn();
-        renderPeerTableHead();
-        renderPeerTable();
+        peerTable.loadTableDisplaySettings();
+        peerTable.applyPanelOpacity();
+        peerTable.updateAutoFitBtn();
+        peerTable.renderPeerTableHead();
+        peerTable.renderPeerTable();
 
         // Setup canvas size and DPI scaling
         resize();
@@ -8152,13 +6372,13 @@
         // Fetch real peer data immediately, then poll every 10s
         lastPeerFetchTime = Date.now();
         fetchPeers();
-        peerPollTimer = setInterval(fetchPeers, CFG.pollInterval);
+        peerPolling.start();
         startCountdownTimer();
 
         // Fetch node info (block height, BTC price, etc) immediately, then poll.
         // Once the first fetch resolves, start the DB auto-update timer if enabled.
         fetchInfo().then(() => syncDbAutoUpdateTimer());
-        btcPriceTimer = setInterval(fetchInfo, CFG.infoPollInterval);
+        infoPolling.start();
 
         // System stats + NET speed: real-time SSE stream (dual-EMA smoothed, ~250ms updates)
         connectSystemStream();
@@ -8184,7 +6404,7 @@
         initNewButtons();
 
         // Apply default visible row count to peer panel
-        applyMaxPeerRows();
+        peerTable.applyMaxPeerRows();
     }
 
     init();

@@ -2,6 +2,8 @@
 (function (global) {
     'use strict';
 
+    const escapeHtml = global.BPMModal.escapeHtml;
+
     function create(options) {
         const distributionState = options.state;
         const sourceData = options.data;
@@ -140,12 +142,12 @@
                     html += '<div class="as-sub-tt-scroll">';
                     for (var pi = 0; pi < fastInsight.topProviders.length; pi++) {
                         var prov = fastInsight.topProviders[pi];
-                        var peerIdsJson = JSON.stringify(prov.peerIds.slice(0, 20)).replace(/"/g, '&quot;');
-                        html += '<div class="as-sub-tt-peer as-provider-row as-fastest-prov-row" data-as="' + prov.asNumber + '" data-peer-ids="' + peerIdsJson + '" data-rank="' + (pi + 1) + '" data-avg-ping="' + prov.avgPing.toFixed(1) + '">';
+                        var peerIdsJson = global.BPMModal.escapeHtml(JSON.stringify(prov.peerIds.slice(0, 20)));
+                        html += '<div class="as-sub-tt-peer as-provider-row as-fastest-prov-row" data-as="' + escapeHtml(prov.asNumber) + '" data-peer-ids="' + peerIdsJson + '" data-rank="' + (pi + 1) + '" data-avg-ping="' + prov.avgPing.toFixed(1) + '">';
                         html += '<span class="as-sub-tt-rank">#' + (pi + 1) + '</span>';
                         html += '<span class="as-grid-dot" style="background:' + prov.color + '"></span>';
                         var name = prov.provName.length > 14 ? prov.provName.substring(0, 13) + '\u2026' : prov.provName;
-                        html += '<span class="as-sub-tt-loc" title="' + prov.provName + '">' + name + '</span>';
+                        html += '<span class="as-sub-tt-loc" title="' + escapeHtml(prov.provName) + '">' + escapeHtml(name) + '</span>';
                         html += '<span class="as-sub-tt-type">' + Math.round(prov.avgPing) + 'ms</span>';
                         html += '</div>';
                     }
@@ -267,8 +269,8 @@
                         if (idSet[sourceData.peers[i].id]) matchedPeers.push(sourceData.peers[i]);
                     }
                     var html = '<div class="as-sub-tt-section" style="border-bottom:none; margin-bottom:2px">';
-                    html += '<div class="as-sub-tt-flag" style="font-weight:700; color:var(--text-primary)">' + stableInsight.provName + ' Peers</div>';
-                    html += '<div class="as-sub-tt-nav as-grid-provider-click" data-as="' + stableInsight.asNumber + '" style="font-size:9px; color:var(--accent); cursor:pointer; margin-top:2px">\u25B6 Open provider panel</div>';
+                    html += '<div class="as-sub-tt-flag" style="font-weight:700; color:var(--text-primary)">' + escapeHtml(stableInsight.provName) + ' Peers</div>';
+                    html += '<div class="as-sub-tt-nav as-grid-provider-click" data-as="' + escapeHtml(stableInsight.asNumber) + '" style="font-size:9px; color:var(--accent); cursor:pointer; margin-top:2px">\u25B6 Open provider panel</div>';
                     html += '</div>';
                     html += view.buildPeerListHtmlForSubSub(matchedPeers);
                     return { html: html, peerIds: peerIds, asNum: stableInsight.asNumber };
@@ -405,12 +407,12 @@
                         html += '<div class="as-sub-tt-scroll">';
                         for (var pi = 0; pi < insight.topProviders.length; pi++) {
                             var prov = insight.topProviders[pi];
-                            var peerIdsJson = JSON.stringify(prov.peers.slice(0, 20).map(function (p) { return p.id; })).replace(/"/g, '&quot;');
-                            html += '<div class="as-sub-tt-peer as-provider-row as-data-prov-row" data-as="' + prov.asNumber + '" data-peer-ids="' + peerIdsJson + '" data-field="' + field + '" data-rank="' + (pi + 1) + '" data-total-bytes="' + prov.totalBytes + '">';
+                            var peerIdsJson = global.BPMModal.escapeHtml(JSON.stringify(prov.peers.slice(0, 20).map(function (p) { return p.id; })));
+                            html += '<div class="as-sub-tt-peer as-provider-row as-data-prov-row" data-as="' + escapeHtml(prov.asNumber) + '" data-peer-ids="' + peerIdsJson + '" data-field="' + field + '" data-rank="' + (pi + 1) + '" data-total-bytes="' + prov.totalBytes + '">';
                             html += '<span class="as-sub-tt-rank">#' + (pi + 1) + '</span>';
                             html += '<span class="as-grid-dot" style="background:' + prov.color + '"></span>';
                             var name = prov.provName.length > 14 ? prov.provName.substring(0, 13) + '\u2026' : prov.provName;
-                            html += '<span class="as-sub-tt-loc" title="' + prov.provName + '">' + name + '</span>';
+                            html += '<span class="as-sub-tt-loc" title="' + escapeHtml(prov.provName) + '">' + escapeHtml(name) + '</span>';
                             html += '<span class="as-sub-tt-type">' + distributionData.fmtBytes(prov.totalBytes) + '</span>';
                             html += '</div>';
                         }

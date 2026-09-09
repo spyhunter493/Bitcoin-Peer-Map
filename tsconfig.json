@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": true,
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": [],
+    "lib": ["ES2022", "DOM"]
+  },
+  "files": [
+    "src/static/js/types.d.ts",
+    "src/static/js/core/polling.js",
+    "src/static/js/features/peer-refresh.js",
+    "src/static/js/features/peer-table-model.js",
+    "src/static/js/features/private-network-state.js"
+  ]
+}

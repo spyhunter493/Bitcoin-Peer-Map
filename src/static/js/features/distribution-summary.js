@@ -2,6 +2,8 @@
 (function (global) {
     'use strict';
 
+    const escapeHtml = global.BPMModal.escapeHtml;
+
     // data, elements, and hooks expose live getters from the composition root.
     // Keep their objects intact so polling and late hook/DOM setup remain visible.
     // Child controllers use the same state and call back here to restore previews.
@@ -529,7 +531,7 @@
                         var grp = sourceData.groups.find(function (g) { return g.asNumber === asNum; });
                         if (grp) provName = grp.asShort || grp.asName || asNum;
                         var html = '<div class="as-sub-tt-section" style="border-bottom:none; margin-bottom:2px">';
-                        html += '<div class="as-sub-tt-flag" style="font-weight:700; color:var(--text-primary)">' + provName + ' Peers</div>';
+                        html += '<div class="as-sub-tt-flag" style="font-weight:700; color:var(--text-primary)">' + escapeHtml(provName) + ' Peers</div>';
                         html += '<div class="as-sub-tt-nav as-grid-provider-click" data-as="' + asNum + '" style="font-size:9px; color:var(--accent); cursor:pointer; margin-top:2px">\u25B6 Open provider panel</div>';
                         html += '</div>';
                         html += view.buildPeerListHtmlForSubSub(matchedPeers);
@@ -631,7 +633,7 @@
                         for (var si = 0; si < subtypes.length; si++) {
                             var st = subtypes[si];
                             html += '<div class="as-sub-tt-peer">';
-                            html += '<span class="as-sub-tt-id" style="font-weight:600; min-width:60px">' + st.label + '</span>';
+                            html += '<span class="as-sub-tt-id" style="font-weight:600; min-width:60px">' + escapeHtml(st.label) + '</span>';
                             html += '<span class="as-sub-tt-type">' + st.count + ' peer' + (st.count !== 1 ? 's' : '') + '</span>';
                             html += '</div>';
                         }
@@ -1376,39 +1378,23 @@
                                     }
                                 }
                             }
-                        } else if (distributionState.filterCategory === 'conn-out') {
-                            // Outbound connection row — refresh outbound peers for the AS
+                        } else if (distributionState.filterCategory === 'conn-out' || distributionState.filterCategory === 'conn-in') {
+                            var direction = distributionState.filterCategory === 'conn-in' ? 'IN' : 'OUT';
                             var provGroup = sourceData.groups.find(function (g) { return g.asNumber === distributionState.filterLabel; });
-                            if (provGroup) {
-                                var outPeerIds = [];
-                                for (var i = 0; i < provGroup.peers.length; i++) {
-                                    if (provGroup.peers[i].direction === 'outbound') outPeerIds.push(provGroup.peers[i].id);
-                                }
-                                distributionState.filterPeerIds = outPeerIds;
-                                if (hooks.filterPeerTable) hooks.filterPeerTable(outPeerIds);
-                                if (hooks.dimMapPeers) hooks.dimMapPeers(outPeerIds);
-                                // Preserve donut state for this provider
-                                if (distributionState.donutFocused) {
-                                    actions.showFocusedCenterText(distributionState.filterLabel);
-                                    actions.animateDonutExpand(distributionState.filterLabel);
-                                }
-                            }
-                        } else if (distributionState.filterCategory === 'conn-in') {
-                            // Inbound connection row — refresh inbound peers for the AS
-                            var provGroup = sourceData.groups.find(function (g) { return g.asNumber === distributionState.filterLabel; });
-                            if (provGroup) {
-                                var inPeerIds = [];
-                                for (var i = 0; i < provGroup.peers.length; i++) {
-                                    if (provGroup.peers[i].direction === 'inbound') inPeerIds.push(provGroup.peers[i].id);
-                                }
-                                distributionState.filterPeerIds = inPeerIds;
-                                if (hooks.filterPeerTable) hooks.filterPeerTable(inPeerIds);
-                                if (hooks.dimMapPeers) hooks.dimMapPeers(inPeerIds);
-                                // Preserve donut state for this provider
-                                if (distributionState.donutFocused) {
-                                    actions.showFocusedCenterText(distributionState.filterLabel);
-                                    actions.animateDonutExpand(distributionState.filterLabel);
-                                }
+                            var peerIds = provGroup ? provGroup.peers.filter(function (peer) {
+                                return peer.direction === direction;
+                            }).map(function (peer) { return peer.id; }) : [];
+                            distributionState.filterPeerIds = peerIds;
+                            var visibleIds = distributionState.hoveredPeerId !== null && peerIds.indexOf(distributionState.hoveredPeerId) >= 0
+                                ? [distributionState.hoveredPeerId] : peerIds;
+                            if (hooks.filterPeerTable) hooks.filterPeerTable(visibleIds);
+                            if (hooks.dimMapPeers) hooks.dimMapPeers(visibleIds);
+                            if (hooks.drawLinesForAs) hooks.drawLinesForAs(
+                                distributionState.filterLabel, visibleIds, actions.getColorForAsNum(distributionState.filterLabel)
+                            );
+                            if (distributionState.donutFocused && distributionState.hoveredPeerId === null) {
+                                actions.showFocusedCenterText(distributionState.filterLabel);
+                                actions.animateDonutExpand(distributionState.filterLabel);
                             }
                         } else if (distributionState.filterCategory === 'conn-others') {
                             // Others bucket — refresh from the Others donut segment

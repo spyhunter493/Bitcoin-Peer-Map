@@ -1,6 +1,6 @@
 """Peer list and peer-management endpoints."""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel
 
 from runtime import AppRuntime
@@ -19,7 +19,14 @@ class AddressRequest(BaseModel):
 
 
 @router.get("/peers")
-def list_peers(runtime: AppRuntime = Depends(runtime_from)):
+def list_peers(
+    response: Response,
+    include_status: bool = False,
+    runtime: AppRuntime = Depends(runtime_from),
+):
+    response.headers["Cache-Control"] = "no-store"
+    if include_status:
+        return runtime.peers.snapshot()
     return runtime.peers.list_peers()
 
 

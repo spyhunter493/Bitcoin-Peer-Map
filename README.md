@@ -225,7 +225,24 @@ summary panels, tooltips, and insight drill-downs. The summary controller preser
 hover previews, and pinned drill-downs as peer data refreshes, using the shared distribution state.
 `app.js` remains the dashboard composition and canvas-rendering root; `as-distribution.js`
 coordinates the interactive distribution visualization through the extracted state and view
-controllers.
+controllers. Peer table rendering and preferences live in `features/peer-table.js`, with pure
+filtering/sorting in `peer-table-model.js`. Private panels and peer popups use
+`private-network-panel.js` and `private-peer-detail.js`, sharing `private-network-state.js`.
+`core/polling.js` owns peer/node-info timer lifecycles and prevents overlapping requests;
+`features/peer-refresh.js` handles snapshot delivery and freshness.
+
+`types.d.ts` defines the shared peer API shape and controller interfaces. Type checking is
+incremental: `tsconfig.json` currently checks the poller, peer-refresh controller, table model,
+and private-network state in strict mode. The DOM adapters remain plain JavaScript and can
+be brought into that checked set separately. No production build step is required.
+
+Peer-supplied strings stay raw in application state. Use `BPMModal.escapeHtml` at HTML text
+and attribute boundaries, or assign `textContent`. Helpers whose names include `HtmlRow`
+accept locally constructed markup; ordinary row helpers escape text.
+
+The default `/api/peers` response remains a list. `/api/peers?include_status=true` includes
+connection status and snapshot timestamps. RPC failures retain the last successful snapshot;
+a successful empty response clears it. The dashboard shows cached data age during outages.
 
 ## Development and Tests
 
@@ -245,6 +262,7 @@ Run the JavaScript checks:
 ```bash
 npm ci
 npm run check:js
+npm run check:types
 npm run test:js
 npm run test:layout:docker
 ```

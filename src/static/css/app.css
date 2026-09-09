@@ -314,6 +314,20 @@ body.map-camera-moving .peer-panel-body {
     box-shadow: 0 0 8px var(--ok);
     animation: status-pulse 2s infinite;
 }
+.status-dot.pending {
+    background: var(--warn);
+    box-shadow: 0 0 5px var(--warn);
+}
+.peer-data-row {
+    font-size: 10px;
+    color: var(--text-secondary);
+}
+#peer-data-status { color: var(--ok); }
+#peer-data-status[data-state="connecting"],
+#peer-data-status[data-state="delayed"] { color: var(--warn); }
+#peer-data-status[data-state="node-unavailable"],
+#peer-data-status[data-state="dashboard-unavailable"] { color: var(--err); }
+#peer-data-age[data-stale="true"] { color: var(--warn); }
 
 /* ==========================================================
    4. FLIGHT DECK — Network stats inline in topbar center

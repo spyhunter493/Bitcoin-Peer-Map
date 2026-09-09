@@ -2,6 +2,8 @@
 (function (global) {
     'use strict';
 
+    const escapeHtml = global.BPMModal.escapeHtml;
+
     function create(options) {
         const elements = options.elements;
         const actions = options.actions;
@@ -36,16 +38,16 @@
             for (var pi = 0; pi < matchedPeers.length; pi++) {
                 var p = matchedPeers[pi];
                 var ct = p.connection_type || 'unknown';
-                var ctLabel = options.connectionTypeLabels[ct] || ct;
+                var ctLabel = (Object.hasOwn(options.connectionTypeLabels, ct) ? options.connectionTypeLabels[ct] : null) || ct;
                 var loc = (p.city || '') + (p.city && p.country ? ', ' : '') + (p.country || '');
                 // Truncate location to keep layout tight
                 if (loc.length > 16) loc = loc.substring(0, 15) + '\u2026';
                 var peerAs = distributionData.parseAsNumber(p.as) || '';
                 var extraClass = pi >= initialShow ? ' as-sub-tt-peer-extra' : '';
-                html += '<div class="as-sub-tt-peer' + extraClass + '" data-peer-id="' + p.id + '" data-as="' + peerAs + '"' + (pi >= initialShow ? ' style="display:none"' : '') + '>';
-                html += '<span class="as-sub-tt-id as-sub-tt-id-link" data-peer-id="' + p.id + '">ID\u00a0' + p.id + '</span>';
-                html += '<span class="as-sub-tt-type">' + ctLabel + '</span>';
-                if (loc) html += '<span class="as-sub-tt-loc">' + loc + '</span>';
+                html += '<div class="as-sub-tt-peer' + extraClass + '" data-peer-id="' + escapeHtml(p.id) + '" data-as="' + escapeHtml(peerAs) + '"' + (pi >= initialShow ? ' style="display:none"' : '') + '>';
+                html += '<span class="as-sub-tt-id as-sub-tt-id-link" data-peer-id="' + escapeHtml(p.id) + '">ID\u00a0' + escapeHtml(p.id) + '</span>';
+                html += '<span class="as-sub-tt-type">' + escapeHtml(ctLabel) + '</span>';
+                if (loc) html += '<span class="as-sub-tt-loc">' + escapeHtml(loc) + '</span>';
                 html += '</div>';
             }
             html += '</div>';
@@ -87,14 +89,14 @@
         }
 
         function row(label, value) {
-            return '<div class="modal-row"><span class="modal-label">' + label + '</span><span class="modal-val">' + value + '</span></div>';
+            return '<div class="modal-row"><span class="modal-label">' + escapeHtml(label) + '</span><span class="modal-val">' + escapeHtml(value) + '</span></div>';
         }
 
         function interactiveRow(label, value, peerIds, category) {
-            var peerIdsJson = JSON.stringify(peerIds).replace(/"/g, '&quot;');
-            return '<div class="as-detail-sub-row as-interactive-row" data-peer-ids="' + peerIdsJson + '" data-category="' + category + '">'
-                 + '<span class="as-detail-sub-label">' + label + '</span>'
-                 + '<span class="as-detail-sub-val">' + value + '</span>'
+            var peerIdsJson = escapeHtml(JSON.stringify(peerIds));
+            return '<div class="as-detail-sub-row as-interactive-row" data-peer-ids="' + peerIdsJson + '" data-category="' + escapeHtml(category) + '">'
+                 + '<span class="as-detail-sub-label">' + escapeHtml(label) + '</span>'
+                 + '<span class="as-detail-sub-val">' + escapeHtml(value) + '</span>'
                  + '</div>';
         }
 
@@ -102,14 +104,14 @@
             var privateNetMap = { 'Tor': 'onion', 'I2P': 'i2p', 'CJDNS': 'cjdns' };
             var html = '';
             html += '<div class="as-sub-tt-section" style="border-bottom:none; margin-bottom:2px">';
-            html += '<div class="as-sub-tt-flag" style="font-weight:700; color:var(--text-primary)">' + catLabel + '</div>';
+            html += '<div class="as-sub-tt-flag" style="font-weight:700; color:var(--text-primary)">' + escapeHtml(catLabel) + '</div>';
             // For private network categories, add link to private network panel
-            if (privateNetMap[catLabel]) {
-                html += '<div class="as-sub-tt-nav as-private-net-link" data-net="' + privateNetMap[catLabel] + '" style="font-size:9px; color:var(--accent); cursor:pointer; margin-top:2px">\u25B6 Open ' + catLabel + ' Network panel</div>';
+            if (Object.hasOwn(privateNetMap, catLabel)) {
+                html += '<div class="as-sub-tt-nav as-private-net-link" data-net="' + privateNetMap[catLabel] + '" style="font-size:9px; color:var(--accent); cursor:pointer; margin-top:2px">\u25B6 Open ' + escapeHtml(catLabel) + ' Network panel</div>';
             }
             // Optional nav link to open a provider/segment panel
             if (navAsNum) {
-                html += '<div class="as-sub-tt-nav as-grid-provider-click" data-as="' + navAsNum + '" style="font-size:9px; color:var(--accent); cursor:pointer; margin-top:2px">\u25B6 Open ' + catLabel + ' panel</div>';
+                html += '<div class="as-sub-tt-nav as-grid-provider-click" data-as="' + escapeHtml(navAsNum) + '" style="font-size:9px; color:var(--accent); cursor:pointer; margin-top:2px">\u25B6 Open ' + escapeHtml(catLabel) + ' panel</div>';
             }
             // For service flag categories, expand abbreviations to full descriptions
             if (catLabel) {
@@ -128,13 +130,13 @@
             html += '<div class="as-sub-tt-scroll">';
             for (var i = 0; i < providers.length; i++) {
                 var prov = providers[i];
-                var peerIdsJson = JSON.stringify(prov.peerIds || prov.pi).replace(/"/g, '&quot;');
-                html += '<div class="as-sub-tt-peer as-provider-row" data-as="' + (prov.asNumber || prov.a) + '" data-peer-ids="' + peerIdsJson + '">';
+                var peerIdsJson = global.BPMModal.escapeHtml(JSON.stringify(prov.peerIds || prov.pi));
+                html += '<div class="as-sub-tt-peer as-provider-row" data-as="' + escapeHtml((prov.asNumber || prov.a)) + '" data-peer-ids="' + peerIdsJson + '">';
                 html += '<span class="as-grid-dot" style="background:' + (prov.color || prov.c) + '"></span>';
-                html += '<span class="as-sub-tt-id as-provider-click" style="cursor:pointer">' + (prov.asNumber || prov.a) + '</span>';
+                html += '<span class="as-sub-tt-id as-provider-click" style="cursor:pointer">' + escapeHtml((prov.asNumber || prov.a)) + '</span>';
                 var name = (prov.name || prov.n || '');
                 if (name.length > 18) name = name.substring(0, 17) + '\u2026';
-                html += '<span class="as-sub-tt-loc" title="' + (prov.name || prov.n || '') + '">' + name + '</span>';
+                html += '<span class="as-sub-tt-loc" title="' + escapeHtml((prov.name || prov.n || '')) + '">' + escapeHtml(name) + '</span>';
                 html += '<span class="as-sub-tt-type">' + (prov.peerCount || prov.pc) + '</span>';
                 html += '</div>';
             }
@@ -151,15 +153,15 @@
             for (var pi = 0; pi < peers.length; pi++) {
                 var p = peers[pi];
                 var ct = p.connection_type || 'unknown';
-                var ctLabel = options.connectionTypeLabels[ct] || ct;
+                var ctLabel = (Object.hasOwn(options.connectionTypeLabels, ct) ? options.connectionTypeLabels[ct] : null) || ct;
                 var loc = (p.city || '') + (p.city && p.country ? ', ' : '') + (p.country || '');
                 if (loc.length > 16) loc = loc.substring(0, 15) + '\u2026';
                 var peerAs = distributionData.parseAsNumber(p.as) || '';
                 var extraClass = pi >= initialShow ? ' as-sub-tt-peer-extra' : '';
-                html += '<div class="as-sub-tt-peer' + extraClass + '" data-peer-id="' + p.id + '" data-as="' + peerAs + '"' + (pi >= initialShow ? ' style="display:none"' : '') + '>';
-                html += '<span class="as-sub-tt-id as-sub-tt-id-link" data-peer-id="' + p.id + '">ID\u00a0' + p.id + '</span>';
-                html += '<span class="as-sub-tt-type">' + ctLabel + '</span>';
-                if (loc) html += '<span class="as-sub-tt-loc">' + loc + '</span>';
+                html += '<div class="as-sub-tt-peer' + extraClass + '" data-peer-id="' + escapeHtml(p.id) + '" data-as="' + escapeHtml(peerAs) + '"' + (pi >= initialShow ? ' style="display:none"' : '') + '>';
+                html += '<span class="as-sub-tt-id as-sub-tt-id-link" data-peer-id="' + escapeHtml(p.id) + '">ID\u00a0' + escapeHtml(p.id) + '</span>';
+                html += '<span class="as-sub-tt-type">' + escapeHtml(ctLabel) + '</span>';
+                if (loc) html += '<span class="as-sub-tt-loc">' + escapeHtml(loc) + '</span>';
                 html += '</div>';
             }
             html += '</div>';
@@ -184,12 +186,12 @@
                 var p = peers[pi];
                 var peerAs = distributionData.parseAsNumber(p.as) || '';
                 var extraClass = pi >= initialShow ? ' as-sub-tt-peer-extra' : '';
-                html += '<div class="as-sub-tt-peer' + extraClass + '" data-peer-id="' + p.id + '" data-as="' + peerAs + '"' + (pi >= initialShow ? ' style="display:none"' : '') + '>';
+                html += '<div class="as-sub-tt-peer' + extraClass + '" data-peer-id="' + escapeHtml(p.id) + '" data-as="' + escapeHtml(peerAs) + '"' + (pi >= initialShow ? ' style="display:none"' : '') + '>';
                 html += '<span class="as-sub-tt-rank">#' + (pi + 1) + '</span>';
-                html += '<span class="as-sub-tt-id as-sub-tt-id-link" data-peer-id="' + p.id + '">ID\u00a0' + p.id + '</span>';
+                html += '<span class="as-sub-tt-id as-sub-tt-id-link" data-peer-id="' + escapeHtml(p.id) + '">ID\u00a0' + escapeHtml(p.id) + '</span>';
                 html += '<span class="as-sub-tt-type">' + (p.ping_ms > 0 ? Math.round(p.ping_ms) + 'ms' : '\u2014') + '</span>';
                 var ct = p.connection_type || 'unknown';
-                html += '<span class="as-sub-tt-loc">' + (options.connectionTypeLabels[ct] || ct) + '</span>';
+                html += '<span class="as-sub-tt-loc">' + escapeHtml(((Object.hasOwn(options.connectionTypeLabels, ct) ? options.connectionTypeLabels[ct] : null) || ct)) + '</span>';
                 html += '</div>';
             }
             html += '</div>';
@@ -216,12 +218,12 @@
                 var p = peers[pi];
                 var peerAs = distributionData.parseAsNumber(p.as) || '';
                 var extraClass = pi >= initialShow ? ' as-sub-tt-peer-extra' : '';
-                html += '<div class="as-sub-tt-peer' + extraClass + '" data-peer-id="' + p.id + '" data-as="' + peerAs + '"' + (pi >= initialShow ? ' style="display:none"' : '') + '>';
+                html += '<div class="as-sub-tt-peer' + extraClass + '" data-peer-id="' + escapeHtml(p.id) + '" data-as="' + escapeHtml(peerAs) + '"' + (pi >= initialShow ? ' style="display:none"' : '') + '>';
                 html += '<span class="as-sub-tt-rank">#' + (pi + 1) + '</span>';
-                html += '<span class="as-sub-tt-id as-sub-tt-id-link" data-peer-id="' + p.id + '">ID\u00a0' + p.id + '</span>';
+                html += '<span class="as-sub-tt-id as-sub-tt-id-link" data-peer-id="' + escapeHtml(p.id) + '">ID\u00a0' + escapeHtml(p.id) + '</span>';
                 html += '<span class="as-sub-tt-type">' + distributionData.fmtBytes(p[field]) + '</span>';
                 var ct = p.connection_type || 'unknown';
-                html += '<span class="as-sub-tt-loc">' + (options.connectionTypeLabels[ct] || ct) + '</span>';
+                html += '<span class="as-sub-tt-loc">' + escapeHtml(((Object.hasOwn(options.connectionTypeLabels, ct) ? options.connectionTypeLabels[ct] : null) || ct)) + '</span>';
                 html += '</div>';
             }
             html += '</div>';
@@ -283,15 +285,15 @@
 
             // ── Section 1: Score + Insights ──
             html += '<div class="modal-section-title" title="Distribution score based on Herfindahl\u2013Hirschman Index (HHI). Higher score = more evenly distributed peers across providers.">Score &amp; Insights</div>';
-            html += '<div class="modal-row"><span class="modal-label" title="' + scoreTooltip.replace(/"/g, '&quot;') + '">Distribution Score</span><span class="modal-val">' + data.score.toFixed(1) + ' / 10</span></div>';
+            html += '<div class="modal-row"><span class="modal-label" title="' + global.BPMModal.escapeHtml(scoreTooltip) + '">Distribution Score</span><span class="modal-val">' + data.score.toFixed(1) + ' / 10</span></div>';
             html += '<div class="modal-row"><span class="modal-label" title="Quality rating based on the distribution score">Quality</span><span class="modal-val">' + data.quality.word + '</span></div>';
             html += '<div class="modal-row"><span class="modal-label" title="Number of distinct Autonomous Systems (AS/ISPs) your peers connect through">Unique Providers</span>'
                  + '<span class="modal-val as-panel-link as-all-providers-link" title="View all providers">' + data.uniqueProviders + '</span></div>';
             if (data.topProvider) {
                 var topName = data.topProvider.asShort || data.topProvider.asNumber;
                 html += '<div class="modal-row"><span class="modal-label" title="The AS provider with the most peers connected to your node">Top Provider</span>'
-                     + '<span class="modal-val as-panel-link as-navigate-provider" data-as="' + data.topProvider.asNumber + '" title="View ' + topName + ' panel">'
-                     + topName + ' (' + data.topProvider.peerCount + ')</span></div>';
+                     + '<span class="modal-val as-panel-link as-navigate-provider" data-as="' + escapeHtml(data.topProvider.asNumber) + '" title="View ' + escapeHtml(topName) + ' panel">'
+                     + escapeHtml(topName) + ' (' + data.topProvider.peerCount + ')</span></div>';
             }
 
             // Dynamic insights — each is a simple label row with hover/click sub-panel
@@ -300,14 +302,14 @@
                 html += '<div class="as-summary-insight">';
                 html += '<span class="as-insight-icon">' + ins.icon + '</span>';
                 if (ins.type === 'stable') {
-                    var stablePeerJson = JSON.stringify(ins.peerIds).replace(/"/g, '&quot;');
-                    html += '<span class="as-insight-text as-panel-link as-stable-link" data-as="' + ins.asNumber + '" data-peer-ids="' + stablePeerJson + '">Most stable: ' + ins.provName + ' (avg ' + ins.durText + ')</span>';
+                    var stablePeerJson = global.BPMModal.escapeHtml(JSON.stringify(ins.peerIds));
+                    html += '<span class="as-insight-text as-panel-link as-stable-link" data-as="' + escapeHtml(ins.asNumber) + '" data-peer-ids="' + stablePeerJson + '">Most stable: ' + escapeHtml(ins.provName) + ' (avg ' + escapeHtml(ins.durText) + ')</span>';
                 } else if (ins.type === 'fastest') {
                     html += '<span class="as-insight-text as-panel-link as-fastest-link" title="Providers ranked by average ping time">Fastest connection <span style="color:var(--text-muted)">(by rank)</span></span>';
                 } else if (ins.type === 'data-providers') {
-                    html += '<span class="as-insight-text as-panel-link as-data-providers-link" data-field="' + ins.field + '" title="Providers ranked by total bytes">' + ins.label + '</span>';
+                    html += '<span class="as-insight-text as-panel-link as-data-providers-link" data-field="' + ins.field + '" title="Providers ranked by total bytes">' + escapeHtml(ins.label) + '</span>';
                 } else {
-                    html += '<span class="as-insight-text">' + ins.text + '</span>';
+                    html += '<span class="as-insight-text">' + escapeHtml(ins.text) + '</span>';
                 }
                 html += '</div>';
             }
@@ -316,39 +318,39 @@
             html += '<div class="modal-section-title" title="Inbound and outbound peer connections grouped by AS provider. Click provider name to view its panel, click IN/OUT to see peer lists.">Connections by Provider</div>';
             for (var gi = 0; gi < data.connectionGrid.length; gi++) {
                 var gItem = data.connectionGrid[gi];
-                var totalJson = JSON.stringify(gItem.totalPeerIds).replace(/"/g, '&quot;');
-                var inJson = JSON.stringify(gItem.inPeerIds).replace(/"/g, '&quot;');
-                var outJson = JSON.stringify(gItem.outPeerIds).replace(/"/g, '&quot;');
-                var outSubJson = JSON.stringify(gItem.outSubtypes).replace(/"/g, '&quot;');
+                var totalJson = global.BPMModal.escapeHtml(JSON.stringify(gItem.totalPeerIds));
+                var inJson = global.BPMModal.escapeHtml(JSON.stringify(gItem.inPeerIds));
+                var outJson = global.BPMModal.escapeHtml(JSON.stringify(gItem.outPeerIds));
+                var outSubJson = global.BPMModal.escapeHtml(JSON.stringify(gItem.outSubtypes));
 
                 if (gItem.isOthers && gItem._othersGroups) {
                     // Others row — 3-level: click shows provider list, then provider → peer list
-                    var othersProvJson = JSON.stringify(gItem._othersGroups.map(function (g) {
+                    var othersProvJson = global.BPMModal.escapeHtml(JSON.stringify(gItem._othersGroups.map(function (g) {
                         return { a: g.asNumber, n: g.asShort || g.asName || g.asNumber, c: g.color || actions.getColorForAsNum(g.asNumber), pc: g.peerCount, pi: g.peerIds };
-                    })).replace(/"/g, '&quot;');
-                    html += '<div class="as-detail-sub-row as-conn-others-row" data-peer-ids="' + totalJson + '" data-providers="' + othersProvJson + '" data-as="' + gItem.asNumber + '" style="cursor:pointer">';
+                    })));
+                    html += '<div class="as-detail-sub-row as-conn-others-row" data-peer-ids="' + totalJson + '" data-providers="' + othersProvJson + '" data-as="' + escapeHtml(gItem.asNumber) + '" style="cursor:pointer">';
                     html += '<span class="as-detail-sub-label"><span class="as-grid-dot" style="background:' + gItem.color + '; display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:5px; vertical-align:middle"></span>';
-                    html += '<span style="color:' + gItem.color + '">' + gItem.name + '</span></span>';
+                    html += '<span style="color:' + gItem.color + '">' + escapeHtml(gItem.name) + '</span></span>';
                     html += '<span class="as-detail-sub-val">' + gItem.totalCount + '</span>';
                     html += '</div>';
                 } else {
                     // Provider name row (total) — click pins sub-tooltip, "Open provider panel" link inside navigates
-                    html += '<div class="as-detail-sub-row as-conn-prov-row" data-peer-ids="' + totalJson + '" data-as="' + gItem.asNumber + '" style="cursor:pointer">';
+                    html += '<div class="as-detail-sub-row as-conn-prov-row" data-peer-ids="' + totalJson + '" data-as="' + escapeHtml(gItem.asNumber) + '" style="cursor:pointer">';
                     html += '<span class="as-detail-sub-label"><span class="as-grid-dot" style="background:' + gItem.color + '; display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:5px; vertical-align:middle"></span>';
-                    html += '<span style="color:' + gItem.color + '">' + gItem.name + '</span></span>';
+                    html += '<span style="color:' + gItem.color + '">' + escapeHtml(gItem.name) + '</span></span>';
                     html += '<span class="as-detail-sub-val">' + gItem.totalCount + '</span>';
                     html += '</div>';
                 }
                 // In row
                 if (gItem.inCount > 0) {
-                    html += '<div class="as-detail-sub-row as-interactive-row as-conn-dir-row" data-peer-ids="' + inJson + '" data-as="' + gItem.asNumber + '" data-category="conntype" style="padding-left:22px">';
+                    html += '<div class="as-detail-sub-row as-interactive-row as-conn-dir-row" data-peer-ids="' + inJson + '" data-as="' + escapeHtml(gItem.asNumber) + '" data-category="conntype" style="padding-left:22px">';
                     html += '<span class="as-detail-sub-label">In</span>';
                     html += '<span class="as-detail-sub-val">' + gItem.inCount + '</span>';
                     html += '</div>';
                 }
                 // Out row
                 if (gItem.outCount > 0) {
-                    html += '<div class="as-detail-sub-row as-conn-out-row" data-peer-ids="' + outJson + '" data-as="' + gItem.asNumber + '" data-out-subtypes="' + outSubJson + '" data-category="conntype" style="padding-left:22px; cursor:pointer">';
+                    html += '<div class="as-detail-sub-row as-conn-out-row" data-peer-ids="' + outJson + '" data-as="' + escapeHtml(gItem.asNumber) + '" data-out-subtypes="' + outSubJson + '" data-category="conntype" style="padding-left:22px; cursor:pointer">';
                     html += '<span class="as-detail-sub-label">Out</span>';
                     html += '<span class="as-detail-sub-val">' + gItem.outCount + '</span>';
                     html += '</div>';
@@ -452,7 +454,7 @@
             html += row('Countries', data.uniqueCountries);
             if (data.topCountry) {
                 var topLabel = (data.topCountry.countryCode || data.topCountry.asShort || '') + '  ' + (data.topCountry.countryName || data.topCountry.asName);
-                html += row('Top Country', global.BPMModal.escapeHtml(topLabel) + ' (' + data.topCountry.peerCount + ')');
+                html += row('Top Country', topLabel + ' (' + data.topCountry.peerCount + ')');
             }
 
             html += '<div class="modal-section-title" title="Click a country to inspect the providers, connection types, software, and services behind that slice.">Countries &amp; Territories</div>';

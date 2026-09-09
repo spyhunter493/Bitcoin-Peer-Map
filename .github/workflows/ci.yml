@@ -37,7 +37,9 @@ jobs:
           ruff format --check src tests
           ruff check src tests
       - name: Check JavaScript
-        run: npm run check:js
+        run: |
+          npm run check:js
+          npm run check:types
       - name: Run Python tests
         run: python -m pytest -q
       - name: Run JavaScript tests
