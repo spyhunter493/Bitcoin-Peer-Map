@@ -220,9 +220,10 @@ The application uses FastAPI lifespan hooks to start and stop peer polling, GeoI
 Browser code is split by responsibility: `static/js/core/` contains shared API and accessible-modal
 infrastructure, while `static/js/features/` contains independently testable controllers for node
 monitoring, peer actions, display settings, map data/projection, distribution aggregation, peer
-detail rendering, and IPv4/IPv6 panel rendering.
-`app.js` remains the dashboard composition and canvas-rendering root; `as-distribution.js` owns the
-interactive distribution visualization and delegates its pure data calculations.
+detail rendering, IPv4/IPv6 panel rendering, and distribution donut rendering/animation.
+`app.js` remains the dashboard composition and canvas-rendering root; `as-distribution.js`
+coordinates the interactive distribution visualization through the extracted state and view
+controllers.
 
 ## Development and Tests
 

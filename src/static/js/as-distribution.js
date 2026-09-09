@@ -20,7 +20,6 @@ window.ASDistribution = (function () {
     const DONUT_WIDTH = 28;      // Width of the donut ring (default)
     const DONUT_WIDTH_SELECTED = 40;  // Width when selected (thicker)
     const DONUT_WIDTH_DIMMED = 14;    // Width when dimmed (thinner)
-    const INNER_RADIUS = DONUT_RADIUS - DONUT_WIDTH;
 
     // Curated colour palette — 9 colours (8 AS + Others), distinct and accessible
     const PALETTE = [
@@ -48,31 +47,18 @@ window.ASDistribution = (function () {
     let totalPeers = 0;
     let countryDistributionScore = 0;
     let countryTotalPeers = 0;
-    let hasRenderedOnce = false;   // Track if we've ever rendered data
     let donutFocused = false;      // True when in focused mode (donut at top-center)
     let othersListOpen = false;    // True when Others popup is showing next to the donut
     let legendsHidden = false;     // True when "Display Top ISP/Net" toggle is OFF
 
-    // Donut segment animation state
-    let donutAnimState = 'idle';   // 'idle' | 'expanding' | 'expanded' | 'reverting'
-    let donutAnimTarget = null;    // AS number being expanded
-    let donutAnimProgress = 0;    // 0 to 1 progress
-    let donutAnimFrame = null;    // requestAnimationFrame ID
-    let donutAnimStartTime = 0;   // Animation start timestamp
     const DONUT_ANIM_DURATION = 400; // ms for expand/revert animation
     const DONUT_EXPAND_RATIO = 0.70; // expanded segment gets 70% of donut
-    let donutAnimSafetyTimer = null; // Safety timeout to force-end stuck animations
 
     // DOM refs (cached on init)
     let containerEl = null;
     let titleEl = null;
-    let donutWrapEl = null;
-    let donutSvg = null;
-    let donutCenter = null;
-    let legendEl = null;
     let lensToggleEl = null;
     let panelEl = null;
-    let loadingEl = null;
     let focusedCloseBtn = null;
 
     // DOM references associated with filter interactions remain local to this view.
@@ -82,8 +68,6 @@ window.ASDistribution = (function () {
     let insightActiveAsNum = null;  // AS number to show in donut when an insight is active (Most Stable, Fastest, etc.)
     let insightActiveType = null;   // Type of insight active: 'stable', 'fastest', 'data-bytessent', 'data-bytesrecv'
     let insightActiveData = null;   // Full data object for the active insight provider (for restoring after peer hover)
-    let insightRectEl = null;       // DOM ref for insight rectangle overlay
-    let insightRectVisible = false; // Whether the insight rectangle is currently shown
     let selectedPeerId = null;      // Peer ID that was clicked/selected (persists through hover cycles)
 
     // Integration hooks (set by app.js)
@@ -137,11 +121,14 @@ window.ASDistribution = (function () {
     // ═══════════════════════════════════════════════════════════
 
     const distributionData = window.BPMDistributionData;
+    const distributionDonut = window.BPMDistributionDonut;
     const parseAsNumber = distributionData.parseAsNumber;
     const parseAsOrg = distributionData.parseAsOrg;
     const fmtBytes = distributionData.fmtBytes;
     const fmtDuration = distributionData.fmtDuration;
     const buildDistributionGroup = distributionData.buildDistributionGroup;
+    const getQuality = distributionDonut.getQuality;
+    const buildScoreTooltip = distributionDonut.buildScoreTooltip;
     const escHtml = window.BPMModal.escapeHtml;
     const distributionNetworkPanel = window.BPMDistributionNetworkPanel;
 
@@ -322,502 +309,114 @@ window.ASDistribution = (function () {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // SVG DONUT RENDERING
+    // DONUT VIEW CONTROLLER — rendering delegated to distribution-donut.js
     // ═══════════════════════════════════════════════════════════
 
-    /** Create an SVG arc path for a donut segment */
-    function describeArc(cx, cy, outerR, innerR, startAngle, endAngle) {
-        var sweep = endAngle - startAngle;
-        var actualEnd = sweep >= 2 * Math.PI ? startAngle + 2 * Math.PI - 0.001 : endAngle;
-        var largeArc = sweep > Math.PI ? 1 : 0;
+    const donutController = distributionDonut.create({
+        state: distributionState,
+        config: {
+            size: DONUT_SIZE,
+            radius: DONUT_RADIUS,
+            width: DONUT_WIDTH,
+            selectedWidth: DONUT_WIDTH_SELECTED,
+            dimmedWidth: DONUT_WIDTH_DIMMED,
+            expandedRatio: DONUT_EXPAND_RATIO,
+            duration: DONUT_ANIM_DURATION,
+            maxSegments: MAX_SEGMENTS,
+        },
+        getView: function () {
+            return {
+                segments: getActiveSegments(),
+                groups: getActiveGroups(),
+                totalPeers: getActiveTotalPeers(),
+                countryLens: isCountryLens(),
+            };
+        },
+        getColor: getColorForActiveEntity,
+        onSegmentHover: onSegmentHover,
+        onSegmentLeave: onSegmentLeave,
+        onSegmentClick: onSegmentClick,
+        onInsightClose: closeActiveInsight,
+    });
 
-        var ox1 = cx + outerR * Math.cos(startAngle);
-        var oy1 = cy + outerR * Math.sin(startAngle);
-        var ox2 = cx + outerR * Math.cos(actualEnd);
-        var oy2 = cy + outerR * Math.sin(actualEnd);
-        var ix1 = cx + innerR * Math.cos(actualEnd);
-        var iy1 = cy + innerR * Math.sin(actualEnd);
-        var ix2 = cx + innerR * Math.cos(startAngle);
-        var iy2 = cy + innerR * Math.sin(startAngle);
-
-        return [
-            'M ' + ox1 + ' ' + oy1,
-            'A ' + outerR + ' ' + outerR + ' 0 ' + largeArc + ' 1 ' + ox2 + ' ' + oy2,
-            'L ' + ix1 + ' ' + iy1,
-            'A ' + innerR + ' ' + innerR + ' 0 ' + largeArc + ' 0 ' + ix2 + ' ' + iy2,
-            'Z',
-        ].join(' ');
-    }
-
-    /** Render the donut SVG */
     function renderDonut() {
-        if (!donutSvg) return;
-
-        var cx = DONUT_SIZE / 2;
-        var cy = DONUT_SIZE / 2;
-        var gap = 0.03; // gap between segments in radians
-        var html = '';
-        var segments = getActiveSegments();
-        var activePeerTotal = getActiveTotalPeers();
-
-        // SVG defs for 3D-style effects
-        html += '<defs>';
-        // Drop shadow for depth
-        html += '<filter id="donut-shadow" x="-20%" y="-20%" width="140%" height="140%">';
-        html += '<feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#000" flood-opacity="0.55"/>';
-        html += '</filter>';
-        // Inner shadow for 3D ring illusion
-        html += '<filter id="donut-inner-shadow" x="-10%" y="-10%" width="120%" height="120%">';
-        html += '<feGaussianBlur in="SourceAlpha" stdDeviation="3" result="shadow"/>';
-        html += '<feOffset dx="0" dy="2" result="shadow-offset"/>';
-        html += '<feComposite in="SourceGraphic" in2="shadow-offset" operator="over"/>';
-        html += '</filter>';
-        // Highlight gradient for 3D ring top-light
-        html += '<linearGradient id="donut-highlight" x1="0" y1="0" x2="0" y2="1">';
-        html += '<stop offset="0%" stop-color="rgba(255,255,255,0.15)"/>';
-        html += '<stop offset="50%" stop-color="rgba(255,255,255,0)"/>';
-        html += '<stop offset="100%" stop-color="rgba(0,0,0,0.12)"/>';
-        html += '</linearGradient>';
-        html += '</defs>';
-
-        // Background track ring (subtle)
-        html += '<circle cx="' + cx + '" cy="' + cy + '" r="' + (DONUT_RADIUS - DONUT_WIDTH / 2) + '" fill="none" stroke="rgba(88,166,255,0.04)" stroke-width="' + DONUT_WIDTH + '" />';
-
-        // Outer decorative ring
-        html += '<circle cx="' + cx + '" cy="' + cy + '" r="' + (DONUT_RADIUS + 3) + '" fill="none" stroke="rgba(88,166,255,0.08)" stroke-width="1" />';
-
-        // Inner decorative ring
-        html += '<circle cx="' + cx + '" cy="' + cy + '" r="' + (INNER_RADIUS - 3) + '" fill="none" stroke="rgba(88,166,255,0.06)" stroke-width="0.5" />';
-
-        if (segments.length === 0) {
-            // Empty state — pulsing gray ring
-            html += '<circle cx="' + cx + '" cy="' + cy + '" r="' + (DONUT_RADIUS - DONUT_WIDTH / 2) + '" fill="none" stroke="#2d333b" stroke-width="' + DONUT_WIDTH + '" opacity="0.5" />';
-        } else if (segments.length === 1) {
-            var seg = segments[0];
-            html += '<circle cx="' + cx + '" cy="' + cy + '" r="' + (DONUT_RADIUS - DONUT_WIDTH / 2) + '" fill="none" stroke="' + seg.color + '" stroke-width="' + DONUT_WIDTH + '" class="as-donut-segment" data-as="' + seg.asNumber + '" filter="url(#donut-shadow)" />';
-        } else {
-            var totalGap = gap * segments.length;
-            var available = 2 * Math.PI - totalGap;
-
-            // Calculate sweeps — either normal (data-proportional) or animated (expanded)
-            var sweeps = [];
-            var normalSweeps = [];
-            for (var si = 0; si < segments.length; si++) {
-                normalSweeps.push((segments[si].peerCount / activePeerTotal) * available);
-            }
-
-            if ((donutAnimState === 'expanding' || donutAnimState === 'expanded' || donutAnimState === 'reverting') && donutAnimTarget) {
-                // Calculate expanded layout: target segment gets DONUT_EXPAND_RATIO, rest share the remainder
-                var expandedSweeps = [];
-                var targetIdx = -1;
-                for (var si = 0; si < segments.length; si++) {
-                    if (segments[si].asNumber === donutAnimTarget) {
-                        targetIdx = si;
-                        break;
-                    }
-                }
-                if (targetIdx >= 0) {
-                    var expandedSweep = available * DONUT_EXPAND_RATIO;
-                    var remainingSpace = available - expandedSweep;
-                    var otherTotal = activePeerTotal - segments[targetIdx].peerCount;
-                    for (var si = 0; si < segments.length; si++) {
-                        if (si === targetIdx) {
-                            expandedSweeps.push(expandedSweep);
-                        } else {
-                            var share = otherTotal > 0 ? (segments[si].peerCount / otherTotal) : (1 / (segments.length - 1));
-                            expandedSweeps.push(share * remainingSpace);
-                        }
-                    }
-                } else {
-                    expandedSweeps = normalSweeps.slice();
-                }
-
-                // Interpolate based on animation progress
-                var t = donutAnimState === 'reverting' ? (1 - donutAnimProgress) : donutAnimProgress;
-                // Smooth easing
-                t = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-                for (var si = 0; si < segments.length; si++) {
-                    sweeps.push(normalSweeps[si] + (expandedSweeps[si] - normalSweeps[si]) * t);
-                }
-            } else {
-                sweeps = normalSweeps;
-            }
-
-            // Arrange segments: in expanded mode, non-target segments go to top, target at bottom
-            var renderOrder = [];
-            var targetIdx = -1;
-            if ((donutAnimState !== 'idle') && donutAnimTarget) {
-                for (var si = 0; si < segments.length; si++) {
-                    if (segments[si].asNumber === donutAnimTarget) {
-                        targetIdx = si;
-                    } else {
-                        renderOrder.push(si);
-                    }
-                }
-                if (targetIdx >= 0) renderOrder.push(targetIdx);
-            } else {
-                for (var si = 0; si < segments.length; si++) renderOrder.push(si);
-            }
-
-            // Layout: others at top (starting at -PI/2), target fills bottom
-            var angle = -Math.PI / 2;
-
-            // If animating, re-order: non-target segments first (top), then target (bottom)
-            var segAngles = [];
-            for (var ri = 0; ri < renderOrder.length; ri++) {
-                var idx = renderOrder[ri];
-                var sweep = sweeps[idx];
-                if (sweep <= 0) {
-                    segAngles[idx] = { start: angle, end: angle };
-                    continue;
-                }
-                segAngles[idx] = { start: angle + gap / 2, end: angle + sweep + gap / 2 };
-                angle += sweep + gap;
-            }
-
-            // Calculate per-segment ring widths (animated: selected=thick, others=thin)
-            var segWidths = [];
-            var animT = 0;
-            if ((donutAnimState === 'expanding' || donutAnimState === 'expanded' || donutAnimState === 'reverting') && donutAnimTarget) {
-                animT = donutAnimState === 'reverting' ? (1 - donutAnimProgress) : donutAnimProgress;
-                animT = animT < 0.5 ? 2 * animT * animT : 1 - Math.pow(-2 * animT + 2, 2) / 2;
-            }
-            for (var si = 0; si < segments.length; si++) {
-                if (animT > 0 && donutAnimTarget) {
-                    if (segments[si].asNumber === donutAnimTarget) {
-                        segWidths.push(DONUT_WIDTH + (DONUT_WIDTH_SELECTED - DONUT_WIDTH) * animT);
-                    } else {
-                        segWidths.push(DONUT_WIDTH + (DONUT_WIDTH_DIMMED - DONUT_WIDTH) * animT);
-                    }
-                } else {
-                    segWidths.push(DONUT_WIDTH);
-                }
-            }
-
-            // Group for shadow on all segments
-            html += '<g filter="url(#donut-shadow)">';
-            for (var si = 0; si < segments.length; si++) {
-                var seg = segments[si];
-                if (!segAngles[si] || sweeps[si] <= 0) continue;
-
-                var segW = segWidths[si];
-                var segOuter = DONUT_RADIUS - (DONUT_WIDTH - segW) / 2;
-                var segInner = segOuter - segW;
-                var d = describeArc(cx, cy, segOuter, segInner, segAngles[si].start, segAngles[si].end);
-
-                var cls = ['as-donut-segment'];
-                if (distributionState.selectedProvider && distributionState.selectedProvider !== seg.asNumber) cls.push('dimmed');
-                if (distributionState.selectedProvider === seg.asNumber) cls.push('selected');
-
-                html += '<path d="' + d + '" fill="' + seg.color + '" class="' + cls.join(' ') + '" data-as="' + seg.asNumber + '" />';
-            }
-            html += '</g>';
-
-            // 3D highlight overlay — a semi-transparent ring on top for depth illusion
-            html += '<circle cx="' + cx + '" cy="' + cy + '" r="' + (DONUT_RADIUS - DONUT_WIDTH / 2) + '" fill="none" stroke="url(#donut-highlight)" stroke-width="' + DONUT_WIDTH + '" pointer-events="none" />';
-        }
-
-        donutSvg.innerHTML = html;
-
-        // Hide loading once we have data
-        if (segments.length > 0 && loadingEl) {
-            loadingEl.style.display = 'none';
-            hasRenderedOnce = true;
-        }
-
-        // Attach segment event listeners
-        var segEls = donutSvg.querySelectorAll('.as-donut-segment');
-        for (var i = 0; i < segEls.length; i++) {
-            segEls[i].addEventListener('mouseenter', onSegmentHover);
-            segEls[i].addEventListener('mouseleave', onSegmentLeave);
-            segEls[i].addEventListener('click', onSegmentClick);
-        }
+        donutController.renderDonut();
     }
 
-    /** Start donut expansion animation for a selected segment */
     function animateDonutExpand(asNum) {
-        // Skip re-animation if already expanded to the same target
-        if (donutAnimState === 'expanded' && donutAnimTarget === asNum) {
-            renderDonut();  // Just re-render with fresh data (no animation)
-            return;
-        }
-        if (donutAnimFrame) cancelAnimationFrame(donutAnimFrame);
-        if (donutAnimSafetyTimer) clearTimeout(donutAnimSafetyTimer);
-        donutAnimTarget = asNum;
-        donutAnimState = 'expanding';
-        donutAnimProgress = 0;
-        donutAnimStartTime = performance.now();
-        donutAnimFrame = requestAnimationFrame(donutAnimStep);
-        // Safety: force-complete if animation gets stuck
-        donutAnimSafetyTimer = setTimeout(function () {
-            if (donutAnimState === 'expanding') {
-                donutAnimState = 'expanded';
-                donutAnimProgress = 1;
-                donutAnimFrame = null;
-                renderDonut();
-            }
-        }, DONUT_ANIM_DURATION + 200);
+        donutController.animateExpand(asNum);
     }
 
-    /** Start donut revert animation (back to proportional) */
     function animateDonutRevert() {
-        if (donutAnimFrame) cancelAnimationFrame(donutAnimFrame);
-        if (donutAnimSafetyTimer) clearTimeout(donutAnimSafetyTimer);
-        donutAnimState = 'reverting';
-        donutAnimProgress = 0;
-        donutAnimStartTime = performance.now();
-        donutAnimFrame = requestAnimationFrame(donutAnimStep);
-        // Safety: force-complete if animation gets stuck
-        donutAnimSafetyTimer = setTimeout(function () {
-            if (donutAnimState === 'reverting') {
-                donutAnimState = 'idle';
-                donutAnimTarget = null;
-                donutAnimProgress = 0;
-                donutAnimFrame = null;
-                renderDonut();
-            }
-        }, DONUT_ANIM_DURATION + 200);
+        donutController.animateRevert();
     }
 
-    /** Animation step — called each frame */
-    function donutAnimStep(now) {
-        var elapsed = now - donutAnimStartTime;
-        donutAnimProgress = Math.min(1, elapsed / DONUT_ANIM_DURATION);
-
-        renderDonut();
-
-        if (donutAnimProgress < 1) {
-            donutAnimFrame = requestAnimationFrame(donutAnimStep);
-        } else {
-            // Animation complete
-            donutAnimFrame = null;
-            if (donutAnimState === 'expanding') {
-                donutAnimState = 'expanded';
-                donutAnimProgress = 1;
-            } else if (donutAnimState === 'reverting') {
-                donutAnimState = 'idle';
-                donutAnimTarget = null;
-                donutAnimProgress = 0;
-                // Final render at idle state
-                renderDonut();
-            }
-        }
-    }
-
-    /** Force-stop any donut animation (safety) */
     function stopDonutAnimation() {
-        if (donutAnimFrame) {
-            cancelAnimationFrame(donutAnimFrame);
-            donutAnimFrame = null;
-        }
-        if (donutAnimSafetyTimer) {
-            clearTimeout(donutAnimSafetyTimer);
-            donutAnimSafetyTimer = null;
-        }
-        donutAnimState = 'idle';
-        donutAnimTarget = null;
-        donutAnimProgress = 0;
+        donutController.stopAnimation();
     }
 
-    // ═══════════════════════════════════════════════════════════
-    // INSIGHT RECTANGLE — replaces donut for Score & Insights selections
-    // ═══════════════════════════════════════════════════════════
-
-    /** Show the insight rectangle overlay, hiding the donut SVG and center text.
-     *  @param {string} type — 'stable' | 'fastest' | 'data-bytessent' | 'data-bytesrecv'
-     *  @param {Object} data — insight-specific data */
     function showInsightRect(type, data) {
-        if (!insightRectEl) return;
-
-        var provColor = data.color || '#d29922';
-
-        // Build the title, icon, and content based on insight type
-        var icon = '', title = '', provName = '', statLine = '', metaLine = '', rankLine = '';
-
-        if (type === 'stable') {
-            icon = '\u23f3';
-            title = 'Most Stable Network';
-            provName = data.provName || '';
-            var peerCount = data.peerIds ? data.peerIds.length : 0;
-            metaLine = peerCount + ' peer' + (peerCount !== 1 ? 's' : '') + ' \u00b7 ' + (data.asNumber || '');
-            statLine = 'avg ' + (data.durText || '');
-        } else if (type === 'fastest') {
-            icon = '\u26a1';
-            title = 'Fastest Connection';
-            provName = data.provName || '';
-            var peerCount = data.peerIds ? data.peerIds.length : 0;
-            metaLine = peerCount + ' peer' + (peerCount !== 1 ? 's' : '') + ' \u00b7 ' + (data.asNumber || '');
-            statLine = data.avgPing ? data.avgPing.toFixed(1) + ' ms avg' : '';
-            if (data.rank) {
-                rankLine = 'Rank #' + data.rank;
-            }
-        } else if (type === 'data-bytessent') {
-            icon = '\u2b06\ufe0f';
-            title = 'Most Data Sent To';
-            provName = data.provName || '';
-            var peerCount = data.peers ? data.peers.length : 0;
-            metaLine = peerCount + ' peer' + (peerCount !== 1 ? 's' : '') + ' \u00b7 ' + (data.asNumber || '');
-            statLine = fmtBytes(data.totalBytes || 0);
-            if (data.rank) {
-                rankLine = 'Rank #' + data.rank;
-            }
-        } else if (type === 'data-bytesrecv') {
-            icon = '\u2b07\ufe0f';
-            title = 'Most Data Recv By';
-            provName = data.provName || '';
-            var peerCount = data.peers ? data.peers.length : 0;
-            metaLine = peerCount + ' peer' + (peerCount !== 1 ? 's' : '') + ' \u00b7 ' + (data.asNumber || '');
-            statLine = fmtBytes(data.totalBytes || 0);
-            if (data.rank) {
-                rankLine = 'Rank #' + data.rank;
-            }
-        }
-
-        // Determine network color for the origin circle
-        var originColor = provColor;
-
-        var html = '';
-        html += '<div class="as-insight-rect-inner">';
-        html += '<div class="as-insight-rect-badge">Score &amp; Insights</div>';
-        html += '<button class="as-insight-rect-close" title="Back">\u2190</button>';
-        html += '<div class="as-insight-rect-content">';
-        html += '<div class="as-insight-rect-icon">' + icon + '</div>';
-        html += '<div class="as-insight-rect-title">' + escHtml(title) + '</div>';
-        if (rankLine) {
-            html += '<div class="as-insight-rect-rank" style="color:#d4a017">' + rankLine + '</div>';
-        }
-        html += '<div class="as-insight-rect-provider" style="color:' + provColor + '" title="' + escHtml(provName) + '">' + escHtml(provName) + '</div>';
-        html += '<div class="as-insight-rect-meta">' + metaLine + '</div>';
-        if (statLine) {
-            html += '<div class="as-insight-rect-stat" style="color:' + provColor + '">' + statLine + '</div>';
-        }
-        html += '</div>';
-        html += '<div class="as-insight-rect-origin" style="background:' + originColor + '; border-color:' + originColor + '"></div>';
-        html += '</div>';
-
-        insightRectEl.innerHTML = html;
-
-        // Hide donut SVG and center, show rectangle
-        if (donutSvg) donutSvg.style.opacity = '0';
-        if (donutCenter) donutCenter.style.opacity = '0';
-        insightRectEl.classList.add('visible');
-        insightRectVisible = true;
-        document.body.classList.add('insight-rect-active');
-
-        // Bind close button
-        var closeBtn = insightRectEl.querySelector('.as-insight-rect-close');
-        if (closeBtn) {
-            closeBtn.addEventListener('click', function (e) {
-                e.stopPropagation();
-                hideInsightRect();
-                // Clear the insight state and revert
-                insightActiveAsNum = null; insightActiveData = null;
-                insightActiveType = null;
-                animateDonutRevert();
-                renderCenter();
-                // Restore summary all-lines
-                if (distributionState.summarySelected) {
-                    clearSummarySubFilter();
-                }
-            });
-        }
+        donutController.showInsight(type, data);
     }
 
-    /** Update the insight rectangle content for a specific peer (hover/select from submenu).
-     *  @param {Object} peer — raw peer data
-     *  @param {string} provColor — color for the provider */
     function updateInsightRectForPeer(peer, provColor) {
-        if (!insightRectEl || !insightRectVisible) return;
-        var provEl = insightRectEl.querySelector('.as-insight-rect-provider');
-        var metaEl = insightRectEl.querySelector('.as-insight-rect-meta');
-        var statEl = insightRectEl.querySelector('.as-insight-rect-stat');
-        var rankEl = insightRectEl.querySelector('.as-insight-rect-rank');
-
-        if (rankEl) rankEl.style.display = 'none';
-        if (provEl) {
-            provEl.textContent = 'Peer #' + peer.id;
-            provEl.title = 'Peer #' + peer.id;
-            provEl.style.color = provColor;
-        }
-        if (metaEl) {
-            var peerProvName = peer.asname || parseAsOrg(peer.as) || '';
-            var asNum = parseAsNumber(peer.as) || '';
-            metaEl.textContent = peerProvName + ' \u00b7 ' + asNum;
-        }
-        if (statEl) {
-            // Show context-appropriate stat based on active insight type
-            if (insightActiveType === 'fastest') {
-                statEl.textContent = peer.ping_ms > 0 ? Math.round(peer.ping_ms) + ' ms' : '\u2014';
-            } else if (insightActiveType === 'data-bytessent') {
-                statEl.textContent = fmtBytes(peer.bytessent || 0) + ' sent';
-            } else if (insightActiveType === 'data-bytesrecv') {
-                statEl.textContent = fmtBytes(peer.bytesrecv || 0) + ' recv';
-            } else {
-                var connSec = peer.conntime ? (Math.floor(Date.now() / 1000) - peer.conntime) : 0;
-                statEl.textContent = 'Uptime: ' + fmtDuration(connSec);
-            }
-            statEl.style.color = provColor;
-        }
+        donutController.updateInsightPeer(peer, provColor, insightActiveType);
     }
 
-    /** Restore the insight rectangle to its original provider-level content.
-     *  Called when mouse leaves a peer in the submenu. */
     function restoreInsightRectProvider() {
-        if (!insightRectVisible || !insightActiveType || !insightActiveAsNum) return;
-        // Rebuild the rect with the original data
+        if (!donutController.isInsightVisible() || !insightActiveType || !insightActiveAsNum) return;
         var data = getInsightDataForActive();
-        if (data) {
-            showInsightRect(insightActiveType, data);
-        } else if (insightActiveData) {
-            // Use stored data for providers not in the top-N list
-            showInsightRect(insightActiveType, insightActiveData);
-        }
+        if (data) showInsightRect(insightActiveType, data);
+        else if (insightActiveData) showInsightRect(insightActiveType, insightActiveData);
     }
 
-    /** Get the current insight data for the active insight type/AS */
     function getInsightDataForActive() {
         if (!insightActiveAsNum || !insightActiveType) return null;
         var sumData = computeSummaryData();
         for (var i = 0; i < sumData.insights.length; i++) {
-            var ins = sumData.insights[i];
-            if (insightActiveType === 'stable' && ins.type === 'stable') {
+            var insight = sumData.insights[i];
+            if (insightActiveType === 'stable' && insight.type === 'stable') {
                 return {
-                    provName: ins.provName,
-                    asNumber: ins.asNumber,
-                    peerIds: ins.peerIds,
-                    durText: ins.durText,
-                    color: getColorForAsNum(ins.asNumber)
+                    provName: insight.provName,
+                    asNumber: insight.asNumber,
+                    peerIds: insight.peerIds,
+                    durText: insight.durText,
+                    color: getColorForAsNum(insight.asNumber),
                 };
             }
-            if (insightActiveType === 'fastest' && ins.type === 'fastest' && ins.topProviders) {
-                for (var j = 0; j < ins.topProviders.length; j++) {
-                    if (ins.topProviders[j].asNumber === insightActiveAsNum) {
+            if (insightActiveType === 'fastest' && insight.type === 'fastest' && insight.topProviders) {
+                for (var j = 0; j < insight.topProviders.length; j++) {
+                    if (insight.topProviders[j].asNumber === insightActiveAsNum) {
                         return {
-                            provName: ins.topProviders[j].provName,
-                            asNumber: ins.topProviders[j].asNumber,
-                            peerIds: ins.topProviders[j].peerIds,
-                            avgPing: ins.topProviders[j].avgPing,
+                            provName: insight.topProviders[j].provName,
+                            asNumber: insight.topProviders[j].asNumber,
+                            peerIds: insight.topProviders[j].peerIds,
+                            avgPing: insight.topProviders[j].avgPing,
                             rank: j + 1,
-                            color: ins.topProviders[j].color || getColorForAsNum(ins.topProviders[j].asNumber)
+                            color: insight.topProviders[j].color ||
+                                getColorForAsNum(insight.topProviders[j].asNumber),
                         };
                     }
                 }
             }
-            if (ins.type === 'data-providers' && ins.topProviders) {
-                var isRecv = insightActiveType === 'data-bytesrecv';
-                var isSent = insightActiveType === 'data-bytessent';
-                if ((isSent && ins.field === 'bytessent') || (isRecv && ins.field === 'bytesrecv')) {
-                    for (var j = 0; j < ins.topProviders.length; j++) {
-                        if (ins.topProviders[j].asNumber === insightActiveAsNum) {
-                            return {
-                                provName: ins.topProviders[j].provName,
-                                asNumber: ins.topProviders[j].asNumber,
-                                peers: ins.topProviders[j].peers,
-                                totalBytes: ins.topProviders[j].totalBytes,
-                                rank: j + 1,
-                                color: ins.topProviders[j].color || getColorForAsNum(ins.topProviders[j].asNumber)
-                            };
-                        }
+            if (insight.type === 'data-providers' && insight.topProviders) {
+                var matchesField = (
+                    insightActiveType === 'data-bytessent' && insight.field === 'bytessent'
+                ) || (
+                    insightActiveType === 'data-bytesrecv' && insight.field === 'bytesrecv'
+                );
+                if (!matchesField) continue;
+                for (var k = 0; k < insight.topProviders.length; k++) {
+                    if (insight.topProviders[k].asNumber === insightActiveAsNum) {
+                        return {
+                            provName: insight.topProviders[k].provName,
+                            asNumber: insight.topProviders[k].asNumber,
+                            peers: insight.topProviders[k].peers,
+                            totalBytes: insight.topProviders[k].totalBytes,
+                            rank: k + 1,
+                            color: insight.topProviders[k].color ||
+                                getColorForAsNum(insight.topProviders[k].asNumber),
+                        };
                     }
                 }
             }
@@ -825,399 +424,109 @@ window.ASDistribution = (function () {
         return null;
     }
 
-    /** Hide the insight rectangle and restore the donut SVG + center text */
     function hideInsightRect() {
-        if (!insightRectEl) return;
-        insightRectEl.classList.remove('visible');
-        insightRectVisible = false;
-        document.body.classList.remove('insight-rect-active');
-        // Show donut SVG and center
-        if (donutSvg) donutSvg.style.opacity = '';
-        if (donutCenter) donutCenter.style.opacity = '';
+        donutController.hideInsight();
     }
 
-    /** Get quality rating for a distribution score */
-    function getQuality(score) {
-        if (score >= 8) return { word: 'Excellent', cls: 'q-excellent' };
-        if (score >= 6) return { word: 'Good', cls: 'q-good' };
-        if (score >= 4) return { word: 'Moderate', cls: 'q-moderate' };
-        if (score >= 2) return { word: 'Poor', cls: 'q-poor' };
-        return { word: 'Critical', cls: 'q-critical' };
+    function closeActiveInsight() {
+        hideInsightRect();
+        insightActiveAsNum = null;
+        insightActiveData = null;
+        insightActiveType = null;
+        animateDonutRevert();
+        renderCenter();
+        if (distributionState.summarySelected) clearSummarySubFilter();
     }
 
-    /** Build score tooltip text */
-    function buildScoreTooltip(score) {
-        var q = getQuality(score);
-        return 'Distribution Score: ' + score.toFixed(1) + '/10 (' + q.word + ')\n'
-             + 'Based on Herfindahl\u2013Hirschman Index (HHI)\n'
-             + 'Higher = more evenly distributed peers across providers';
-    }
-
-    /** Update the donut center label.
-     *  Layout: DISTRIBUTION | SCORE: heading | big number | quality word
-     *  When AS selected: peer count heading | AS name | percentage */
     function renderCenter() {
-        if (!donutCenter) return;
         var activePeerTotal = getActiveTotalPeers();
-        var activeScore = getActiveDistributionScore();
-
-        // Clear legend-hover pointer-events lock whenever center is re-rendered
-        clearLegendHoverActive();
-
-        // If peer detail panel is active, don't touch center text — showPeerInDonutCenter manages it
+        donutController.clearLegendHover();
         if (peerDetailActive) return;
-
-
-        // In focused mode with hover active, preserve the hover display during data updates
         if (donutFocused && distributionState.focusedHoverProvider && !distributionState.selectedProvider) {
             showFocusedCenterText(distributionState.focusedHoverProvider);
             return;
         }
-
-        // With legends hidden and hover active, preserve provider info during data updates
         if (legendsHidden && !donutFocused && distributionState.focusedHoverProvider && !distributionState.selectedProvider) {
             showLegendHoverCenterText(distributionState.focusedHoverProvider);
             return;
         }
-
-        // If an insight is active (Most Stable, Fastest, etc.) and no AS is selected,
-        // refresh the insight rectangle (it replaces the donut)
-        if (insightActiveAsNum && distributionState.summarySelected && !distributionState.selectedProvider && donutFocused) {
-            if (insightRectVisible) {
-                // Rect is already visible — refresh its data
-                var insData = getInsightDataForActive();
-                if (insData) showInsightRect(insightActiveType, insData);
+        if (insightActiveAsNum && distributionState.summarySelected &&
+            !distributionState.selectedProvider && donutFocused) {
+            if (donutController.isInsightVisible()) {
+                var insightData = getInsightDataForActive();
+                if (insightData) showInsightRect(insightActiveType, insightData);
             } else {
                 showFocusedCenterText(insightActiveAsNum);
             }
             return;
         }
-
-        // If a summary sub-filter is active (e.g. IPv4, IPv6), show category info in donut center
-        if (donutFocused && distributionState.summarySelected && distributionState.filterPeerIds && distributionState.filterLabel && !distributionState.selectedProvider) {
-            var distributionEl2 = donutCenter.querySelector('.as-score-distribution');
-            var headingEl2 = donutCenter.querySelector('.as-score-heading');
-            var scoreVal2 = donutCenter.querySelector('.as-score-value');
-            var qualityEl2 = donutCenter.querySelector('.as-score-quality');
-            var scoreLbl2 = donutCenter.querySelector('.as-score-label');
-            if (distributionEl2) distributionEl2.style.display = 'none';
-            if (headingEl2) {
-                headingEl2.textContent = distributionState.filterPeerIds.length + ' PEER' + (distributionState.filterPeerIds.length !== 1 ? 'S' : '');
-                headingEl2.style.color = 'var(--accent)';
-                headingEl2.style.display = '';
-            }
-            if (scoreVal2) {
-                scoreVal2.textContent = distributionState.filterLabel;
-                scoreVal2.className = 'as-score-value as-selected-mode';
-                scoreVal2.style.color = 'var(--text-primary)';
-                scoreVal2.title = distributionState.filterLabel + ' — ' + distributionState.filterPeerIds.length + ' peers';
-            }
-            if (qualityEl2) {
-                var pctOfTotal = activePeerTotal > 0 ? ((distributionState.filterPeerIds.length / activePeerTotal) * 100).toFixed(1) : '0.0';
-                qualityEl2.textContent = pctOfTotal + '% of peers';
-                qualityEl2.className = 'as-score-quality';
-                qualityEl2.style.color = 'var(--text-secondary)';
-            }
-            if (scoreLbl2) {
-                scoreLbl2.textContent = '';
-            }
+        if (donutFocused && distributionState.summarySelected &&
+            distributionState.filterPeerIds && distributionState.filterLabel &&
+            !distributionState.selectedProvider) {
+            donutController.renderFilterCenter(
+                distributionState.filterPeerIds.length,
+                distributionState.filterLabel,
+                activePeerTotal
+            );
             return;
         }
-
-        // If a summary row hover preview is active, preserve it across data refresh
-        if (donutFocused && distributionState.summarySelected && distributionState.summaryPreviewPeerIds && distributionState.summaryPreviewLabel && !distributionState.selectedProvider) {
-            previewSummaryCenterText(distributionState.summaryPreviewPeerIds, distributionState.summaryPreviewLabel);
+        if (donutFocused && distributionState.summarySelected &&
+            distributionState.summaryPreviewPeerIds && distributionState.summaryPreviewLabel &&
+            !distributionState.selectedProvider) {
+            previewSummaryCenterText(
+                distributionState.summaryPreviewPeerIds,
+                distributionState.summaryPreviewLabel
+            );
             return;
         }
-
-        // If a network panel (IPv4/IPv6) is open, show network info in center
         if (donutFocused && distributionState.activeNetwork && !distributionState.selectedProvider) {
-            // If a sub-filter is active within the network panel, show that category
             if (distributionState.filterPeerIds && distributionState.filterLabel) {
-                var distributionEl2 = donutCenter.querySelector('.as-score-distribution');
-                var headingEl2 = donutCenter.querySelector('.as-score-heading');
-                var scoreVal2 = donutCenter.querySelector('.as-score-value');
-                var qualityEl2 = donutCenter.querySelector('.as-score-quality');
-                var scoreLbl2 = donutCenter.querySelector('.as-score-label');
-                if (distributionEl2) distributionEl2.style.display = 'none';
-                if (headingEl2) {
-                    headingEl2.textContent = distributionState.filterPeerIds.length + ' PEER' + (distributionState.filterPeerIds.length !== 1 ? 'S' : '');
-                    headingEl2.style.color = 'var(--accent)';
-                    headingEl2.style.display = '';
-                }
-                if (scoreVal2) {
-                    scoreVal2.textContent = distributionState.filterLabel;
-                    scoreVal2.className = 'as-score-value as-selected-mode';
-                    scoreVal2.style.color = 'var(--text-primary)';
-                    scoreVal2.title = distributionState.filterLabel + ' — ' + distributionState.filterPeerIds.length + ' peers';
-                }
-                if (qualityEl2) {
-                    var pctOfTotal = activePeerTotal > 0 ? ((distributionState.filterPeerIds.length / activePeerTotal) * 100).toFixed(1) : '0.0';
-                    qualityEl2.textContent = pctOfTotal + '% of peers';
-                    qualityEl2.className = 'as-score-quality';
-                    qualityEl2.style.color = 'var(--text-secondary)';
-                }
-                if (scoreLbl2) {
-                    scoreLbl2.textContent = '';
-                }
+                donutController.renderFilterCenter(
+                    distributionState.filterPeerIds.length,
+                    distributionState.filterLabel,
+                    activePeerTotal
+                );
                 return;
             }
-            // No sub-filter — show the network overview
-            var npNetKey = distributionState.activeNetwork;
-            var npNetLabel = npNetKey === 'ipv4' ? 'IPv4' : 'IPv6';
-            var npNetColor = npNetKey === 'ipv4' ? 'var(--net-ipv4, #e3b341)' : 'var(--net-ipv6, #f07178)';
-            var npNetPeers = lastPeersRaw.filter(function (p) {
-                return (p.network || 'ipv4') === npNetKey;
-            });
-            var distributionEl3 = donutCenter.querySelector('.as-score-distribution');
-            var headingEl3 = donutCenter.querySelector('.as-score-heading');
-            var scoreVal3 = donutCenter.querySelector('.as-score-value');
-            var qualityEl3 = donutCenter.querySelector('.as-score-quality');
-            var scoreLbl3 = donutCenter.querySelector('.as-score-label');
-            if (distributionEl3) distributionEl3.style.display = 'none';
-            if (headingEl3) {
-                headingEl3.textContent = npNetPeers.length + ' PEER' + (npNetPeers.length !== 1 ? 'S' : '');
-                headingEl3.style.color = 'var(--accent)';
-                headingEl3.style.display = '';
-            }
-            if (scoreVal3) {
-                scoreVal3.textContent = npNetLabel;
-                scoreVal3.className = 'as-score-value as-selected-mode';
-                scoreVal3.style.color = npNetColor;
-                scoreVal3.title = npNetLabel + ' Network — ' + npNetPeers.length + ' peers';
-            }
-            if (qualityEl3) {
-                var pctOfTotal = activePeerTotal > 0 ? ((npNetPeers.length / activePeerTotal) * 100).toFixed(1) : '0.0';
-                qualityEl3.textContent = pctOfTotal + '% of peers';
-                qualityEl3.className = 'as-score-quality';
-                qualityEl3.style.color = 'var(--text-secondary)';
-            }
-            if (scoreLbl3) {
-                scoreLbl3.textContent = '';
-            }
+            var networkKey = distributionState.activeNetwork;
+            var networkPeerCount = lastPeersRaw.filter(function (peer) {
+                return (peer.network || 'ipv4') === networkKey;
+            }).length;
+            donutController.renderNetworkCenter(networkKey, networkPeerCount, activePeerTotal);
             return;
         }
-
-        var distributionEl = donutCenter.querySelector('.as-score-distribution');
-        var headingEl = donutCenter.querySelector('.as-score-heading');
-        var scoreVal = donutCenter.querySelector('.as-score-value');
-        var qualityEl = donutCenter.querySelector('.as-score-quality');
-        var scoreLbl = donutCenter.querySelector('.as-score-label');
-        if (!scoreVal || !scoreLbl) return;
-
-        // If an AS is selected, show AS info instead of score
         if (distributionState.selectedProvider) {
-            var seg = findActiveSegmentOrGroup(distributionState.selectedProvider);
-            if (seg) {
-                var displayName = seg.isOthers ? 'Others' : (seg.asShort || seg.asName || seg.asNumber);
-                if (displayName.length > 14) displayName = displayName.substring(0, 13) + '\u2026';
-
-                // Show "← Others" back link for sub-groups, else active lens label
-                var isSubProv = isOthersSubProvider(distributionState.selectedProvider);
-                if (distributionEl) {
-                    if (isSubProv && donutFocused) {
-                        distributionEl.innerHTML = '<span class="as-others-back-link">\u2190 Others</span>';
-                        distributionEl.style.color = '';
-                    } else {
-                        distributionEl.textContent = seg.isOthers ? 'Bucket:' : getActiveEntityKind();
-                        distributionEl.style.color = 'var(--logo-primary)';
-                    }
-                    distributionEl.style.display = '';
-                }
-                // Hide the heading row — peer count moves to bottom label
-                if (headingEl) {
-                    headingEl.textContent = '';
-                    headingEl.style.display = 'none';
-                }
-                scoreVal.textContent = displayName;
-                scoreVal.className = 'as-score-value as-selected-mode';
-                scoreVal.style.color = seg.color;
-                scoreVal.title = seg.asNumber + ' \u00b7 ' + (seg.asName || '') + '\n'
-                    + seg.peerCount + ' peers (' + seg.percentage.toFixed(1) + '%)';
-                if (qualityEl) {
-                    qualityEl.textContent = seg.asNumber === 'Others' ? '' : (isCountryLens() ? (seg.countryCode || '') : seg.asNumber);
-                    qualityEl.className = 'as-score-quality';
-                    qualityEl.style.color = seg.color;
-                }
-                if (scoreLbl) {
-                    scoreLbl.textContent = seg.peerCount + ' PEER' + (seg.peerCount !== 1 ? 'S' : '');
-                    scoreLbl.className = 'as-score-label as-provider-peers';
-                    scoreLbl.style.color = '';
-                }
-                scoreLbl.classList.remove('as-summary-link');
-                attachOthersBackHandler();
+            var segment = findActiveSegmentOrGroup(distributionState.selectedProvider);
+            if (segment) {
+                donutController.renderSelectedCenter(segment, {
+                    focused: donutFocused,
+                    isSubProvider: isOthersSubProvider(distributionState.selectedProvider),
+                    countryLens: isCountryLens(),
+                    entityKind: getActiveEntityKind(),
+                    onBack: backToOthersList,
+                });
                 return;
             }
         }
-
-        // Reset any selected-mode / provider styling
-        scoreVal.className = 'as-score-value';
-        scoreVal.style.color = '';
-        if (distributionEl) {
-            distributionEl.textContent = 'DISTRIBUTION';
-            distributionEl.style.display = '';
-            distributionEl.style.color = '';
-        }
-        if (headingEl) {
-            headingEl.style.color = '';
-            headingEl.style.display = '';
-        }
-        if (qualityEl) {
-            qualityEl.style.color = '';
-        }
-        if (scoreLbl) {
-            scoreLbl.className = 'as-score-label';
-            scoreLbl.style.color = '';
-        }
-
-        // Edge case: no locatable peers for the active lens.
-        if (activePeerTotal === 0) {
-            if (distributionEl) distributionEl.style.display = 'none';
-            if (headingEl) headingEl.textContent = '';
-            if (qualityEl) {
-                qualityEl.textContent = '';
-                qualityEl.className = 'as-score-quality q-nodata';
-            }
-            scoreVal.textContent = '\u2014';
-            scoreVal.title = isCountryLens()
-                ? 'No country data available for public peers'
-                : 'No AS data available \u2014 all peers are on private or anonymous networks';
-            scoreLbl.textContent = 'NO DATA';
-            scoreLbl.classList.remove('as-summary-link');
-            return;
-        }
-
-        // Normal: show distribution score
-        var q = getQuality(activeScore);
-
-        if (headingEl) {
-            headingEl.textContent = 'SCORE:';
-        }
-
-        scoreVal.textContent = activeScore.toFixed(1);
-        scoreVal.title = buildActiveScoreTooltip(activeScore);
-
-        // Remove old score classes and add new
-        scoreVal.classList.remove('as-score-excellent', 'as-score-good', 'as-score-moderate', 'as-score-poor', 'as-score-critical');
-        if (activeScore >= 8) scoreVal.classList.add('as-score-excellent');
-        else if (activeScore >= 6) scoreVal.classList.add('as-score-good');
-        else if (activeScore >= 4) scoreVal.classList.add('as-score-moderate');
-        else if (activeScore >= 2) scoreVal.classList.add('as-score-poor');
-        else scoreVal.classList.add('as-score-critical');
-
-        if (qualityEl) {
-            qualityEl.textContent = q.word;
-            qualityEl.className = 'as-score-quality ' + q.cls;
-        }
-
-        // Label just shows quality word below - no "DISTRIBUTION SUMMARY" text needed
-        scoreLbl.textContent = '';
-        scoreLbl.classList.remove('as-summary-link');
-        scoreLbl.classList.remove('as-summary-active');
+        donutController.renderScoreCenter(getActiveDistributionScore(), activePeerTotal, {
+            countryLens: isCountryLens(),
+            tooltip: buildActiveScoreTooltip(getActiveDistributionScore()),
+        });
     }
 
-    /** Render the legend */
     function renderLegend() {
-        if (!legendEl) return;
-        var html = '';
-        var segments = getActiveSegments();
-        var groups = getActiveGroups();
-        var activePeerTotal = getActiveTotalPeers();
-        var headerLabel = isCountryLens() ? 'COUNTRIES' : 'PROVIDERS';
-
-        // When a provider is hovered in the panel, show only that provider in the legend
-        var focusAs = distributionState.legendFocusProvider || (distributionState.summarySelected && distributionState.subSubTooltipPinned && distributionState.subSubFilterProvider ? distributionState.subSubFilterProvider : null);
-        if (focusAs) {
-            var seg = segments.find(function (s) { return s.asNumber === focusAs; });
-            if (seg) {
-                var displayName = seg.isOthers ? seg.asName : (seg.asShort || seg.asName || seg.asNumber);
-                var shortName = displayName.length > 18 ? displayName.substring(0, 17) + '\u2026' : displayName;
-                html += '<div class="as-legend-item highlighted" data-as="' + seg.asNumber + '">';
-                html += '<span class="as-legend-dot" style="background:' + seg.color + '"></span>';
-                html += '<span class="as-legend-name" title="' + displayName + '">' + shortName + '</span>';
-                html += '<span class="as-legend-count">' + seg.peerCount + '</span>';
-                html += '<span class="as-legend-pct">' + seg.percentage.toFixed(0) + '%</span>';
-                html += '</div>';
-            } else {
-                // Provider is inside Others — show its actual name, not "Others"
-                var grp = groups.find(function (g) { return g.asNumber === focusAs; });
-                if (grp) {
-                    var color = getColorForActiveEntity(focusAs);
-                    var displayName = grp.asShort || grp.asName || grp.asNumber;
-                    var shortName = displayName.length > 18 ? displayName.substring(0, 17) + '\u2026' : displayName;
-                    html += '<div class="as-legend-item highlighted" data-as="' + focusAs + '">';
-                    html += '<span class="as-legend-dot" style="background:' + color + '"></span>';
-                    html += '<span class="as-legend-name" title="' + displayName + '">' + shortName + '</span>';
-                    html += '<span class="as-legend-count">' + grp.peerCount + '</span>';
-                    html += '<span class="as-legend-pct">' + (activePeerTotal > 0 ? (grp.peerCount / activePeerTotal * 100).toFixed(0) : 0) + '%</span>';
-                    html += '</div>';
-                }
-            }
-        } else if (distributionState.selectedProvider) {
-            // When an AS is clicked (selected), show only that provider in the legend
-            var seg = segments.find(function (s) { return s.asNumber === distributionState.selectedProvider; });
-            if (!seg) {
-                // Selected AS might be a sub-provider inside Others
-                var grp = groups.find(function (g) { return g.asNumber === distributionState.selectedProvider; });
-                if (grp) {
-                    var color = getColorForActiveEntity(distributionState.selectedProvider);
-                    var displayName = grp.asShort || grp.asName || grp.asNumber;
-                    var shortName = displayName.length > 18 ? displayName.substring(0, 17) + '\u2026' : displayName;
-                    html += '<div class="as-legend-item selected" data-as="' + distributionState.selectedProvider + '">';
-                    html += '<span class="as-legend-dot" style="background:' + color + '"></span>';
-                    html += '<span class="as-legend-name" title="' + displayName + '">' + shortName + '</span>';
-                    html += '<span class="as-legend-count">' + grp.peerCount + '</span>';
-                    html += '<span class="as-legend-pct">' + (activePeerTotal > 0 ? (grp.peerCount / activePeerTotal * 100).toFixed(0) : 0) + '%</span>';
-                    html += '</div>';
-                }
-            } else {
-                var displayName = seg.isOthers ? seg.asName : (seg.asShort || seg.asName || seg.asNumber);
-                var shortName = displayName.length > 18 ? displayName.substring(0, 17) + '\u2026' : displayName;
-                html += '<div class="as-legend-item selected" data-as="' + seg.asNumber + '">';
-                html += '<span class="as-legend-dot" style="background:' + seg.color + '"></span>';
-                html += '<span class="as-legend-name" title="' + displayName + '">' + shortName + '</span>';
-                html += '<span class="as-legend-count">' + seg.peerCount + '</span>';
-                html += '<span class="as-legend-pct">' + seg.percentage.toFixed(0) + '%</span>';
-                html += '</div>';
-            }
-        } else {
-            // Default state: show "TOP 8" header + all segments
-            html += '<div class="as-legend-header">TOP ' + Math.min(MAX_SEGMENTS, segments.length) + ' ' + headerLabel + '</div>';
-            for (var i = 0; i < segments.length; i++) {
-                var seg = segments[i];
-                var displayName = seg.isOthers ? seg.asName : (seg.asShort || seg.asName || seg.asNumber);
-                var shortName = displayName.length > 18 ? displayName.substring(0, 17) + '\u2026' : displayName;
-
-                html += '<div class="as-legend-item" data-as="' + seg.asNumber + '">';
-                html += '<span class="as-legend-dot" style="background:' + seg.color + '"></span>';
-                html += '<span class="as-legend-name" title="' + displayName + '">' + shortName + '</span>';
-                html += '<span class="as-legend-count">' + seg.peerCount + '</span>';
-                html += '<span class="as-legend-pct">' + seg.percentage.toFixed(0) + '%</span>';
-                html += '</div>';
-            }
-        }
-        legendEl.innerHTML = html;
-
-        // Attach legend event listeners
-        var items = legendEl.querySelectorAll('.as-legend-item');
-        for (var li = 0; li < items.length; li++) {
-            items[li].addEventListener('mouseenter', onSegmentHover);
-            items[li].addEventListener('mouseleave', onSegmentLeave);
-            items[li].addEventListener('click', onSegmentClick);
-        }
+        donutController.renderLegend();
     }
 
-    /** Focus the legend on a single provider (used during panel hover/click) */
     function setLegendFocus(asNum) {
         if (distributionState.legendFocusProvider === asNum) return;
         distributionState.legendFocusProvider = asNum;
         renderLegend();
     }
 
-    /** Clear the legend focus, returning to normal display */
     function clearLegendFocus() {
         if (!distributionState.legendFocusProvider) return;
-        if (distributionState.subSubTooltipPinned) return; // Don't clear while sub-sub is pinned
+        if (distributionState.subSubTooltipPinned) return;
         distributionState.legendFocusProvider = null;
         renderLegend();
     }
@@ -2056,7 +1365,7 @@ window.ASDistribution = (function () {
                         if (peer) {
                             var asNum = row.dataset.as || parseAsNumber(peer.as);
                             var color = asNum ? getColorForAsNum(asNum) : '#6e7681';
-                            if (insightRectVisible) {
+                            if (donutController.isInsightVisible()) {
                                 updateInsightRectForPeer(peer, color);
                             } else {
                                 showPeerInDonutCenter(peer, color);
@@ -2084,7 +1393,7 @@ window.ASDistribution = (function () {
                             if (_dimMapPeers) _dimMapPeers([selectedPeerId]);
                             // Restore donut center / insight rect to selected peer
                             if (donutFocused) {
-                                if (insightRectVisible) {
+                                if (donutController.isInsightVisible()) {
                                     updateInsightRectForPeer(selPeer, selColor);
                                 } else {
                                     showPeerInDonutCenter(selPeer, selColor);
@@ -2102,7 +1411,7 @@ window.ASDistribution = (function () {
                     }
                     // Restore donut center display
                     if (donutFocused) {
-                        if (insightRectVisible) {
+                        if (donutController.isInsightVisible()) {
                             restoreInsightRectProvider();
                         } else if (distributionState.filterCategory && distributionState.filterCategory.indexOf('conn-') === 0 && distributionState.filterLabel) {
                             // Restore donut to show the provider (keep expanded)
@@ -2529,7 +1838,7 @@ window.ASDistribution = (function () {
             animateDonutExpand(distributionState.subSubFilterProvider);
         } else if (insightActiveAsNum) {
             // An insight is active (Most Stable, Fastest, etc.) — keep donut on that provider
-            if (insightRectVisible) {
+            if (donutController.isInsightVisible()) {
                 restoreInsightRectProvider();
             }
             showFocusedCenterText(insightActiveAsNum);
@@ -2589,37 +1898,10 @@ window.ASDistribution = (function () {
     /** Preview category info in the donut center during hover (focused mode only).
      *  Shows the category label, peer count, and percentage without changing state. */
     function previewSummaryCenterText(peerIds, label) {
-        if (!donutFocused || !donutCenter) return;
+        if (!donutFocused) return;
         distributionState.summaryPreviewPeerIds = peerIds;
         distributionState.summaryPreviewLabel = label;
-        var distributionEl = donutCenter.querySelector('.as-score-distribution');
-        var headingEl = donutCenter.querySelector('.as-score-heading');
-        var scoreVal = donutCenter.querySelector('.as-score-value');
-        var qualityEl = donutCenter.querySelector('.as-score-quality');
-        var scoreLbl = donutCenter.querySelector('.as-score-label');
-
-        if (distributionEl) { distributionEl.style.display = 'none'; }
-        if (headingEl) {
-            headingEl.textContent = peerIds.length + ' PEER' + (peerIds.length !== 1 ? 'S' : '');
-            headingEl.style.color = 'var(--accent)';
-            headingEl.style.display = '';
-        }
-        if (scoreVal) {
-            scoreVal.textContent = label;
-            scoreVal.className = 'as-score-value as-selected-mode';
-            scoreVal.style.color = 'var(--text-primary)';
-            scoreVal.title = label + ' \u2014 ' + peerIds.length + ' peers';
-        }
-        if (qualityEl) {
-            var pctOfTotal = totalPeers > 0 ? ((peerIds.length / totalPeers) * 100).toFixed(1) : '0.0';
-            qualityEl.textContent = pctOfTotal + '% of peers';
-            qualityEl.className = 'as-score-quality';
-            qualityEl.style.color = 'var(--text-secondary)';
-        }
-        if (scoreLbl) {
-            scoreLbl.textContent = '';
-            scoreLbl.className = 'as-score-label';
-        }
+        donutController.renderFilterCenter(peerIds.length, label, getActiveTotalPeers());
     }
 
     /** Restore lines/filter/dim after a hover preview ends (summary mode) */
@@ -2649,7 +1931,7 @@ window.ASDistribution = (function () {
                     }
                     if (_filterPeerTable) _filterPeerTable(peerIds);
                     if (_dimMapPeers) _dimMapPeers(peerIds);
-                    if (donutFocused && asNum && insightRectVisible) {
+                    if (donutFocused && asNum && donutController.isInsightVisible()) {
                         restoreInsightRectProvider();
                     } else if (donutFocused && asNum) {
                         showFocusedCenterText(asNum);
@@ -2673,7 +1955,7 @@ window.ASDistribution = (function () {
             }
             if (_filterPeerTable) _filterPeerTable(peerIds);
             if (_dimMapPeers) _dimMapPeers(peerIds);
-            if (donutFocused && insightRectVisible) {
+            if (donutFocused && donutController.isInsightVisible()) {
                 restoreInsightRectProvider();
             } else if (donutFocused) {
                 showFocusedCenterText(asNum);
@@ -3778,7 +3060,7 @@ window.ASDistribution = (function () {
                     if (_filterPeerTable) _filterPeerTable(peerIds);
                     if (_dimMapPeers) _dimMapPeers(peerIds);
                     // In focused mode, update insight rect for this provider
-                    if (donutFocused && asNum && insightRectVisible) {
+                    if (donutFocused && asNum && donutController.isInsightVisible()) {
                         var grp = asGroups.find(function (g) { return g.asNumber === asNum; });
                         var avgPing = parseFloat(provRow.dataset.avgPing) || 0;
                         showInsightRect('fastest', {
@@ -3798,7 +3080,7 @@ window.ASDistribution = (function () {
                 provRow.addEventListener('mouseleave', function () {
                     if (peerDetailActive || distributionState.subSubTooltipPinned) return;
                     // On leave, restore to the pinned insight provider
-                    if (insightRectVisible) {
+                    if (donutController.isInsightVisible()) {
                         restoreInsightRectProvider();
                     } else {
                         restoreSummaryFromPreview();
@@ -3847,7 +3129,7 @@ window.ASDistribution = (function () {
                     if (_dimMapPeers) _dimMapPeers(peerIds);
 
                     // Update insight rect to show selected provider
-                    if (donutFocused && insightRectVisible) {
+                    if (donutFocused && donutController.isInsightVisible()) {
                         var grp = asGroups.find(function (g) { return g.asNumber === asNum; });
                         var avgPing = parseFloat(provRow.dataset.avgPing) || 0;
                         insightActiveAsNum = asNum;
@@ -3918,7 +3200,7 @@ window.ASDistribution = (function () {
                     if (_filterPeerTable) _filterPeerTable(peerIds);
                     if (_dimMapPeers) _dimMapPeers(peerIds);
                     // In focused mode, update insight rect for this provider
-                    if (donutFocused && asNum && insightRectVisible) {
+                    if (donutFocused && asNum && donutController.isInsightVisible()) {
                         var grp = asGroups.find(function (g) { return g.asNumber === asNum; });
                         var totalBytes = parseInt(provRow.dataset.totalBytes) || 0;
                         var rectType = field === 'bytesrecv' ? 'data-bytesrecv' : 'data-bytessent';
@@ -3939,7 +3221,7 @@ window.ASDistribution = (function () {
                 provRow.addEventListener('mouseleave', function () {
                     if (peerDetailActive || distributionState.subSubTooltipPinned) return;
                     // On leave, restore to the pinned insight provider
-                    if (insightRectVisible) {
+                    if (donutController.isInsightVisible()) {
                         restoreInsightRectProvider();
                     } else {
                         restoreSummaryFromPreview();
@@ -3991,7 +3273,7 @@ window.ASDistribution = (function () {
                     if (_dimMapPeers) _dimMapPeers(peerIds);
 
                     // Update insight rect to show selected data provider
-                    if (donutFocused && insightRectVisible) {
+                    if (donutFocused && donutController.isInsightVisible()) {
                         var grp = asGroups.find(function (g) { return g.asNumber === asNum; });
                         var totalBytes = parseInt(provRow.dataset.totalBytes) || 0;
                         var rank = parseInt(provRow.dataset.rank) || 0;
@@ -4641,146 +3923,37 @@ window.ASDistribution = (function () {
         showOthersListInDonut();
     }
 
-    /** Attach click handler to the "← Others" back link in donut center */
-    function attachOthersBackHandler() {
-        if (!donutCenter) return;
-        var backLink = donutCenter.querySelector('.as-others-back-link');
-        if (backLink) {
-            backLink.addEventListener('click', function (e) {
-                e.stopPropagation();
-                backToOthersList();
-            });
-        }
-    }
-
-    /** Show provider name in donut center during focused mode hover.
-     *  Handles multi-line display for long names with dashes. */
+    // DONUT CENTER DELEGATES
     function showFocusedCenterText(asNum) {
-        if (!donutCenter) return;
-        var seg = findActiveSegmentOrGroup(asNum);
-        if (!seg) return;
-
-        var distributionEl = donutCenter.querySelector('.as-score-distribution');
-        var headingEl = donutCenter.querySelector('.as-score-heading');
-        var scoreVal = donutCenter.querySelector('.as-score-value');
-        var qualityEl = donutCenter.querySelector('.as-score-quality');
-        var scoreLbl = donutCenter.querySelector('.as-score-label');
-
-        // Show "← Others" back link for sub-providers, else "ISP" label
-        var isSubProv = isOthersSubProvider(asNum);
-        if (distributionEl) {
-            if (isSubProv) {
-                distributionEl.innerHTML = '<span class="as-others-back-link">\u2190 Others</span>';
-                distributionEl.style.color = '';
-            } else {
-                distributionEl.textContent = seg.isOthers ? 'Bucket:' : getActiveEntityKind();
-                distributionEl.style.color = 'var(--logo-primary)';
-            }
-            distributionEl.style.display = '';
-        }
-
-        // Hide the heading row — peer count moves to bottom label
-        if (headingEl) {
-            headingEl.textContent = '';
-            headingEl.style.display = 'none';
-        }
-
-        // Build display name — smart line-breaking for names with dashes
-        var name = seg.isOthers ? 'Others' : (seg.asShort || seg.asName || seg.asNumber);
-        var displayLines = formatNameForDonut(name);
-
-        if (scoreVal) {
-            scoreVal.textContent = displayLines;
-            scoreVal.className = 'as-score-value as-focused-provider';
-            scoreVal.style.color = seg.color;
-            scoreVal.title = (seg.asName || seg.asNumber) + '\n' + seg.peerCount + ' peers (' + seg.percentage.toFixed(1) + '%)';
-        }
-        if (qualityEl) {
-            qualityEl.textContent = seg.asNumber === 'Others' ? (seg.asName || '') : (isCountryLens() ? (seg.countryCode || '') : seg.asNumber);
-            qualityEl.className = 'as-score-quality';
-            qualityEl.style.color = seg.color;
-        }
-        if (scoreLbl) {
-            scoreLbl.textContent = seg.peerCount + ' PEER' + (seg.peerCount !== 1 ? 'S' : '');
-            scoreLbl.className = 'as-score-label as-provider-peers';
-            scoreLbl.style.color = '';
-        }
-        attachOthersBackHandler();
+        var segment = findActiveSegmentOrGroup(asNum);
+        if (!segment) return;
+        donutController.renderProviderCenter(segment, {
+            isSubProvider: isOthersSubProvider(asNum),
+            countryLens: isCountryLens(),
+            entityKind: getActiveEntityKind(),
+            onBack: backToOthersList,
+        });
     }
 
-    /** Show provider info in donut center when hovering a segment with legends hidden.
-     *  Displays: Rank #N / ISP / PROVIDER-NAME / AS12345 / 16 PEERS
-     *  Uses title-matching font (Cinzel 15px uppercase) to stay inside donut hole. */
     function showLegendHoverCenterText(asNum) {
-        if (!donutCenter) return;
-        var seg = findActiveSegment(asNum);
-        if (!seg) return;
-
-        // Disable pointer-events on center so it doesn't steal hover from segments
-        donutCenter.classList.add('legend-hover-active');
-
-        // Determine rank (1-based position in donutSegments, excluding Others)
+        var segment = findActiveSegment(asNum);
+        if (!segment) return;
         var rank = 0;
         var segments = getActiveSegments();
         for (var i = 0; i < segments.length; i++) {
-            if (!segments[i].isOthers) {
-                rank++;
-                if (segments[i].asNumber === asNum) break;
-            }
+            if (segments[i].isOthers) continue;
+            rank++;
+            if (segments[i].asNumber === asNum) break;
         }
-
-        var distributionEl = donutCenter.querySelector('.as-score-distribution');
-        var headingEl = donutCenter.querySelector('.as-score-heading');
-        var scoreVal = donutCenter.querySelector('.as-score-value');
-        var qualityEl = donutCenter.querySelector('.as-score-quality');
-        var scoreLbl = donutCenter.querySelector('.as-score-label');
-
-        // Top line: "Rank #N" or "Bucket:" for Others
-        if (distributionEl) {
-            if (seg.isOthers) {
-                distributionEl.textContent = 'Bucket:';
-            } else {
-                distributionEl.textContent = 'Rank #' + rank;
-            }
-            distributionEl.style.color = '#d4a017';
-            distributionEl.style.display = '';
-        }
-
-        // Second line: "ISP" label
-        if (headingEl) {
-            headingEl.textContent = seg.isOthers ? '' : getActiveEntityKind();
-            headingEl.style.color = 'var(--logo-primary)';
-            headingEl.style.display = seg.isOthers ? 'none' : '';
-        }
-
-        // Provider name — title-matching font, smart line-breaking
-        var name = seg.isOthers ? 'Others' : (seg.asShort || seg.asName || seg.asNumber);
-        var displayLines = formatNameForDonut(name);
-        if (scoreVal) {
-            scoreVal.textContent = displayLines;
-            scoreVal.className = 'as-score-value as-legend-hover-provider';
-            scoreVal.style.color = seg.color;
-            scoreVal.title = (seg.asName || seg.asNumber) + '\n' + seg.peerCount + ' peers (' + seg.percentage.toFixed(1) + '%)';
-        }
-
-        // AS number
-        if (qualityEl) {
-            qualityEl.textContent = seg.asNumber === 'Others' ? (seg.asName || '') : (isCountryLens() ? (seg.countryCode || '') : seg.asNumber);
-            qualityEl.className = 'as-score-quality';
-            qualityEl.style.color = seg.color;
-        }
-
-        // Peer count
-        if (scoreLbl) {
-            scoreLbl.textContent = seg.peerCount + ' PEER' + (seg.peerCount !== 1 ? 'S' : '');
-            scoreLbl.className = 'as-score-label as-provider-peers';
-            scoreLbl.style.color = '';
-        }
+        donutController.renderLegendHoverCenter(segment, {
+            rank: rank,
+            countryLens: isCountryLens(),
+            entityKind: getActiveEntityKind(),
+        });
     }
 
-    /** Remove the legend-hover pointer-events lock from donut center */
     function clearLegendHoverActive() {
-        if (donutCenter) donutCenter.classList.remove('legend-hover-active');
+        donutController.clearLegendHover();
     }
 
     /** Show scrollable Others provider list as a floating popup to the right of the donut.
@@ -4885,9 +4058,7 @@ window.ASDistribution = (function () {
         popup.appendChild(listDiv);
 
         // Position next to the donut wrap
-        if (donutWrapEl) {
-            donutWrapEl.appendChild(popup);
-        } else {
+        if (!donutController.appendToWrap(popup)) {
             document.body.appendChild(popup);
         }
     }
@@ -4911,48 +4082,6 @@ window.ASDistribution = (function () {
                 items[i].classList.remove('as-others-popup-selected');
             }
         }
-    }
-
-    /** Format a provider name to fit inside the donut center.
-     *  Breaks long names at dashes or spaces. */
-    function formatNameForDonut(name) {
-        if (!name) return '';
-        // If it fits, just return it
-        if (name.length <= 12) return name;
-        // Try breaking at dashes first
-        if (name.indexOf('-') !== -1) {
-            var parts = name.split('-');
-            var lines = [];
-            var current = parts[0];
-            for (var i = 1; i < parts.length; i++) {
-                if ((current + '-' + parts[i]).length <= 12) {
-                    current += '-' + parts[i];
-                } else {
-                    lines.push(current);
-                    current = parts[i];
-                }
-            }
-            lines.push(current);
-            return lines.join('\n');
-        }
-        // Try breaking at spaces
-        if (name.indexOf(' ') !== -1) {
-            var words = name.split(' ');
-            var lines = [];
-            var current = words[0];
-            for (var i = 1; i < words.length; i++) {
-                if ((current + ' ' + words[i]).length <= 14) {
-                    current += ' ' + words[i];
-                } else {
-                    lines.push(current);
-                    current = words[i];
-                }
-            }
-            lines.push(current);
-            return lines.join('\n');
-        }
-        // Last resort: just return truncated
-        return name.length > 16 ? name.substring(0, 15) + '\u2026' : name;
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -5038,25 +4167,12 @@ window.ASDistribution = (function () {
 
     /** Add highlight class to the matching legend item */
     function highlightLegendItem(asNum) {
-        if (!legendEl) return;
-        var items = legendEl.querySelectorAll('.as-legend-item');
-        for (var i = 0; i < items.length; i++) {
-            if (items[i].dataset.as === asNum) {
-                items[i].classList.add('highlighted');
-            } else {
-                items[i].classList.add('dimmed');
-            }
-        }
+        donutController.highlightLegend(asNum);
     }
 
     /** Remove highlight class from all legend items */
     function clearLegendHighlight() {
-        if (!legendEl) return;
-        var items = legendEl.querySelectorAll('.as-legend-item');
-        for (var i = 0; i < items.length; i++) {
-            items[i].classList.remove('highlighted');
-            items[i].classList.remove('dimmed');
-        }
+        donutController.clearLegendHighlight();
     }
 
     /** Activate hover-all visual state: highlight all segments + draw all lines */
@@ -5187,7 +4303,8 @@ window.ASDistribution = (function () {
         if (_filterPeerTable) _filterPeerTable(null);
         if (_dimMapPeers) _dimMapPeers(null);
         if (_clearAsLines) _clearAsLines();
-        if (donutAnimState !== 'idle' && donutAnimState !== 'reverting') {
+        if (donutController.getAnimationState() !== 'idle' &&
+            donutController.getAnimationState() !== 'reverting') {
             animateDonutRevert();
         } else {
             renderDonut();
@@ -5296,8 +4413,9 @@ window.ASDistribution = (function () {
         document.body.classList.add('donut-focused');
 
         // Hide the legend (top 8 list) — it only shows in default mode or on interaction
-        if (legendEl) {
-            legendEl.style.display = '';
+        var legend = donutController.getLegendElement();
+        if (legend) {
+            legend.style.display = '';
         }
 
         // Activate hover-all to show lines from donut center in focused mode
@@ -5461,34 +4579,7 @@ window.ASDistribution = (function () {
 
     /** Show peer ID and provider in donut center */
     function showPeerInDonutCenter(peer, color) {
-        if (!donutCenter) return;
-        var distributionEl = donutCenter.querySelector('.as-score-distribution');
-        var headingEl = donutCenter.querySelector('.as-score-heading');
-        var scoreVal = donutCenter.querySelector('.as-score-value');
-        var qualityEl = donutCenter.querySelector('.as-score-quality');
-        var scoreLbl = donutCenter.querySelector('.as-score-label');
-
-        if (distributionEl) distributionEl.style.display = 'none';
-        if (headingEl) {
-            headingEl.textContent = 'PEER #' + peer.id;
-            headingEl.style.color = color;
-            headingEl.style.display = '';
-        }
-        if (scoreVal) {
-            var provName = peer.asname || parseAsOrg(peer.as) || '';
-            scoreVal.textContent = formatNameForDonut(provName);
-            scoreVal.className = 'as-score-value as-focused-provider';
-            scoreVal.style.color = color;
-        }
-        if (qualityEl) {
-            qualityEl.textContent = parseAsNumber(peer.as) || '';
-            qualityEl.className = 'as-score-quality';
-            qualityEl.style.color = color;
-        }
-        if (scoreLbl) {
-            scoreLbl.textContent = '';
-            scoreLbl.classList.remove('as-summary-link');
-        }
+        donutController.renderPeerCenter(peer, color);
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -5566,15 +4657,17 @@ window.ASDistribution = (function () {
     function init() {
         containerEl = document.getElementById('as-distribution-container');
         titleEl = document.getElementById('as-donut-title');
-        donutWrapEl = document.getElementById('as-donut-wrap');
-        donutSvg = document.getElementById('as-donut');
-        donutCenter = document.getElementById('as-donut-center');
-        legendEl = document.getElementById('as-legend');
         lensToggleEl = document.getElementById('as-lens-toggle');
         panelEl = document.getElementById('as-detail-panel');
-        loadingEl = containerEl ? containerEl.querySelector('.as-loading') : null;
         focusedCloseBtn = document.getElementById('as-focused-close');
-        insightRectEl = document.getElementById('as-insight-rect');
+        donutController.init({
+            wrap: document.getElementById('as-donut-wrap'),
+            svg: document.getElementById('as-donut'),
+            center: document.getElementById('as-donut-center'),
+            legend: document.getElementById('as-legend'),
+            loading: containerEl ? containerEl.querySelector('.as-loading') : null,
+            insight: document.getElementById('as-insight-rect'),
+        });
 
         // Hover-all: title triggers all-segments highlight; click enters focused mode
         if (titleEl) {
@@ -5589,13 +4682,14 @@ window.ASDistribution = (function () {
         }
         // Donut center: hover previews all lines, click enters focused mode
         // NOTE: We intentionally do NOT add separate mouseenter/mouseleave on as-score-label,
-        // because donutCenter already covers it. Adding handlers on the child causes
+        // because the center already covers it. Adding handlers on the child causes
         // lines to disappear when the mouse moves from the label to the score value
         // (child mouseleave fires while still inside the parent).
-        if (donutCenter) {
-            donutCenter.addEventListener('mouseenter', onTitleEnter);
-            donutCenter.addEventListener('mouseleave', onTitleLeave);
-            donutCenter.addEventListener('click', function (e) {
+        var center = donutController.getCenterElement();
+        if (center) {
+            center.addEventListener('mouseenter', onTitleEnter);
+            center.addEventListener('mouseleave', onTitleLeave);
+            center.addEventListener('click', function (e) {
                 e.stopPropagation();
                 if (!donutFocused) {
                     enterFocusedMode();
@@ -5685,15 +4779,7 @@ window.ASDistribution = (function () {
         var pendingPct = peers.length > 0 ? (pendingCount / peers.length) * 100 : 0;
         var isGeoLoading = pendingPct > 10;
 
-        // Show/hide the loading overlay
-        if (loadingEl) {
-            if (isGeoLoading) {
-                loadingEl.textContent = 'Locating ' + pendingCount + ' peer' + (pendingCount !== 1 ? 's' : '') + '\u2026';
-                loadingEl.style.display = '';
-            } else if (hasRenderedOnce) {
-                loadingEl.style.display = 'none';
-            }
-        }
+        donutController.updateLoading(pendingCount, isGeoLoading);
 
         asGroups = aggregatePeers(peers);
         distributionScore = calcDistributionScore(asGroups);
@@ -6007,7 +5093,7 @@ window.ASDistribution = (function () {
                             if (_dimMapPeers) _dimMapPeers(provGroup.peerIds);
                             // Preserve insight rect state
                             insightActiveAsNum = distributionState.filterLabel;
-                            if (donutFocused && insightRectVisible) {
+                            if (donutFocused && donutController.isInsightVisible()) {
                                 var insRectData = getInsightDataForActive();
                                 if (insRectData) showInsightRect(insightActiveType, insRectData);
                             } else if (donutFocused) {
@@ -6159,7 +5245,7 @@ window.ASDistribution = (function () {
                     // Preserve insight rect state for all insight categories
                     // (but skip if a peer is being hovered — that takes priority)
                     if (insightActiveAsNum && donutFocused && !distributionState.hoveredPeerId) {
-                        if (insightRectVisible) {
+                        if (donutController.isInsightVisible()) {
                             var insRectData = getInsightDataForActive();
                             if (insRectData) showInsightRect(insightActiveType, insRectData);
                         } else {
@@ -6244,7 +5330,7 @@ window.ASDistribution = (function () {
                     if (_dimMapPeers) _dimMapPeers(insightPeerIds);
                     setLegendFocus(savedInsightAsNum);
                     if (donutFocused) {
-                        if (insightRectVisible) {
+                        if (donutController.isInsightVisible()) {
                             var insRectData = getInsightDataForActive();
                             if (insRectData) showInsightRect(insightActiveType, insRectData);
                         } else {
@@ -6261,41 +5347,18 @@ window.ASDistribution = (function () {
 
     /** Get the donut center screen position for line drawing */
     function getDonutCenter() {
-        if (!donutWrapEl) return null;
-        var rect = donutWrapEl.getBoundingClientRect();
-        return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+        return donutController.getDonutCenterPosition();
     }
 
     /** Get the screen position of a legend dot for a specific AS number.
      *  Returns {x, y} in page coords, or null if not found / legend not visible. */
     function getLegendDotPosition(asNum) {
-        if (!legendEl) return null;
-        var items = legendEl.querySelectorAll('.as-legend-item');
-        for (var i = 0; i < items.length; i++) {
-            if (items[i].dataset.as === asNum) {
-                var dot = items[i].querySelector('.as-legend-dot');
-                if (dot) {
-                    var rect = dot.getBoundingClientRect();
-                    // Check if actually visible (legend might be hidden)
-                    if (rect.width === 0 && rect.height === 0) return null;
-                    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-                }
-            }
-        }
-        return null;
+        return donutController.getLegendDotPosition(asNum);
     }
 
     /** Get the position of the insight rect origin circle (bottom center dot). */
     function getInsightRectOrigin() {
-        if (!insightRectEl || !insightRectVisible) return null;
-        var originDot = insightRectEl.querySelector('.as-insight-rect-origin');
-        if (originDot) {
-            var rect = originDot.getBoundingClientRect();
-            if (rect.width > 0 && rect.height > 0) {
-                return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-            }
-        }
-        return null;
+        return donutController.getInsightOrigin();
     }
 
     /** Get the line origin position for a given AS number.
@@ -6305,7 +5368,7 @@ window.ASDistribution = (function () {
      *  - Final fallback: donut center (only when legend genuinely not rendered). */
     function getLineOriginForAs(asNum) {
         // When insight rect is visible, lines come from the origin circle at the bottom
-        if (insightRectVisible) {
+        if (donutController.isInsightVisible()) {
             var origin = getInsightRectOrigin();
             if (origin) return origin;
         }

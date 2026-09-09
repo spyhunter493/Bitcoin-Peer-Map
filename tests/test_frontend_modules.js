@@ -46,6 +46,7 @@ function loadScript(sandbox, path) {
     loadScript(sandbox, 'src/static/js/features/distribution-data.js');
     loadScript(sandbox, 'src/static/js/features/distribution-peer-detail.js');
     loadScript(sandbox, 'src/static/js/features/distribution-network-panel.js');
+    loadScript(sandbox, 'src/static/js/features/distribution-donut.js');
 
     assert.strictEqual(typeof sandbox.window.BPMDisplaySettings.create, 'function');
 
@@ -72,6 +73,81 @@ function loadScript(sandbox, path) {
     const hostile = `<img src=x onerror="alert(1)"> & '`;
     const escaped = '&lt;img src=x onerror=&quot;alert(1)&quot;&gt; &amp; &#39;';
     assert.strictEqual(sandbox.window.BPMModal.escapeHtml(hostile), escaped);
+
+    const donut = sandbox.window.BPMDistributionDonut;
+    assert.strictEqual(typeof donut.create, 'function');
+    assert.ok(donut.describeArc(10, 10, 8, 4, 0, Math.PI).endsWith('Z'));
+    assert.strictEqual(donut.getQuality(8).word, 'Excellent');
+    assert.ok(donut.buildScoreTooltip(7.5).includes('7.5/10 (Good)'));
+    assert.strictEqual(donut.formatNameForDonut('A-Very-Long-Provider'), 'A-Very-Long\nProvider');
+
+    const donutSvg = donut.buildDonutSvg({
+        segments: [
+            { asNumber: 'AS1', peerCount: 3, color: '#123456' },
+            { asNumber: hostile, peerCount: 1, color: '#abcdef' },
+        ],
+        totalPeers: 4,
+        size: 260,
+        radius: 116,
+        width: 28,
+        selectedWidth: 40,
+        dimmedWidth: 14,
+        expandedRatio: 0.7,
+        selectedProvider: 'AS1',
+        animation: { state: 'idle', target: null, progress: 0 },
+    });
+    assert.ok(donutSvg.includes('as-donut-segment selected'));
+    assert.ok(donutSvg.includes('as-donut-segment dimmed'));
+    assert.ok(donutSvg.includes('tabindex="0" role="button"'));
+    assert.ok(donutSvg.includes(escaped));
+    assert.ok(!donutSvg.includes('<img'));
+    const expandedDonutSvg = donut.buildDonutSvg({
+        segments: [
+            { asNumber: 'AS1', peerCount: 3, color: '#123456' },
+            { asNumber: hostile, peerCount: 1, color: '#abcdef' },
+        ],
+        totalPeers: 4,
+        size: 260,
+        radius: 116,
+        width: 28,
+        selectedWidth: 40,
+        dimmedWidth: 14,
+        expandedRatio: 0.7,
+        selectedProvider: 'AS1',
+        animation: { state: 'expanded', target: 'AS1', progress: 1 },
+    });
+    assert.notStrictEqual(expandedDonutSvg, donutSvg);
+
+    const legend = donut.buildLegendHtml({
+        segments: [{
+            asNumber: 'AS1',
+            asName: hostile,
+            peerCount: 4,
+            percentage: 100,
+            color: '#123456',
+        }],
+        groups: [],
+        totalPeers: 4,
+        countryLens: false,
+        maxSegments: 8,
+        getColor: () => '#123456',
+    });
+    assert.ok(legend.includes(escaped));
+    assert.ok(legend.includes('role="button" tabindex="0"'));
+    assert.ok(!legend.includes('<img'));
+
+    const insight = donut.buildInsightHtml('fastest', {
+        provName: hostile,
+        asNumber: 'AS1',
+        peerIds: [1],
+        avgPing: 12.25,
+        rank: 1,
+        color: '#123456',
+    });
+    assert.ok(insight.includes('type="button"'));
+    assert.ok(insight.includes('aria-label="Back to distribution summary"'));
+    assert.ok(insight.includes(escaped));
+    assert.ok(!insight.includes('<img'));
 
     const row = sandbox.window.BPMModal.row(hostile, hostile, hostile, hostile, 'ok" onclick="bad');
     assert.ok(row.includes(escaped));

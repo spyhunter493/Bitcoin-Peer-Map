@@ -19,6 +19,7 @@ loadScript(sandbox, 'src/static/js/features/distribution-state.js');
 loadScript(sandbox, 'src/static/js/features/distribution-data.js');
 loadScript(sandbox, 'src/static/js/features/distribution-peer-detail.js');
 loadScript(sandbox, 'src/static/js/features/distribution-network-panel.js');
+loadScript(sandbox, 'src/static/js/features/distribution-donut.js');
 
 const peerDetail = sandbox.window.BPMDistributionPeerDetail;
 const escapeHtml = sandbox.window.BPMModal.escapeHtml;
@@ -99,7 +100,9 @@ assert.ok(!peerDetailSource.includes('fetch('));
 const source = fs.readFileSync('src/static/js/as-distribution.js', 'utf8');
 assert.ok(!source.includes("fetch('/api/peer/disconnect'"));
 assert.ok(!source.includes("fetch('/api/peer/ban'"));
+assert.ok(!source.includes('function describeArc'));
+assert.ok(!source.includes("querySelector('.as-score-"));
 loadScript(sandbox, 'src/static/js/as-distribution.js');
 assert.strictEqual(typeof sandbox.window.ASDistribution.openPeerDetailPanel, 'function');
 
-console.log('Distribution peer-detail module tests passed');
+console.log('Distribution feature module tests passed');
