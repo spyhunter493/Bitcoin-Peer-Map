@@ -23,6 +23,13 @@
         subSubFilterProvider: null,
         subSubFilterColor: null,
         panelHistory: null,
+        // Shared by summary, tooltip, donut, and peer-detail controllers.
+        donutFocused: false,
+        peerDetailActive: false,
+        selectedPeerId: null,
+        insightActiveAsNum: null,
+        insightActiveType: null,
+        insightActiveData: null,
     });
 
     function create(initialValues) {

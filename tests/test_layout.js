@@ -477,6 +477,113 @@ async function assertAdvancedDisplaySettings(page) {
     await page.keyboard.press('Escape');
 }
 
+async function assertDistributionSummaryInteractions(page) {
+    await page.waitForSelector('#as-detail-panel .as-detail-asn.as-summary-title');
+    const category = page.locator('#as-detail-panel .as-summary-row[data-cat-label="IPv4"]');
+    await category.hover();
+    await page.waitForSelector('#as-sub-tooltip .as-provider-row');
+    assert.strictEqual(await category.evaluate(row => row.classList.contains('sub-filter-active')), false);
+    await page.mouse.move(10, 10);
+    await page.waitForSelector('#as-sub-tooltip', { state: 'hidden' });
+
+    await category.focus();
+    await page.keyboard.press('Space');
+    await page.waitForSelector('#as-sub-tooltip .as-provider-row');
+    const provider = page.locator('#as-sub-tooltip .as-provider-row').first();
+    await provider.click();
+    await page.waitForSelector('#as-sub-sub-tooltip .as-sub-tt-id-link');
+
+    // Polling must preserve the actual pinned DOM and its source row for toggling.
+    const preserved = await page.evaluate(() => {
+        const body = document.querySelector('#as-detail-panel .as-detail-body');
+        const row = body.querySelector('[data-cat-label="IPv4"]');
+        const tip = document.getElementById('as-sub-tooltip');
+        const peerLink = document.querySelector('#as-sub-sub-tooltip .as-sub-tt-id-link');
+        const peerId = Number(peerLink.dataset.peerId);
+        const scrollTop = body.scrollTop;
+        const peers = window.ASDistribution.getLastPeersRaw().map(peer => ({ ...peer }));
+        window.ASDistribution.update(peers);
+        return {
+            rowPreserved: row === body.querySelector('[data-cat-label="IPv4"]'),
+            providerPreserved: tip.querySelector('.as-provider-row-selected') !== null,
+            peerPreserved: peerLink === document.querySelector('#as-sub-sub-tooltip .as-sub-tt-id-link'),
+            scrollPreserved: scrollTop === body.scrollTop,
+            peerId,
+        };
+    });
+    assert.strictEqual(preserved.rowPreserved, true);
+    assert.strictEqual(preserved.providerPreserved, true);
+    assert.strictEqual(preserved.peerPreserved, true);
+    assert.strictEqual(preserved.scrollPreserved, true);
+
+    await page.locator('#as-sub-sub-tooltip .as-sub-tt-id-link').first().click();
+    await page.waitForSelector('.peer-detail-popup.visible');
+    assert.strictEqual(await page.locator('.peer-popup-name').textContent(), `Peer #${preserved.peerId}`);
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('.peer-detail-popup', { state: 'detached' });
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('#as-sub-sub-tooltip', { state: 'hidden' });
+    assert.strictEqual(await page.locator('#as-sub-tooltip').isVisible(), true);
+    await category.click();
+    await page.waitForSelector('#as-sub-tooltip', { state: 'hidden' });
+    assert.strictEqual(await category.evaluate(row => row.classList.contains('sub-filter-active')), false);
+
+    // Connections, outbound subtypes, and the Others bucket use distinct drill-down paths.
+    for (const selector of ['.as-conn-prov-row', '.as-conn-out-row', '.as-conn-dir-row', '.as-conn-others-row']) {
+        const row = page.locator('#as-detail-panel ' + selector).first();
+        await row.click();
+        await page.waitForSelector('#as-sub-tooltip', { state: 'visible' });
+        if (selector === '.as-conn-others-row') {
+            await page.locator('#as-sub-tooltip .as-provider-row').first().click();
+            await page.waitForSelector('#as-sub-sub-tooltip', { state: 'visible' });
+            await page.keyboard.press('Escape');
+        } else {
+            assert.ok(await page.locator('#as-sub-tooltip .as-sub-tt-id-link').count() > 0);
+        }
+        await page.keyboard.press('Escape');
+        await page.waitForSelector('#as-sub-tooltip', { state: 'hidden' });
+    }
+
+    // All three insight formats must remain interactive after moving into their own module.
+    for (const selector of ['.as-stable-link', '.as-fastest-link', '.as-data-providers-link[data-field="bytessent"]', '.as-data-providers-link[data-field="bytesrecv"]']) {
+        await page.locator('#as-detail-panel ' + selector).click();
+        await page.waitForSelector('#as-sub-tooltip', { state: 'visible' });
+        if (selector !== '.as-stable-link') {
+            await page.locator('#as-sub-tooltip .as-provider-row').first().click();
+            await page.waitForSelector('#as-sub-sub-tooltip .as-sub-tt-rank');
+            await page.evaluate(() => window.ASDistribution.update(window.ASDistribution.getLastPeersRaw()));
+            assert.strictEqual(await page.locator('#as-sub-sub-tooltip').isVisible(), true);
+            await page.keyboard.press('Escape');
+        }
+        await page.keyboard.press('Escape');
+        await page.waitForSelector('#as-sub-tooltip', { state: 'hidden' });
+    }
+
+    // Provider navigation returns to summary, whose scroll position survives polling.
+    await page.locator('#as-detail-panel .as-detail-body .as-all-providers-link').click();
+    await page.locator('#as-sub-tooltip .as-provider-click').first().click();
+    await page.waitForSelector('#as-detail-panel .as-detail-asn:not(.as-summary-title)');
+    await page.locator('#as-detail-panel .as-detail-back').click();
+    await page.waitForSelector('#as-detail-panel .as-detail-asn.as-summary-title');
+    const summaryScroll = await page.locator('#as-detail-panel .as-detail-body').evaluate(body => {
+        body.scrollTop = 100;
+        const scrollTop = body.scrollTop;
+        window.ASDistribution.update(window.ASDistribution.getLastPeersRaw());
+        return [scrollTop, body.scrollTop];
+    });
+    assert.strictEqual(summaryScroll[1], summaryScroll[0]);
+
+    await page.locator('.as-lens-btn[data-lens="country"]').click();
+    await page.waitForSelector('#as-detail-panel .as-country-summary-row');
+    assert.match(await page.locator('#as-detail-panel .as-detail-asn').textContent(), /PEER COUNTRY/);
+    await page.locator('#as-detail-panel .as-country-summary-row').first().click();
+    await page.waitForSelector('#as-detail-panel .as-detail-asn:not(.as-summary-title)');
+    await page.locator('#as-detail-panel .as-detail-back').click();
+    await page.waitForSelector('#as-detail-panel .as-country-summary-row');
+    await page.locator('.as-lens-btn[data-lens="provider"]').click();
+    await page.waitForSelector('#as-detail-panel .as-summary-row');
+}
+
 async function assertPeerControlsResponsive(browser, baseUrl) {
     const compactContext = await browser.newContext({ viewport: { width: 1080, height: 728 } });
     await compactContext.addInitScript(() => {
@@ -580,6 +687,7 @@ async function assertPeerControlsResponsive(browser, baseUrl) {
         });
         await assertChainTipsModal(page);
         await assertDistributionNetworkPanelInteractions(page);
+        await assertDistributionSummaryInteractions(page);
         await assertDistributionPeerDetailInteractions(page);
         await assertPeerActionInteractions(page);
         await assertAdvancedDisplaySettings(page);

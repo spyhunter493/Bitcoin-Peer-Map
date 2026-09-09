@@ -20,6 +20,10 @@ loadScript(sandbox, 'src/static/js/features/distribution-data.js');
 loadScript(sandbox, 'src/static/js/features/distribution-peer-detail.js');
 loadScript(sandbox, 'src/static/js/features/distribution-network-panel.js');
 loadScript(sandbox, 'src/static/js/features/distribution-donut.js');
+loadScript(sandbox, 'src/static/js/features/distribution-summary-panel.js');
+loadScript(sandbox, 'src/static/js/features/distribution-tooltips.js');
+loadScript(sandbox, 'src/static/js/features/distribution-summary-insights.js');
+loadScript(sandbox, 'src/static/js/features/distribution-summary.js');
 
 const peerDetail = sandbox.window.BPMDistributionPeerDetail;
 const escapeHtml = sandbox.window.BPMModal.escapeHtml;
@@ -102,6 +106,62 @@ assert.ok(!source.includes("fetch('/api/peer/disconnect'"));
 assert.ok(!source.includes("fetch('/api/peer/ban'"));
 assert.ok(!source.includes('function describeArc'));
 assert.ok(!source.includes("querySelector('.as-score-"));
+
+const summaryState = sandbox.window.BPMDistributionState.create();
+assert.strictEqual(summaryState.donutFocused, false);
+assert.strictEqual(summaryState.peerDetailActive, false);
+assert.strictEqual(summaryState.selectedPeerId, null);
+assert.strictEqual(summaryState.insightActiveType, null);
+summaryState.donutFocused = true;
+summaryState.insightActiveAsNum = 'AS64500';
+summaryState.insightActiveType = 'fastest';
+assert.strictEqual(summaryState.snapshot().insightActiveAsNum, 'AS64500');
+assert.strictEqual(sandbox.window.BPMDistributionState.create().insightActiveAsNum, null);
+
+// Controllers are created before init/setHooks/update: they must read current data and hooks.
+let currentSegments = [];
+let drawLines = null;
+const filtered = [];
+const centerPreviews = [];
+const summary = sandbox.window.BPMDistributionSummary.create({
+    state: summaryState,
+    data: { get segments() { return currentSegments; } },
+    elements: { panel: null },
+    hooks: {
+        filterPeerTable: ids => filtered.push(Array.from(ids)),
+        get drawLinesForAllAs() { return drawLines; },
+    },
+    actions: { getActiveTotalPeers: () => 3 },
+    donut: { renderFilterCenter: (...args) => centerPreviews.push(args) },
+    serviceFlags,
+    connectionTypeLabels: {},
+});
+summary.previewSummaryLines([7]);
+currentSegments = [
+    { asNumber: 'AS64500', peerIds: [7, 8], color: '#58a6ff' },
+    { asNumber: 'AS64501', peerIds: [9], color: '#3fb950' },
+];
+let drawn;
+drawLines = groups => { drawn = JSON.parse(JSON.stringify(groups)); };
+summary.previewSummaryLines([8, 9]);
+assert.deepStrictEqual(filtered, [[7], [8, 9]]);
+assert.deepStrictEqual(drawn, [
+    { asNum: 'AS64500', peerIds: [8], color: '#58a6ff' },
+    { asNum: 'AS64501', peerIds: [9], color: '#3fb950' },
+]);
+summary.previewSummaryCenterText([8, 9], 'IPv4');
+assert.strictEqual(summaryState.summaryPreviewLabel, 'IPv4');
+assert.deepStrictEqual(centerPreviews, [[2, 'IPv4', 3]]);
+
+const summaryRow = summary.view.summaryInteractiveRow(hostile, '2p / 1prov', {
+    peerIds: [7, 8],
+    providers: [{ asNumber: 'AS64500', name: hostile, color: '#58a6ff', peerCount: 2, peerIds: [7, 8] }],
+});
+assert.ok(summaryRow.includes('role="button" tabindex="0"'));
+assert.ok(summaryRow.includes('data-cat-label="' + escaped + '"'));
+assert.ok(summaryRow.includes('data-peer-ids="[7,8]"'));
+assert.ok(!summaryRow.includes('<img'));
+
 loadScript(sandbox, 'src/static/js/as-distribution.js');
 assert.strictEqual(typeof sandbox.window.ASDistribution.openPeerDetailPanel, 'function');
 
