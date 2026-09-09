@@ -42,11 +42,32 @@ function loadScript(sandbox, path) {
     loadScript(sandbox, 'src/static/js/features/peer-actions.js');
     loadScript(sandbox, 'src/static/js/features/display-settings.js');
     loadScript(sandbox, 'src/static/js/features/world-map.js');
+    loadScript(sandbox, 'src/static/js/features/distribution-state.js');
     loadScript(sandbox, 'src/static/js/features/distribution-data.js');
     loadScript(sandbox, 'src/static/js/features/distribution-peer-detail.js');
     loadScript(sandbox, 'src/static/js/features/distribution-network-panel.js');
 
     assert.strictEqual(typeof sandbox.window.BPMDisplaySettings.create, 'function');
+
+    const distributionState = sandbox.window.BPMDistributionState.create();
+    assert.strictEqual(distributionState.lens, 'provider');
+    assert.strictEqual(distributionState.selectedProvider, null);
+    distributionState.selectedProvider = 'AS64500';
+    distributionState.filterPeerIds = [1, 2];
+    distributionState.filterLabel = 'IPv4';
+    distributionState.subTooltipPinned = true;
+    assert.strictEqual(distributionState.snapshot().selectedProvider, 'AS64500');
+    distributionState.resetFilters();
+    assert.strictEqual(distributionState.filterPeerIds, null);
+    assert.strictEqual(distributionState.filterLabel, null);
+    assert.strictEqual(distributionState.subTooltipPinned, false);
+    assert.strictEqual(distributionState.setLens('country'), true);
+    assert.strictEqual(distributionState.lens, 'country');
+    assert.strictEqual(distributionState.setLens('invalid'), false);
+    assert.strictEqual(distributionState.lens, 'country');
+    distributionState.resetNavigation();
+    assert.strictEqual(distributionState.selectedProvider, null);
+    assert.strictEqual(distributionState.lens, 'country');
 
     const hostile = `<img src=x onerror="alert(1)"> & '`;
     const escaped = '&lt;img src=x onerror=&quot;alert(1)&quot;&gt; &amp; &#39;';

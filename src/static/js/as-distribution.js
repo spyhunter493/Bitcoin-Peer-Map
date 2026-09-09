@@ -39,23 +39,17 @@ window.ASDistribution = (function () {
     // STATE
     // ═══════════════════════════════════════════════════════════
 
+    const distributionState = window.BPMDistributionState.create();
     let asGroups = [];             // Aggregated AS data (sorted by count desc)
     let donutSegments = [];        // Top N + Others for donut rendering
     let countryGroups = [];        // Aggregated country/jurisdiction data
     let countryDonutSegments = []; // Top N + Others for country donut rendering
-    let activeDistributionLens = 'provider'; // 'provider' | 'country'
-    let hoveredAs = null;          // AS number string currently hovered
-    let hoveredAll = false;        // True when title or SUMMARY ANALYSIS is hovered
-    let summarySelected = false;   // True when Summary Analysis panel is open
-    let selectedAs = null;         // AS number string currently selected (clicked)
     let distributionScore = 0;        // 0-10 score
     let totalPeers = 0;
     let countryDistributionScore = 0;
     let countryTotalPeers = 0;
     let hasRenderedOnce = false;   // Track if we've ever rendered data
-    let legendFocusAs = null;      // AS number to exclusively show in legend during panel hover
     let donutFocused = false;      // True when in focused mode (donut at top-center)
-    let focusedHoverAs = null;     // AS hovered in focused mode (for center text display)
     let othersListOpen = false;    // True when Others popup is showing next to the donut
     let legendsHidden = false;     // True when "Display Top ISP/Net" toggle is OFF
 
@@ -81,27 +75,15 @@ window.ASDistribution = (function () {
     let loadingEl = null;
     let focusedCloseBtn = null;
 
-    // Sub-filter state: when user clicks a sub-row (software, service, country, conn type, others provider)
-    let subFilterPeerIds = null;   // Array of peer IDs for the active sub-filter, or null
-    let subFilterLabel = null;     // Description of what's being sub-filtered
-    let subFilterCategory = null;  // Category key ('software', 'conntype', 'country', 'services', 'provider')
-    let subTooltipPinned = false;  // Whether the sub-tooltip is pinned (clicked vs hovered)
-    let subSubTooltipPinned = false; // Whether the sub-sub-tooltip is pinned
-    let subSubFilterPeerIds = null;  // Peer IDs at sub-sub level (specific provider within a category drill-down)
-    let subSubFilterAsNum = null;    // AS number for the sub-sub drill-down provider
-    let subSubFilterColor = null;    // Line color for the sub-sub drill-down provider
+    // DOM references associated with filter interactions remain local to this view.
     let pinnedSubTooltipSrc = null;  // Source element that opened the pinned sub-tooltip
     let lastPeersRaw = [];         // Raw peers from last update (for summary computation)
-    let panelHistory = [];         // Navigation stack [{type:'summary'|'provider', asNumber?, scrollTop?}]
     let peerDetailActive = false;  // True when peer detail panel is shown (from peer list/map click)
     let insightActiveAsNum = null;  // AS number to show in donut when an insight is active (Most Stable, Fastest, etc.)
     let insightActiveType = null;   // Type of insight active: 'stable', 'fastest', 'data-bytessent', 'data-bytesrecv'
     let insightActiveData = null;   // Full data object for the active insight provider (for restoring after peer hover)
     let insightRectEl = null;       // DOM ref for insight rectangle overlay
     let insightRectVisible = false; // Whether the insight rectangle is currently shown
-    let hoveredPeerId = null;       // Peer ID currently being hovered in a subtooltip (for update preservation)
-    let summaryPreviewPeerIds = null;  // Peer IDs for active summary hover preview (preservation across refresh)
-    let summaryPreviewLabel = null;    // Label for active summary hover preview
     let selectedPeerId = null;      // Peer ID that was clicked/selected (persists through hover cycles)
 
     // Integration hooks (set by app.js)
@@ -196,7 +178,7 @@ window.ASDistribution = (function () {
     }
 
     function isCountryLens() {
-        return activeDistributionLens === 'country';
+        return distributionState.lens === 'country';
     }
 
     function getActiveGroups() {
@@ -524,8 +506,8 @@ window.ASDistribution = (function () {
                 var d = describeArc(cx, cy, segOuter, segInner, segAngles[si].start, segAngles[si].end);
 
                 var cls = ['as-donut-segment'];
-                if (selectedAs && selectedAs !== seg.asNumber) cls.push('dimmed');
-                if (selectedAs === seg.asNumber) cls.push('selected');
+                if (distributionState.selectedProvider && distributionState.selectedProvider !== seg.asNumber) cls.push('dimmed');
+                if (distributionState.selectedProvider === seg.asNumber) cls.push('selected');
 
                 html += '<path d="' + d + '" fill="' + seg.color + '" class="' + cls.join(' ') + '" data-as="' + seg.asNumber + '" />';
             }
@@ -734,7 +716,7 @@ window.ASDistribution = (function () {
                 animateDonutRevert();
                 renderCenter();
                 // Restore summary all-lines
-                if (summarySelected) {
+                if (distributionState.summarySelected) {
                     clearSummarySubFilter();
                 }
             });
@@ -887,20 +869,20 @@ window.ASDistribution = (function () {
 
 
         // In focused mode with hover active, preserve the hover display during data updates
-        if (donutFocused && focusedHoverAs && !selectedAs) {
-            showFocusedCenterText(focusedHoverAs);
+        if (donutFocused && distributionState.focusedHoverProvider && !distributionState.selectedProvider) {
+            showFocusedCenterText(distributionState.focusedHoverProvider);
             return;
         }
 
         // With legends hidden and hover active, preserve provider info during data updates
-        if (legendsHidden && !donutFocused && focusedHoverAs && !selectedAs) {
-            showLegendHoverCenterText(focusedHoverAs);
+        if (legendsHidden && !donutFocused && distributionState.focusedHoverProvider && !distributionState.selectedProvider) {
+            showLegendHoverCenterText(distributionState.focusedHoverProvider);
             return;
         }
 
         // If an insight is active (Most Stable, Fastest, etc.) and no AS is selected,
         // refresh the insight rectangle (it replaces the donut)
-        if (insightActiveAsNum && summarySelected && !selectedAs && donutFocused) {
+        if (insightActiveAsNum && distributionState.summarySelected && !distributionState.selectedProvider && donutFocused) {
             if (insightRectVisible) {
                 // Rect is already visible — refresh its data
                 var insData = getInsightDataForActive();
@@ -912,7 +894,7 @@ window.ASDistribution = (function () {
         }
 
         // If a summary sub-filter is active (e.g. IPv4, IPv6), show category info in donut center
-        if (donutFocused && summarySelected && subFilterPeerIds && subFilterLabel && !selectedAs) {
+        if (donutFocused && distributionState.summarySelected && distributionState.filterPeerIds && distributionState.filterLabel && !distributionState.selectedProvider) {
             var distributionEl2 = donutCenter.querySelector('.as-score-distribution');
             var headingEl2 = donutCenter.querySelector('.as-score-heading');
             var scoreVal2 = donutCenter.querySelector('.as-score-value');
@@ -920,18 +902,18 @@ window.ASDistribution = (function () {
             var scoreLbl2 = donutCenter.querySelector('.as-score-label');
             if (distributionEl2) distributionEl2.style.display = 'none';
             if (headingEl2) {
-                headingEl2.textContent = subFilterPeerIds.length + ' PEER' + (subFilterPeerIds.length !== 1 ? 'S' : '');
+                headingEl2.textContent = distributionState.filterPeerIds.length + ' PEER' + (distributionState.filterPeerIds.length !== 1 ? 'S' : '');
                 headingEl2.style.color = 'var(--accent)';
                 headingEl2.style.display = '';
             }
             if (scoreVal2) {
-                scoreVal2.textContent = subFilterLabel;
+                scoreVal2.textContent = distributionState.filterLabel;
                 scoreVal2.className = 'as-score-value as-selected-mode';
                 scoreVal2.style.color = 'var(--text-primary)';
-                scoreVal2.title = subFilterLabel + ' — ' + subFilterPeerIds.length + ' peers';
+                scoreVal2.title = distributionState.filterLabel + ' — ' + distributionState.filterPeerIds.length + ' peers';
             }
             if (qualityEl2) {
-                var pctOfTotal = activePeerTotal > 0 ? ((subFilterPeerIds.length / activePeerTotal) * 100).toFixed(1) : '0.0';
+                var pctOfTotal = activePeerTotal > 0 ? ((distributionState.filterPeerIds.length / activePeerTotal) * 100).toFixed(1) : '0.0';
                 qualityEl2.textContent = pctOfTotal + '% of peers';
                 qualityEl2.className = 'as-score-quality';
                 qualityEl2.style.color = 'var(--text-secondary)';
@@ -943,15 +925,15 @@ window.ASDistribution = (function () {
         }
 
         // If a summary row hover preview is active, preserve it across data refresh
-        if (donutFocused && summarySelected && summaryPreviewPeerIds && summaryPreviewLabel && !selectedAs) {
-            previewSummaryCenterText(summaryPreviewPeerIds, summaryPreviewLabel);
+        if (donutFocused && distributionState.summarySelected && distributionState.summaryPreviewPeerIds && distributionState.summaryPreviewLabel && !distributionState.selectedProvider) {
+            previewSummaryCenterText(distributionState.summaryPreviewPeerIds, distributionState.summaryPreviewLabel);
             return;
         }
 
         // If a network panel (IPv4/IPv6) is open, show network info in center
-        if (donutFocused && activeNetworkPanel && !selectedAs) {
+        if (donutFocused && distributionState.activeNetwork && !distributionState.selectedProvider) {
             // If a sub-filter is active within the network panel, show that category
-            if (subFilterPeerIds && subFilterLabel) {
+            if (distributionState.filterPeerIds && distributionState.filterLabel) {
                 var distributionEl2 = donutCenter.querySelector('.as-score-distribution');
                 var headingEl2 = donutCenter.querySelector('.as-score-heading');
                 var scoreVal2 = donutCenter.querySelector('.as-score-value');
@@ -959,18 +941,18 @@ window.ASDistribution = (function () {
                 var scoreLbl2 = donutCenter.querySelector('.as-score-label');
                 if (distributionEl2) distributionEl2.style.display = 'none';
                 if (headingEl2) {
-                    headingEl2.textContent = subFilterPeerIds.length + ' PEER' + (subFilterPeerIds.length !== 1 ? 'S' : '');
+                    headingEl2.textContent = distributionState.filterPeerIds.length + ' PEER' + (distributionState.filterPeerIds.length !== 1 ? 'S' : '');
                     headingEl2.style.color = 'var(--accent)';
                     headingEl2.style.display = '';
                 }
                 if (scoreVal2) {
-                    scoreVal2.textContent = subFilterLabel;
+                    scoreVal2.textContent = distributionState.filterLabel;
                     scoreVal2.className = 'as-score-value as-selected-mode';
                     scoreVal2.style.color = 'var(--text-primary)';
-                    scoreVal2.title = subFilterLabel + ' — ' + subFilterPeerIds.length + ' peers';
+                    scoreVal2.title = distributionState.filterLabel + ' — ' + distributionState.filterPeerIds.length + ' peers';
                 }
                 if (qualityEl2) {
-                    var pctOfTotal = activePeerTotal > 0 ? ((subFilterPeerIds.length / activePeerTotal) * 100).toFixed(1) : '0.0';
+                    var pctOfTotal = activePeerTotal > 0 ? ((distributionState.filterPeerIds.length / activePeerTotal) * 100).toFixed(1) : '0.0';
                     qualityEl2.textContent = pctOfTotal + '% of peers';
                     qualityEl2.className = 'as-score-quality';
                     qualityEl2.style.color = 'var(--text-secondary)';
@@ -981,7 +963,7 @@ window.ASDistribution = (function () {
                 return;
             }
             // No sub-filter — show the network overview
-            var npNetKey = activeNetworkPanel;
+            var npNetKey = distributionState.activeNetwork;
             var npNetLabel = npNetKey === 'ipv4' ? 'IPv4' : 'IPv6';
             var npNetColor = npNetKey === 'ipv4' ? 'var(--net-ipv4, #e3b341)' : 'var(--net-ipv6, #f07178)';
             var npNetPeers = lastPeersRaw.filter(function (p) {
@@ -1024,14 +1006,14 @@ window.ASDistribution = (function () {
         if (!scoreVal || !scoreLbl) return;
 
         // If an AS is selected, show AS info instead of score
-        if (selectedAs) {
-            var seg = findActiveSegmentOrGroup(selectedAs);
+        if (distributionState.selectedProvider) {
+            var seg = findActiveSegmentOrGroup(distributionState.selectedProvider);
             if (seg) {
                 var displayName = seg.isOthers ? 'Others' : (seg.asShort || seg.asName || seg.asNumber);
                 if (displayName.length > 14) displayName = displayName.substring(0, 13) + '\u2026';
 
                 // Show "← Others" back link for sub-groups, else active lens label
-                var isSubProv = isOthersSubProvider(selectedAs);
+                var isSubProv = isOthersSubProvider(distributionState.selectedProvider);
                 if (distributionEl) {
                     if (isSubProv && donutFocused) {
                         distributionEl.innerHTML = '<span class="as-others-back-link">\u2190 Others</span>';
@@ -1144,7 +1126,7 @@ window.ASDistribution = (function () {
         var headerLabel = isCountryLens() ? 'COUNTRIES' : 'PROVIDERS';
 
         // When a provider is hovered in the panel, show only that provider in the legend
-        var focusAs = legendFocusAs || (summarySelected && subSubTooltipPinned && subSubFilterAsNum ? subSubFilterAsNum : null);
+        var focusAs = distributionState.legendFocusProvider || (distributionState.summarySelected && distributionState.subSubTooltipPinned && distributionState.subSubFilterProvider ? distributionState.subSubFilterProvider : null);
         if (focusAs) {
             var seg = segments.find(function (s) { return s.asNumber === focusAs; });
             if (seg) {
@@ -1171,17 +1153,17 @@ window.ASDistribution = (function () {
                     html += '</div>';
                 }
             }
-        } else if (selectedAs) {
+        } else if (distributionState.selectedProvider) {
             // When an AS is clicked (selected), show only that provider in the legend
-            var seg = segments.find(function (s) { return s.asNumber === selectedAs; });
+            var seg = segments.find(function (s) { return s.asNumber === distributionState.selectedProvider; });
             if (!seg) {
                 // Selected AS might be a sub-provider inside Others
-                var grp = groups.find(function (g) { return g.asNumber === selectedAs; });
+                var grp = groups.find(function (g) { return g.asNumber === distributionState.selectedProvider; });
                 if (grp) {
-                    var color = getColorForActiveEntity(selectedAs);
+                    var color = getColorForActiveEntity(distributionState.selectedProvider);
                     var displayName = grp.asShort || grp.asName || grp.asNumber;
                     var shortName = displayName.length > 18 ? displayName.substring(0, 17) + '\u2026' : displayName;
-                    html += '<div class="as-legend-item selected" data-as="' + selectedAs + '">';
+                    html += '<div class="as-legend-item selected" data-as="' + distributionState.selectedProvider + '">';
                     html += '<span class="as-legend-dot" style="background:' + color + '"></span>';
                     html += '<span class="as-legend-name" title="' + displayName + '">' + shortName + '</span>';
                     html += '<span class="as-legend-count">' + grp.peerCount + '</span>';
@@ -1227,16 +1209,16 @@ window.ASDistribution = (function () {
 
     /** Focus the legend on a single provider (used during panel hover/click) */
     function setLegendFocus(asNum) {
-        if (legendFocusAs === asNum) return;
-        legendFocusAs = asNum;
+        if (distributionState.legendFocusProvider === asNum) return;
+        distributionState.legendFocusProvider = asNum;
         renderLegend();
     }
 
     /** Clear the legend focus, returning to normal display */
     function clearLegendFocus() {
-        if (!legendFocusAs) return;
-        if (subSubTooltipPinned) return; // Don't clear while sub-sub is pinned
-        legendFocusAs = null;
+        if (!distributionState.legendFocusProvider) return;
+        if (distributionState.subSubTooltipPinned) return; // Don't clear while sub-sub is pinned
+        distributionState.legendFocusProvider = null;
         renderLegend();
     }
 
@@ -1694,7 +1676,7 @@ window.ASDistribution = (function () {
         for (var ri = 0; ri < rows.length; ri++) {
             (function (rowEl) {
                 rowEl.addEventListener('mouseenter', function () {
-                    if (subTooltipPinned || peerDetailActive) return;
+                    if (distributionState.subTooltipPinned || peerDetailActive) return;
                     var countryId = rowEl.dataset.as;
                     var seg = findActiveSegmentOrGroup(countryId);
                     if (!seg) return;
@@ -1703,15 +1685,15 @@ window.ASDistribution = (function () {
                     if (_dimMapPeers) _dimMapPeers(seg.peerIds);
                     if (_drawLinesForAs) _drawLinesForAs(countryId, seg.peerIds, seg.color);
                     if (donutFocused) {
-                        focusedHoverAs = countryId;
+                        distributionState.focusedHoverProvider = countryId;
                         showFocusedCenterText(countryId);
                     }
                 });
                 rowEl.addEventListener('mouseleave', function () {
-                    if (subTooltipPinned || peerDetailActive) return;
-                    focusedHoverAs = null;
+                    if (distributionState.subTooltipPinned || peerDetailActive) return;
+                    distributionState.focusedHoverProvider = null;
                     clearLegendHighlight();
-                    if (summarySelected) {
+                    if (distributionState.summarySelected) {
                         if (_filterPeerTable) _filterPeerTable(null);
                         if (_dimMapPeers) _dimMapPeers(null);
                         activateHoverAll();
@@ -1728,12 +1710,12 @@ window.ASDistribution = (function () {
                     if (!seg) return;
 
                     var scrollTop = bodyEl ? bodyEl.scrollTop : 0;
-                    panelHistory = [{ type: 'summary', scrollTop: scrollTop }];
-                    summarySelected = false;
-                    selectedAs = countryId;
-                    subFilterPeerIds = null;
-                    subFilterLabel = null;
-                    subFilterCategory = null;
+                    distributionState.panelHistory = [{ type: 'summary', scrollTop: scrollTop }];
+                    distributionState.summarySelected = false;
+                    distributionState.selectedProvider = countryId;
+                    distributionState.filterPeerIds = null;
+                    distributionState.filterLabel = null;
+                    distributionState.filterCategory = null;
                     hideSubTooltip();
                     hideSubSubTooltip();
 
@@ -1972,7 +1954,7 @@ window.ASDistribution = (function () {
     /** Build a compact hover summary for a set of peers */
     function buildPeerSummaryHtml(peerIds, category, label) {
         // Find the actual peer objects from the current AS group
-        var seg = selectedAs ? findActiveSegment(selectedAs) : null;
+        var seg = distributionState.selectedProvider ? findActiveSegment(distributionState.selectedProvider) : null;
         var allPeers = [];
         if (seg) {
             if (seg.isOthers && seg._othersGroups) {
@@ -1982,12 +1964,12 @@ window.ASDistribution = (function () {
                     }
                 }
             } else {
-                var grp = findActiveGroup(selectedAs);
+                var grp = findActiveGroup(distributionState.selectedProvider);
                 if (grp) allPeers = grp.peers;
             }
-        } else if (selectedAs) {
+        } else if (distributionState.selectedProvider) {
             // Fallback for sub-groups not in top donut segments.
-            var grp = findActiveGroup(selectedAs);
+            var grp = findActiveGroup(distributionState.selectedProvider);
             if (grp) allPeers = grp.peers;
         }
 
@@ -2057,10 +2039,10 @@ window.ASDistribution = (function () {
                 row.addEventListener('mouseenter', function () {
                     var peerId = parseInt(row.dataset.peerId);
                     if (isNaN(peerId)) return;
-                    hoveredPeerId = peerId; // Track for update preservation
-                    if (summarySelected) {
+                    distributionState.hoveredPeerId = peerId; // Track for update preservation
+                    if (distributionState.summarySelected) {
                         previewSummaryLines([peerId]);
-                    } else if (selectedAs) {
+                    } else if (distributionState.selectedProvider) {
                         previewProviderLines([peerId]);
                     }
                     // Preview this peer in the popup if a different peer is selected
@@ -2079,15 +2061,15 @@ window.ASDistribution = (function () {
                             } else {
                                 showPeerInDonutCenter(peer, color);
                                 // Keep donut expanded for the provider context
-                                if (subFilterCategory && subFilterCategory.indexOf('conn-') === 0 && subFilterLabel) {
-                                    animateDonutExpand(subFilterLabel);
+                                if (distributionState.filterCategory && distributionState.filterCategory.indexOf('conn-') === 0 && distributionState.filterLabel) {
+                                    animateDonutExpand(distributionState.filterLabel);
                                 }
                             }
                         }
                     }
                 });
                 row.addEventListener('mouseleave', function () {
-                    hoveredPeerId = null;
+                    distributionState.hoveredPeerId = null;
 
                     // If a peer is selected (popup open), restore to that peer's state
                     if (peerDetailActive && selectedPeerId) {
@@ -2113,20 +2095,20 @@ window.ASDistribution = (function () {
                     }
 
                     // Restore lines/filter to parent state (selected provider or summary sub-filter)
-                    if (summarySelected) {
+                    if (distributionState.summarySelected) {
                         restoreSummaryFromPreview();
-                    } else if (selectedAs) {
+                    } else if (distributionState.selectedProvider) {
                         restoreProviderFromPreview();
                     }
                     // Restore donut center display
                     if (donutFocused) {
                         if (insightRectVisible) {
                             restoreInsightRectProvider();
-                        } else if (subFilterCategory && subFilterCategory.indexOf('conn-') === 0 && subFilterLabel) {
+                        } else if (distributionState.filterCategory && distributionState.filterCategory.indexOf('conn-') === 0 && distributionState.filterLabel) {
                             // Restore donut to show the provider (keep expanded)
-                            showFocusedCenterText(subFilterLabel);
-                            animateDonutExpand(subFilterLabel);
-                        } else if (selectedAs) {
+                            showFocusedCenterText(distributionState.filterLabel);
+                            animateDonutExpand(distributionState.filterLabel);
+                        } else if (distributionState.selectedProvider) {
                             renderCenter();
                         } else {
                             renderCenter();
@@ -2206,19 +2188,19 @@ window.ASDistribution = (function () {
             if (e.target === bodyEl || e.target.classList.contains('modal-section-title') ||
                 e.target.classList.contains('modal-row') || e.target.classList.contains('modal-label') ||
                 e.target.classList.contains('modal-val')) {
-                if (subTooltipPinned || subSubTooltipPinned) {
+                if (distributionState.subTooltipPinned || distributionState.subSubTooltipPinned) {
                     hideSubTooltip();
                     hideSubSubTooltip();
-                    if (summarySelected) {
-                        subFilterPeerIds = null;
-                        subFilterLabel = null;
-                        subFilterCategory = null;
+                    if (distributionState.summarySelected) {
+                        distributionState.filterPeerIds = null;
+                        distributionState.filterLabel = null;
+                        distributionState.filterCategory = null;
                         if (_filterPeerTable) _filterPeerTable(null);
                         if (_dimMapPeers) _dimMapPeers(null);
                         activateHoverAll();
                         var rows = bodyEl.querySelectorAll('.sub-filter-active');
                         for (var i = 0; i < rows.length; i++) rows[i].classList.remove('sub-filter-active');
-                    } else if (selectedAs) {
+                    } else if (distributionState.selectedProvider) {
                         clearSubFilter();
                     }
                 }
@@ -2233,7 +2215,7 @@ window.ASDistribution = (function () {
             (function (rowEl) {
                 rowEl.addEventListener('mouseenter', function (e) {
                     // When something is selected (pinned) or peer detail is open, suppress hover previews
-                    if (subTooltipPinned || peerDetailActive) return;
+                    if (distributionState.subTooltipPinned || peerDetailActive) return;
                     var peerIds = JSON.parse(rowEl.dataset.peerIds);
                     var category = rowEl.dataset.category;
                     var label = rowEl.querySelector('.as-detail-sub-label').textContent;
@@ -2243,10 +2225,10 @@ window.ASDistribution = (function () {
                     previewProviderLines(peerIds);
                 });
                 rowEl.addEventListener('mousemove', function (e) {
-                    if (!subTooltipPinned) positionSubTooltip(e);
+                    if (!distributionState.subTooltipPinned) positionSubTooltip(e);
                 });
                 rowEl.addEventListener('mouseleave', function () {
-                    if (subTooltipPinned || peerDetailActive) return;
+                    if (distributionState.subTooltipPinned || peerDetailActive) return;
                     hideSubTooltip();
                     restoreProviderFromPreview();
                 });
@@ -2256,7 +2238,7 @@ window.ASDistribution = (function () {
                     var category = rowEl.dataset.category;
                     var label = rowEl.querySelector('.as-detail-sub-label').textContent;
                     // Toggle: clicking same row unpins
-                    if (subTooltipPinned && pinnedSubTooltipSrc === rowEl) {
+                    if (distributionState.subTooltipPinned && pinnedSubTooltipSrc === rowEl) {
                         hideSubTooltip();
                         clearSubFilter();
                         return;
@@ -2311,14 +2293,14 @@ window.ASDistribution = (function () {
             tip.style.display = 'none';
             tip.style.pointerEvents = 'none';
         }
-        subTooltipPinned = false;
+        distributionState.subTooltipPinned = false;
         pinnedSubTooltipSrc = null;
         hideSubSubTooltip();
     }
 
     /** Pin the sub-tooltip and remember the element that opened it. */
     function pinSubTooltip(srcEl) {
-        subTooltipPinned = true;
+        distributionState.subTooltipPinned = true;
         pinnedSubTooltipSrc = srcEl || null;
         var tip = document.getElementById('as-sub-tooltip');
         if (tip) tip.style.pointerEvents = 'auto';
@@ -2369,10 +2351,10 @@ window.ASDistribution = (function () {
             tip.style.display = 'none';
             tip.style.pointerEvents = 'none';
         }
-        subSubTooltipPinned = false;
-        subSubFilterPeerIds = null;
-        subSubFilterAsNum = null;
-        subSubFilterColor = null;
+        distributionState.subSubTooltipPinned = false;
+        distributionState.subSubFilterPeerIds = null;
+        distributionState.subSubFilterProvider = null;
+        distributionState.subSubFilterColor = null;
         // Clear provider row selection highlight in the sub-tooltip
         var subTip = document.getElementById('as-sub-tooltip');
         if (subTip) {
@@ -2380,8 +2362,8 @@ window.ASDistribution = (function () {
             for (var si = 0; si < prevSel.length; si++) prevSel[si].classList.remove('as-provider-row-selected');
         }
         // Clear legend focus when sub-sub dismisses
-        if (legendFocusAs) {
-            legendFocusAs = null;
+        if (distributionState.legendFocusProvider) {
+            distributionState.legendFocusProvider = null;
             renderLegend();
         }
     }
@@ -2538,13 +2520,13 @@ window.ASDistribution = (function () {
      *  Checks for active sub-filters, insights, or selections and restores appropriately
      *  instead of blindly reverting to the default distribution score display. */
     function restoreDonutAfterPreview() {
-        summaryPreviewPeerIds = null;
-        summaryPreviewLabel = null;
+        distributionState.summaryPreviewPeerIds = null;
+        distributionState.summaryPreviewLabel = null;
         if (!donutFocused) return;
-        if (subSubFilterAsNum && subSubTooltipPinned) {
+        if (distributionState.subSubFilterProvider && distributionState.subSubTooltipPinned) {
             // A Level 3 provider is selected (sub-sub pinned) — keep donut on that provider
-            showFocusedCenterText(subSubFilterAsNum);
-            animateDonutExpand(subSubFilterAsNum);
+            showFocusedCenterText(distributionState.subSubFilterProvider);
+            animateDonutExpand(distributionState.subSubFilterProvider);
         } else if (insightActiveAsNum) {
             // An insight is active (Most Stable, Fastest, etc.) — keep donut on that provider
             if (insightRectVisible) {
@@ -2552,11 +2534,11 @@ window.ASDistribution = (function () {
             }
             showFocusedCenterText(insightActiveAsNum);
             animateDonutExpand(insightActiveAsNum);
-        } else if (subFilterCategory && subFilterCategory.indexOf('conn-') === 0 && subFilterLabel) {
+        } else if (distributionState.filterCategory && distributionState.filterCategory.indexOf('conn-') === 0 && distributionState.filterLabel) {
             // A conn-provider/conn-out/conn-in sub-filter is active — keep donut on that
-            showFocusedCenterText(subFilterLabel);
-            animateDonutExpand(subFilterLabel);
-        } else if (subFilterPeerIds && subFilterLabel && subFilterCategory === 'summary') {
+            showFocusedCenterText(distributionState.filterLabel);
+            animateDonutExpand(distributionState.filterLabel);
+        } else if (distributionState.filterPeerIds && distributionState.filterLabel && distributionState.filterCategory === 'summary') {
             // A summary category sub-filter is active (IPv4, etc.) — show category info
             animateDonutRevert();
             renderCenter();
@@ -2598,9 +2580,9 @@ window.ASDistribution = (function () {
     function previewProviderLines(peerIds) {
         if (_filterPeerTable) _filterPeerTable(peerIds);
         if (_dimMapPeers) _dimMapPeers(peerIds);
-        if (selectedAs && _drawLinesForAs) {
-            var color = getColorForActiveEntity(selectedAs);
-            _drawLinesForAs(selectedAs, peerIds, color);
+        if (distributionState.selectedProvider && _drawLinesForAs) {
+            var color = getColorForActiveEntity(distributionState.selectedProvider);
+            _drawLinesForAs(distributionState.selectedProvider, peerIds, color);
         }
     }
 
@@ -2608,8 +2590,8 @@ window.ASDistribution = (function () {
      *  Shows the category label, peer count, and percentage without changing state. */
     function previewSummaryCenterText(peerIds, label) {
         if (!donutFocused || !donutCenter) return;
-        summaryPreviewPeerIds = peerIds;
-        summaryPreviewLabel = label;
+        distributionState.summaryPreviewPeerIds = peerIds;
+        distributionState.summaryPreviewLabel = label;
         var distributionEl = donutCenter.querySelector('.as-score-distribution');
         var headingEl = donutCenter.querySelector('.as-score-heading');
         var scoreVal = donutCenter.querySelector('.as-score-value');
@@ -2644,16 +2626,16 @@ window.ASDistribution = (function () {
     function restoreSummaryFromPreview() {
         // Don't restore if big peer popup is active — it manages its own line state
         if (peerDetailActive) return;
-        if (subSubFilterPeerIds && subSubFilterAsNum) {
+        if (distributionState.subSubFilterPeerIds && distributionState.subSubFilterProvider) {
             // Was showing sub-sub (e.g. a specific provider within a category)
-            var ssColor = subSubFilterColor || getColorForAsNum(subSubFilterAsNum);
-            if (_drawLinesForAs) _drawLinesForAs(subSubFilterAsNum, subSubFilterPeerIds, ssColor);
-            if (_filterPeerTable) _filterPeerTable(subSubFilterPeerIds);
-            if (_dimMapPeers) _dimMapPeers(subSubFilterPeerIds);
-        } else if (subFilterPeerIds && subFilterPeerIds.length > 0) {
+            var ssColor = distributionState.subSubFilterColor || getColorForAsNum(distributionState.subSubFilterProvider);
+            if (_drawLinesForAs) _drawLinesForAs(distributionState.subSubFilterProvider, distributionState.subSubFilterPeerIds, ssColor);
+            if (_filterPeerTable) _filterPeerTable(distributionState.subSubFilterPeerIds);
+            if (_dimMapPeers) _dimMapPeers(distributionState.subSubFilterPeerIds);
+        } else if (distributionState.filterPeerIds && distributionState.filterPeerIds.length > 0) {
             // Was showing a category filter (e.g. IPv6)
-            previewSummaryLines(subFilterPeerIds);
-        } else if (subTooltipPinned && (subFilterCategory === 'insight-fastest' || (subFilterCategory && subFilterCategory.indexOf('insight-data-') === 0))) {
+            previewSummaryLines(distributionState.filterPeerIds);
+        } else if (distributionState.subTooltipPinned && (distributionState.filterCategory === 'insight-fastest' || (distributionState.filterCategory && distributionState.filterCategory.indexOf('insight-data-') === 0))) {
             // Rank list pinned — default to showing #1 ranked provider
             var tip = document.getElementById('as-sub-tooltip');
             if (tip) {
@@ -2709,14 +2691,14 @@ window.ASDistribution = (function () {
     function restoreProviderFromPreview() {
         // Don't restore if big peer popup is active — it manages its own line state
         if (peerDetailActive) return;
-        if (subFilterPeerIds && subFilterPeerIds.length > 0) {
-            previewProviderLines(subFilterPeerIds);
-        } else if (selectedAs) {
-            var allPeerIds = getPeerIdsForActiveEntity(selectedAs);
-            var color = getColorForActiveEntity(selectedAs);
+        if (distributionState.filterPeerIds && distributionState.filterPeerIds.length > 0) {
+            previewProviderLines(distributionState.filterPeerIds);
+        } else if (distributionState.selectedProvider) {
+            var allPeerIds = getPeerIdsForActiveEntity(distributionState.selectedProvider);
+            var color = getColorForActiveEntity(distributionState.selectedProvider);
             if (_filterPeerTable) _filterPeerTable(allPeerIds);
             if (_dimMapPeers) _dimMapPeers(allPeerIds);
-            if (_drawLinesForAs) _drawLinesForAs(selectedAs, allPeerIds, color);
+            if (_drawLinesForAs) _drawLinesForAs(distributionState.selectedProvider, allPeerIds, color);
         }
     }
 
@@ -2732,7 +2714,7 @@ window.ASDistribution = (function () {
             (function (rowEl) {
                 rowEl.addEventListener('mouseenter', function (e) {
                     // When something is selected (pinned) or peer detail is open, suppress hover previews
-                    if (subTooltipPinned || peerDetailActive) return;
+                    if (distributionState.subTooltipPinned || peerDetailActive) return;
                     var peerIds = JSON.parse(rowEl.dataset.peerIds);
                     var providers = JSON.parse(rowEl.dataset.providers);
                     var catLabel = rowEl.dataset.catLabel;
@@ -2744,10 +2726,10 @@ window.ASDistribution = (function () {
                     previewSummaryCenterText(peerIds, catLabel);
                 });
                 rowEl.addEventListener('mousemove', function (e) {
-                    if (!subTooltipPinned) positionSubTooltip(e);
+                    if (!distributionState.subTooltipPinned) positionSubTooltip(e);
                 });
                 rowEl.addEventListener('mouseleave', function () {
-                    if (subTooltipPinned || peerDetailActive) return;
+                    if (distributionState.subTooltipPinned || peerDetailActive) return;
                     hideSubTooltip();
                     restoreSummaryFromPreview();
                     restoreDonutAfterPreview();
@@ -2760,7 +2742,7 @@ window.ASDistribution = (function () {
                     var catLabel = rowEl.dataset.catLabel;
 
                     // Toggle: clicking same row unpins
-                    if (subTooltipPinned && pinnedSubTooltipSrc === rowEl) {
+                    if (distributionState.subTooltipPinned && pinnedSubTooltipSrc === rowEl) {
                         hideSubTooltip();
                         clearSummarySubFilter();
                         restoreDonutAfterPreview();
@@ -2797,7 +2779,7 @@ window.ASDistribution = (function () {
                 provRow.style.cursor = 'pointer';
                 // Hover preview: show lines + filter for this provider's peers
                 provRow.addEventListener('mouseenter', function () {
-                    if (peerDetailActive || subSubTooltipPinned) return;
+                    if (peerDetailActive || distributionState.subSubTooltipPinned) return;
                     var asNum = provRow.dataset.as;
                     var peerIds = JSON.parse(provRow.dataset.peerIds);
                     // Focus legend on this provider
@@ -2814,7 +2796,7 @@ window.ASDistribution = (function () {
                     }
                 });
                 provRow.addEventListener('mouseleave', function () {
-                    if (peerDetailActive || subSubTooltipPinned) return;
+                    if (peerDetailActive || distributionState.subSubTooltipPinned) return;
                     clearLegendFocus();
                     restoreSummaryFromPreview();
                     restoreDonutAfterPreview();
@@ -2833,7 +2815,7 @@ window.ASDistribution = (function () {
 
                     var asNum = provRow.dataset.as;
                     // Keep legend focused on this provider while sub-sub is pinned
-                    legendFocusAs = asNum;
+                    distributionState.legendFocusProvider = asNum;
                     renderLegend();
 
                     // Highlight this provider row as selected in the sub-tooltip
@@ -2846,16 +2828,16 @@ window.ASDistribution = (function () {
 
                     var html = buildPeerListHtmlForSubSub(matchedPeers);
                     showSubSubTooltip(html, e);
-                    subSubTooltipPinned = true;
+                    distributionState.subSubTooltipPinned = true;
 
                     // Track sub-sub state for data refresh preservation
-                    subSubFilterPeerIds = peerIds;
-                    subSubFilterAsNum = asNum;
-                    subSubFilterColor = getColorForAsNum(asNum);
+                    distributionState.subSubFilterPeerIds = peerIds;
+                    distributionState.subSubFilterProvider = asNum;
+                    distributionState.subSubFilterColor = getColorForAsNum(asNum);
 
                     // Draw lines for just this provider's peers
                     if (_drawLinesForAs && asNum) {
-                        _drawLinesForAs(asNum, peerIds, subSubFilterColor);
+                        _drawLinesForAs(asNum, peerIds, distributionState.subSubFilterColor);
                     }
                     if (_filterPeerTable) _filterPeerTable(peerIds);
                     if (_dimMapPeers) _dimMapPeers(peerIds);
@@ -2905,7 +2887,7 @@ window.ASDistribution = (function () {
                 }
                 rowEl.addEventListener('mouseenter', function (e) {
                     // When something is selected (pinned) or peer detail is open, suppress hover previews
-                    if (subTooltipPinned || peerDetailActive) return;
+                    if (distributionState.subTooltipPinned || peerDetailActive) return;
                     var peerIds = JSON.parse(rowEl.dataset.peerIds);
                     var asNum = rowEl.dataset.as;
                     if (asNum) setLegendFocus(asNum);
@@ -2924,7 +2906,7 @@ window.ASDistribution = (function () {
                     }
                 });
                 rowEl.addEventListener('mouseleave', function () {
-                    if (subTooltipPinned || peerDetailActive) return;
+                    if (distributionState.subTooltipPinned || peerDetailActive) return;
                     clearLegendFocus();
                     hideSubTooltip();
                     restoreSummaryFromPreview();
@@ -2933,14 +2915,14 @@ window.ASDistribution = (function () {
                 rowEl.addEventListener('click', function (e) {
                     e.stopPropagation();
                     if (peerDetailActive) closePeerPopup();
-                    if (subTooltipPinned && pinnedSubTooltipSrc === rowEl) {
+                    if (distributionState.subTooltipPinned && pinnedSubTooltipSrc === rowEl) {
                         hideSubTooltip();
-                        subFilterPeerIds = null;
-                        subFilterCategory = null;
-                        subFilterLabel = null;
+                        distributionState.filterPeerIds = null;
+                        distributionState.filterCategory = null;
+                        distributionState.filterLabel = null;
                         if (_filterPeerTable) _filterPeerTable(null);
                         if (_dimMapPeers) _dimMapPeers(null);
-                        if (summarySelected) activateHoverAll();
+                        if (distributionState.summarySelected) activateHoverAll();
                         restoreDonutAfterPreview();
                         return;
                     }
@@ -2965,9 +2947,9 @@ window.ASDistribution = (function () {
                     rowEl.classList.add('sub-filter-active');
                     // Track sub-filter state for data refresh preservation
                     var asNum = rowEl.dataset.as;
-                    subFilterPeerIds = peerIds;
-                    subFilterCategory = 'conn-provider';
-                    subFilterLabel = asNum || '';
+                    distributionState.filterPeerIds = peerIds;
+                    distributionState.filterCategory = 'conn-provider';
+                    distributionState.filterLabel = asNum || '';
                     // Draw lines for this provider's peers
                     if (asNum && _drawLinesForAs) {
                         var color = getColorForAsNum(asNum);
@@ -3018,7 +3000,7 @@ window.ASDistribution = (function () {
                 }
                 rowEl.addEventListener('mouseenter', function (e) {
                     // When something is selected (pinned) or peer detail is open, suppress hover previews
-                    if (subTooltipPinned || peerDetailActive) return;
+                    if (distributionState.subTooltipPinned || peerDetailActive) return;
                     var peerIds = JSON.parse(rowEl.dataset.peerIds);
                     var asNum = rowEl.dataset.as;
                     if (asNum) setLegendFocus(asNum);
@@ -3036,7 +3018,7 @@ window.ASDistribution = (function () {
                     }
                 });
                 rowEl.addEventListener('mouseleave', function () {
-                    if (subTooltipPinned || peerDetailActive) return;
+                    if (distributionState.subTooltipPinned || peerDetailActive) return;
                     clearLegendFocus();
                     hideSubTooltip();
                     restoreSummaryFromPreview();
@@ -3044,14 +3026,14 @@ window.ASDistribution = (function () {
                 });
                 rowEl.addEventListener('click', function (e) {
                     e.stopPropagation();
-                    if (subTooltipPinned && pinnedSubTooltipSrc === rowEl) {
+                    if (distributionState.subTooltipPinned && pinnedSubTooltipSrc === rowEl) {
                         hideSubTooltip();
-                        subFilterPeerIds = null;
-                        subFilterCategory = null;
-                        subFilterLabel = null;
+                        distributionState.filterPeerIds = null;
+                        distributionState.filterCategory = null;
+                        distributionState.filterLabel = null;
                         if (_filterPeerTable) _filterPeerTable(null);
                         if (_dimMapPeers) _dimMapPeers(null);
-                        if (summarySelected) activateHoverAll();
+                        if (distributionState.summarySelected) activateHoverAll();
                         restoreDonutAfterPreview();
                         return;
                     }
@@ -3068,9 +3050,9 @@ window.ASDistribution = (function () {
                     // Highlight this row as the active selection
                     rowEl.classList.add('sub-filter-active');
                     // Track sub-filter state for data refresh preservation
-                    subFilterPeerIds = peerIds;
-                    subFilterCategory = 'conn-out';
-                    subFilterLabel = rowEl.dataset.as || '';
+                    distributionState.filterPeerIds = peerIds;
+                    distributionState.filterCategory = 'conn-out';
+                    distributionState.filterLabel = rowEl.dataset.as || '';
                     if (_filterPeerTable) _filterPeerTable(peerIds);
                     if (_dimMapPeers) _dimMapPeers(peerIds);
                     // Keep donut expanded for the parent provider
@@ -3105,7 +3087,7 @@ window.ASDistribution = (function () {
                 }
                 rowEl.addEventListener('mouseenter', function (e) {
                     // When something is selected (pinned) or peer detail is open, suppress hover previews
-                    if (subTooltipPinned || peerDetailActive) return;
+                    if (distributionState.subTooltipPinned || peerDetailActive) return;
                     var peerIds = JSON.parse(rowEl.dataset.peerIds);
                     var asNum = rowEl.dataset.as;
                     if (asNum) setLegendFocus(asNum);
@@ -3123,7 +3105,7 @@ window.ASDistribution = (function () {
                     }
                 });
                 rowEl.addEventListener('mouseleave', function () {
-                    if (subTooltipPinned || peerDetailActive) return;
+                    if (distributionState.subTooltipPinned || peerDetailActive) return;
                     clearLegendFocus();
                     hideSubTooltip();
                     restoreSummaryFromPreview();
@@ -3131,14 +3113,14 @@ window.ASDistribution = (function () {
                 });
                 rowEl.addEventListener('click', function (e) {
                     e.stopPropagation();
-                    if (subTooltipPinned && pinnedSubTooltipSrc === rowEl) {
+                    if (distributionState.subTooltipPinned && pinnedSubTooltipSrc === rowEl) {
                         hideSubTooltip();
-                        subFilterPeerIds = null;
-                        subFilterCategory = null;
-                        subFilterLabel = null;
+                        distributionState.filterPeerIds = null;
+                        distributionState.filterCategory = null;
+                        distributionState.filterLabel = null;
                         if (_filterPeerTable) _filterPeerTable(null);
                         if (_dimMapPeers) _dimMapPeers(null);
-                        if (summarySelected) activateHoverAll();
+                        if (distributionState.summarySelected) activateHoverAll();
                         restoreDonutAfterPreview();
                         return;
                     }
@@ -3155,9 +3137,9 @@ window.ASDistribution = (function () {
                     // Highlight this row as the active selection
                     rowEl.classList.add('sub-filter-active');
                     // Track sub-filter state for data refresh preservation
-                    subFilterPeerIds = peerIds;
-                    subFilterCategory = 'conn-in';
-                    subFilterLabel = rowEl.dataset.as || '';
+                    distributionState.filterPeerIds = peerIds;
+                    distributionState.filterCategory = 'conn-in';
+                    distributionState.filterLabel = rowEl.dataset.as || '';
                     if (_filterPeerTable) _filterPeerTable(peerIds);
                     if (_dimMapPeers) _dimMapPeers(peerIds);
                     // Keep donut expanded for the parent provider
@@ -3175,7 +3157,7 @@ window.ASDistribution = (function () {
         for (var coi2 = 0; coi2 < connOthersRows.length; coi2++) {
             (function (rowEl) {
                 rowEl.addEventListener('mouseenter', function (e) {
-                    if (subTooltipPinned || peerDetailActive) return;
+                    if (distributionState.subTooltipPinned || peerDetailActive) return;
                     var peerIds = JSON.parse(rowEl.dataset.peerIds);
                     var providers = JSON.parse(rowEl.dataset.providers);
                     var html = buildProviderListHtml(providers, 'Others', 'Others');
@@ -3184,10 +3166,10 @@ window.ASDistribution = (function () {
                     previewSummaryCenterText(peerIds, 'Others');
                 });
                 rowEl.addEventListener('mousemove', function (e) {
-                    if (!subTooltipPinned) positionSubTooltip(e);
+                    if (!distributionState.subTooltipPinned) positionSubTooltip(e);
                 });
                 rowEl.addEventListener('mouseleave', function () {
-                    if (subTooltipPinned || peerDetailActive) return;
+                    if (distributionState.subTooltipPinned || peerDetailActive) return;
                     hideSubTooltip();
                     restoreSummaryFromPreview();
                     restoreDonutAfterPreview();
@@ -3199,14 +3181,14 @@ window.ASDistribution = (function () {
                     var providers = JSON.parse(rowEl.dataset.providers);
 
                     // Toggle: clicking same row unpins
-                    if (subTooltipPinned && pinnedSubTooltipSrc === rowEl) {
+                    if (distributionState.subTooltipPinned && pinnedSubTooltipSrc === rowEl) {
                         hideSubTooltip();
-                        subFilterPeerIds = null;
-                        subFilterCategory = null;
-                        subFilterLabel = null;
+                        distributionState.filterPeerIds = null;
+                        distributionState.filterCategory = null;
+                        distributionState.filterLabel = null;
                         if (_filterPeerTable) _filterPeerTable(null);
                         if (_dimMapPeers) _dimMapPeers(null);
-                        if (summarySelected) activateHoverAll();
+                        if (distributionState.summarySelected) activateHoverAll();
                         restoreDonutAfterPreview();
                         return;
                     }
@@ -3224,9 +3206,9 @@ window.ASDistribution = (function () {
 
                     // Track sub-filter state — use 'conn-others' so refresh
                     // rebuilds from the Others donut segment, not summary categories
-                    subFilterPeerIds = peerIds;
-                    subFilterCategory = 'conn-others';
-                    subFilterLabel = 'Others';
+                    distributionState.filterPeerIds = peerIds;
+                    distributionState.filterCategory = 'conn-others';
+                    distributionState.filterLabel = 'Others';
 
                     // Draw lines grouped by AS for the Others peers
                     if (_drawLinesForAllAs && donutSegments.length > 0) {
@@ -3269,7 +3251,7 @@ window.ASDistribution = (function () {
         for (var i = 0; i < navLinks.length; i++) {
             (function (el) {
                 el.addEventListener('mouseenter', function () {
-                    if (subTooltipPinned || peerDetailActive) return;
+                    if (distributionState.subTooltipPinned || peerDetailActive) return;
                     var asNum = el.dataset.as;
                     if (!asNum) return;
                     // Focus legend on this provider
@@ -3288,7 +3270,7 @@ window.ASDistribution = (function () {
                     }
                 });
                 el.addEventListener('mouseleave', function () {
-                    if (subTooltipPinned || peerDetailActive) return;
+                    if (distributionState.subTooltipPinned || peerDetailActive) return;
                     clearLegendFocus();
                     restoreSummaryFromPreview();
                     restoreDonutAfterPreview();
@@ -3309,14 +3291,14 @@ window.ASDistribution = (function () {
                     e.stopPropagation();
                     if (peerDetailActive) closePeerPopup();
                     // Toggle: clicking same link unpins
-                    if (subTooltipPinned && pinnedSubTooltipSrc === el) {
+                    if (distributionState.subTooltipPinned && pinnedSubTooltipSrc === el) {
                         hideSubTooltip();
-                        subFilterPeerIds = null;
-                        subFilterCategory = null;
-                        subFilterLabel = null;
+                        distributionState.filterPeerIds = null;
+                        distributionState.filterCategory = null;
+                        distributionState.filterLabel = null;
                         if (_filterPeerTable) _filterPeerTable(null);
                         if (_dimMapPeers) _dimMapPeers(null);
-                        if (summarySelected) activateHoverAll();
+                        if (distributionState.summarySelected) activateHoverAll();
                         return;
                     }
                     var allProvs = asGroups.map(function (g) {
@@ -3331,9 +3313,9 @@ window.ASDistribution = (function () {
                         attachProviderNavHandlers(tip);
                     }
                     // Track sub-filter state for data refresh preservation
-                    subFilterPeerIds = [];
-                    subFilterCategory = 'all-providers';
-                    subFilterLabel = 'all-providers';
+                    distributionState.filterPeerIds = [];
+                    distributionState.filterCategory = 'all-providers';
+                    distributionState.filterLabel = 'all-providers';
                 });
             })(allProvLinks[i]);
         }
@@ -3345,14 +3327,14 @@ window.ASDistribution = (function () {
                 (function (el) {
                     el.addEventListener('click', function (e) {
                         e.stopPropagation();
-                        if (subTooltipPinned && pinnedSubTooltipSrc === el) {
+                        if (distributionState.subTooltipPinned && pinnedSubTooltipSrc === el) {
                             hideSubTooltip();
-                            subFilterPeerIds = null;
-                            subFilterCategory = null;
-                            subFilterLabel = null;
+                            distributionState.filterPeerIds = null;
+                            distributionState.filterCategory = null;
+                            distributionState.filterLabel = null;
                             if (_filterPeerTable) _filterPeerTable(null);
                             if (_dimMapPeers) _dimMapPeers(null);
-                            if (summarySelected) activateHoverAll();
+                            if (distributionState.summarySelected) activateHoverAll();
                             return;
                         }
                         var allProvs = asGroups.map(function (g) {
@@ -3367,9 +3349,9 @@ window.ASDistribution = (function () {
                             attachProviderNavHandlers(tip);
                         }
                         // Track sub-filter state for data refresh preservation
-                        subFilterPeerIds = [];
-                        subFilterCategory = 'all-providers';
-                        subFilterLabel = 'all-providers';
+                        distributionState.filterPeerIds = [];
+                        distributionState.filterCategory = 'all-providers';
+                        distributionState.filterLabel = 'all-providers';
                     });
                 })(headerProvLinks[i]);
             }
@@ -3405,7 +3387,7 @@ window.ASDistribution = (function () {
             }
             fastestLink.addEventListener('mouseenter', function (e) {
                 // When something is selected (pinned) or peer detail is open, suppress hover previews
-                if (subTooltipPinned || peerDetailActive) return;
+                if (distributionState.subTooltipPinned || peerDetailActive) return;
                 var html = buildFastestProvHtml();
                 if (html) showSubTooltip(html, e);
                 // Preview lines for the #1 fastest provider + focus legend + show insight rect
@@ -3433,7 +3415,7 @@ window.ASDistribution = (function () {
                 }
             });
             fastestLink.addEventListener('mouseleave', function () {
-                if (subTooltipPinned || peerDetailActive) return;
+                if (distributionState.subTooltipPinned || peerDetailActive) return;
                 clearLegendFocus();
                 hideSubTooltip();
                 hideInsightRect();
@@ -3443,19 +3425,19 @@ window.ASDistribution = (function () {
             fastestLink.addEventListener('click', function (e) {
                 e.stopPropagation();
                 if (peerDetailActive) closePeerPopup();
-                if (subTooltipPinned && pinnedSubTooltipSrc === fastestLink) {
+                if (distributionState.subTooltipPinned && pinnedSubTooltipSrc === fastestLink) {
                     hideSubTooltip();
                     fastestLink.closest('.as-summary-insight').classList.remove('sub-filter-active');
-                    subFilterPeerIds = null;
-                    subFilterCategory = null;
-                    subFilterLabel = null;
+                    distributionState.filterPeerIds = null;
+                    distributionState.filterCategory = null;
+                    distributionState.filterLabel = null;
                     insightActiveAsNum = null; insightActiveData = null;
                     insightActiveType = null;
                     hideInsightRect();
                     if (donutFocused) animateDonutRevert();
                     if (_filterPeerTable) _filterPeerTable(null);
                     if (_dimMapPeers) _dimMapPeers(null);
-                    if (summarySelected) activateHoverAll();
+                    if (distributionState.summarySelected) activateHoverAll();
                     renderCenter();
                     return;
                 }
@@ -3469,9 +3451,9 @@ window.ASDistribution = (function () {
                 if (activeBodyEl) { var prev = activeBodyEl.querySelectorAll('.sub-filter-active'); for (var ai = 0; ai < prev.length; ai++) prev[ai].classList.remove('sub-filter-active'); }
                 fastestLink.closest('.as-summary-insight').classList.add('sub-filter-active');
                 // Track sub-filter state for data refresh preservation
-                subFilterPeerIds = [];
-                subFilterCategory = 'insight-fastest';
-                subFilterLabel = 'fastest';
+                distributionState.filterPeerIds = [];
+                distributionState.filterCategory = 'insight-fastest';
+                distributionState.filterLabel = 'fastest';
                 // Activate insight donut state — show insight rectangle for #1 fastest provider
                 var insData = computeSummaryData();
                 for (var ij = 0; ij < insData.insights.length; ij++) {
@@ -3526,7 +3508,7 @@ window.ASDistribution = (function () {
             }
             stableLink.addEventListener('mouseenter', function (e) {
                 // When something is selected (pinned) or peer detail is open, suppress hover previews
-                if (subTooltipPinned || peerDetailActive) return;
+                if (distributionState.subTooltipPinned || peerDetailActive) return;
                 var asNum = stableLink.dataset.as;
                 if (asNum) setLegendFocus(asNum);
                 var result = buildStablePeersHtml();
@@ -3560,7 +3542,7 @@ window.ASDistribution = (function () {
                 }
             });
             stableLink.addEventListener('mouseleave', function () {
-                if (subTooltipPinned || peerDetailActive) return;
+                if (distributionState.subTooltipPinned || peerDetailActive) return;
                 clearLegendFocus();
                 hideSubTooltip();
                 hideInsightRect();
@@ -3571,19 +3553,19 @@ window.ASDistribution = (function () {
                 e.stopPropagation();
                 if (peerDetailActive) closePeerPopup();
                 // Toggle
-                if (subTooltipPinned && pinnedSubTooltipSrc === stableLink) {
+                if (distributionState.subTooltipPinned && pinnedSubTooltipSrc === stableLink) {
                     hideSubTooltip();
                     stableLink.closest('.as-summary-insight').classList.remove('sub-filter-active');
-                    subFilterPeerIds = null;
-                    subFilterCategory = null;
-                    subFilterLabel = null;
+                    distributionState.filterPeerIds = null;
+                    distributionState.filterCategory = null;
+                    distributionState.filterLabel = null;
                     insightActiveAsNum = null; insightActiveData = null;
                     insightActiveType = null;
                     hideInsightRect();
                     if (donutFocused) animateDonutRevert();
                     if (_filterPeerTable) _filterPeerTable(null);
                     if (_dimMapPeers) _dimMapPeers(null);
-                    if (summarySelected) activateHoverAll();
+                    if (distributionState.summarySelected) activateHoverAll();
                     renderCenter();
                     return;
                 }
@@ -3599,9 +3581,9 @@ window.ASDistribution = (function () {
                 if (activeBodyEl) { var prev = activeBodyEl.querySelectorAll('.sub-filter-active'); for (var ai = 0; ai < prev.length; ai++) prev[ai].classList.remove('sub-filter-active'); }
                 stableLink.closest('.as-summary-insight').classList.add('sub-filter-active');
                 // Track sub-filter state for data refresh preservation
-                subFilterPeerIds = result.peerIds;
-                subFilterCategory = 'insight-stable';
-                subFilterLabel = result.asNum;
+                distributionState.filterPeerIds = result.peerIds;
+                distributionState.filterCategory = 'insight-stable';
+                distributionState.filterLabel = result.asNum;
                 if (_filterPeerTable) _filterPeerTable(result.peerIds);
                 if (_dimMapPeers) _dimMapPeers(result.peerIds);
                 // Draw lines for this provider
@@ -3671,7 +3653,7 @@ window.ASDistribution = (function () {
 
                 el.addEventListener('mouseenter', function (e) {
                     // When something is selected (pinned) or peer detail is open, suppress hover previews
-                    if (subTooltipPinned || peerDetailActive) return;
+                    if (distributionState.subTooltipPinned || peerDetailActive) return;
                     var result = buildDataProviderHtml();
                     if (!result) return;
                     showSubTooltip(result.html, e);
@@ -3698,7 +3680,7 @@ window.ASDistribution = (function () {
                     }
                 });
                 el.addEventListener('mouseleave', function () {
-                    if (subTooltipPinned || peerDetailActive) return;
+                    if (distributionState.subTooltipPinned || peerDetailActive) return;
                     clearLegendFocus();
                     hideSubTooltip();
                     hideInsightRect();
@@ -3709,19 +3691,19 @@ window.ASDistribution = (function () {
                     e.stopPropagation();
                     if (peerDetailActive) closePeerPopup();
                     // Toggle: clicking same link unpins
-                    if (subTooltipPinned && pinnedSubTooltipSrc === el) {
+                    if (distributionState.subTooltipPinned && pinnedSubTooltipSrc === el) {
                         hideSubTooltip();
                         el.closest('.as-summary-insight').classList.remove('sub-filter-active');
-                        subFilterPeerIds = null;
-                        subFilterCategory = null;
-                        subFilterLabel = null;
+                        distributionState.filterPeerIds = null;
+                        distributionState.filterCategory = null;
+                        distributionState.filterLabel = null;
                         insightActiveAsNum = null; insightActiveData = null;
                         insightActiveType = null;
                         hideInsightRect();
                         if (donutFocused) animateDonutRevert();
                         if (_filterPeerTable) _filterPeerTable(null);
                         if (_dimMapPeers) _dimMapPeers(null);
-                        if (summarySelected) activateHoverAll();
+                        if (distributionState.summarySelected) activateHoverAll();
                         renderCenter();
                         return;
                     }
@@ -3736,9 +3718,9 @@ window.ASDistribution = (function () {
                     // Highlight this insight as active
                     el.closest('.as-summary-insight').classList.add('sub-filter-active');
                     // Track sub-filter state for data refresh preservation
-                    subFilterPeerIds = [];
-                    subFilterCategory = 'insight-data-' + field;
-                    subFilterLabel = field;
+                    distributionState.filterPeerIds = [];
+                    distributionState.filterCategory = 'insight-data-' + field;
+                    distributionState.filterLabel = field;
                     // Activate insight donut state — show insight rectangle for #1 data provider
                     var insDataResult = buildDataProviderHtml();
                     if (insDataResult && insDataResult.insight && insDataResult.insight.topProviders && insDataResult.insight.topProviders.length > 0) {
@@ -3784,7 +3766,7 @@ window.ASDistribution = (function () {
             (function (provRow) {
                 provRow.style.cursor = 'pointer';
                 provRow.addEventListener('mouseenter', function () {
-                    if (peerDetailActive || subSubTooltipPinned) return;
+                    if (peerDetailActive || distributionState.subSubTooltipPinned) return;
                     var asNum = provRow.dataset.as;
                     var peerIds = JSON.parse(provRow.dataset.peerIds);
                     var rank = parseInt(provRow.dataset.rank) || 0;
@@ -3814,7 +3796,7 @@ window.ASDistribution = (function () {
                     }
                 });
                 provRow.addEventListener('mouseleave', function () {
-                    if (peerDetailActive || subSubTooltipPinned) return;
+                    if (peerDetailActive || distributionState.subSubTooltipPinned) return;
                     // On leave, restore to the pinned insight provider
                     if (insightRectVisible) {
                         restoreInsightRectProvider();
@@ -3829,7 +3811,7 @@ window.ASDistribution = (function () {
                     var rank = parseInt(provRow.dataset.rank) || 0;
 
                     // Keep legend focused on this provider while sub-sub is pinned
-                    legendFocusAs = asNum;
+                    distributionState.legendFocusProvider = asNum;
                     renderLegend();
 
                     // Highlight this provider row as selected in the sub-tooltip
@@ -3851,15 +3833,15 @@ window.ASDistribution = (function () {
                     // Build sub-sub-tooltip with peers ranked by ping
                     var html = buildPingPeerListHtml(matchedPeers.slice(0, 20));
                     showSubSubTooltip(html, e);
-                    subSubTooltipPinned = true;
+                    distributionState.subSubTooltipPinned = true;
 
                     // Track sub-sub state for data refresh preservation
-                    subSubFilterPeerIds = peerIds;
-                    subSubFilterAsNum = asNum;
-                    subSubFilterColor = getColorForAsNum(asNum);
+                    distributionState.subSubFilterPeerIds = peerIds;
+                    distributionState.subSubFilterProvider = asNum;
+                    distributionState.subSubFilterColor = getColorForAsNum(asNum);
 
                     if (_drawLinesForAs && asNum) {
-                        _drawLinesForAs(asNum, peerIds, subSubFilterColor);
+                        _drawLinesForAs(asNum, peerIds, distributionState.subSubFilterColor);
                     }
                     if (_filterPeerTable) _filterPeerTable(peerIds);
                     if (_dimMapPeers) _dimMapPeers(peerIds);
@@ -3924,7 +3906,7 @@ window.ASDistribution = (function () {
                 provRow.style.cursor = 'pointer';
                 // Hover preview: show lines + filter for this provider's peers
                 provRow.addEventListener('mouseenter', function () {
-                    if (peerDetailActive || subSubTooltipPinned) return;
+                    if (peerDetailActive || distributionState.subSubTooltipPinned) return;
                     var asNum = provRow.dataset.as;
                     var peerIds = JSON.parse(provRow.dataset.peerIds);
                     var rank = parseInt(provRow.dataset.rank) || 0;
@@ -3955,7 +3937,7 @@ window.ASDistribution = (function () {
                     }
                 });
                 provRow.addEventListener('mouseleave', function () {
-                    if (peerDetailActive || subSubTooltipPinned) return;
+                    if (peerDetailActive || distributionState.subSubTooltipPinned) return;
                     // On leave, restore to the pinned insight provider
                     if (insightRectVisible) {
                         restoreInsightRectProvider();
@@ -3970,7 +3952,7 @@ window.ASDistribution = (function () {
                     var rowField = provRow.dataset.field;
 
                     // Keep legend focused on this provider while sub-sub is pinned
-                    legendFocusAs = asNum;
+                    distributionState.legendFocusProvider = asNum;
                     renderLegend();
 
                     // Highlight this provider row as selected in the sub-tooltip
@@ -3994,16 +3976,16 @@ window.ASDistribution = (function () {
                     // Build sub-sub-tooltip showing top 20 peers with bytes amounts
                     var html = buildDataPeerListHtml(matchedPeers.slice(0, 20), rowField);
                     showSubSubTooltip(html, e);
-                    subSubTooltipPinned = true;
+                    distributionState.subSubTooltipPinned = true;
 
                     // Track sub-sub state for data refresh preservation
-                    subSubFilterPeerIds = peerIds;
-                    subSubFilterAsNum = asNum;
-                    subSubFilterColor = getColorForAsNum(asNum);
+                    distributionState.subSubFilterPeerIds = peerIds;
+                    distributionState.subSubFilterProvider = asNum;
+                    distributionState.subSubFilterColor = getColorForAsNum(asNum);
 
                     // Draw lines for this provider's peers
                     if (_drawLinesForAs && asNum) {
-                        _drawLinesForAs(asNum, peerIds, subSubFilterColor);
+                        _drawLinesForAs(asNum, peerIds, distributionState.subSubFilterColor);
                     }
                     if (_filterPeerTable) _filterPeerTable(peerIds);
                     if (_dimMapPeers) _dimMapPeers(peerIds);
@@ -4102,7 +4084,7 @@ window.ASDistribution = (function () {
     function applySummarySubFilter(peerIds, label) {
         // Close peer detail popup when selecting from panel
         if (peerDetailActive) closePeerPopup();
-        if (subFilterPeerIds && label === subFilterLabel) {
+        if (distributionState.filterPeerIds && label === distributionState.filterLabel) {
             clearSummarySubFilter();
             return;
         }
@@ -4113,9 +4095,9 @@ window.ASDistribution = (function () {
             hideInsightRect();
             if (donutFocused) animateDonutRevert();
         }
-        subFilterPeerIds = peerIds;
-        subFilterCategory = 'summary';
-        subFilterLabel = label;
+        distributionState.filterPeerIds = peerIds;
+        distributionState.filterCategory = 'summary';
+        distributionState.filterLabel = label;
         if (_filterPeerTable) _filterPeerTable(peerIds);
         if (_dimMapPeers) _dimMapPeers(peerIds);
         // Draw lines for the filtered peers — group by AS for colored lines
@@ -4141,9 +4123,9 @@ window.ASDistribution = (function () {
     }
 
     function clearSummarySubFilter() {
-        subFilterPeerIds = null;
-        subFilterLabel = null;
-        subFilterCategory = null;
+        distributionState.filterPeerIds = null;
+        distributionState.filterLabel = null;
+        distributionState.filterCategory = null;
         insightActiveAsNum = null; insightActiveData = null;
         insightActiveType = null;
         hideSubTooltip();
@@ -4152,7 +4134,7 @@ window.ASDistribution = (function () {
         if (_filterPeerTable) _filterPeerTable(null);
         if (_dimMapPeers) _dimMapPeers(null);
         // Re-draw all lines
-        if (summarySelected) activateHoverAll();
+        if (distributionState.summarySelected) activateHoverAll();
         // Remove active highlights from both summary rows and insight rows
         var bodyEl = panelEl ? panelEl.querySelector('.as-detail-body') : null;
         if (bodyEl) {
@@ -4173,23 +4155,23 @@ window.ASDistribution = (function () {
         var allActive = bodyEl.querySelectorAll('.sub-filter-active');
         for (var ai = 0; ai < allActive.length; ai++) allActive[ai].classList.remove('sub-filter-active');
         // Re-apply highlight to matching summary row
-        if (subFilterCategory === 'summary' && subFilterLabel) {
+        if (distributionState.filterCategory === 'summary' && distributionState.filterLabel) {
             var rows = bodyEl.querySelectorAll('.as-summary-row');
             for (var ri = 0; ri < rows.length; ri++) {
-                if (rows[ri].dataset.catLabel === subFilterLabel) {
+                if (rows[ri].dataset.catLabel === distributionState.filterLabel) {
                     rows[ri].classList.add('sub-filter-active');
                 }
             }
         }
         // Re-apply highlight to matching grid rows (conn-provider, conn-out, conn-in)
-        if (subFilterCategory && subFilterCategory.indexOf('conn-') === 0 && subFilterLabel) {
-            var gridSelector = subFilterCategory === 'conn-provider' ? '.as-conn-prov-row'
-                : subFilterCategory === 'conn-out' ? '.as-conn-out-row'
-                : subFilterCategory === 'conn-others' ? '.as-conn-others-row'
+        if (distributionState.filterCategory && distributionState.filterCategory.indexOf('conn-') === 0 && distributionState.filterLabel) {
+            var gridSelector = distributionState.filterCategory === 'conn-provider' ? '.as-conn-prov-row'
+                : distributionState.filterCategory === 'conn-out' ? '.as-conn-out-row'
+                : distributionState.filterCategory === 'conn-others' ? '.as-conn-others-row'
                 : '.as-conn-dir-row';
             var gridRows = bodyEl.querySelectorAll(gridSelector);
             for (var gi = 0; gi < gridRows.length; gi++) {
-                if (gridRows[gi].dataset.as === subFilterLabel) {
+                if (gridRows[gi].dataset.as === distributionState.filterLabel) {
                     gridRows[gi].classList.add('sub-filter-active');
                 }
             }
@@ -4202,9 +4184,9 @@ window.ASDistribution = (function () {
 
     /** Select the Summary Analysis view */
     function selectSummary() {
-        if (selectedAs) deselect();
-        summarySelected = true;
-        hoveredAll = false;
+        if (distributionState.selectedProvider) deselect();
+        distributionState.summarySelected = true;
+        distributionState.hoveringAll = false;
 
         // Draw all lines (persistent)
         activateHoverAll();
@@ -4218,12 +4200,12 @@ window.ASDistribution = (function () {
 
     /** Deselect the Summary Analysis view */
     function deselectSummary() {
-        if (!summarySelected) return;
-        summarySelected = false;
-        panelHistory = [];
-        subFilterPeerIds = null;
-        subFilterLabel = null;
-        subFilterCategory = null;
+        if (!distributionState.summarySelected) return;
+        distributionState.summarySelected = false;
+        distributionState.panelHistory = [];
+        distributionState.filterPeerIds = null;
+        distributionState.filterLabel = null;
+        distributionState.filterCategory = null;
         insightActiveAsNum = null; insightActiveData = null;
         insightActiveType = null;
         hideSubTooltip();
@@ -4257,22 +4239,22 @@ window.ASDistribution = (function () {
         var bodyEl = panelEl ? panelEl.querySelector('.as-detail-body') : null;
         var scrollTop = bodyEl ? bodyEl.scrollTop : 0;
 
-        if (summarySelected) {
-            panelHistory.push({ type: 'summary', scrollTop: scrollTop });
-            summarySelected = false;
-        } else if (selectedAs) {
-            panelHistory.push({ type: 'provider', asNumber: selectedAs, scrollTop: scrollTop });
+        if (distributionState.summarySelected) {
+            distributionState.panelHistory.push({ type: 'summary', scrollTop: scrollTop });
+            distributionState.summarySelected = false;
+        } else if (distributionState.selectedProvider) {
+            distributionState.panelHistory.push({ type: 'provider', asNumber: distributionState.selectedProvider, scrollTop: scrollTop });
         }
 
         // Clear sub-filters and tooltips
-        subFilterPeerIds = null;
-        subFilterLabel = null;
-        subFilterCategory = null;
+        distributionState.filterPeerIds = null;
+        distributionState.filterLabel = null;
+        distributionState.filterCategory = null;
         hideSubTooltip();
         hideSubSubTooltip();
 
         // Navigate to provider panel
-        selectedAs = asNum;
+        distributionState.selectedProvider = asNum;
         openPanel(asNum);
 
         // Draw lines for this provider
@@ -4301,21 +4283,21 @@ window.ASDistribution = (function () {
         if (othersListOpen) closeOthersListInDonut();
 
         // Always go back to distribution summary (clear all state)
-        activeNetworkPanel = null;
+        distributionState.activeNetwork = null;
         dismissPeerDetailView(false);
-        selectedAs = null;
-        subFilterPeerIds = null;
-        subFilterLabel = null;
-        subFilterCategory = null;
+        distributionState.selectedProvider = null;
+        distributionState.filterPeerIds = null;
+        distributionState.filterLabel = null;
+        distributionState.filterCategory = null;
         insightActiveAsNum = null; insightActiveData = null;
         insightActiveType = null;
-        panelHistory = [];
+        distributionState.panelHistory = [];
         hideSubTooltip();
         hideSubSubTooltip();
         hideInsightRect();
 
         if (donutFocused) {
-            summarySelected = true;
+            distributionState.summarySelected = true;
             openLensSummaryPanel();
             animateDonutRevert();
             activateHoverAll();
@@ -4334,7 +4316,7 @@ window.ASDistribution = (function () {
     function renderBackButton() {
         if (!panelEl) return;
         var existing = panelEl.querySelector('.as-detail-back');
-        if (panelHistory.length > 0) {
+        if (distributionState.panelHistory.length > 0) {
             if (!existing) {
                 existing = document.createElement('button');
                 existing.className = 'as-detail-back';
@@ -4362,20 +4344,20 @@ window.ASDistribution = (function () {
      *    2nd click: close main panel */
     function onMapClick() {
         // Stage 0: If a network panel (IPv4/IPv6) is open, close it and return to summary
-        if (activeNetworkPanel) {
-            activeNetworkPanel = null;
-            selectedAs = null;
+        if (distributionState.activeNetwork) {
+            distributionState.activeNetwork = null;
+            distributionState.selectedProvider = null;
             // If sub-tooltips are open, close those first
-            if (subTooltipPinned || subSubTooltipPinned) {
+            if (distributionState.subTooltipPinned || distributionState.subSubTooltipPinned) {
                 hideSubTooltip();
                 hideSubSubTooltip();
-                subFilterPeerIds = null;
-                subFilterLabel = null;
-                subFilterCategory = null;
+                distributionState.filterPeerIds = null;
+                distributionState.filterLabel = null;
+                distributionState.filterCategory = null;
             }
             // Return to summary view
-            summarySelected = true;
-            panelHistory = [];
+            distributionState.summarySelected = true;
+            distributionState.panelHistory = [];
             openLensSummaryPanel();
             if (_filterPeerTable) _filterPeerTable(null);
             if (_dimMapPeers) _dimMapPeers(null);
@@ -4393,14 +4375,14 @@ window.ASDistribution = (function () {
         }
 
         // Stage 1.5: If sub-tooltips are visible, close them
-        if (subTooltipPinned || subSubTooltipPinned) {
+        if (distributionState.subTooltipPinned || distributionState.subSubTooltipPinned) {
             hideSubTooltip();
             hideSubSubTooltip();
             // Restore to main state (summary or single AS)
-            if (summarySelected) {
-                subFilterPeerIds = null;
-                subFilterLabel = null;
-                subFilterCategory = null;
+            if (distributionState.summarySelected) {
+                distributionState.filterPeerIds = null;
+                distributionState.filterLabel = null;
+                distributionState.filterCategory = null;
                 if (_filterPeerTable) _filterPeerTable(null);
                 if (_dimMapPeers) _dimMapPeers(null);
                 activateHoverAll();
@@ -4415,33 +4397,33 @@ window.ASDistribution = (function () {
                 animateDonutRevert();
                 renderCenter();
                 renderLegend();
-            } else if (selectedAs) {
+            } else if (distributionState.selectedProvider) {
                 clearSubFilter();
             }
             return true; // handled — don't close main panel
         }
 
         // Stage 2: If in a provider view, go back to summary
-        if (selectedAs) {
+        if (distributionState.selectedProvider) {
             if (donutFocused) {
                 // In focused mode, go back to summary instead of closing
                 if (othersListOpen) closeOthersListInDonut();
-                panelHistory = [];
-                selectedAs = null;
-                hoveredAs = null;
+                distributionState.panelHistory = [];
+                distributionState.selectedProvider = null;
+                distributionState.hoveredProvider = null;
                 animateDonutRevert();
                 renderCenter();
                 renderLegend();
                 selectSummary();
                 return true;
             }
-            panelHistory = [];
+            distributionState.panelHistory = [];
             deselect();
             return true;
         }
 
         // Stage 3: Close summary / exit focused mode
-        if (summarySelected) {
+        if (distributionState.summarySelected) {
             if (donutFocused) {
                 exitFocusedMode();
             } else {
@@ -4462,28 +4444,28 @@ window.ASDistribution = (function () {
     /** Apply a sub-filter: show only these peers on the map and in the peer list.
      *  category and label are used to re-apply the filter after data refreshes. */
     function applySubFilter(peerIds, category, label) {
-        if (subFilterPeerIds && category === subFilterCategory && label === subFilterLabel) {
+        if (distributionState.filterPeerIds && category === distributionState.filterCategory && label === distributionState.filterLabel) {
             // Clicking the same filter — toggle off
             clearSubFilter();
             return;
         }
-        subFilterPeerIds = peerIds;
-        subFilterCategory = category || null;
-        subFilterLabel = label || null;
+        distributionState.filterPeerIds = peerIds;
+        distributionState.filterCategory = category || null;
+        distributionState.filterLabel = label || null;
         if (_filterPeerTable) _filterPeerTable(peerIds);
         if (_dimMapPeers) _dimMapPeers(peerIds);
 
         // Draw lines for sub-filtered peers
-        var seg = selectedAs ? findActiveSegment(selectedAs) : null;
-        if (!seg && selectedAs) {
-            var grp = findActiveGroup(selectedAs);
+        var seg = distributionState.selectedProvider ? findActiveSegment(distributionState.selectedProvider) : null;
+        if (!seg && distributionState.selectedProvider) {
+            var grp = findActiveGroup(distributionState.selectedProvider);
             if (grp) {
                 var othersSeg = getActiveSegments().find(function (s) { return s.isOthers; });
-                seg = { asNumber: selectedAs, peerIds: grp.peerIds, color: othersSeg ? othersSeg.color : '#58a6ff' };
+                seg = { asNumber: distributionState.selectedProvider, peerIds: grp.peerIds, color: othersSeg ? othersSeg.color : '#58a6ff' };
             }
         }
         if (seg && _drawLinesForAs) {
-            _drawLinesForAs(selectedAs, peerIds, seg.color);
+            _drawLinesForAs(distributionState.selectedProvider, peerIds, seg.color);
         }
 
         // Highlight the active row
@@ -4496,9 +4478,9 @@ window.ASDistribution = (function () {
         if (!bodyEl) return;
         var rows = bodyEl.querySelectorAll('.as-interactive-row');
         for (var ri = 0; ri < rows.length; ri++) {
-            if (subFilterCategory && subFilterLabel
-                && rows[ri].dataset.category === subFilterCategory
-                && rows[ri].querySelector('.as-detail-sub-label').textContent === subFilterLabel) {
+            if (distributionState.filterCategory && distributionState.filterLabel
+                && rows[ri].dataset.category === distributionState.filterCategory
+                && rows[ri].querySelector('.as-detail-sub-label').textContent === distributionState.filterLabel) {
                 rows[ri].classList.add('sub-filter-active');
             } else {
                 rows[ri].classList.remove('sub-filter-active');
@@ -4508,24 +4490,24 @@ window.ASDistribution = (function () {
 
     /** Clear the sub-filter (restore to full AS selection) */
     function clearSubFilter() {
-        subFilterPeerIds = null;
-        subFilterLabel = null;
-        subFilterCategory = null;
+        distributionState.filterPeerIds = null;
+        distributionState.filterLabel = null;
+        distributionState.filterCategory = null;
         hideSubTooltip();
         // Restore to full AS filter
-        if (selectedAs) {
-            var seg = findActiveSegment(selectedAs);
+        if (distributionState.selectedProvider) {
+            var seg = findActiveSegment(distributionState.selectedProvider);
             if (!seg) {
-                var grp = findActiveGroup(selectedAs);
+                var grp = findActiveGroup(distributionState.selectedProvider);
                 if (grp) {
                     var othersSeg = getActiveSegments().find(function (s) { return s.isOthers; });
-                    seg = { asNumber: selectedAs, peerIds: grp.peerIds, color: othersSeg ? othersSeg.color : '#58a6ff' };
+                    seg = { asNumber: distributionState.selectedProvider, peerIds: grp.peerIds, color: othersSeg ? othersSeg.color : '#58a6ff' };
                 }
             }
             if (seg) {
                 if (_filterPeerTable) _filterPeerTable(seg.peerIds);
                 if (_dimMapPeers) _dimMapPeers(seg.peerIds);
-                if (_drawLinesForAs) _drawLinesForAs(selectedAs, seg.peerIds, seg.color);
+                if (_drawLinesForAs) _drawLinesForAs(distributionState.selectedProvider, seg.peerIds, seg.color);
             }
         }
         // Remove active highlights
@@ -4642,12 +4624,12 @@ window.ASDistribution = (function () {
         var othersSeg = getActiveSegments().find(function (s) { return s.isOthers; });
         if (!othersSeg) return;
         // Clear sub-filters
-        subFilterPeerIds = null;
-        subFilterLabel = null;
-        subFilterCategory = null;
+        distributionState.filterPeerIds = null;
+        distributionState.filterLabel = null;
+        distributionState.filterCategory = null;
         hideSubTooltip();
         // Select the Others segment
-        selectedAs = 'Others';
+        distributionState.selectedProvider = 'Others';
         openPanel('Others');
         if (_filterPeerTable) _filterPeerTable(othersSeg.peerIds);
         if (_dimMapPeers) _dimMapPeers(othersSeg.peerIds);
@@ -4854,17 +4836,17 @@ window.ASDistribution = (function () {
                 item.dataset.as = g.asNumber;
                 item.addEventListener('mouseleave', function () {
                     // Restore lines and donut center for current selection
-                    if (selectedAs === 'Others') {
+                    if (distributionState.selectedProvider === 'Others') {
                         if (_drawLinesForAs) _drawLinesForAs('Others', othersSeg.peerIds, othersSeg.color);
                         if (_dimMapPeers) _dimMapPeers(othersSeg.peerIds);
                         showFocusedCenterText('Others');
-                    } else if (selectedAs && isOthersSubProvider(selectedAs)) {
+                    } else if (distributionState.selectedProvider && isOthersSubProvider(distributionState.selectedProvider)) {
                         // Restore selected sub-provider's lines
-                        var peerIds = getPeerIdsForAnyAs(selectedAs);
-                        var color = getColorForAsNum(selectedAs);
-                        if (_drawLinesForAs) _drawLinesForAs(selectedAs, peerIds, color);
+                        var peerIds = getPeerIdsForAnyAs(distributionState.selectedProvider);
+                        var color = getColorForAsNum(distributionState.selectedProvider);
+                        if (_drawLinesForAs) _drawLinesForAs(distributionState.selectedProvider, peerIds, color);
                         if (_dimMapPeers) _dimMapPeers(peerIds);
-                        showFocusedCenterText(selectedAs);
+                        showFocusedCenterText(distributionState.selectedProvider);
                     } else {
                         activateHoverAll();
                         if (_dimMapPeers) _dimMapPeers(null);
@@ -4875,12 +4857,12 @@ window.ASDistribution = (function () {
                 // Click: toggle or navigate to this provider's panel
                 item.addEventListener('click', function (e) {
                     e.stopPropagation();
-                    if (selectedAs === g.asNumber) {
+                    if (distributionState.selectedProvider === g.asNumber) {
                         // Toggle off — go back to Others list
                         backToOthersList();
                     } else {
                         if (isCountryLens()) {
-                            selectedAs = g.asNumber;
+                            distributionState.selectedProvider = g.asNumber;
                             openPanel(g.asNumber);
                             if (_filterPeerTable) _filterPeerTable(g.peerIds);
                             if (_dimMapPeers) _dimMapPeers(g.peerIds);
@@ -4923,7 +4905,7 @@ window.ASDistribution = (function () {
         if (!popup) return;
         var items = popup.querySelectorAll('.as-others-popup-item');
         for (var i = 0; i < items.length; i++) {
-            if (items[i].dataset.as === selectedAs) {
+            if (items[i].dataset.as === distributionState.selectedProvider) {
                 items[i].classList.add('as-others-popup-selected');
             } else {
                 items[i].classList.remove('as-others-popup-selected');
@@ -4981,30 +4963,30 @@ window.ASDistribution = (function () {
         var asNum = e.currentTarget.dataset.as;
         if (!asNum) return;
         // Don't show AS hover tooltip when a sub-tooltip is pinned or peer detail is active
-        if (subTooltipPinned || peerDetailActive) return;
-        hoveredAs = asNum;
+        if (distributionState.subTooltipPinned || peerDetailActive) return;
+        distributionState.hoveredProvider = asNum;
         // No floating tooltip — legend highlighting replaces it
         highlightLegendItem(asNum);
 
         // In focused mode, show provider name in donut center on hover
-        if (donutFocused && !selectedAs) {
-            focusedHoverAs = asNum;
+        if (donutFocused && !distributionState.selectedProvider) {
+            distributionState.focusedHoverProvider = asNum;
             showFocusedCenterText(asNum);
         }
 
         // When legends are hidden (not focused), show provider info in donut center
-        if (legendsHidden && !donutFocused && !selectedAs) {
-            focusedHoverAs = asNum;
+        if (legendsHidden && !donutFocused && !distributionState.selectedProvider) {
+            distributionState.focusedHoverProvider = asNum;
             showLegendHoverCenterText(asNum);
         }
 
         // Temporarily remove all-hovered highlight so only this segment is bright
-        if ((hoveredAll || summarySelected) && containerEl) {
+        if ((distributionState.hoveringAll || distributionState.summarySelected) && containerEl) {
             containerEl.classList.remove('as-all-hovered');
         }
 
         // Draw hover lines if nothing is selected, or if summary is selected (temporary override)
-        if (!selectedAs) {
+        if (!distributionState.selectedProvider) {
             var seg = findActiveSegment(asNum);
             if (seg && _drawLinesForAs) {
                 _drawLinesForAs(asNum, seg.peerIds, seg.color);
@@ -5015,31 +4997,31 @@ window.ASDistribution = (function () {
     }
 
     function onSegmentLeave() {
-        if (subTooltipPinned || peerDetailActive) return;
-        hoveredAs = null;
+        if (distributionState.subTooltipPinned || peerDetailActive) return;
+        distributionState.hoveredProvider = null;
         clearLegendHighlight();
 
         // In focused mode, restore center text to default score display
-        if (donutFocused && !selectedAs) {
-            focusedHoverAs = null;
+        if (donutFocused && !distributionState.selectedProvider) {
+            distributionState.focusedHoverProvider = null;
             renderCenter();
         }
 
         // When legends are hidden (not focused), restore default center text
-        if (legendsHidden && !donutFocused && !selectedAs) {
-            focusedHoverAs = null;
+        if (legendsHidden && !donutFocused && !distributionState.selectedProvider) {
+            distributionState.focusedHoverProvider = null;
             clearLegendHoverActive();
             renderCenter();
         }
 
         // If there's an active sub-filter, restore to that instead of showing all
-        if (summarySelected && subFilterPeerIds && subFilterPeerIds.length > 0 && !selectedAs) {
+        if (distributionState.summarySelected && distributionState.filterPeerIds && distributionState.filterPeerIds.length > 0 && !distributionState.selectedProvider) {
             restoreSummaryFromPreview();
             return;
         }
 
-        // If hoveredAll or summarySelected is active, restore all-lines state
-        if ((hoveredAll || summarySelected) && !selectedAs) {
+        // If distributionState.hoveringAll or distributionState.summarySelected is active, restore all-lines state
+        if ((distributionState.hoveringAll || distributionState.summarySelected) && !distributionState.selectedProvider) {
             activateHoverAll();
             if (_filterPeerTable) _filterPeerTable(null);
             if (_dimMapPeers) _dimMapPeers(null);
@@ -5047,7 +5029,7 @@ window.ASDistribution = (function () {
         }
 
         // ONLY clear lines if nothing is selected — selection keeps its lines
-        if (!selectedAs) {
+        if (!distributionState.selectedProvider) {
             if (_clearAsLines) _clearAsLines();
             if (_filterPeerTable) _filterPeerTable(null);
             if (_dimMapPeers) _dimMapPeers(null);
@@ -5103,14 +5085,14 @@ window.ASDistribution = (function () {
     }
 
     function onTitleEnter() {
-        if (selectedAs || summarySelected) return; // Don't override an active selection or summary
-        hoveredAll = true;
+        if (distributionState.selectedProvider || distributionState.summarySelected) return; // Don't override an active selection or summary
+        distributionState.hoveringAll = true;
         activateHoverAll();
     }
 
     function onTitleLeave() {
-        if (!hoveredAll || summarySelected) return;
-        hoveredAll = false;
+        if (!distributionState.hoveringAll || distributionState.summarySelected) return;
+        distributionState.hoveringAll = false;
         deactivateHoverAll();
     }
 
@@ -5131,18 +5113,18 @@ window.ASDistribution = (function () {
         }
 
         // If summary is active, close it and select this AS
-        if (summarySelected) {
+        if (distributionState.summarySelected) {
             deselectSummary();
         }
 
-        if (selectedAs === asNum) {
+        if (distributionState.selectedProvider === asNum) {
             // Deselect — go back to summary in focused mode
             if (donutFocused) {
                 if (othersListOpen) closeOthersListInDonut();
-                selectedAs = null;
-                subFilterPeerIds = null;
-                subFilterLabel = null;
-                subFilterCategory = null;
+                distributionState.selectedProvider = null;
+                distributionState.filterPeerIds = null;
+                distributionState.filterLabel = null;
+                distributionState.filterCategory = null;
                 hideSubTooltip();
                 closePanel();
                 if (_filterPeerTable) _filterPeerTable(null);
@@ -5157,12 +5139,12 @@ window.ASDistribution = (function () {
             }
         } else {
             // Select this AS — clear any sub-filter from previous selection
-            subFilterPeerIds = null;
-            subFilterLabel = null;
-            subFilterCategory = null;
+            distributionState.filterPeerIds = null;
+            distributionState.filterLabel = null;
+            distributionState.filterCategory = null;
             hideSubTooltip();
             if (othersListOpen) closeOthersListInDonut();
-            selectedAs = asNum;
+            distributionState.selectedProvider = asNum;
             var seg = findActiveSegment(asNum);
             if (seg) {
                 openPanel(asNum);
@@ -5187,16 +5169,16 @@ window.ASDistribution = (function () {
     }
 
     function deselect() {
-        activeNetworkPanel = null;
-        if (summarySelected) {
+        distributionState.activeNetwork = null;
+        if (distributionState.summarySelected) {
             deselectSummary();
             return;
         }
         dismissPeerDetailView(false);
-        selectedAs = null;
-        subFilterPeerIds = null;
-        subFilterLabel = null;
-        subFilterCategory = null;
+        distributionState.selectedProvider = null;
+        distributionState.filterPeerIds = null;
+        distributionState.filterLabel = null;
+        distributionState.filterCategory = null;
         if (othersListOpen) closeOthersListInDonut();
         hideSubTooltip();
         hideInsightRect();
@@ -5223,16 +5205,16 @@ window.ASDistribution = (function () {
                 closePeerPopup();
                 return;
             }
-            if (subSubTooltipPinned) {
+            if (distributionState.subSubTooltipPinned) {
                 hideSubSubTooltip();
                 // Restore to parent sub-filter state
-                if (summarySelected && subFilterPeerIds && subFilterPeerIds.length > 0) {
-                    if (_filterPeerTable) _filterPeerTable(subFilterPeerIds);
-                    if (_dimMapPeers) _dimMapPeers(subFilterPeerIds);
+                if (distributionState.summarySelected && distributionState.filterPeerIds && distributionState.filterPeerIds.length > 0) {
+                    if (_filterPeerTable) _filterPeerTable(distributionState.filterPeerIds);
+                    if (_dimMapPeers) _dimMapPeers(distributionState.filterPeerIds);
                     // Re-draw lines for the parent sub-filter (not all lines)
                     if (_drawLinesForAllAs && donutSegments.length > 0) {
                         var idSet = {};
-                        for (var i = 0; i < subFilterPeerIds.length; i++) idSet[subFilterPeerIds[i]] = true;
+                        for (var i = 0; i < distributionState.filterPeerIds.length; i++) idSet[distributionState.filterPeerIds[i]] = true;
                         var groups = [];
                         for (var si = 0; si < donutSegments.length; si++) {
                             var seg = donutSegments[si];
@@ -5246,36 +5228,36 @@ window.ASDistribution = (function () {
                         }
                         _drawLinesForAllAs(groups);
                     }
-                } else if (summarySelected) {
+                } else if (distributionState.summarySelected) {
                     if (_filterPeerTable) _filterPeerTable(null);
                     if (_dimMapPeers) _dimMapPeers(null);
                     activateHoverAll();
                 }
                 return;
             }
-            if (subTooltipPinned) {
+            if (distributionState.subTooltipPinned) {
                 hideSubTooltip();
                 // Restore to full summary or AS state
-                if (summarySelected) {
+                if (distributionState.summarySelected) {
                     clearSummarySubFilter();
-                } else if (selectedAs) {
+                } else if (distributionState.selectedProvider) {
                     clearSubFilter();
                 }
                 return;
             }
             // If a network panel is open, Escape goes back to summary
-            if (activeNetworkPanel) {
-                activeNetworkPanel = null;
-                selectedAs = null;
-                if (subTooltipPinned || subSubTooltipPinned) {
+            if (distributionState.activeNetwork) {
+                distributionState.activeNetwork = null;
+                distributionState.selectedProvider = null;
+                if (distributionState.subTooltipPinned || distributionState.subSubTooltipPinned) {
                     hideSubTooltip();
                     hideSubSubTooltip();
-                    subFilterPeerIds = null;
-                    subFilterLabel = null;
-                    subFilterCategory = null;
+                    distributionState.filterPeerIds = null;
+                    distributionState.filterLabel = null;
+                    distributionState.filterCategory = null;
                 }
-                summarySelected = true;
-                panelHistory = [];
+                distributionState.summarySelected = true;
+                distributionState.panelHistory = [];
                 openLensSummaryPanel();
                 if (_filterPeerTable) _filterPeerTable(null);
                 if (_dimMapPeers) _dimMapPeers(null);
@@ -5285,7 +5267,7 @@ window.ASDistribution = (function () {
                 renderLegend();
                 return;
             }
-            if (summarySelected) {
+            if (distributionState.summarySelected) {
                 if (donutFocused) {
                     exitFocusedMode();
                 } else {
@@ -5293,7 +5275,7 @@ window.ASDistribution = (function () {
                 }
                 return;
             }
-            if (selectedAs) {
+            if (distributionState.selectedProvider) {
                 deselect();
                 return;
             }
@@ -5319,7 +5301,7 @@ window.ASDistribution = (function () {
         }
 
         // Activate hover-all to show lines from donut center in focused mode
-        hoveredAll = false;
+        distributionState.hoveringAll = false;
         activateHoverAll();
 
         // Open summary panel automatically
@@ -5330,9 +5312,9 @@ window.ASDistribution = (function () {
     function exitFocusedMode() {
         if (!donutFocused) return;
         donutFocused = false;
-        focusedHoverAs = null;
+        distributionState.focusedHoverProvider = null;
         dismissPeerDetailView(false);
-        activeNetworkPanel = null;
+        distributionState.activeNetwork = null;
         if (othersListOpen) closeOthersListInDonut();
         document.body.classList.remove('donut-focused');
 
@@ -5341,10 +5323,10 @@ window.ASDistribution = (function () {
         hideInsightRect();
 
         // Deselect everything
-        if (summarySelected) deselectSummary();
-        else if (selectedAs) deselect();
+        if (distributionState.summarySelected) deselectSummary();
+        else if (distributionState.selectedProvider) deselect();
         else closePanel(); // Network panel or other non-summary/non-AS state
-        hoveredAll = false;
+        distributionState.hoveringAll = false;
         deactivateHoverAll();
         if (_filterPeerTable) _filterPeerTable(null);
         if (_dimMapPeers) _dimMapPeers(null);
@@ -5398,29 +5380,29 @@ window.ASDistribution = (function () {
     function closePeerPopup(skipZoomReset) {
         dismissPeerDetailView(!skipZoomReset);
 
-        if (summarySelected) {
+        if (distributionState.summarySelected) {
             if (insightActiveAsNum) {
                 var peerIds = getPeerIdsForAnyAs(insightActiveAsNum);
                 var color = getColorForAsNum(insightActiveAsNum);
                 if (_drawLinesForAs) _drawLinesForAs(insightActiveAsNum, peerIds, color);
                 if (_filterPeerTable) _filterPeerTable(peerIds);
                 if (_dimMapPeers) _dimMapPeers(peerIds);
-            } else if (subFilterPeerIds && subFilterPeerIds.length > 0) {
-                previewSummaryLines(subFilterPeerIds);
+            } else if (distributionState.filterPeerIds && distributionState.filterPeerIds.length > 0) {
+                previewSummaryLines(distributionState.filterPeerIds);
             } else {
                 if (_filterPeerTable) _filterPeerTable(null);
                 if (_dimMapPeers) _dimMapPeers(null);
                 activateHoverAll();
             }
             renderCenter();
-        } else if (selectedAs) {
-            var seg = donutSegments.find(function (item) { return item.asNumber === selectedAs; });
+        } else if (distributionState.selectedProvider) {
+            var seg = donutSegments.find(function (item) { return item.asNumber === distributionState.selectedProvider; });
             if (!seg) {
-                var group = asGroups.find(function (item) { return item.asNumber === selectedAs; });
+                var group = asGroups.find(function (item) { return item.asNumber === distributionState.selectedProvider; });
                 if (group) {
                     var others = donutSegments.find(function (item) { return item.isOthers; });
                     seg = {
-                        asNumber: selectedAs,
+                        asNumber: distributionState.selectedProvider,
                         peerIds: group.peerIds,
                         color: others ? others.color : '#58a6ff'
                     };
@@ -5429,7 +5411,7 @@ window.ASDistribution = (function () {
             if (seg) {
                 if (_filterPeerTable) _filterPeerTable(seg.peerIds);
                 if (_dimMapPeers) _dimMapPeers(seg.peerIds);
-                if (_drawLinesForAs) _drawLinesForAs(selectedAs, seg.peerIds, seg.color);
+                if (_drawLinesForAs) _drawLinesForAs(distributionState.selectedProvider, seg.peerIds, seg.color);
             }
             renderCenter();
         } else {
@@ -5464,7 +5446,7 @@ window.ASDistribution = (function () {
         if (!donutFocused) {
             donutFocused = true;
             document.body.classList.add('donut-focused');
-            if (!summarySelected && !selectedAs) selectSummary();
+            if (!distributionState.summarySelected && !distributionState.selectedProvider) selectSummary();
             peerDetailActive = true;
             selectedPeerId = peer.id;
         }
@@ -5515,7 +5497,7 @@ window.ASDistribution = (function () {
 
     function updateLensChrome() {
         if (containerEl) {
-            containerEl.dataset.lens = activeDistributionLens;
+            containerEl.dataset.lens = distributionState.lens;
         }
         if (titleEl) {
             if (isCountryLens()) {
@@ -5529,24 +5511,24 @@ window.ASDistribution = (function () {
         if (!lensToggleEl) return;
         var buttons = lensToggleEl.querySelectorAll('.as-lens-btn');
         for (var i = 0; i < buttons.length; i++) {
-            var active = buttons[i].dataset.lens === activeDistributionLens;
+            var active = buttons[i].dataset.lens === distributionState.lens;
             buttons[i].classList.toggle('active', active);
             buttons[i].setAttribute('aria-selected', active ? 'true' : 'false');
         }
     }
 
     function clearSelectionForLensSwitch() {
-        selectedAs = null;
-        hoveredAs = null;
-        hoveredAll = false;
-        focusedHoverAs = null;
-        summarySelected = false;
-        activeNetworkPanel = null;
-        legendFocusAs = null;
-        panelHistory = [];
-        subFilterPeerIds = null;
-        subFilterLabel = null;
-        subFilterCategory = null;
+        distributionState.selectedProvider = null;
+        distributionState.hoveredProvider = null;
+        distributionState.hoveringAll = false;
+        distributionState.focusedHoverProvider = null;
+        distributionState.summarySelected = false;
+        distributionState.activeNetwork = null;
+        distributionState.legendFocusProvider = null;
+        distributionState.panelHistory = [];
+        distributionState.filterPeerIds = null;
+        distributionState.filterLabel = null;
+        distributionState.filterCategory = null;
         insightActiveAsNum = null;
         insightActiveData = null;
         insightActiveType = null;
@@ -5566,10 +5548,10 @@ window.ASDistribution = (function () {
 
     function setDistributionLens(lens) {
         if (lens !== 'provider' && lens !== 'country') return;
-        if (activeDistributionLens === lens) return;
+        if (distributionState.lens === lens) return;
         var wasFocused = donutFocused;
         clearSelectionForLensSwitch();
-        activeDistributionLens = lens;
+        distributionState.lens = lens;
         updateLensChrome();
         renderDonut();
         renderCenter();
@@ -5664,11 +5646,11 @@ window.ASDistribution = (function () {
 
         // Clear donut hover state when mouse leaves the browser window
         document.addEventListener('mouseleave', function () {
-            if (hoveredAs && !subTooltipPinned) {
+            if (distributionState.hoveredProvider && !distributionState.subTooltipPinned) {
                 onSegmentLeave();
             }
-            if (focusedHoverAs && !selectedAs) {
-                focusedHoverAs = null;
+            if (distributionState.focusedHoverProvider && !distributionState.selectedProvider) {
+                distributionState.focusedHoverProvider = null;
                 renderCenter();
             }
         });
@@ -5731,7 +5713,7 @@ window.ASDistribution = (function () {
         // update the donut visuals and peer count in the header, but leave the
         // panel body DOM intact so that drill-down state, scroll position, and
         // pinned sub-tooltips are all preserved across the poll cycle.
-        if (activeNetworkPanel) {
+        if (distributionState.activeNetwork) {
             renderDonut();
             renderCenter();
             renderLegend();
@@ -5739,23 +5721,23 @@ window.ASDistribution = (function () {
             var networkRefresh = distributionNetworkPanel.refreshHeader(
                 panelEl,
                 lastPeersRaw,
-                activeNetworkPanel
+                distributionState.activeNetwork
             );
             // Re-apply the correct dim/filter state: if a sub-filter is active
             // (user drilled into a country/provider/etc), preserve that narrow set.
             // Otherwise dim to the full network peer list.
-            if (subSubFilterPeerIds && subSubFilterPeerIds.length > 0) {
-                if (_filterPeerTable) _filterPeerTable(subSubFilterPeerIds);
-                if (_dimMapPeers) _dimMapPeers(subSubFilterPeerIds);
-                var ssAsNum = subSubFilterAsNum;
+            if (distributionState.subSubFilterPeerIds && distributionState.subSubFilterPeerIds.length > 0) {
+                if (_filterPeerTable) _filterPeerTable(distributionState.subSubFilterPeerIds);
+                if (_dimMapPeers) _dimMapPeers(distributionState.subSubFilterPeerIds);
+                var ssAsNum = distributionState.subSubFilterProvider;
                 if (ssAsNum && _drawLinesForAs) {
-                    var ssColor = subSubFilterColor || getColorForAsNum(ssAsNum);
-                    _drawLinesForAs(ssAsNum, subSubFilterPeerIds, ssColor);
+                    var ssColor = distributionState.subSubFilterColor || getColorForAsNum(ssAsNum);
+                    _drawLinesForAs(ssAsNum, distributionState.subSubFilterPeerIds, ssColor);
                 }
-            } else if (subFilterPeerIds && subFilterPeerIds.length > 0) {
-                if (_filterPeerTable) _filterPeerTable(subFilterPeerIds);
-                if (_dimMapPeers) _dimMapPeers(subFilterPeerIds);
-                previewSummaryLines(subFilterPeerIds);
+            } else if (distributionState.filterPeerIds && distributionState.filterPeerIds.length > 0) {
+                if (_filterPeerTable) _filterPeerTable(distributionState.filterPeerIds);
+                if (_dimMapPeers) _dimMapPeers(distributionState.filterPeerIds);
+                previewSummaryLines(distributionState.filterPeerIds);
             } else {
                 if (_filterPeerTable) _filterPeerTable(networkRefresh.peerIds);
                 if (_dimMapPeers) _dimMapPeers(networkRefresh.peerIds);
@@ -5773,21 +5755,21 @@ window.ASDistribution = (function () {
         renderCenter();
 
         // Clear transient legend hover focus unless tooltips are pinned (DOM preserved).
-        // When pinned, hover listeners are still attached so legendFocusAs stays valid.
-        // The persistent sub-sub check in renderLegend handles the pinned case via subSubFilterAsNum.
-        if (legendFocusAs && !subTooltipPinned && !subSubTooltipPinned) {
-            legendFocusAs = null;
+        // When pinned, hover listeners are still attached so distributionState.legendFocusProvider stays valid.
+        // The persistent sub-sub check in renderLegend handles the pinned case via distributionState.subSubFilterProvider.
+        if (distributionState.legendFocusProvider && !distributionState.subTooltipPinned && !distributionState.subSubTooltipPinned) {
+            distributionState.legendFocusProvider = null;
         }
         renderLegend();
 
         // If a selection is active, refresh the panel + filter + keep lines
-        if (selectedAs) {
-            var savedCategory = subFilterCategory;
-            var savedLabel = subFilterLabel;
+        if (distributionState.selectedProvider) {
+            var savedCategory = distributionState.filterCategory;
+            var savedLabel = distributionState.filterLabel;
 
-            var seg = findActiveSegmentOrGroup(selectedAs);
+            var seg = findActiveSegmentOrGroup(distributionState.selectedProvider);
             if (seg) {
-                if (subTooltipPinned || subSubTooltipPinned) {
+                if (distributionState.subTooltipPinned || distributionState.subSubTooltipPinned) {
                     // Sub-tooltip is open — DON'T rebuild panel DOM or change filters.
                     // Keep current peer table filter and dim state intact so drill-down
                     // (e.g. Country > Provider > Peer) isn't disrupted by data refresh.
@@ -5795,36 +5777,36 @@ window.ASDistribution = (function () {
                     if (savedCategory && savedLabel) {
                         var freshPeerIds = findPeerIdsByCategoryLabel(seg, savedCategory, savedLabel);
                         if (freshPeerIds && freshPeerIds.length > 0) {
-                            subFilterPeerIds = freshPeerIds;
-                            subFilterCategory = savedCategory;
-                            subFilterLabel = savedLabel;
+                            distributionState.filterPeerIds = freshPeerIds;
+                            distributionState.filterCategory = savedCategory;
+                            distributionState.filterLabel = savedLabel;
                         }
                     }
                     // Re-apply lines and center text (renderCenter/renderDonut already ran and reset them)
-                    if (hoveredPeerId) {
+                    if (distributionState.hoveredPeerId) {
                         // Peer is being hovered — preserve that peer's visual state
-                        var hPeer = lastPeersRaw.find(function (p) { return p.id === hoveredPeerId; });
+                        var hPeer = lastPeersRaw.find(function (p) { return p.id === distributionState.hoveredPeerId; });
                         if (hPeer) {
                             var hAsNum = parseAsNumber(hPeer.as);
                             var hColor = hAsNum ? getColorForAsNum(hAsNum) : '#6e7681';
-                            previewProviderLines([hoveredPeerId]);
+                            previewProviderLines([distributionState.hoveredPeerId]);
                             if (donutFocused) showPeerInDonutCenter(hPeer, hColor);
                         }
-                    } else if (subFilterPeerIds && subFilterPeerIds.length > 0) {
-                        if (_drawLinesForAs) _drawLinesForAs(selectedAs, subFilterPeerIds, seg.color);
-                        if (_filterPeerTable) _filterPeerTable(subFilterPeerIds);
-                        if (_dimMapPeers) _dimMapPeers(subFilterPeerIds);
+                    } else if (distributionState.filterPeerIds && distributionState.filterPeerIds.length > 0) {
+                        if (_drawLinesForAs) _drawLinesForAs(distributionState.selectedProvider, distributionState.filterPeerIds, seg.color);
+                        if (_filterPeerTable) _filterPeerTable(distributionState.filterPeerIds);
+                        if (_dimMapPeers) _dimMapPeers(distributionState.filterPeerIds);
                         if (donutFocused) {
-                            showFocusedCenterText(selectedAs);
-                            animateDonutExpand(selectedAs);
+                            showFocusedCenterText(distributionState.selectedProvider);
+                            animateDonutExpand(distributionState.selectedProvider);
                         }
                     } else {
-                        if (_drawLinesForAs) _drawLinesForAs(selectedAs, seg.peerIds, seg.color);
+                        if (_drawLinesForAs) _drawLinesForAs(distributionState.selectedProvider, seg.peerIds, seg.color);
                         if (_filterPeerTable) _filterPeerTable(seg.peerIds);
                         if (_dimMapPeers) _dimMapPeers(seg.peerIds);
                         if (donutFocused) {
-                            showFocusedCenterText(selectedAs);
-                            animateDonutExpand(selectedAs);
+                            showFocusedCenterText(distributionState.selectedProvider);
+                            animateDonutExpand(distributionState.selectedProvider);
                         }
                     }
                 } else {
@@ -5832,32 +5814,32 @@ window.ASDistribution = (function () {
                     // Preserve scroll position across data refresh
                     var bodyEl = panelEl ? panelEl.querySelector('.as-detail-body') : null;
                     var savedScroll = bodyEl ? bodyEl.scrollTop : 0;
-                    openPanel(selectedAs);
+                    openPanel(distributionState.selectedProvider);
                     if (bodyEl && savedScroll > 0) bodyEl.scrollTop = savedScroll;
 
                     if (savedCategory && savedLabel) {
                         var freshPeerIds = findPeerIdsByCategoryLabel(seg, savedCategory, savedLabel);
                         if (freshPeerIds && freshPeerIds.length > 0) {
-                            subFilterPeerIds = freshPeerIds;
-                            subFilterCategory = savedCategory;
-                            subFilterLabel = savedLabel;
+                            distributionState.filterPeerIds = freshPeerIds;
+                            distributionState.filterCategory = savedCategory;
+                            distributionState.filterLabel = savedLabel;
                             if (_filterPeerTable) _filterPeerTable(freshPeerIds);
                             if (_dimMapPeers) _dimMapPeers(freshPeerIds);
-                            if (_drawLinesForAs) _drawLinesForAs(selectedAs, freshPeerIds, seg.color);
+                            if (_drawLinesForAs) _drawLinesForAs(distributionState.selectedProvider, freshPeerIds, seg.color);
                             highlightActiveSubRow();
                         } else {
-                            subFilterPeerIds = null;
-                            subFilterCategory = null;
-                            subFilterLabel = null;
+                            distributionState.filterPeerIds = null;
+                            distributionState.filterCategory = null;
+                            distributionState.filterLabel = null;
                             hideSubTooltip();
                             if (_filterPeerTable) _filterPeerTable(seg.peerIds);
                             if (_dimMapPeers) _dimMapPeers(seg.peerIds);
-                            if (_drawLinesForAs) _drawLinesForAs(selectedAs, seg.peerIds, seg.color);
+                            if (_drawLinesForAs) _drawLinesForAs(distributionState.selectedProvider, seg.peerIds, seg.color);
                         }
                     } else {
                         if (_filterPeerTable) _filterPeerTable(seg.peerIds);
                         if (_dimMapPeers) _dimMapPeers(seg.peerIds);
-                        if (_drawLinesForAs) _drawLinesForAs(selectedAs, seg.peerIds, seg.color);
+                        if (_drawLinesForAs) _drawLinesForAs(distributionState.selectedProvider, seg.peerIds, seg.color);
                     }
                 }
             } else {
@@ -5868,7 +5850,7 @@ window.ASDistribution = (function () {
         // If summary is active, refresh — but DON'T rebuild the panel DOM if a
         // sub-tooltip is pinned (that destroys pinnedSubTooltipSrc and resets state).
         // Instead, just refresh lines/filters with fresh peer data.
-        if (summarySelected) {
+        if (distributionState.summarySelected) {
             if (isCountryLens()) {
                 var countrySumBodyEl = panelEl ? panelEl.querySelector('.as-detail-body') : null;
                 var countrySumScroll = countrySumBodyEl ? countrySumBodyEl.scrollTop : 0;
@@ -5881,24 +5863,24 @@ window.ASDistribution = (function () {
                 renderLegend();
                 return;
             }
-            if (subTooltipPinned || subSubTooltipPinned) {
+            if (distributionState.subTooltipPinned || distributionState.subSubTooltipPinned) {
                 // Sub-tooltip is open — preserve DOM. Refresh lines/filters with fresh peer data.
 
                 // PRIORITY 1: Sub-sub-tooltip pinned (e.g. IPv6 → Provider → Peers)
                 // Draw lines only for the specific provider, not the entire category.
-                if (subSubTooltipPinned && subSubFilterAsNum) {
-                    var provGroup = asGroups.find(function (g) { return g.asNumber === subSubFilterAsNum; });
+                if (distributionState.subSubTooltipPinned && distributionState.subSubFilterProvider) {
+                    var provGroup = asGroups.find(function (g) { return g.asNumber === distributionState.subSubFilterProvider; });
                     if (provGroup) {
                         var freshProvPeerIds = provGroup.peerIds;
                         // If there's a parent category filter (e.g. "IPv6"), intersect
-                        if (subFilterCategory === 'summary' && subFilterLabel) {
+                        if (distributionState.filterCategory === 'summary' && distributionState.filterLabel) {
                             var freshSumData = computeSummaryData();
                             var freshCatPeerIds = null;
                             var allCats = [freshSumData.networks, freshSumData.hosting, freshSumData.countries, freshSumData.software, freshSumData.services];
                             for (var ci = 0; ci < allCats.length; ci++) {
                                 if (!allCats[ci]) continue;
                                 for (var ri = 0; ri < allCats[ci].length; ri++) {
-                                    if (allCats[ci][ri].label === subFilterLabel) {
+                                    if (allCats[ci][ri].label === distributionState.filterLabel) {
                                         freshCatPeerIds = allCats[ci][ri].peerIds;
                                         break;
                                     }
@@ -5906,7 +5888,7 @@ window.ASDistribution = (function () {
                                 if (freshCatPeerIds) break;
                             }
                             if (freshCatPeerIds) {
-                                subFilterPeerIds = freshCatPeerIds;
+                                distributionState.filterPeerIds = freshCatPeerIds;
                                 var catSet = {};
                                 for (var i = 0; i < freshCatPeerIds.length; i++) catSet[freshCatPeerIds[i]] = true;
                                 freshProvPeerIds = [];
@@ -5914,11 +5896,11 @@ window.ASDistribution = (function () {
                                     if (catSet[provGroup.peerIds[i]]) freshProvPeerIds.push(provGroup.peerIds[i]);
                                 }
                             }
-                        } else if (subFilterCategory === 'conn-others') {
+                        } else if (distributionState.filterCategory === 'conn-others') {
                             // Others bucket — intersect provider with fresh Others peers
                             var othersSeg = donutSegments.find(function (s) { return s.isOthers; });
                             if (othersSeg) {
-                                subFilterPeerIds = othersSeg.peerIds;
+                                distributionState.filterPeerIds = othersSeg.peerIds;
                                 var othSet = {};
                                 for (var i = 0; i < othersSeg.peerIds.length; i++) othSet[othersSeg.peerIds[i]] = true;
                                 freshProvPeerIds = [];
@@ -5927,33 +5909,33 @@ window.ASDistribution = (function () {
                                 }
                             }
                         }
-                        subSubFilterPeerIds = freshProvPeerIds;
-                        var ssColor = subSubFilterColor || getColorForAsNum(subSubFilterAsNum);
+                        distributionState.subSubFilterPeerIds = freshProvPeerIds;
+                        var ssColor = distributionState.subSubFilterColor || getColorForAsNum(distributionState.subSubFilterProvider);
                         // If a peer is currently being hovered, preserve that single-peer view
-                        if (hoveredPeerId && freshProvPeerIds.indexOf(hoveredPeerId) >= 0) {
-                            if (_drawLinesForAs) _drawLinesForAs(subSubFilterAsNum, [hoveredPeerId], ssColor);
-                            if (_filterPeerTable) _filterPeerTable([hoveredPeerId]);
-                            if (_dimMapPeers) _dimMapPeers([hoveredPeerId]);
+                        if (distributionState.hoveredPeerId && freshProvPeerIds.indexOf(distributionState.hoveredPeerId) >= 0) {
+                            if (_drawLinesForAs) _drawLinesForAs(distributionState.subSubFilterProvider, [distributionState.hoveredPeerId], ssColor);
+                            if (_filterPeerTable) _filterPeerTable([distributionState.hoveredPeerId]);
+                            if (_dimMapPeers) _dimMapPeers([distributionState.hoveredPeerId]);
                             // Preserve hovered peer's center text
                             if (donutFocused) {
-                                var hPeer = lastPeersRaw.find(function (p) { return p.id === hoveredPeerId; });
+                                var hPeer = lastPeersRaw.find(function (p) { return p.id === distributionState.hoveredPeerId; });
                                 if (hPeer) showPeerInDonutCenter(hPeer, ssColor);
                             }
                         } else {
-                            if (_drawLinesForAs) _drawLinesForAs(subSubFilterAsNum, freshProvPeerIds, ssColor);
+                            if (_drawLinesForAs) _drawLinesForAs(distributionState.subSubFilterProvider, freshProvPeerIds, ssColor);
                             if (_filterPeerTable) _filterPeerTable(freshProvPeerIds);
                             if (_dimMapPeers) _dimMapPeers(freshProvPeerIds);
                             // Restore center text to the selected provider
                             if (donutFocused) {
-                                showFocusedCenterText(subSubFilterAsNum);
-                                animateDonutExpand(subSubFilterAsNum);
+                                showFocusedCenterText(distributionState.subSubFilterProvider);
+                                animateDonutExpand(distributionState.subSubFilterProvider);
                             }
                         }
                     }
                 }
                 // PRIORITY 2: Sub-tooltip pinned at category level (e.g. "IPv6" showing providers)
-                else if (subFilterPeerIds && subFilterCategory && subFilterLabel) {
-                    if (subFilterCategory === 'summary') {
+                else if (distributionState.filterPeerIds && distributionState.filterCategory && distributionState.filterLabel) {
+                    if (distributionState.filterCategory === 'summary') {
                         // Standard summary category — look up fresh peer IDs
                         var freshSumData = computeSummaryData();
                         var freshPeerIds = null;
@@ -5961,7 +5943,7 @@ window.ASDistribution = (function () {
                         for (var ci = 0; ci < allCats.length; ci++) {
                             if (!allCats[ci]) continue;
                             for (var ri = 0; ri < allCats[ci].length; ri++) {
-                                if (allCats[ci][ri].label === subFilterLabel) {
+                                if (allCats[ci][ri].label === distributionState.filterLabel) {
                                     freshPeerIds = allCats[ci][ri].peerIds;
                                     break;
                                 }
@@ -5969,10 +5951,10 @@ window.ASDistribution = (function () {
                             if (freshPeerIds) break;
                         }
                         if (freshPeerIds && freshPeerIds.length > 0) {
-                            subFilterPeerIds = freshPeerIds;
+                            distributionState.filterPeerIds = freshPeerIds;
                             // If a provider row is being hovered in the sub-tooltip, preserve that
-                            if (legendFocusAs) {
-                                var hovProvGroup = asGroups.find(function (g) { return g.asNumber === legendFocusAs; });
+                            if (distributionState.legendFocusProvider) {
+                                var hovProvGroup = asGroups.find(function (g) { return g.asNumber === distributionState.legendFocusProvider; });
                                 if (hovProvGroup) {
                                     // Intersect provider peers with category-scoped freshPeerIds
                                     // so a 10-second refresh doesn't expand the preview beyond
@@ -5984,13 +5966,13 @@ window.ASDistribution = (function () {
                                     for (var hfi = 0; hfi < hovAllIds.length; hfi++) {
                                         if (freshSet[hovAllIds[hfi]]) hovPeerIds.push(hovAllIds[hfi]);
                                     }
-                                    var hovColor = getColorForAsNum(legendFocusAs);
-                                    if (_drawLinesForAs) _drawLinesForAs(legendFocusAs, hovPeerIds, hovColor);
+                                    var hovColor = getColorForAsNum(distributionState.legendFocusProvider);
+                                    if (_drawLinesForAs) _drawLinesForAs(distributionState.legendFocusProvider, hovPeerIds, hovColor);
                                     if (_filterPeerTable) _filterPeerTable(hovPeerIds);
                                     if (_dimMapPeers) _dimMapPeers(hovPeerIds);
                                     if (donutFocused) {
-                                        showFocusedCenterText(legendFocusAs);
-                                        animateDonutExpand(legendFocusAs);
+                                        showFocusedCenterText(distributionState.legendFocusProvider);
+                                        animateDonutExpand(distributionState.legendFocusProvider);
                                     }
                                 }
                             } else {
@@ -6014,94 +5996,94 @@ window.ASDistribution = (function () {
                                 }
                             }
                         }
-                    } else if (subFilterCategory === 'insight-stable') {
-                        // "Most stable" insight — refresh by AS number stored in subFilterLabel
-                        var provGroup = asGroups.find(function (g) { return g.asNumber === subFilterLabel; });
+                    } else if (distributionState.filterCategory === 'insight-stable') {
+                        // "Most stable" insight — refresh by AS number stored in distributionState.filterLabel
+                        var provGroup = asGroups.find(function (g) { return g.asNumber === distributionState.filterLabel; });
                         if (provGroup) {
-                            subFilterPeerIds = provGroup.peerIds;
-                            var color = getColorForAsNum(subFilterLabel);
-                            if (_drawLinesForAs) _drawLinesForAs(subFilterLabel, provGroup.peerIds, color);
+                            distributionState.filterPeerIds = provGroup.peerIds;
+                            var color = getColorForAsNum(distributionState.filterLabel);
+                            if (_drawLinesForAs) _drawLinesForAs(distributionState.filterLabel, provGroup.peerIds, color);
                             if (_filterPeerTable) _filterPeerTable(provGroup.peerIds);
                             if (_dimMapPeers) _dimMapPeers(provGroup.peerIds);
                             // Preserve insight rect state
-                            insightActiveAsNum = subFilterLabel;
+                            insightActiveAsNum = distributionState.filterLabel;
                             if (donutFocused && insightRectVisible) {
                                 var insRectData = getInsightDataForActive();
                                 if (insRectData) showInsightRect(insightActiveType, insRectData);
                             } else if (donutFocused) {
-                                showFocusedCenterText(subFilterLabel);
-                                animateDonutExpand(subFilterLabel);
+                                showFocusedCenterText(distributionState.filterLabel);
+                                animateDonutExpand(distributionState.filterLabel);
                             }
                         }
-                    } else if (subFilterCategory === 'conn-provider') {
-                        // Connection by Provider row — refresh by AS number in subFilterLabel
-                        var provGroup = asGroups.find(function (g) { return g.asNumber === subFilterLabel; });
+                    } else if (distributionState.filterCategory === 'conn-provider') {
+                        // Connection by Provider row — refresh by AS number in distributionState.filterLabel
+                        var provGroup = asGroups.find(function (g) { return g.asNumber === distributionState.filterLabel; });
                         if (provGroup) {
-                            subFilterPeerIds = provGroup.peerIds;
-                            var color = getColorForAsNum(subFilterLabel);
+                            distributionState.filterPeerIds = provGroup.peerIds;
+                            var color = getColorForAsNum(distributionState.filterLabel);
                             // If a peer is being hovered, preserve that single-peer view
-                            if (hoveredPeerId && provGroup.peerIds.indexOf(hoveredPeerId) >= 0) {
-                                if (_drawLinesForAs) _drawLinesForAs(subFilterLabel, [hoveredPeerId], color);
-                                if (_filterPeerTable) _filterPeerTable([hoveredPeerId]);
-                                if (_dimMapPeers) _dimMapPeers([hoveredPeerId]);
+                            if (distributionState.hoveredPeerId && provGroup.peerIds.indexOf(distributionState.hoveredPeerId) >= 0) {
+                                if (_drawLinesForAs) _drawLinesForAs(distributionState.filterLabel, [distributionState.hoveredPeerId], color);
+                                if (_filterPeerTable) _filterPeerTable([distributionState.hoveredPeerId]);
+                                if (_dimMapPeers) _dimMapPeers([distributionState.hoveredPeerId]);
                                 if (donutFocused) {
-                                    var hPeer = lastPeersRaw.find(function (p) { return p.id === hoveredPeerId; });
+                                    var hPeer = lastPeersRaw.find(function (p) { return p.id === distributionState.hoveredPeerId; });
                                     if (hPeer) showPeerInDonutCenter(hPeer, color);
                                 }
                             } else {
-                                if (_drawLinesForAs) _drawLinesForAs(subFilterLabel, provGroup.peerIds, color);
+                                if (_drawLinesForAs) _drawLinesForAs(distributionState.filterLabel, provGroup.peerIds, color);
                                 if (_filterPeerTable) _filterPeerTable(provGroup.peerIds);
                                 if (_dimMapPeers) _dimMapPeers(provGroup.peerIds);
                                 // Preserve donut state for this provider
                                 if (donutFocused) {
-                                    showFocusedCenterText(subFilterLabel);
-                                    animateDonutExpand(subFilterLabel);
+                                    showFocusedCenterText(distributionState.filterLabel);
+                                    animateDonutExpand(distributionState.filterLabel);
                                 }
                             }
                         }
-                    } else if (subFilterCategory === 'conn-out') {
+                    } else if (distributionState.filterCategory === 'conn-out') {
                         // Outbound connection row — refresh outbound peers for the AS
-                        var provGroup = asGroups.find(function (g) { return g.asNumber === subFilterLabel; });
+                        var provGroup = asGroups.find(function (g) { return g.asNumber === distributionState.filterLabel; });
                         if (provGroup) {
                             var outPeerIds = [];
                             for (var i = 0; i < provGroup.peers.length; i++) {
                                 if (provGroup.peers[i].direction === 'outbound') outPeerIds.push(provGroup.peers[i].id);
                             }
-                            subFilterPeerIds = outPeerIds;
+                            distributionState.filterPeerIds = outPeerIds;
                             if (_filterPeerTable) _filterPeerTable(outPeerIds);
                             if (_dimMapPeers) _dimMapPeers(outPeerIds);
                             // Preserve donut state for this provider
                             if (donutFocused) {
-                                showFocusedCenterText(subFilterLabel);
-                                animateDonutExpand(subFilterLabel);
+                                showFocusedCenterText(distributionState.filterLabel);
+                                animateDonutExpand(distributionState.filterLabel);
                             }
                         }
-                    } else if (subFilterCategory === 'conn-in') {
+                    } else if (distributionState.filterCategory === 'conn-in') {
                         // Inbound connection row — refresh inbound peers for the AS
-                        var provGroup = asGroups.find(function (g) { return g.asNumber === subFilterLabel; });
+                        var provGroup = asGroups.find(function (g) { return g.asNumber === distributionState.filterLabel; });
                         if (provGroup) {
                             var inPeerIds = [];
                             for (var i = 0; i < provGroup.peers.length; i++) {
                                 if (provGroup.peers[i].direction === 'inbound') inPeerIds.push(provGroup.peers[i].id);
                             }
-                            subFilterPeerIds = inPeerIds;
+                            distributionState.filterPeerIds = inPeerIds;
                             if (_filterPeerTable) _filterPeerTable(inPeerIds);
                             if (_dimMapPeers) _dimMapPeers(inPeerIds);
                             // Preserve donut state for this provider
                             if (donutFocused) {
-                                showFocusedCenterText(subFilterLabel);
-                                animateDonutExpand(subFilterLabel);
+                                showFocusedCenterText(distributionState.filterLabel);
+                                animateDonutExpand(distributionState.filterLabel);
                             }
                         }
-                    } else if (subFilterCategory === 'conn-others') {
+                    } else if (distributionState.filterCategory === 'conn-others') {
                         // Others bucket — refresh from the Others donut segment
                         var othersSeg = donutSegments.find(function (s) { return s.isOthers; });
                         if (othersSeg) {
                             var freshOthersPeerIds = othersSeg.peerIds;
-                            subFilterPeerIds = freshOthersPeerIds;
+                            distributionState.filterPeerIds = freshOthersPeerIds;
                             // If a provider is being hovered, intersect with Others peers
-                            if (legendFocusAs) {
-                                var hovProvGroup = asGroups.find(function (g) { return g.asNumber === legendFocusAs; });
+                            if (distributionState.legendFocusProvider) {
+                                var hovProvGroup = asGroups.find(function (g) { return g.asNumber === distributionState.legendFocusProvider; });
                                 if (hovProvGroup) {
                                     var othSet = {};
                                     for (var oi = 0; oi < freshOthersPeerIds.length; oi++) othSet[freshOthersPeerIds[oi]] = true;
@@ -6109,13 +6091,13 @@ window.ASDistribution = (function () {
                                     for (var hoi = 0; hoi < hovProvGroup.peerIds.length; hoi++) {
                                         if (othSet[hovProvGroup.peerIds[hoi]]) hovPeerIds.push(hovProvGroup.peerIds[hoi]);
                                     }
-                                    var hovColor = getColorForAsNum(legendFocusAs);
-                                    if (_drawLinesForAs) _drawLinesForAs(legendFocusAs, hovPeerIds, hovColor);
+                                    var hovColor = getColorForAsNum(distributionState.legendFocusProvider);
+                                    if (_drawLinesForAs) _drawLinesForAs(distributionState.legendFocusProvider, hovPeerIds, hovColor);
                                     if (_filterPeerTable) _filterPeerTable(hovPeerIds);
                                     if (_dimMapPeers) _dimMapPeers(hovPeerIds);
                                     if (donutFocused) {
-                                        showFocusedCenterText(legendFocusAs);
-                                        animateDonutExpand(legendFocusAs);
+                                        showFocusedCenterText(distributionState.legendFocusProvider);
+                                        animateDonutExpand(distributionState.legendFocusProvider);
                                     }
                                 }
                             } else {
@@ -6139,29 +6121,29 @@ window.ASDistribution = (function () {
                                 }
                             }
                         }
-                    } else if (subFilterCategory === 'insight-fastest' || subFilterCategory === 'insight-data-bytessent' || subFilterCategory === 'insight-data-bytesrecv') {
+                    } else if (distributionState.filterCategory === 'insight-fastest' || distributionState.filterCategory === 'insight-data-bytessent' || distributionState.filterCategory === 'insight-data-bytesrecv') {
                         // Insight ranking categories — preserve DOM, refresh lines for active provider
                         if (insightActiveAsNum) {
                             var insProvGroup = asGroups.find(function (g) { return g.asNumber === insightActiveAsNum; });
                             if (insProvGroup) {
                                 var insColor = getColorForAsNum(insightActiveAsNum);
                                 // If sub-sub is drilled into a specific provider, respect that
-                                if (subSubTooltipPinned && subSubFilterAsNum) {
-                                    var ssProvGroup = asGroups.find(function (g) { return g.asNumber === subSubFilterAsNum; });
+                                if (distributionState.subSubTooltipPinned && distributionState.subSubFilterProvider) {
+                                    var ssProvGroup = asGroups.find(function (g) { return g.asNumber === distributionState.subSubFilterProvider; });
                                     if (ssProvGroup) {
-                                        subSubFilterPeerIds = ssProvGroup.peerIds;
-                                        var ssColor = subSubFilterColor || getColorForAsNum(subSubFilterAsNum);
-                                        if (hoveredPeerId && ssProvGroup.peerIds.indexOf(hoveredPeerId) >= 0) {
-                                            if (_drawLinesForAs) _drawLinesForAs(subSubFilterAsNum, [hoveredPeerId], ssColor);
-                                            if (_filterPeerTable) _filterPeerTable([hoveredPeerId]);
-                                            if (_dimMapPeers) _dimMapPeers([hoveredPeerId]);
+                                        distributionState.subSubFilterPeerIds = ssProvGroup.peerIds;
+                                        var ssColor = distributionState.subSubFilterColor || getColorForAsNum(distributionState.subSubFilterProvider);
+                                        if (distributionState.hoveredPeerId && ssProvGroup.peerIds.indexOf(distributionState.hoveredPeerId) >= 0) {
+                                            if (_drawLinesForAs) _drawLinesForAs(distributionState.subSubFilterProvider, [distributionState.hoveredPeerId], ssColor);
+                                            if (_filterPeerTable) _filterPeerTable([distributionState.hoveredPeerId]);
+                                            if (_dimMapPeers) _dimMapPeers([distributionState.hoveredPeerId]);
                                             // Preserve hovered peer's center text
                                             if (donutFocused) {
-                                                var hPeer = lastPeersRaw.find(function (p) { return p.id === hoveredPeerId; });
+                                                var hPeer = lastPeersRaw.find(function (p) { return p.id === distributionState.hoveredPeerId; });
                                                 if (hPeer) showPeerInDonutCenter(hPeer, ssColor);
                                             }
                                         } else {
-                                            if (_drawLinesForAs) _drawLinesForAs(subSubFilterAsNum, ssProvGroup.peerIds, ssColor);
+                                            if (_drawLinesForAs) _drawLinesForAs(distributionState.subSubFilterProvider, ssProvGroup.peerIds, ssColor);
                                             if (_filterPeerTable) _filterPeerTable(ssProvGroup.peerIds);
                                             if (_dimMapPeers) _dimMapPeers(ssProvGroup.peerIds);
                                         }
@@ -6176,7 +6158,7 @@ window.ASDistribution = (function () {
                     }
                     // Preserve insight rect state for all insight categories
                     // (but skip if a peer is being hovered — that takes priority)
-                    if (insightActiveAsNum && donutFocused && !hoveredPeerId) {
+                    if (insightActiveAsNum && donutFocused && !distributionState.hoveredPeerId) {
                         if (insightRectVisible) {
                             var insRectData = getInsightDataForActive();
                             if (insRectData) showInsightRect(insightActiveType, insRectData);
@@ -6191,8 +6173,8 @@ window.ASDistribution = (function () {
                 }
             } else {
                 // No sub-tooltip pinned — safe to rebuild the panel
-                var savedSumCategory = subFilterCategory;
-                var savedSumLabel = subFilterLabel;
+                var savedSumCategory = distributionState.filterCategory;
+                var savedSumLabel = distributionState.filterLabel;
                 var savedInsightAsNum = insightActiveAsNum;
                 var savedInsightType = insightActiveType;
 
@@ -6221,9 +6203,9 @@ window.ASDistribution = (function () {
                         if (freshPeerIds) break;
                     }
                     if (freshPeerIds && freshPeerIds.length > 0) {
-                        subFilterPeerIds = freshPeerIds;
-                        subFilterCategory = savedSumCategory;
-                        subFilterLabel = savedSumLabel;
+                        distributionState.filterPeerIds = freshPeerIds;
+                        distributionState.filterCategory = savedSumCategory;
+                        distributionState.filterLabel = savedSumLabel;
                         if (_filterPeerTable) _filterPeerTable(freshPeerIds);
                         if (_dimMapPeers) _dimMapPeers(freshPeerIds);
                         highlightActiveSummaryRow();
@@ -6244,9 +6226,9 @@ window.ASDistribution = (function () {
                             _drawLinesForAllAs(groups);
                         }
                     } else {
-                        subFilterPeerIds = null;
-                        subFilterCategory = null;
-                        subFilterLabel = null;
+                        distributionState.filterPeerIds = null;
+                        distributionState.filterCategory = null;
+                        distributionState.filterLabel = null;
                         hideSubTooltip();
                         hideSubSubTooltip();
                         activateHoverAll();
@@ -6361,7 +6343,7 @@ window.ASDistribution = (function () {
 
     /** Get the currently selected AS number */
     function getSelectedAs() {
-        return selectedAs;
+        return distributionState.selectedProvider;
     }
 
     /** Get the color for a given AS number */
@@ -6374,23 +6356,20 @@ window.ASDistribution = (function () {
     // IPv4/IPv6 NETWORK DETAIL PANEL
     // ═══════════════════════════════════════════════════════════
 
-    /** State for network panels */
-    var activeNetworkPanel = null; // 'ipv4' | 'ipv6' | null
-
     /** Open a dedicated network detail panel (IPv4 or IPv6) */
     function openNetworkPanel(netKey) {
         if (!panelEl) return;
         if (peerDetailActive) closePeerPopup();
 
-        var isRefresh = (activeNetworkPanel === netKey);
+        var isRefresh = (distributionState.activeNetwork === netKey);
         if (!donutFocused) {
             donutFocused = true;
             document.body.classList.add('donut-focused');
         }
 
-        activeNetworkPanel = netKey;
+        distributionState.activeNetwork = netKey;
         if (!isRefresh) {
-            panelHistory = [{ type: 'summary', scrollTop: 0 }];
+            distributionState.panelHistory = [{ type: 'summary', scrollTop: 0 }];
             renderBackButton();
         }
 

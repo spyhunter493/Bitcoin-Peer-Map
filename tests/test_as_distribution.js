@@ -15,6 +15,7 @@ const sandbox = {
     },
 };
 loadScript(sandbox, 'src/static/js/core/modal.js');
+loadScript(sandbox, 'src/static/js/features/distribution-state.js');
 loadScript(sandbox, 'src/static/js/features/distribution-data.js');
 loadScript(sandbox, 'src/static/js/features/distribution-peer-detail.js');
 loadScript(sandbox, 'src/static/js/features/distribution-network-panel.js');
