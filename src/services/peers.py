@@ -6,6 +6,7 @@ import logging
 import queue
 import threading
 import time
+from dataclasses import dataclass
 from typing import Any
 
 import requests
@@ -32,7 +33,15 @@ GEO_API_FIELDS = (
 )
 REFRESH_INTERVAL_SECONDS = 10
 GEO_API_DELAY_SECONDS = 1.5
+GEO_RETRY_SECONDS = 60
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class GeoEntry:
+    data: dict[str, Any]
+    generation: int
+    retry_at: float | None = None
 
 
 class PeerService:
@@ -56,8 +65,9 @@ class PeerService:
         self._geo_queue: queue.Queue[tuple[str, str]] = queue.Queue()
         self._pending: set[str] = set()
         self._pending_lock = threading.Lock()
-        self._geo_cache: dict[str, dict[str, Any]] = {}
+        self._geo_cache: dict[str, GeoEntry] = {}
         self._geo_cache_lock = threading.Lock()
+        self._active_hosts: set[str] = set()
         self._known_addresses: set[str] = set()
         self._known_addresses_lock = threading.Lock()
         self._threads: list[threading.Thread] = []
@@ -98,6 +108,12 @@ class PeerService:
             self._last_attempt_at = self._last_success_at
             self._last_error = None
 
+        with self._geo_cache_lock:
+            self._active_hosts = {split_peer_address(peer.get("addr", ""))[0] for peer in peers}
+            self._geo_cache = {
+                host: entry for host, entry in self._geo_cache.items() if host in self._active_hosts
+            }
+
         for peer in peers:
             address = peer.get("addr", "")
             peer_network = peer.get("network", network_type(address))
@@ -136,11 +152,18 @@ class PeerService:
 
     def cached_geo(self, host: str) -> dict[str, Any] | None:
         with self._geo_cache_lock:
-            return self._geo_cache.get(host)
+            entry = self._geo_cache.get(host)
+            if entry is None or entry.generation != self.geo_database.generation:
+                return None
+            if entry.retry_at is not None and time.monotonic() >= entry.retry_at:
+                return None
+            return entry.data
 
     def _cache_private_address(self, host: str) -> None:
         with self._geo_cache_lock:
-            self._geo_cache[host] = self._empty_geo("private")
+            self._geo_cache[host] = GeoEntry(
+                self._empty_geo("private"), self.geo_database.generation
+            )
 
     def queue_geo_lookup(self, host: str, peer_network: str) -> None:
         with self._pending_lock:
@@ -201,47 +224,56 @@ class PeerService:
             self.connectivity.network_failure(geoip_api=True)
         return None
 
-    def _geo_loop(self) -> None:
-        deferred: list[tuple[str, str]] = []
-        while not self.stop_event.is_set():
-            try:
-                host, peer_network = self._geo_queue.get(timeout=0.5)
-            except queue.Empty:
-                connectivity = self.connectivity.snapshot()
-                if (
-                    deferred
-                    and connectivity["internet_state"] == "green"
-                    and not connectivity["geo_db_only_mode"]
-                ):
-                    host, peer_network = deferred.pop(0)
-                else:
-                    continue
-
+    def _resolve_geo(self, host: str, peer_network: str) -> bool:
+        """Resolve one active address; return whether the API rate limit applies."""
+        try:
+            with self._geo_cache_lock:
+                if host not in self._active_hosts:
+                    return False
+            generation = self.geo_database.generation
             data = self.geo_database.get(host)
-            from_database = data is not None
+            if data and not is_valid_geo_data(data):
+                data = None
+            from_database = bool(data)
             connectivity = self.connectivity.snapshot()
             skip_api = connectivity["geo_db_only_mode"] or connectivity["internet_state"] in {
                 "yellow",
                 "red",
             }
-            if data is None and skip_api:
-                if (host, peer_network) not in deferred:
-                    deferred.append((host, peer_network))
-            elif data is None:
+            used_api = data is None and not skip_api and is_public_address(peer_network, host)
+            if used_api:
                 data = self._fetch_geo(host)
                 if data and is_valid_geo_data(data):
-                    self.geo_database.save(host, data)
+                    if generation == self.geo_database.generation:
+                        self.geo_database.save(host, data)
+                else:
+                    data = None
 
             with self._geo_cache_lock:
-                self._geo_cache[host] = (
-                    self._normalize_geo(data, from_database)
-                    if data
-                    else self._empty_geo("unavailable")
-                )
+                if host in self._active_hosts and generation == self.geo_database.generation:
+                    self._geo_cache[host] = GeoEntry(
+                        self._normalize_geo(data, from_database)
+                        if data
+                        else self._empty_geo("unavailable"),
+                        generation,
+                        None if data else time.monotonic() + GEO_RETRY_SECONDS,
+                    )
+            return used_api
+        finally:
             with self._pending_lock:
                 self._pending.discard(host)
-            if not from_database and not skip_api:
-                self.stop_event.wait(GEO_API_DELAY_SECONDS)
+
+    def _geo_loop(self) -> None:
+        while not self.stop_event.is_set():
+            try:
+                host, peer_network = self._geo_queue.get(timeout=0.5)
+            except queue.Empty:
+                continue
+            try:
+                if self._resolve_geo(host, peer_network):
+                    self.stop_event.wait(GEO_API_DELAY_SECONDS)
+            finally:
+                self._geo_queue.task_done()
 
     def list_peers(self) -> list[dict[str, Any]]:
         return self.snapshot()["peers"]

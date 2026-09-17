@@ -62,6 +62,18 @@ class GeoDatabase:
         self.path = data_dir / "geo.db"
         self.temp_dir = data_dir / "tmp"
         self._update_lock = threading.Lock()
+        self._generation = 0
+        self._generation_lock = threading.Lock()
+
+    @property
+    def generation(self) -> int:
+        with self._generation_lock:
+            return self._generation
+
+    def dataset_changed(self) -> None:
+        """Invalidate derived lookup results after a committed dataset merge."""
+        with self._generation_lock:
+            self._generation += 1
 
     def initialize(self) -> None:
         if not self.enabled:
@@ -255,6 +267,7 @@ class GeoDatabase:
             if not self.path.exists():
                 temporary_path.replace(self.path)
                 temporary_path = None
+                self.dataset_changed()
                 return {
                     "success": True,
                     "message": f"Downloaded database ({len(rows)} entries)",
@@ -269,6 +282,7 @@ class GeoDatabase:
                 )
                 total = connection.execute("SELECT COUNT(*) FROM geo_cache").fetchone()[0]
             added = total - before
+            self.dataset_changed()
             message = (
                 f"+{added} new entries ({total} total)"
                 if added

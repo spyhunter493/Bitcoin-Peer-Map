@@ -101,3 +101,93 @@ def test_invalid_response_does_not_replace_successful_snapshot(service):
     service.rpc.result = {"unexpected": "response"}
     assert service.refresh_once() is False
     assert service.snapshot()["peers"] == previous["peers"]
+
+
+def public_peer(service):
+    service.rpc.result = [{"id": 1, "addr": "8.8.8.8:8333", "network": "ipv4"}]
+    service.refresh_once()
+
+
+def resolve_next(service):
+    host, network = service._geo_queue.get_nowait()
+    return service._resolve_geo(host, network)
+
+
+def test_failed_geo_lookup_expires_and_recovers(service, monkeypatch):
+    clock = [100.0]
+    monkeypatch.setattr("services.peers.time.monotonic", lambda: clock[0])
+    attempts = []
+
+    def fetch(host):
+        attempts.append(host)
+        return (
+            None
+            if len(attempts) == 1
+            else {"lat": -36.85, "lon": 174.76, "country": "New Zealand", "city": "Auckland"}
+        )
+
+    monkeypatch.setattr(service, "_fetch_geo", fetch)
+    public_peer(service)
+    assert resolve_next(service)
+    assert service.snapshot()["peers"][0]["location_status"] == "unavailable"
+    clock[0] = 159.99
+    public_peer(service)
+    assert service._geo_queue.empty()
+    clock[0] = 160
+    public_peer(service)
+    public_peer(service)
+    assert service._geo_queue.qsize() == 1
+    assert resolve_next(service)
+    assert attempts == ["8.8.8.8", "8.8.8.8"]
+    assert service.snapshot()["peers"][0]["city"] == "Auckland"
+
+
+def test_geo_database_generation_invalidates_negative_cache(service, monkeypatch):
+    monkeypatch.setattr(service, "_fetch_geo", lambda host: None)
+    public_peer(service)
+    resolve_next(service)
+    monkeypatch.setattr(
+        service.geo_database,
+        "get",
+        lambda host: {"lat": -36.85, "lon": 174.76, "country": "New Zealand", "city": "Auckland"},
+    )
+    service.geo_database.dataset_changed()
+    public_peer(service)
+    assert not resolve_next(service)
+    assert service.snapshot()["peers"][0]["city"] == "Auckland"
+
+
+def test_geo_skips_departed_peers_and_prunes_memory(service, monkeypatch):
+    monkeypatch.setattr(service, "_fetch_geo", lambda host: pytest.fail("obsolete request"))
+    public_peer(service)
+    service.rpc.result = []
+    service.refresh_once()
+    assert not resolve_next(service)
+    assert not service._pending
+    assert not service._geo_cache
+
+
+def test_geo_reads_database_even_when_api_is_disabled(service, monkeypatch):
+    service.connectivity.toggle_geoip_api()
+    monkeypatch.setattr(service, "_fetch_geo", lambda host: pytest.fail("API disabled"))
+    monkeypatch.setattr(
+        service.geo_database,
+        "get",
+        lambda host: {"lat": -36.85, "lon": 174.76, "country": "New Zealand", "city": "Auckland"},
+    )
+    public_peer(service)
+    assert not resolve_next(service)
+    assert service.snapshot()["peers"][0]["city"] == "Auckland"
+
+
+def test_geo_does_not_install_result_from_old_dataset_generation(service, monkeypatch):
+    def fetch(host):
+        service.geo_database.dataset_changed()
+        return {"lat": 1, "lon": 1, "country": "Old", "city": "Old"}
+
+    monkeypatch.setattr(service, "_fetch_geo", fetch)
+    public_peer(service)
+    resolve_next(service)
+    assert service.cached_geo("8.8.8.8") is None
+    public_peer(service)
+    assert service._geo_queue.qsize() == 1
