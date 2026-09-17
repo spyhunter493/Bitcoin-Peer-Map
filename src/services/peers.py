@@ -279,6 +279,8 @@ class PeerService:
             "P2P_V2": "P",
             "COMPACT_FILTERS": "CF",
             "BLOOM": "B",
+            "BLAKE2B?": "BL",
+            "BLAKE2B": "BL",
         }
         for peer in peers:
             address = peer.get("addr", "")

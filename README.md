@@ -230,6 +230,7 @@ their respective detail panels. `distribution.css` styles both lenses. Peer tabl
 and preferences live in `features/peer-table.js`, with pure filtering/sorting in
 `peer-table-model.js`. Private panels and peer popups use
 `private-network-panel.js` and `private-peer-detail.js`, sharing `private-network-state.js`.
+`features/service-flags.js` supplies the peer service labels used by the table and detail panels.
 `core/polling.js` owns peer/node-info timer lifecycles and prevents overlapping requests;
 `features/peer-refresh.js` handles snapshot delivery and freshness.
 

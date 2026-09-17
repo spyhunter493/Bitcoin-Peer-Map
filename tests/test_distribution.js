@@ -15,6 +15,7 @@ const sandbox = {
     },
 };
 loadScript(sandbox, 'src/static/js/core/modal.js');
+loadScript(sandbox, 'src/static/js/features/service-flags.js');
 loadScript(sandbox, 'src/static/js/features/distribution-state.js');
 loadScript(sandbox, 'src/static/js/features/distribution-data.js');
 loadScript(sandbox, 'src/static/js/features/distribution-peer-detail.js');
@@ -90,15 +91,9 @@ const peerDetail = sandbox.window.BPMDistributionPeerDetail;
 const escapeHtml = sandbox.window.BPMModal.escapeHtml;
 const hostile = `<img src=x onerror="alert(1)"> & '`;
 const escaped = '&lt;img src=x onerror=&quot;alert(1)&quot;&gt; &amp; &#39;';
-const serviceFlags = {
-    NETWORK: { abbr: 'N', label: 'Full chain history', rpc: 'NODE_NETWORK' },
-    WITNESS: { abbr: 'W', label: 'Segregated Witness', rpc: 'NODE_WITNESS' },
-    NETWORK_LIMITED: {
-        abbr: 'NL',
-        label: 'Limited chain history',
-        rpc: 'NODE_NETWORK_LIMITED',
-    },
-};
+const serviceFlags = sandbox.window.BPMServiceFlags;
+assert.strictEqual(serviceFlags['BLAKE2B?'].abbr, 'BL');
+assert.strictEqual(serviceFlags.BLAKE2B, serviceFlags['BLAKE2B?']);
 
 assert.strictEqual(escapeHtml(hostile), escaped);
 assert.strictEqual(escapeHtml(0), '0');
@@ -122,6 +117,10 @@ assert.ok(serviceList.includes('class="service-flag-list"'));
 assert.ok(serviceList.includes('NODE_NETWORK'));
 assert.ok(serviceList.includes('Segregated Witness'));
 assert.ok(!serviceList.includes('<br>'));
+const forkServiceList = peerDetail.renderServiceFlagList('BL', serviceFlags);
+assert.ok(forkServiceList.includes('BLAKE2b fork support'));
+assert.ok(forkServiceList.includes('NODE_BLAKE2B'));
+assert.ok(!forkServiceList.includes('Unknown service flag'));
 
 const rendered = peerDetail.renderPeerDetails({
     id: 7,
