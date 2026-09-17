@@ -69,6 +69,21 @@ def test_snapshot_preserves_peers_on_failure_and_recovers_to_zero(service, monke
     assert recovered["status"]["error"] is None
 
 
+@pytest.mark.parametrize("name", ["BLAKE2B?", "BLAKE2B"])
+def test_blake2b_service_flag_is_abbreviated(service, name):
+    service.rpc.result = [
+        {
+            "id": 7,
+            "addr": "127.0.0.1:8333",
+            "servicesnames": ["NETWORK", name],
+        }
+    ]
+    assert service.refresh_once() is True
+    peer = service.snapshot()["peers"][0]
+    assert peer["services"] == ["NETWORK", name]
+    assert peer["services_abbrev"] == "N BL"
+
+
 @pytest.mark.parametrize("result", [None, {}, ["invalid peer"], RpcError("RPC failed")])
 def test_first_failed_poll_is_distinct_from_successful_zero_peers(service, result):
     service.rpc.result = result

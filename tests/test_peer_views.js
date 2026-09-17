@@ -25,6 +25,8 @@ module.exports = async function assertPeerViews(browser, baseUrl) {
         country: '<b>Country</b>', connection_type: hostile, transport_protocol_type: hostile,
         permissions: [hostile], session_id: hostile,
     }));
+    peers[0].services = [...peers[0].services, 'BLAKE2B?'];
+    peers[0].services_abbrev += ' BL';
     const privatePeers = peers.filter(peer => ['onion', 'i2p', 'cjdns'].includes(peer.network));
     privatePeers[0].subver = 'constructor';
     await page.route('**/api/peers?include_status=true', route => route.fulfill({
@@ -46,9 +48,12 @@ module.exports = async function assertPeerViews(browser, baseUrl) {
         await page.waitForFunction(() => document.querySelectorAll('#peer-tbody tr').length >= 10);
         assert.strictEqual(await page.locator('#peer-tbody tr').first().locator('td').nth(5).textContent(), hostile);
         assert.strictEqual(await page.locator('#peer-tbody tr').first().locator('td').nth(5).getAttribute('title'), hostile);
+        const servicesCell = page.locator('#peer-tbody tr[data-id="1"] td').nth(6);
+        assert.match(await servicesCell.textContent(), /\bBL\b/);
+        assert.match(await servicesCell.getAttribute('title'), /BL = BLAKE2b fork support \(NODE_BLAKE2B\)/);
         await safe();
 
-        await page.evaluate(() => window.ASDistribution.enterFocusedMode());
+        await page.evaluate(() => window.BPMDistribution.enterFocusedMode());
         await page.waitForSelector('#as-detail-panel .as-summary-row');
         const software = page.locator('#as-detail-panel .as-summary-row').filter({ hasText: hostile }).first();
         await software.click();
@@ -74,8 +79,8 @@ module.exports = async function assertPeerViews(browser, baseUrl) {
             await page.keyboard.press('Escape');
         }
         await page.evaluate(() => {
-            window.ASDistribution.exitFocusedMode();
-            window.ASDistribution.enterFocusedMode();
+            window.BPMDistribution.exitFocusedMode();
+            window.BPMDistribution.enterFocusedMode();
         });
         // Assert table contents, not just counts, through both connection-direction filters.
         for (const [selector, direction] of [['.as-conn-dir-row', 'IN'], ['.as-conn-out-row', 'OUT']]) {
@@ -98,14 +103,14 @@ module.exports = async function assertPeerViews(browser, baseUrl) {
         }
 
         await page.evaluate(() => {
-            const peer = window.ASDistribution.getLastPeersRaw().find(p => p.network === 'ipv4');
-            window.ASDistribution.openPeerDetailPanel(peer, 'peer-table');
+            const peer = window.BPMDistribution.getLastPeersRaw().find(p => p.network === 'ipv4');
+            window.BPMDistribution.openPeerDetailPanel(peer, 'peer-table');
         });
         await page.waitForSelector('.peer-detail-popup.visible');
         await safe();
         assert.ok((await page.locator('.peer-detail-popup').textContent()).includes(hostile));
         await page.keyboard.press('Escape');
-        await page.evaluate(() => window.ASDistribution.exitFocusedMode());
+        await page.evaluate(() => window.BPMDistribution.exitFocusedMode());
 
         // Private overview, software drill-down, network panel, and full peer details.
         await page.click('#pn-mini-donut');

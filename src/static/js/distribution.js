@@ -1,20 +1,16 @@
 /* ============================================================
-   AS Distribution Analysis — JavaScript Module
-   Isolated logic for the AS Distribution view.
-   Delete this file to fully revert the feature.
-
-   Integration points in app.js are marked with [AS-DISTRIBUTION].
-   This module exposes window.ASDistribution for the main app to call.
+   Distribution dashboard coordinator — provider and country lenses.
+   This module exposes window.BPMDistribution for the main app to call.
    ============================================================ */
 
-window.ASDistribution = (function () {
+window.BPMDistribution = (function () {
     'use strict';
 
     // ═══════════════════════════════════════════════════════════
     // CONFIGURATION
     // ═══════════════════════════════════════════════════════════
 
-    const MAX_SEGMENTS = 8;      // Top N ASes in the donut, rest = "Others"
+    const MAX_SEGMENTS = 8;      // Top N groups in either lens, rest = "Others"
     const DONUT_SIZE = 260;      // SVG viewBox size
     const DONUT_RADIUS = 116;    // Outer radius of the donut ring
     const DONUT_WIDTH = 28;      // Width of the donut ring (default)
@@ -76,15 +72,7 @@ window.ASDistribution = (function () {
     let _enterPrivateNetMode = null; // fn(targetNet) — enter private network mode
     let _showDisconnectDialog = null; // fn(peerId, network) — shared peer-actions dialog
 
-    // Service flag definitions (mirrored from app.js for hover expansion)
-    var SERVICE_FLAGS = {
-        'NETWORK':          { abbr: 'N',  label: 'Full chain history', rpc: 'NODE_NETWORK' },
-        'WITNESS':          { abbr: 'W',  label: 'Segregated Witness', rpc: 'NODE_WITNESS' },
-        'NETWORK_LIMITED':  { abbr: 'NL', label: 'Limited chain history', rpc: 'NODE_NETWORK_LIMITED' },
-        'P2P_V2':           { abbr: 'P',  label: 'BIP324 v2 transport', rpc: 'P2P_V2' },
-        'COMPACT_FILTERS':  { abbr: 'CF', label: 'Compact block filters', rpc: 'NODE_COMPACT_FILTERS' },
-        'BLOOM':            { abbr: 'B',  label: 'Bloom filters', rpc: 'NODE_BLOOM' },
-    };
+    const SERVICE_FLAGS = window.BPMServiceFlags;
 
     // Connection type short labels
     var CONN_TYPE_LABELS = {
@@ -113,13 +101,13 @@ window.ASDistribution = (function () {
     const distributionDonut = window.BPMDistributionDonut;
     const parseAsNumber = distributionData.parseAsNumber;
     const parseAsOrg = distributionData.parseAsOrg;
-    const fmtBytes = distributionData.fmtBytes;
-    const fmtDuration = distributionData.fmtDuration;
     const buildDistributionGroup = distributionData.buildDistributionGroup;
     const getQuality = distributionDonut.getQuality;
     const buildScoreTooltip = distributionDonut.buildScoreTooltip;
     const escHtml = window.BPMModal.escapeHtml;
     const distributionNetworkPanel = window.BPMDistributionNetworkPanel;
+    const countryPanel = window.BPMDistributionCountryPanel;
+    const providerPanel = window.BPMDistributionProviderPanel;
 
     function aggregatePeers(peers) {
         const aggregation = distributionData.aggregateProviders(peers);
@@ -591,126 +579,7 @@ window.ASDistribution = (function () {
     // DETAIL PANEL — Right slide-in (pushes content)
     // ═══════════════════════════════════════════════════════════
 
-    function openCountryPanel(countryId) {
-        if (!panelEl) return;
-        if (distributionState.peerDetailActive) closePeerPopup();
-
-        var seg = findActiveSegment(countryId);
-        var fullGroup = seg && seg.isOthers ? seg : findActiveGroup(countryId);
-        if (!seg && fullGroup) seg = findActiveSegmentOrGroup(countryId);
-        if (!seg || !fullGroup) return;
-
-        renderBackButton();
-
-        var asnEl = panelEl.querySelector('.as-detail-asn');
-        var orgEl = panelEl.querySelector('.as-detail-org');
-        var metaEl = panelEl.querySelector('.as-detail-meta');
-        var barFill = panelEl.querySelector('.as-detail-bar-fill');
-        var pctEl = panelEl.querySelector('.as-detail-pct');
-        var riskEl = panelEl.querySelector('.as-detail-risk');
-
-        var allPeers = getAllPeersForActiveSegment(seg);
-        if (seg.isOthers) {
-            fullGroup = buildDistributionGroup({
-                asNumber: 'Others',
-                asName: seg.asName,
-                asShort: '',
-                isCountryGroup: true
-            }, allPeers, countryTotalPeers);
-        }
-        var providers = aggregateProvidersForPeers(allPeers);
-        var titleCode = seg.isOthers ? 'Others' : (fullGroup.countryCode || fullGroup.asShort || 'Country');
-        var titleName = seg.isOthers ? seg.asName : (fullGroup.countryName || fullGroup.asName || titleCode);
-
-        if (asnEl) {
-            asnEl.textContent = titleCode;
-            asnEl.classList.remove('as-summary-title');
-        }
-        if (orgEl) orgEl.textContent = titleName;
-        if (metaEl) {
-            metaEl.innerHTML = '<span class="as-detail-type-badge">Jurisdiction</span>';
-        }
-
-        if (barFill) {
-            barFill.style.width = seg.percentage.toFixed(1) + '%';
-            barFill.style.background = seg.color;
-        }
-        if (pctEl) pctEl.textContent = seg.percentage.toFixed(1) + '% of geolocated peers';
-
-        if (riskEl) {
-            riskEl.className = 'as-detail-risk';
-            if (seg.riskLevel !== 'low' && seg.riskLabel) {
-                riskEl.classList.add('as-detail-risk-' + seg.riskLevel);
-                riskEl.textContent = seg.riskLabel;
-            } else {
-                riskEl.textContent = '';
-            }
-        }
-
-        var bodyEl = panelEl.querySelector('.as-detail-body');
-        if (!bodyEl) return;
-
-        var html = '';
-        html += '<div class="modal-section-title">Summary</div>';
-        html += summaryController.view.row('Total Peers', seg.peerCount);
-        html += summaryController.view.row('Providers', providers.length);
-        html += summaryController.view.row('Share', seg.percentage.toFixed(1) + '%');
-
-        if (seg.isOthers && seg._othersGroups && seg._othersGroups.length > 0) {
-            html += '<div class="modal-section-title">Countries &amp; Territories</div>';
-            for (var oi = 0; oi < seg._othersGroups.length; oi++) {
-                var og = seg._othersGroups[oi];
-                var oLabel = (og.countryCode || og.asShort || '') + '  ' + (og.countryName || og.asName || og.asNumber);
-                html += summaryController.view.interactiveRow(oLabel, og.peerCount + ' peer' + (og.peerCount !== 1 ? 's' : ''), og.peerIds, 'country-group');
-            }
-        }
-
-        if (fullGroup.connTypesList && fullGroup.connTypesList.length > 0) {
-            html += '<div class="modal-section-title">Connections</div>';
-            html += summaryController.view.row('Inbound', seg.isOthers ? allPeers.filter(function (p) { return p.direction === 'IN'; }).length : fullGroup.inboundCount);
-            html += summaryController.view.row('Outbound', seg.isOthers ? allPeers.filter(function (p) { return p.direction !== 'IN'; }).length : fullGroup.outboundCount);
-            for (var cti = 0; cti < fullGroup.connTypesList.length; cti++) {
-                var ctItem = fullGroup.connTypesList[cti];
-                var ctLabel = (Object.hasOwn(CONN_TYPE_LABELS, ctItem.type) ? CONN_TYPE_LABELS[ctItem.type] : null) || ctItem.type;
-                html += summaryController.view.interactiveRow(ctLabel, ctItem.count, ctItem.peers.map(function (p) { return p.id; }), 'conntype');
-            }
-        }
-
-        html += '<div class="modal-section-title">Performance</div>';
-        html += summaryController.view.row('Avg Duration', fullGroup.avgDurationFmt || '\u2014');
-        html += summaryController.view.row('Avg Ping', fullGroup.avgPingMs > 0 ? Math.round(fullGroup.avgPingMs) + 'ms' : '\u2014');
-        html += summaryController.view.row('Data Sent', fullGroup.totalBytesSentFmt || fmtBytes(0));
-        html += summaryController.view.row('Data Recv', fullGroup.totalBytesRecvFmt || fmtBytes(0));
-
-        if (providers.length > 0) {
-            html += '<div class="modal-section-title">Providers</div>';
-            for (var pi = 0; pi < providers.length; pi++) {
-                var prov = providers[pi];
-                var pName = prov.name;
-                if (pName.length > 24) pName = pName.substring(0, 23) + '\u2026';
-                html += summaryController.view.interactiveRow(prov.asNumber + ' \u00b7 ' + pName, prov.peerCount + ' peer' + (prov.peerCount !== 1 ? 's' : ''), prov.peerIds, 'country-provider');
-            }
-        }
-
-        if (fullGroup.versions && fullGroup.versions.length > 0) {
-            html += '<div class="modal-section-title">Software</div>';
-            for (var vi = 0; vi < fullGroup.versions.length; vi++) {
-                html += summaryController.view.interactiveRow(fullGroup.versions[vi].subver, fullGroup.versions[vi].count + ' peer' + (fullGroup.versions[vi].count !== 1 ? 's' : ''), fullGroup.versions[vi].peers.map(function (p) { return p.id; }), 'software');
-            }
-        }
-
-        if (fullGroup.servicesCombos && fullGroup.servicesCombos.length > 0) {
-            html += '<div class="modal-section-title">Services</div>';
-            for (var si = 0; si < fullGroup.servicesCombos.length; si++) {
-                html += summaryController.view.interactiveRow(fullGroup.servicesCombos[si].abbrev, fullGroup.servicesCombos[si].count + ' peer' + (fullGroup.servicesCombos[si].count !== 1 ? 's' : ''), fullGroup.servicesCombos[si].peers.map(function (p) { return p.id; }), 'services');
-            }
-        }
-
-        bodyEl.innerHTML = html;
-        bodyEl.scrollTop = 0;
-        summaryController.attachInteractiveRowHandlers(bodyEl, seg);
-        summaryController.attachPanelBlankClickHandler(bodyEl);
-
+    function showPanel() {
         panelEl.classList.remove('hidden');
         void panelEl.offsetWidth;
         panelEl.classList.add('visible');
@@ -719,217 +588,44 @@ window.ASDistribution = (function () {
         document.body.classList.remove('panel-focus-peers');
     }
 
-    function openPanel(asNum) {
+    function openCountryPanel(countryId) {
         if (!panelEl) return;
+        if (distributionState.peerDetailActive) closePeerPopup();
+        var seg = findActiveSegment(countryId);
+        var fullGroup = seg && seg.isOthers ? seg : findActiveGroup(countryId);
+        if (!seg && fullGroup) seg = findActiveSegmentOrGroup(countryId);
+        if (!seg || !fullGroup) return;
+
+        var allPeers = getAllPeersForActiveSegment(seg);
+        if (seg.isOthers) {
+            fullGroup = buildDistributionGroup({
+                asNumber: 'Others', asName: seg.asName, asShort: '', isCountryGroup: true
+            }, allPeers, countryTotalPeers);
+        }
+        renderBackButton();
+        if (!countryPanel.render({
+            panelEl, segment: seg, group: fullGroup, peers: allPeers,
+            providers: aggregateProvidersForPeers(allPeers),
+            summaryController, connectionTypeLabels: CONN_TYPE_LABELS,
+        })) return;
+        showPanel();
+    }
+
+    function openPanel(asNum) {
         if (isCountryLens()) {
             openCountryPanel(asNum);
             return;
         }
+        if (!panelEl) return;
         if (distributionState.peerDetailActive) closePeerPopup();
-        var seg = donutSegments.find(function (s) { return s.asNumber === asNum; });
-        var fullGroup;
-
-        if (seg) {
-            fullGroup = seg.isOthers ? seg : asGroups.find(function (g) { return g.asNumber === asNum; });
-        } else {
-            // Not a donut segment — find in asGroups (e.g. an "Others" sub-provider)
-            fullGroup = asGroups.find(function (g) { return g.asNumber === asNum; });
-            if (fullGroup) {
-                seg = {
-                    asNumber: fullGroup.asNumber,
-                    asName: fullGroup.asName,
-                    asShort: fullGroup.asShort,
-                    peerCount: fullGroup.peerCount,
-                    percentage: fullGroup.percentage,
-                    color: getColorForAsNum(asNum),
-                    riskLevel: fullGroup.riskLevel,
-                    riskLabel: fullGroup.riskLabel,
-                    peerIds: fullGroup.peerIds,
-                    isOthers: false,
-                    hostingLabel: fullGroup.hostingLabel,
-                };
-            }
-        }
-        if (!seg || !fullGroup) return;
-
-        // Render back button
+        const resolved = providerPanel.resolve(asNum, donutSegments, asGroups, getColorForAsNum);
+        if (!resolved) return;
         renderBackButton();
-
-        // Build header
-        var asnEl = panelEl.querySelector('.as-detail-asn');
-        var orgEl = panelEl.querySelector('.as-detail-org');
-        var metaEl = panelEl.querySelector('.as-detail-meta');
-        var barFill = panelEl.querySelector('.as-detail-bar-fill');
-        var pctEl = panelEl.querySelector('.as-detail-pct');
-        var riskEl = panelEl.querySelector('.as-detail-risk');
-
-        if (asnEl) {
-            asnEl.textContent = seg.isOthers ? 'Others' : seg.asNumber;
-            asnEl.classList.remove('as-summary-title');
-        }
-        if (orgEl) orgEl.textContent = seg.isOthers ? seg.asName : (fullGroup.asName || seg.asNumber);
-
-        // Meta badges
-        if (metaEl && !seg.isOthers) {
-            var hosting = fullGroup.hostingLabel || '';
-            var hcls = hosting === 'Cloud/Hosting' ? 'hosting' : (hosting === 'Residential' ? 'residential' : '');
-            metaEl.innerHTML = hosting ? '<span class="as-detail-type-badge ' + hcls + '">' + hosting + '</span>' : '';
-        } else if (metaEl) {
-            metaEl.innerHTML = '';
-        }
-
-        // Percentage bar
-        if (barFill) {
-            barFill.style.width = seg.percentage.toFixed(1) + '%';
-            barFill.style.background = seg.color;
-        }
-        if (pctEl) pctEl.textContent = seg.percentage.toFixed(1) + '% of peers';
-
-        // Risk label
-        if (riskEl) {
-            riskEl.className = 'as-detail-risk';
-            if (seg.riskLevel !== 'low' && seg.riskLabel) {
-                riskEl.classList.add('as-detail-risk-' + seg.riskLevel);
-                riskEl.textContent = seg.riskLabel;
-            } else {
-                riskEl.textContent = '';
-            }
-        }
-
-        // Build body
-        var bodyEl = panelEl.querySelector('.as-detail-body');
-        if (!bodyEl) return;
-
-        var html = '';
-
-        if (seg.isOthers) {
-            // ── Others: enriched summary ──
-            var allOtherPeers = [];
-            if (seg._othersGroups) {
-                for (var oi = 0; oi < seg._othersGroups.length; oi++) {
-                    for (var opi = 0; opi < seg._othersGroups[oi].peers.length; opi++) {
-                        allOtherPeers.push(seg._othersGroups[oi].peers[opi]);
-                    }
-                }
-            }
-
-            html += '<div class="modal-section-title">Summary</div>';
-            html += summaryController.view.row('Total Peers', seg.peerCount);
-            html += summaryController.view.row('Providers', seg._othersGroups ? seg._othersGroups.length : '?');
-            html += summaryController.view.row('Share', seg.percentage.toFixed(1) + '%');
-
-            // Connection type breakdown for Others
-            var otherConnMap = Object.create(null);
-            for (var oci = 0; oci < allOtherPeers.length; oci++) {
-                var oct = allOtherPeers[oci].connection_type || 'unknown';
-                if (!otherConnMap[oct]) otherConnMap[oct] = { count: 0, peers: [] };
-                otherConnMap[oct].count++;
-                otherConnMap[oct].peers.push(allOtherPeers[oci]);
-            }
-            var otherConnKeys = Object.keys(otherConnMap);
-            for (var ock = 0; ock < otherConnKeys.length; ock++) {
-                var octKey = otherConnKeys[ock];
-                var octLabel = (Object.hasOwn(CONN_TYPE_LABELS, octKey) ? CONN_TYPE_LABELS[octKey] : null) || octKey;
-                var octPeerIds = otherConnMap[octKey].peers.map(function (p) { return p.id; });
-                html += summaryController.view.interactiveRow(octLabel, otherConnMap[octKey].count, octPeerIds, 'conntype');
-            }
-
-            // Performance averages for Others
-            var otherPings = [], otherDurations = [], otherSent = 0, otherRecv = 0;
-            var nowSec = Math.floor(Date.now() / 1000);
-            for (var opi2 = 0; opi2 < allOtherPeers.length; opi2++) {
-                if (allOtherPeers[opi2].ping_ms > 0) otherPings.push(allOtherPeers[opi2].ping_ms);
-                if (allOtherPeers[opi2].conntime > 0) {
-                    var odur = nowSec - allOtherPeers[opi2].conntime;
-                    if (odur > 0) otherDurations.push(odur);
-                }
-                otherSent += (allOtherPeers[opi2].bytessent || 0);
-                otherRecv += (allOtherPeers[opi2].bytesrecv || 0);
-            }
-            var oAvgPing = otherPings.length > 0 ? otherPings.reduce(function (a, b) { return a + b; }, 0) / otherPings.length : 0;
-            var oAvgDur = otherDurations.length > 0 ? otherDurations.reduce(function (a, b) { return a + b; }, 0) / otherDurations.length : 0;
-
-            html += '<div class="modal-section-title">Performance</div>';
-            html += summaryController.view.row('Avg Duration', fmtDuration(oAvgDur));
-            html += summaryController.view.row('Avg Ping', oAvgPing > 0 ? Math.round(oAvgPing) + 'ms' : '\u2014');
-            html += summaryController.view.row('Data Sent', fmtBytes(otherSent));
-            html += summaryController.view.row('Data Recv', fmtBytes(otherRecv));
-
-            if (seg._othersGroups && seg._othersGroups.length > 0) {
-                html += '<div class="modal-section-title">All Providers</div>';
-                for (var i = 0; i < seg._othersGroups.length; i++) {
-                    var g = seg._othersGroups[i];
-                    var gName = g.asShort || g.asName || g.asNumber;
-                    if (gName.length > 24) gName = gName.substring(0, 23) + '\u2026';
-                    html += summaryController.view.interactiveRow(
-                        g.asNumber + ' \u00b7 ' + gName,
-                        g.peerCount + ' peer' + (g.peerCount !== 1 ? 's' : ''),
-                        g.peerIds,
-                        'provider'
-                    );
-                }
-            }
-        } else {
-            // ── Individual AS: connection types only (no duplicate inbound/outbound) ──
-            html += '<div class="modal-section-title">Peers</div>';
-            html += summaryController.view.interactiveRow('Total', fullGroup.peerCount, fullGroup.peerIds, 'conntype');
-
-            // Show only connection types that exist, with short labels
-            if (fullGroup.connTypesList && fullGroup.connTypesList.length > 0) {
-                for (var cti = 0; cti < fullGroup.connTypesList.length; cti++) {
-                    var ctItem = fullGroup.connTypesList[cti];
-                    var ctLabel = (Object.hasOwn(CONN_TYPE_LABELS, ctItem.type) ? CONN_TYPE_LABELS[ctItem.type] : null) || ctItem.type;
-                    var ctPeerIds = ctItem.peers.map(function (p) { return p.id; });
-                    html += summaryController.view.interactiveRow(ctLabel, ctItem.count, ctPeerIds, 'conntype');
-                }
-            }
-
-            html += '<div class="modal-section-title">Performance</div>';
-            html += summaryController.view.row('Avg Duration', fullGroup.avgDurationFmt);
-            html += summaryController.view.row('Avg Ping', fullGroup.avgPingMs > 0 ? Math.round(fullGroup.avgPingMs) + 'ms' : '\u2014');
-            html += summaryController.view.row('Data Sent', fullGroup.totalBytesSentFmt);
-            html += summaryController.view.row('Data Recv', fullGroup.totalBytesRecvFmt);
-
-            if (fullGroup.versions && fullGroup.versions.length > 0) {
-                html += '<div class="modal-section-title">Software</div>';
-                for (var vi = 0; vi < fullGroup.versions.length; vi++) {
-                    var vPeerIds = fullGroup.versions[vi].peers.map(function (p) { return p.id; });
-                    html += summaryController.view.interactiveRow(fullGroup.versions[vi].subver, fullGroup.versions[vi].count + ' peer' + (fullGroup.versions[vi].count !== 1 ? 's' : ''), vPeerIds, 'software');
-                }
-            }
-
-            if (fullGroup.countries && fullGroup.countries.length > 0) {
-                html += '<div class="modal-section-title">Countries</div>';
-                for (var ci = 0; ci < fullGroup.countries.length; ci++) {
-                    var cPeerIds = fullGroup.countries[ci].peers.map(function (p) { return p.id; });
-                    html += summaryController.view.interactiveRow(fullGroup.countries[ci].code + '  ' + fullGroup.countries[ci].name, fullGroup.countries[ci].count, cPeerIds, 'country');
-                }
-            }
-
-            if (fullGroup.servicesCombos && fullGroup.servicesCombos.length > 0) {
-                html += '<div class="modal-section-title">Services</div>';
-                for (var si = 0; si < fullGroup.servicesCombos.length; si++) {
-                    var sPeerIds = fullGroup.servicesCombos[si].peers.map(function (p) { return p.id; });
-                    html += summaryController.view.interactiveRow(fullGroup.servicesCombos[si].abbrev, fullGroup.servicesCombos[si].count + ' peer' + (fullGroup.servicesCombos[si].count !== 1 ? 's' : ''), sPeerIds, 'services');
-                }
-            }
-        }
-
-        bodyEl.innerHTML = html;
-        bodyEl.scrollTop = 0;
-
-        // Attach hover/click handlers to all interactive rows
-        summaryController.attachInteractiveRowHandlers(bodyEl, seg);
-        summaryController.attachPanelBlankClickHandler(bodyEl);
-
-        // Show panel with animation + push content
-        panelEl.classList.remove('hidden');
-        void panelEl.offsetWidth;
-        panelEl.classList.add('visible');
-        document.body.classList.add('as-panel-open');
-        // Bring AS panel to front
-        document.body.classList.add('panel-focus-as');
-        document.body.classList.remove('panel-focus-peers');
+        if (!providerPanel.render({
+            panelEl, segment: resolved.segment, group: resolved.group,
+            summaryController, connectionTypeLabels: CONN_TYPE_LABELS,
+        })) return;
+        showPanel();
     }
 
     function closePanel() {
@@ -988,12 +684,9 @@ window.ASDistribution = (function () {
     // PANEL NAVIGATION — Back button, history, provider links
     // ═══════════════════════════════════════════════════════════
 
-    /** Get peer IDs for any AS number (works for "Others" sub-providers too) */
+    /** Get peer IDs for any provider, including those inside Others. */
     function getPeerIdsForAnyAs(asNum) {
-        var seg = donutSegments.find(function (s) { return s.asNumber === asNum; });
-        if (seg) return seg.peerIds;
-        var grp = asGroups.find(function (g) { return g.asNumber === asNum; });
-        return grp ? grp.peerIds : [];
+        return providerPanel.peerIdsFor(asNum, donutSegments, asGroups);
     }
 
     /** Navigate to a provider's panel (with back button to return) */

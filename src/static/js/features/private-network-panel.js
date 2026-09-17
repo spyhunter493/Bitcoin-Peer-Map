@@ -40,8 +40,8 @@
             const backBtn = document.getElementById('pn-detail-back');
             if (backBtn) backBtn.classList.remove('hidden');
 
-            const ASD = window.ASDistribution;
-            const rawPeers = ASD ? ASD.getLastPeersRaw() : sourceData.lastPeers;
+            const distribution = window.BPMDistribution;
+            const rawPeers = distribution ? distribution.getLastPeersRaw() : sourceData.lastPeers;
             const netPeers = rawPeers.filter(p => p.network === net);
             const netLabel = sourceData.PN_NET_LABELS[net] || net.toUpperCase();
             const netColor = actions.getPnNetColor(net);
@@ -174,8 +174,8 @@
             const backBtn = document.getElementById('pn-detail-back');
             if (backBtn) backBtn.classList.add('hidden');
 
-            const ASD = window.ASDistribution;
-            const rawPeers = ASD ? ASD.getLastPeersRaw() : sourceData.lastPeers;
+            const distribution = window.BPMDistribution;
+            const rawPeers = distribution ? distribution.getLastPeersRaw() : sourceData.lastPeers;
             const allPrivate = rawPeers.filter(p => sourceData.PRIVATE_NETS.has(p.network));
 
             // Header

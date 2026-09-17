@@ -15,6 +15,7 @@ const sandbox = {
     },
 };
 loadScript(sandbox, 'src/static/js/core/modal.js');
+loadScript(sandbox, 'src/static/js/features/service-flags.js');
 loadScript(sandbox, 'src/static/js/features/distribution-state.js');
 loadScript(sandbox, 'src/static/js/features/distribution-data.js');
 loadScript(sandbox, 'src/static/js/features/distribution-peer-detail.js');
@@ -24,20 +25,75 @@ loadScript(sandbox, 'src/static/js/features/distribution-summary-panel.js');
 loadScript(sandbox, 'src/static/js/features/distribution-tooltips.js');
 loadScript(sandbox, 'src/static/js/features/distribution-summary-insights.js');
 loadScript(sandbox, 'src/static/js/features/distribution-summary.js');
+loadScript(sandbox, 'src/static/js/features/distribution-country-panel.js');
+loadScript(sandbox, 'src/static/js/features/distribution-provider-panel.js');
+
+const providerPanel = sandbox.window.BPMDistributionProviderPanel;
+const providerSegments = [{ asNumber: 'Others', peerIds: [7, 8], isOthers: true }];
+const providerGroups = [{ asNumber: 'AS64500', peerIds: [7], percentage: 33,
+    asName: 'Example Provider', riskLevel: 'low' }];
+const nestedProvider = providerPanel.resolve('AS64500', providerSegments, providerGroups, () => '#58a6ff');
+assert.strictEqual(nestedProvider.segment.asNumber, 'AS64500');
+assert.strictEqual(nestedProvider.segment.color, '#58a6ff');
+assert.strictEqual(nestedProvider.group, providerGroups[0]);
+assert.strictEqual(providerPanel.resolve('Others', providerSegments, providerGroups, () => '').group, providerSegments[0]);
+assert.strictEqual(providerPanel.resolve('missing', providerSegments, providerGroups, () => ''), null);
+assert.deepStrictEqual(Array.from(providerPanel.peerIdsFor('AS64500', providerSegments, providerGroups)), [7]);
+assert.deepStrictEqual(Array.from(providerPanel.peerIdsFor('Others', providerSegments, providerGroups)), [7, 8]);
+assert.deepStrictEqual(Array.from(providerPanel.peerIdsFor('missing', providerSegments, providerGroups)), []);
+
+function panelFixture() {
+    const elements = {};
+    for (const selector of ['.as-detail-asn', '.as-detail-org', '.as-detail-meta',
+        '.as-detail-bar-fill', '.as-detail-pct', '.as-detail-risk', '.as-detail-body']) {
+        elements[selector] = {
+            textContent: '', innerHTML: '', style: {}, scrollTop: 0,
+            classList: { add() {}, remove() {} },
+        };
+    }
+    return { elements, querySelector: selector => elements[selector] };
+}
+
+const panelSummary = {
+    view: {
+        row: (label, value) => `<p>${label}: ${value}</p>`,
+        interactiveRow: (label, value) => `<p>${label}: ${value}</p>`,
+    },
+    attachInteractiveRowHandlers() {},
+    attachPanelBlankClickHandler() {},
+};
+const countryFixture = panelFixture();
+assert.strictEqual(sandbox.window.BPMDistributionCountryPanel.render({
+    panelEl: countryFixture,
+    segment: { asNumber: 'NZ', percentage: 50, peerCount: 1, color: '#58a6ff', riskLevel: 'low' },
+    group: { countryCode: 'NZ', countryName: 'New Zealand', avgDurationFmt: '1h',
+        totalBytesSentFmt: '2 KB', totalBytesRecvFmt: '3 KB' },
+    peers: [{ id: 7, direction: 'IN' }],
+    providers: [{ asNumber: 'AS64500', name: 'Example Provider', peerCount: 1, peerIds: [7] }],
+    summaryController: panelSummary,
+    connectionTypeLabels: {},
+}), true);
+assert.strictEqual(countryFixture.elements['.as-detail-asn'].textContent, 'NZ');
+assert.ok(countryFixture.elements['.as-detail-body'].innerHTML.includes('Example Provider'));
+
+const providerFixture = panelFixture();
+assert.strictEqual(providerPanel.render({
+    panelEl: providerFixture,
+    segment: nestedProvider.segment,
+    group: providerGroups[0],
+    summaryController: panelSummary,
+    connectionTypeLabels: {},
+}), true);
+assert.strictEqual(providerFixture.elements['.as-detail-asn'].textContent, 'AS64500');
+assert.ok(providerFixture.elements['.as-detail-body'].innerHTML.includes('Peers'));
 
 const peerDetail = sandbox.window.BPMDistributionPeerDetail;
 const escapeHtml = sandbox.window.BPMModal.escapeHtml;
 const hostile = `<img src=x onerror="alert(1)"> & '`;
 const escaped = '&lt;img src=x onerror=&quot;alert(1)&quot;&gt; &amp; &#39;';
-const serviceFlags = {
-    NETWORK: { abbr: 'N', label: 'Full chain history', rpc: 'NODE_NETWORK' },
-    WITNESS: { abbr: 'W', label: 'Segregated Witness', rpc: 'NODE_WITNESS' },
-    NETWORK_LIMITED: {
-        abbr: 'NL',
-        label: 'Limited chain history',
-        rpc: 'NODE_NETWORK_LIMITED',
-    },
-};
+const serviceFlags = sandbox.window.BPMServiceFlags;
+assert.strictEqual(serviceFlags['BLAKE2B?'].abbr, 'BL');
+assert.strictEqual(serviceFlags.BLAKE2B, serviceFlags['BLAKE2B?']);
 
 assert.strictEqual(escapeHtml(hostile), escaped);
 assert.strictEqual(escapeHtml(0), '0');
@@ -61,6 +117,10 @@ assert.ok(serviceList.includes('class="service-flag-list"'));
 assert.ok(serviceList.includes('NODE_NETWORK'));
 assert.ok(serviceList.includes('Segregated Witness'));
 assert.ok(!serviceList.includes('<br>'));
+const forkServiceList = peerDetail.renderServiceFlagList('BL', serviceFlags);
+assert.ok(forkServiceList.includes('BLAKE2b fork support'));
+assert.ok(forkServiceList.includes('NODE_BLAKE2B'));
+assert.ok(!forkServiceList.includes('Unknown service flag'));
 
 const rendered = peerDetail.renderPeerDetails({
     id: 7,
@@ -101,7 +161,7 @@ const peerDetailSource = fs.readFileSync(
 );
 assert.ok(!peerDetailSource.includes('fetch('));
 
-const source = fs.readFileSync('src/static/js/as-distribution.js', 'utf8');
+const source = fs.readFileSync('src/static/js/distribution.js', 'utf8');
 assert.ok(!source.includes("fetch('/api/peer/disconnect'"));
 assert.ok(!source.includes("fetch('/api/peer/ban'"));
 assert.ok(!source.includes('function describeArc'));
@@ -180,8 +240,8 @@ for (const html of [
     assert.ok(html.includes('&lt;'), 'the label should remain visible as literal text');
 }
 
-loadScript(sandbox, 'src/static/js/as-distribution.js');
-assert.strictEqual(typeof sandbox.window.ASDistribution.openPeerDetailPanel, 'function');
+loadScript(sandbox, 'src/static/js/distribution.js');
+assert.strictEqual(typeof sandbox.window.BPMDistribution.openPeerDetailPanel, 'function');
 
 for (const direction of ['IN', 'OUT']) {
     const state = sandbox.window.BPMDistributionState.create({
