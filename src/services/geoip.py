@@ -64,6 +64,8 @@ class GeoDatabase:
         self._update_lock = threading.Lock()
         self._generation = 0
         self._generation_lock = threading.Lock()
+        self._stats_lock = threading.Lock()
+        self._stats: dict[str, Any] | None = None
 
     @property
     def generation(self) -> int:
@@ -74,6 +76,7 @@ class GeoDatabase:
         """Invalidate derived lookup results after a committed dataset merge."""
         with self._generation_lock:
             self._generation += 1
+        self._invalidate_stats()
 
     def initialize(self) -> None:
         if not self.enabled:
@@ -121,7 +124,20 @@ class GeoDatabase:
             )
             connection.execute("PRAGMA journal_mode=WAL")
 
+    def _invalidate_stats(self) -> None:
+        with self._stats_lock:
+            self._stats = None
+
     def stats(self) -> dict[str, Any]:
+        with self._stats_lock:
+            if self._stats is None:
+                result = self._read_stats()
+                if result["status"] == "ok":
+                    self._stats = result
+                return result.copy()
+            return self._stats.copy()
+
+    def _read_stats(self) -> dict[str, Any]:
         result: dict[str, Any] = {
             "status": "disabled",
             "entries": 0,
@@ -207,6 +223,8 @@ class GeoDatabase:
                 )
         except sqlite3.Error as exc:
             print(f"Could not save geolocation for {ip_address}: {exc}")
+        else:
+            self._invalidate_stats()
 
     def update(
         self,

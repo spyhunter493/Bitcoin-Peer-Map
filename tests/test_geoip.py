@@ -96,3 +96,35 @@ def test_update_rejects_concurrent_request(tmp_path: Path) -> None:
         }
     finally:
         geo_database._update_lock.release()
+
+
+def test_statistics_cache_invalidated_only_after_successful_writes_or_merges(tmp_path, monkeypatch):
+    geo_database = database(tmp_path)
+    reads = []
+    read_stats = geo_database._read_stats
+
+    def counted():
+        reads.append(True)
+        return read_stats()
+
+    monkeypatch.setattr(geo_database, "_read_stats", counted)
+    first = geo_database.stats()
+    first["entries"] = 999  # callers receive independent dictionaries
+    assert geo_database.stats()["entries"] == 0
+    assert len(reads) == 1
+    geo_database.save("198.51.100.1", {"lat": 1, "lon": 2, "country": "NZ"})
+    assert geo_database.stats()["entries"] == 1
+    assert len(reads) == 2
+    geo_database.save("bad", {})
+    assert geo_database.stats()["entries"] == 1
+    assert len(reads) == 2
+    remote = tmp_path / "remote.db"
+    row = ("198.51.100.2",) + (None,) * (len(GEO_COLUMNS) - 1)
+    create_database(remote, GEO_COLUMNS, [row])
+    assert geo_database.update(
+        http_get=lambda *args, **kwargs: StreamingResponse([remote.read_bytes()])
+    )["success"]
+    assert geo_database.stats()["entries"] == 2
+    assert len(reads) == 3
+    assert geo_database.stats()["entries"] == 2
+    assert len(reads) == 3

@@ -34,6 +34,21 @@ class FakeNode:
         self.recent_limits: list[int] = []
         self.chain_tip_calls = 0
 
+    def dashboard_info(self, currency: str = "USD", include_price: bool = True):
+        result = {"connected": 3}
+        if include_price:
+            result.update(self.price(currency))
+        return result
+
+    def price(self, currency: str = "USD"):
+        return {
+            "btc_price": 100,
+            "btc_currency": currency.strip().upper(),
+            "last_known_price": "100",
+            "last_price_currency": currency.strip().upper(),
+            "last_price_error": None,
+        }
+
     def recent_blocks(self, limit: int) -> dict[str, Any]:
         self.recent_limits.append(limit)
         return {"success": True, "summary": {"count": 0}, "blocks": [], "error": None}
@@ -160,7 +175,7 @@ def test_application_factory_serves_health_dashboard_and_assets(tmp_path: Path) 
         assert unversioned_asset.headers["cache-control"] == ("public, max-age=0, must-revalidate")
 
         versioned_asset = client.get(
-            "/static/js/app.js?v=abcdef0123456789abcdef0123456789abcdef01",
+            "/static/js/map/controller.js?v=abcdef0123456789abcdef0123456789abcdef01",
             headers={"Accept-Encoding": "gzip"},
         )
         assert versioned_asset.status_code == 200
@@ -188,3 +203,21 @@ def test_peer_snapshot_status_is_optional_and_not_cached(tmp_path: Path) -> None
         assert snapshot.json()["peers"] == []
         assert snapshot.json()["status"]["connected"] is None
         assert snapshot.json()["status"]["last_success_at"] is None
+
+
+def test_price_endpoint_and_opt_out_preserve_default_info_contract(tmp_path: Path) -> None:
+    app_settings = settings(tmp_path)
+    runtime = FakeRuntime(app_settings)
+    with TestClient(create_app(app_settings, runtime)) as client:
+        default_info = client.get("/api/info?currency=nzd").json()
+        price = client.get("/api/price?currency=nzd").json()
+        assert default_info == {"connected": 3, **price}
+        assert price["btc_currency"] == "NZD"
+        assert set(price) == {
+            "btc_price",
+            "btc_currency",
+            "last_known_price",
+            "last_price_currency",
+            "last_price_error",
+        }
+        assert client.get("/api/info?include_price=false").json() == {"connected": 3}

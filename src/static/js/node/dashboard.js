@@ -258,8 +258,15 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
 
     // ═══════════════════════════════════════════════════════════
 
-    let btcCurrency = 'USD';
-    let btcPriceInterval = CFG.infoPollInterval / 1000;  // seconds
+    let lastPriceInfo = null;
+    const priceController = window.BPMPrice.create({ onPrice(info) {
+        lastPriceInfo = info;
+        updateBtcPricePanel(info);
+    } });
+    const pricePolling = window.BPMPolling.create({
+        task: priceController.refresh,
+        intervalMs: effectivePollInterval(CFG.infoPollInterval),
+    });
     const infoPolling = window.BPMPolling.create({
         task: refreshNodeInfo,
         intervalMs: effectivePollInterval(CFG.infoPollInterval),
@@ -303,13 +310,13 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
         dd.id = 'currency-dropdown';
         let html = '<div class="curr-title">Select Currency</div><div class="curr-grid">';
         for (const c of CURRENCIES) {
-            html += `<button class="curr-btn${c === btcCurrency ? ' active' : ''}" data-curr="${c}">${c}</button>`;
+            html += `<button class="curr-btn${c === priceController.currency ? ' active' : ''}" data-curr="${c}">${c}</button>`;
         }
         html += '</div>';
-        html += `<div class="curr-freq"><span>Update every</span><input type="number" id="curr-freq-input" value="${btcPriceInterval}" min="5" max="99"><span>sec</span></div>`;
+        html += `<div class="curr-freq"><span>Update every</span><input type="number" id="curr-freq-input" value="${CFG.infoPollInterval / 1000}" min="5" max="99"><span>sec</span></div>`;
         // Show last price error if any
-        if (lastNodeInfo && lastNodeInfo.last_price_error) {
-            html += `<div class="curr-error" style="color:var(--text-muted);font-size:9px;padding:6px 8px 2px;border-top:1px solid rgba(255,255,255,0.06)">${escapeHtml(lastNodeInfo.last_price_error)}</div>`;
+        if (lastPriceInfo && lastPriceInfo.last_price_error) {
+            html += `<div class="curr-error" style="color:var(--text-muted);font-size:9px;padding:6px 8px 2px;border-top:1px solid rgba(255,255,255,0.06)">${escapeHtml(lastPriceInfo.last_price_error)}</div>`;
         }
         dd.innerHTML = html;
         document.body.appendChild(dd);
@@ -326,11 +333,9 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
 
         dd.querySelectorAll('.curr-btn').forEach(btn => {
             btn.addEventListener('click', () => {
-                btcCurrency = btn.dataset.curr;
-                if (currCodeEl) currCodeEl.textContent = btcCurrency;
+                priceController.setCurrency(btn.dataset.curr);
                 dd.querySelectorAll('.curr-btn').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
-                fetchInfo();
             });
         });
 
@@ -339,9 +344,8 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
             freqInput.addEventListener('change', () => {
                 const v = clamp(parseInt(freqInput.value) || 10, 5, 99);
                 freqInput.value = v;
-                btcPriceInterval = v;
                 // Restart info poll with new interval
-                CFG.infoPollInterval = btcPriceInterval * 1000;
+                CFG.infoPollInterval = v * 1000;
                 onAction({ type: 'intervals' });
             });
         }
@@ -689,7 +693,7 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
 
     async function refreshNodeInfo() {
         try {
-            const resp = await fetch(`/api/info?currency=${btcCurrency}`);
+            const resp = await fetch('/api/info?include_price=false');
             if (!resp.ok) return;
             const info = await resp.json();
 
@@ -714,8 +718,6 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
                 checkApiDownPrompt();
             }
 
-            // Update BTC price in topbar
-            updateBtcPricePanel(info);
             updateNodeTrafficTotals(info.node_traffic);
 
             // Update right overlay GeoIP DB count
@@ -740,7 +742,7 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
 
     const nodeMonitor = window.BPMNodeMonitor.create({
         getNodeInfo: () => lastNodeInfo,
-        getCurrency: () => btcCurrency,
+        getCurrency: () => priceController.currency,
         currencyMeta: CURRENCY_META,
         formatBytes: window.BPMFormat.fmtBytesShort,
     });
@@ -769,7 +771,7 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
 
         if (info.btc_price) {
             const price = parseFloat(info.btc_price);
-            priceEl.textContent = formatCurrencyPrice(price, btcCurrency);
+            priceEl.textContent = formatCurrencyPrice(price, priceController.currency);
             priceEl.style.color = '';
             priceEl.title = '';
 
@@ -785,7 +787,7 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
         } else if (info.last_known_price) {
             // Offline but have a cached price — show grey with red asterisks
             const price = parseFloat(info.last_known_price);
-            const curr = info.last_price_currency || btcCurrency;
+            const curr = info.last_price_currency || priceController.currency;
             priceEl.textContent = formatCurrencyPrice(price, curr);
             priceEl.style.color = 'var(--text-muted)';
             priceEl.title = 'OFFLINE... Waiting for connection';
@@ -812,7 +814,7 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
 
         // Currency code display
         const codeEl = document.getElementById('mo-btc-currency');
-        if (codeEl) codeEl.textContent = btcCurrency;
+        if (codeEl) codeEl.textContent = priceController.currency;
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -1527,7 +1529,7 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
     }
 
 
-return Object.freeze({ updateFlightDeck, infoPolling, openGeoDBDropdown, syncDbAutoUpdateTimer, fetchInfo, openRecentBlocksModal, openNodeInfoModal, openChainTipsModal, renderPeerDataStatus, updateHUD, getNetworkStats, systemStatsPolling, disconnectSystemStream, connectSystemStream });
+return Object.freeze({ updateFlightDeck, infoPolling, pricePolling, openGeoDBDropdown, syncDbAutoUpdateTimer, fetchInfo, openRecentBlocksModal, openNodeInfoModal, openChainTipsModal, renderPeerDataStatus, updateHUD, getNetworkStats, systemStatsPolling, disconnectSystemStream, connectSystemStream });
 }
 global.BPMNodeDashboard = Object.freeze({ create });
 })(window);

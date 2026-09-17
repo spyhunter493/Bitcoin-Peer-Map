@@ -9,6 +9,7 @@ const { spawn } = require('child_process');
 const { chromium } = require('playwright');
 const assertPeerViews = require('./test_peer_views');
 const assertPeerLifecycle = require('./test_peer_lifecycle');
+const assertPriceDelivery = require('./test_price_delivery');
 
 const repoRoot = path.resolve(__dirname, '..');
 
@@ -717,12 +718,13 @@ async function assertDashboardLifecycle(browser, baseUrl) {
     });
     const page = await context.newPage();
     const errors = [];
-    const requests = { peers: 0, info: 0, stats: 0, stream: 0 };
+    const requests = { peers: 0, info: 0, price: 0, stats: 0, stream: 0 };
     page.on('pageerror', error => errors.push(error.message));
     page.on('request', request => {
         const pathname = new URL(request.url()).pathname;
         if (pathname === '/api/peers') requests.peers++;
         if (pathname === '/api/info') requests.info++;
+        if (pathname === '/api/price') requests.price++;
         if (pathname === '/api/stats') requests.stats++;
         if (pathname === '/api/stream/system') requests.stream++;
     });
@@ -740,7 +742,7 @@ async function assertDashboardLifecycle(browser, baseUrl) {
             document.dispatchEvent(new Event('visibilitychange'));
         });
         const hiddenIntervals = await page.evaluate(() => Array.from(window.testDashboardIntervals.values()));
-        assert.strictEqual(hiddenIntervals.filter(interval => interval === 60000).length, 3);
+        assert.strictEqual(hiddenIntervals.filter(interval => interval === 60000).length, 4);
         assert.ok(!hiddenIntervals.includes(10000) && !hiddenIntervals.includes(15000) &&
             !hiddenIntervals.includes(30000));
 
@@ -754,7 +756,7 @@ async function assertDashboardLifecycle(browser, baseUrl) {
             for (let i = 0; i < 3; i++) document.dispatchEvent(new Event('visibilitychange'));
         });
         await page.waitForTimeout(650);
-        assert.ok(requests.peers > before.peers && requests.info > before.info);
+        assert.ok(requests.peers > before.peers && requests.info > before.info && requests.price > before.price);
         assert.strictEqual(requests.stats, before.stats + 1, 'stats requests should not overlap');
         assert.ok(requests.stream > before.stream, 'system stream should reconnect');
         const visibleIntervals = await page.evaluate(() => Array.from(window.testDashboardIntervals.values()));
@@ -842,6 +844,7 @@ async function assertDashboardLifecycle(browser, baseUrl) {
         await assertPeerRefreshReliability(browser, baseUrl);
         await assertPeerViews(browser, baseUrl);
         await assertPeerLifecycle(browser, baseUrl);
+        await assertPriceDelivery(browser, baseUrl);
         await assertDashboardLifecycle(browser, baseUrl);
         console.log('Browser layout regression tests passed');
     } finally {

@@ -30,7 +30,7 @@ over wrappers, duplication, or compressed syntax.
   and refresh open/pinned views without losing geometry, focus, or scroll. Remove
   the 38-action summary callback interface and writable parent getters. Move map,
   private-network, node/price, and settings behavior out of the bootstrap.
-- [ ] Stage 4 — Backend polling: five-second demand-driven node cache shared across
+- [x] Stage 4 — Backend polling: five-second demand-driven node cache shared across
   clients/currencies, per-currency price caches with last-success/error isolation,
   one concurrent refresh per key, expiry measured from refresh start. Reuse tip
   hash/height from blockchain info and cache header metadata by hash. Cache GeoIP
@@ -99,8 +99,15 @@ previous working application revision.
   panels' parent getter adapters. Extracted map, private-network, node/status,
   and preferences controllers; the application entrypoint is two lines. Preserved
   unchanged-poll DOM identity and changed-poll scroll/focus/popup geometry.
-- Next step: Stage 4 backend polling caches and separate price delivery, then
-  native-module conversion and complete strict JavaScript coverage in Stage 5.
+- Stage 3 commit: `7a54daa`.
+- Stage 4 validation: 65 Python tests, Ruff formatting/lint, recursive JavaScript
+  syntax checks, unit suites, configured strict types, and the full browser suite
+  pass. Fake-clock and concurrent-client tests cover refresh-start expiry, shared
+  node work, independent currency caches, partial RPC failures, cached headers,
+  and statistics invalidation. Browser tests verify that a delayed price leaves
+  node rendering responsive and cannot overwrite a newer currency selection.
+- Next step: native-module conversion and complete strict JavaScript coverage
+  in Stage 5.
 - Final CI-equivalent verification, three post-refactor benchmark runs, and the
   production line-count comparison remain outstanding.
 

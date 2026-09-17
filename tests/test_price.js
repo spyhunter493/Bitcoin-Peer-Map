@@ -1,0 +1,34 @@
+'use strict';
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+
+(async () => {
+    const sandbox = { window: {}, AbortSignal, Error };
+    vm.runInNewContext(fs.readFileSync('src/static/js/node/price.js', 'utf8'), sandbox);
+    const requests = [];
+    const api = { getJson: url => new Promise((resolve, reject) => requests.push({ url, resolve, reject })) };
+    const shown = [];
+    const controller = sandbox.window.BPMPrice.create({ api, onPrice: data => shown.push(data) });
+    const usd = controller.refresh();
+    const anotherUsd = controller.refresh();
+    assert.equal(requests.length, 1, 'concurrent refreshes share a currency request');
+    const eur = controller.setCurrency('eur');
+    assert.equal(requests.length, 2, 'changing currency must not wait for a slow old request');
+    assert.equal(shown.at(-1).btc_price, null);
+    requests[1].resolve({ btc_price: 90, btc_currency: 'EUR', last_known_price: '90' });
+    await eur;
+    assert.equal(shown.at(-1).btc_price, 90);
+    requests[0].resolve({ btc_price: 100, btc_currency: 'USD', last_known_price: '100' });
+    await Promise.all([usd, anotherUsd]);
+    assert.equal(shown.at(-1).btc_currency, 'EUR');
+    assert.equal(shown.at(-1).btc_price, 90);
+    const failed = controller.refresh();
+    requests[2].reject(new Error('temporarily unavailable'));
+    await failed;
+    assert.equal(shown.at(-1).btc_price, null);
+    assert.equal(shown.at(-1).last_known_price, '90');
+    assert.equal(shown.at(-1).last_price_currency, 'EUR');
+    assert.equal(shown.at(-1).last_price_error, 'temporarily unavailable');
+    console.log('Independent price refresh tests passed');
+})().catch(error => { console.error(error); process.exitCode = 1; });

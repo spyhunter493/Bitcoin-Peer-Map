@@ -6,6 +6,7 @@ import asyncio
 import threading
 import time
 from collections import OrderedDict
+from copy import deepcopy
 from typing import Any, Callable
 
 from network import format_bytes, normalize_peer_address, split_peer_address
@@ -34,8 +35,12 @@ class NodeService:
         self._traffic_lock = threading.Lock()
         self._recent_blocks: OrderedDict[str, dict[str, Any]] = OrderedDict()
         self._recent_blocks_lock = threading.Lock()
-        self._chain_tip_times: OrderedDict[str, int] = OrderedDict()
         self._chain_tips_lock = threading.Lock()
+        self._dashboard_lock = threading.Lock()
+        self._dashboard_started_at: float | None = None
+        self._dashboard_data: dict[str, Any] | None = None
+        self._headers: OrderedDict[str, dict[str, Any]] = OrderedDict()
+        self._headers_lock = threading.Lock()
 
     @staticmethod
     def _network_key(name: Any) -> str | None:
@@ -114,40 +119,74 @@ class NodeService:
             "upload_fmt": format_bytes(uploaded),
         }
 
-    def dashboard_info(self, currency: str = "USD") -> dict[str, Any]:
-        currency = currency.upper()
-        price = self.connectivity.fetch_price(currency)
+    def price(self, currency: str = "USD") -> dict[str, Any]:
+        return self.connectivity.price_info(currency)
+
+    def dashboard_info(self, currency: str = "USD", include_price: bool = True) -> dict[str, Any]:
+        with self._dashboard_lock:
+            started = time.monotonic()
+            if (
+                self._dashboard_data is None
+                or self._dashboard_started_at is None
+                or started - self._dashboard_started_at >= 5
+            ):
+                self._dashboard_data = self._refresh_dashboard()
+                self._dashboard_started_at = started
+            result = deepcopy(self._dashboard_data)
+        # Neither a slow external request nor assembling response-specific state
+        # holds the node refresh lock. /api/price never acquires it at all.
+        if include_price:
+            result.update(self.price(currency))
         connectivity = self.connectivity.snapshot()
-        result: dict[str, Any] = {
-            "btc_price": price,
-            "btc_currency": currency,
-            "last_block": None,
-            "blockchain": None,
-            "network_scores": None,
-            "geo_db_stats": None,
-            "connected": None,
-            "mempool_size": None,
-            "subversion": None,
-            "network_details": None,
-            "node_traffic": None,
-            "last_known_price": connectivity["last_known_price"],
-            "last_price_currency": connectivity["last_price_currency"],
-            "last_price_error": connectivity["last_price_error"],
-            "internet_state": connectivity["internet_state"],
-            "api_available": connectivity["api_available"],
-            "geo_db_only_mode": connectivity["geo_db_only_mode"],
-        }
-
-        try:
-            block_hash = self.rpc.call("getbestblockhash", timeout=10)
-            header = self.rpc.call("getblockheader", block_hash, timeout=10)
-            result["last_block"] = {
-                "height": header.get("height", 0),
-                "time": header.get("time", 0),
+        result.update(
+            {
+                key: connectivity[key]
+                for key in ("internet_state", "api_available", "geo_db_only_mode")
             }
-        except RpcError as exc:
-            print(f"Could not load last block: {exc}")
+        )
+        geo_stats = self.geo_database.stats()
+        if geo_stats.get("entries", 0):
+            oldest = geo_stats.get("oldest_updated")
+            newest = geo_stats.get("last_updated")
+            now = time.time()
+            geo_stats["oldest_age_days"] = int((now - oldest) / 86400) if oldest else None
+            geo_stats["newest_age_days"] = int((now - newest) / 86400) if newest else None
+            geo_stats["newest_age_seconds"] = int(now - newest) if newest else None
+        geo_stats.update(
+            auto_lookup=self.geo_database.enabled,
+            auto_update=self.auto_update_enabled(),
+            db_only_mode=connectivity["geo_db_only_mode"],
+        )
+        result["geo_db_stats"] = geo_stats
+        return result
 
+    def _block_header(self, block_hash: str) -> dict[str, Any]:
+        with self._headers_lock:
+            if block_hash not in self._headers:
+                header = self.rpc.call("getblockheader", block_hash, timeout=10)
+                if not isinstance(header, dict):
+                    raise TypeError("getblockheader returned an unexpected response")
+                self._headers[block_hash] = header
+                while len(self._headers) > _BLOCK_METADATA_CACHE_LIMIT:
+                    self._headers.popitem(last=False)
+            self._headers.move_to_end(block_hash)
+            return self._headers[block_hash]
+
+    def _refresh_dashboard(self) -> dict[str, Any]:
+        # Each refresh starts empty so failed RPC fields do not live indefinitely.
+        result: dict[str, Any] = dict.fromkeys(
+            (
+                "last_block",
+                "blockchain",
+                "network_scores",
+                "connected",
+                "mempool_size",
+                "subversion",
+                "network_details",
+                "node_traffic",
+            )
+        )
+        blockchain = None
         try:
             blockchain = self.rpc.call("getblockchaininfo", timeout=10)
             indexed = False
@@ -163,6 +202,21 @@ class NodeService:
             }
         except RpcError as exc:
             print(f"Could not load blockchain details: {exc}")
+
+        try:
+            block_hash = blockchain.get("bestblockhash") if blockchain else None
+            if not block_hash:
+                # Preserve independent last-block results if blockchain info fails.
+                block_hash = self.rpc.call("getbestblockhash", timeout=10)
+            header = self._block_header(block_hash)
+            result["last_block"] = {
+                "height": blockchain.get("blocks", header.get("height", 0))
+                if blockchain
+                else header.get("height", 0),
+                "time": header.get("time", 0),
+            }
+        except (RpcError, TypeError) as exc:
+            print(f"Could not load last block: {exc}")
 
         try:
             network = self.rpc.call("getnetworkinfo", timeout=10)
@@ -193,19 +247,6 @@ class NodeService:
         except RpcError as exc:
             print(f"Could not load mempool details: {exc}")
 
-        geo_stats = self.geo_database.stats()
-        if geo_stats.get("entries", 0):
-            oldest = geo_stats.get("oldest_updated")
-            newest = geo_stats.get("last_updated")
-            geo_stats["oldest_age_days"] = int((time.time() - oldest) / 86400) if oldest else None
-            geo_stats["newest_age_days"] = int((time.time() - newest) / 86400) if newest else None
-            geo_stats["newest_age_seconds"] = int(time.time() - newest) if newest else None
-        geo_stats.update(
-            auto_lookup=self.geo_database.enabled,
-            auto_update=self.auto_update_enabled(),
-            db_only_mode=connectivity["geo_db_only_mode"],
-        )
-        result["geo_db_stats"] = geo_stats
         return result
 
     def mempool(self, currency: str = "USD") -> dict[str, Any]:
@@ -380,29 +421,11 @@ class NodeService:
             return {"success": False, "error": str(exc)}
 
     def _chain_tip_time(self, block_hash: str) -> int:
-        cached = self._chain_tip_times.get(block_hash)
-        if cached is not None:
-            self._chain_tip_times.move_to_end(block_hash)
-            return cached
-
         with self._recent_blocks_lock:
             recent_block = self._recent_blocks.get(block_hash)
             if recent_block is not None:
-                block_time = int(recent_block["time"])
-            else:
-                block_time = 0
-
-        if not block_time:
-            header = self.rpc.call("getblockheader", block_hash, timeout=10)
-            if not isinstance(header, dict):
-                raise TypeError("getblockheader returned an unexpected response")
-            block_time = int(header.get("time", 0) or 0)
-
-        if block_time:
-            self._chain_tip_times[block_hash] = block_time
-            while len(self._chain_tip_times) > _BLOCK_METADATA_CACHE_LIMIT:
-                self._chain_tip_times.popitem(last=False)
-        return block_time
+                return int(recent_block["time"])
+        return int(self._block_header(block_hash).get("time", 0) or 0)
 
     def chain_tips(self) -> dict[str, Any]:
         try:

@@ -339,7 +339,7 @@ function create() {
             }
         }
     } });
-    const { updateFlightDeck, infoPolling, openGeoDBDropdown, syncDbAutoUpdateTimer, fetchInfo, openRecentBlocksModal, openNodeInfoModal, openChainTipsModal, renderPeerDataStatus, updateHUD, getNetworkStats, systemStatsPolling, disconnectSystemStream, connectSystemStream } = nodeDashboard;
+    const { updateFlightDeck, infoPolling, pricePolling, openGeoDBDropdown, syncDbAutoUpdateTimer, fetchInfo, openRecentBlocksModal, openNodeInfoModal, openChainTipsModal, renderPeerDataStatus, updateHUD, getNetworkStats, systemStatsPolling, disconnectSystemStream, connectSystemStream } = nodeDashboard;
 
     const minimizeBtn = document.getElementById('btn-minimize');
 
@@ -3056,6 +3056,7 @@ function create() {
     /** Build popover HTML for a network type or "all" */
     function syncPollingIntervals() {
         peerPolling.setIntervalMs(effectivePollInterval(CFG.pollInterval));
+        pricePolling.setIntervalMs(effectivePollInterval(CFG.infoPollInterval));
         infoPolling.setIntervalMs(effectivePollInterval(CFG.infoPollInterval));
         systemStatsPolling.setIntervalMs(effectivePollInterval(30000));
     }
@@ -3076,6 +3077,7 @@ function create() {
         // snapshot immediately instead of waiting for the next foreground tick.
         peerPolling.run().catch(console.error);
         infoPolling.run().catch(console.error);
+        pricePolling.run().catch(console.error);
         systemStatsPolling.run().catch(console.error);
         connectSystemStream();
         updateClock();
@@ -3398,6 +3400,8 @@ function create() {
         // Once the first fetch resolves, start the DB auto-update timer if enabled.
         fetchInfo().then(() => syncDbAutoUpdateTimer());
         infoPolling.start();
+        pricePolling.run();
+        pricePolling.start();
 
         // System stats + NET speed: real-time SSE stream (dual-EMA smoothed, ~250ms updates)
         connectSystemStream();

@@ -48,6 +48,14 @@ class Connectivity:
     def __init__(self):
         self.price_fetched = False
 
+    def price_info(self, currency: str) -> dict[str, Any]:
+        currency = currency.strip().upper()
+        return {
+            "btc_price": self.fetch_price(currency),
+            "btc_currency": currency,
+            **self.snapshot(),
+        }
+
     def fetch_price(self, currency: str) -> float:
         assert currency == "NZD"
         self.price_fetched = True
@@ -107,7 +115,9 @@ class ErrorRpc:
         raise RpcError("rpc unavailable")
 
 
-def test_dashboard_info_snapshots_connectivity_after_price_fetch() -> None:
+def test_dashboard_info_snapshots_connectivity_after_price_fetch(monkeypatch) -> None:
+    now = [0.0]
+    monkeypatch.setattr("services.node.time.monotonic", lambda: now[0])
     rpc = Rpc()
     service = NodeService(rpc, Connectivity(), GeoDatabase(), lambda: True)
 
@@ -138,6 +148,7 @@ def test_dashboard_info_snapshots_connectivity_after_price_fetch() -> None:
         "upload_fmt": "0B",
     }
 
+    now[0] = 5.0
     rpc.net_totals = {"totalbytesrecv": 2536, "totalbytessent": 7120}
     result = service.dashboard_info("nzd")
 

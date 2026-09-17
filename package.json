@@ -5,7 +5,7 @@
   "type": "commonjs",
   "scripts": {
     "check:js": "node scripts/check-js.js",
-    "test:js": "node tests/test_frontend_modules.js && node tests/test_distribution.js && node tests/test_peer_refresh.js && node tests/test_peer_table_model.js && node tests/test_peer_table_dom.js && node tests/test_polling.js",
+    "test:js": "node tests/test_frontend_modules.js && node tests/test_distribution.js && node tests/test_peer_refresh.js && node tests/test_peer_table_model.js && node tests/test_peer_table_dom.js && node tests/test_polling.js && node tests/test_price.js",
     "benchmark:dashboard": "node scripts/benchmark-dashboard.js",
     "test:layout": "node tests/test_layout.js",
     "test:layout:docker": "scripts/test-layout-docker.sh",

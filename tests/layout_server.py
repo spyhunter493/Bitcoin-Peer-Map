@@ -266,7 +266,16 @@ class FakePeers:
 
 
 class FakeNode:
-    def dashboard_info(self, currency: str = "USD") -> dict[str, Any]:
+    def price(self, currency: str = "USD") -> dict[str, Any]:
+        return {
+            "btc_price": 77203.48,
+            "btc_currency": currency.upper(),
+            "last_known_price": "77203.48",
+            "last_price_currency": currency.upper(),
+            "last_price_error": None,
+        }
+
+    def dashboard_info(self, currency: str = "USD", include_price: bool = True) -> dict[str, Any]:
         currency = currency.upper()
         return {
             "btc_price": 77203.48,

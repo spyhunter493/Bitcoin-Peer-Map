@@ -12,8 +12,17 @@ router = APIRouter(prefix="/api")
 
 
 @router.get("/info")
-def dashboard_info(currency: str = "USD", runtime: AppRuntime = Depends(runtime_from)):
-    return runtime.node.dashboard_info(currency)
+def dashboard_info(
+    currency: str = "USD",
+    include_price: bool = True,
+    runtime: AppRuntime = Depends(runtime_from),
+):
+    return runtime.node.dashboard_info(currency, include_price=include_price)
+
+
+@router.get("/price")
+def price(currency: str = "USD", runtime: AppRuntime = Depends(runtime_from)):
+    return runtime.node.price(currency)
 
 
 @router.get("/mempool")
