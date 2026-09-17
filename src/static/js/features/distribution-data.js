@@ -233,7 +233,7 @@
         return fallback;
     }
 
-    function aggregateSummaryByCategory(peers, getKey, getLabel, segments) {
+    function aggregateSummaryByCategory(peers, getKey, getLabel, segments, kind) {
         const categories = Object.create(null);
         for (const peer of peers) {
             const key = getKey(peer);
@@ -274,6 +274,7 @@
                     .sort((left, right) => right.peerCount - left.peerCount);
                 return {
                     key: category.key,
+                    filter: { kind, key: category.key },
                     label: category.label,
                     peerCount: category.peerCount,
                     providerCount: providers.length,
@@ -290,7 +291,7 @@
             peers,
             peer => peer.network || 'ipv4',
             (peer, key) => labels[key] || key,
-            segments
+            segments, 'network'
         );
     }
 
@@ -310,7 +311,7 @@
                 return 'residential';
             },
             (peer, key) => labels[key] || key,
-            segments
+            segments, 'hosting'
         );
     }
 
@@ -319,7 +320,7 @@
             peers,
             peer => peer.countryCode || null,
             (peer, key) => key + '  ' + (peer.country || key),
-            segments
+            segments, 'country'
         );
     }
 
@@ -328,7 +329,7 @@
             peers,
             peer => peer.subver || 'Unknown',
             null,
-            segments
+            segments, 'software'
         );
     }
 
@@ -337,7 +338,7 @@
             peers,
             peer => peer.services_abbrev || '\u2014',
             null,
-            segments
+            segments, 'services'
         );
     }
 

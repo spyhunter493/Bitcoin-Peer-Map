@@ -64,6 +64,18 @@ module.exports = async function assertPeerViews(browser, baseUrl) {
         await page.waitForSelector('#as-sub-sub-tooltip .as-sub-tt-peer');
         await safe();
         assert.strictEqual(await page.locator('#as-sub-sub-tooltip b').count(), 0);
+        // Pinned nested membership is recomputed from the software/provider keys.
+        const nestedProvider = await page.locator('#as-sub-tooltip .as-provider-row-selected').getAttribute('data-as');
+        const member = peers.find(peer => peer.as.split(' ')[0] === nestedProvider && peer.subver === hostile);
+        const arrival = { ...member, id: 903 };
+        peers = peers.concat(arrival);
+        await poll();
+        assert.equal(await page.locator('#as-sub-sub-tooltip [data-peer-id="903"]').count() > 0, true);
+        assert.equal(await page.locator('#peer-tbody tr[data-id="903"]').count(), 1);
+        peers = peers.filter(peer => peer.id !== 903);
+        await poll();
+        assert.equal(await page.locator('#as-sub-sub-tooltip [data-peer-id="903"]').count(), 0);
+        assert.equal(await page.locator('#peer-tbody tr[data-id="903"]').count(), 0);
         await page.keyboard.press('Escape');
         await page.keyboard.press('Escape');
 
@@ -134,7 +146,10 @@ module.exports = async function assertPeerViews(browser, baseUrl) {
         await safe();
         peers = peers.filter(peer => peer.id !== 900);
         await poll();
-        await page.waitForSelector('#pn-sub-tooltip', { state: 'hidden' });
+        assert.equal(await page.locator('#pn-sub-tooltip').isVisible(), true);
+        assert.equal(await page.locator('#pn-sub-tooltip .pn-sub-tt-id-link').count(), 0);
+        assert.equal(await page.locator('#pn-center-label').textContent(), '0 PEERS');
+        await page.keyboard.press('Escape');
 
         // A departed insight peer must release its pinned rectangle and lines.
         await page.locator('#pn-detail-body .pn-insight-row').first().click();

@@ -132,7 +132,7 @@ export interface PrivateInsight {
 }
 export interface PrivateNetworkState {
     privateNetMode: boolean;
-    privateNetSelectedPeer: PeerMapNode | null;
+    privateNetSelectedPeerId: number | null;
     privateNetLinePeer: number | null;
     pnMiniHover: boolean;
     pnPreviewPeerIds: number[] | null;
@@ -157,6 +157,7 @@ export interface PrivateNetworkState {
     pnHoveredNet: PeerNetwork | null;
     pnSubTooltipPinned: boolean;
     pnPinnedSubSrc: HTMLElement | null;
+    pnFilter: { filter: { kind: string; key: string }; label: string } | null;
     pnCenterPreviewLabel: string | null;
     pnCenterPreviewPeerIds: number[] | null;
 }
@@ -207,25 +208,11 @@ export interface PeerTableController {
 export interface ServiceFlag { abbr: string; label: string; rpc: string }
 export interface PrivatePanelOptions {
     state: PrivateNetworkState;
-    data: {
-        readonly lastPeers: Peer[];
-        readonly PN_NET_LABELS: Partial<Record<PeerNetwork, string>>;
-        readonly PRIVATE_NETS: ReadonlySet<PeerNetwork>;
-        readonly nodes: PeerMapNode[];
-        highlightedPeerId: number | null;
-    };
-    actions: {
-        cachePnElements(): void;
-        getPnNetColor(network: PeerNetwork): string;
-        pnEsc(value: unknown): string;
-        pnFmtDuration(seconds: number): string;
-        selectPrivatePeer(peerId: number): void;
-        renderPnDonut(): void;
-        serviceFlagFromAbbr(abbreviation: string): ServiceFlag | null;
-        serviceFlagDescription(flag: ServiceFlag): string;
-    };
+    getColor(network: PeerNetwork): string;
+    onAction(action: { type: 'select' | 'highlight'; peerId: number | null } | { type: 'redraw' }): void;
 }
 export interface PrivatePanelController {
+    cachePnElements(): void;
     refreshPinnedPreview(): void;
     openPnDetailPanel(network: PeerNetwork): void;
     closePnDetailPanel(): void;

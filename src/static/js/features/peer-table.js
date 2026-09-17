@@ -5,9 +5,12 @@
     /** @param {import('../types').PeerTableOptions} options
      *  @returns {import('../types').PeerTableController} */
     function create(options) {
-        const privateState = options.state;
-        const sourceData = options.data;
-        const actions = options.actions;
+        const dashboard = options.dashboard;
+        const privateState = dashboard.privateNetwork;
+        const { mapView, preferences, onAction } = options;
+        const NET_DISPLAY = { ipv4: 'IPv4', ipv6: 'IPv6', onion: 'Tor', i2p: 'I2P', cjdns: 'CJDNS' };
+        const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+        const passesNetwork = network => dashboard.interaction.enabledNets.has(network);
 
         // Connection type acronyms: short form + full description for hover
         const CONN_TYPE_SHORT = {
@@ -34,12 +37,12 @@
         // width: preferred width in px for fixed layout. min is enforced via CSS.
         const COLUMNS = [
             { key: 'id',              label: 'ID',       get: p => p.id,                                      full: null,  vis: true,  w: 40  },
-            { key: 'network',         label: 'Net',      get: p => (sourceData.NET_DISPLAY[p.network] || p.network),     full: null,  vis: true,  w: 45  },
+            { key: 'network',         label: 'Net',      get: p => (NET_DISPLAY[p.network] || p.network),     full: null,  vis: true,  w: 45  },
             { key: 'conntime_fmt',    label: 'Duration', get: p => p.conntime_fmt || '—',                     full: null,  vis: true,  w: 75  },
             { key: 'connection_type', label: 'Type',     get: p => peerTypeShort(p),                           full: p => peerTypeFull(p), vis: true, w: 70 },
             { key: 'addr',            label: 'IP:Port',  get: p => p.addr || `${p.ip}:${p.port}`,             full: null,  vis: true,  w: 130 },
             { key: 'subver',          label: 'Software', get: p => p.subver || '—',                            full: null,  vis: true,  w: 90  },
-            { key: 'services_abbrev', label: 'Services', get: p => actions.serviceAbbrev(p.services),                    full: p => actions.serviceHover(p.services),  vis: true,  w: 70  },
+            { key: 'services_abbrev', label: 'Services', get: p => global.BPMFormat.serviceAbbrev(p.services),                    full: p => global.BPMFormat.serviceHover(p.services),  vis: true,  w: 70  },
             { key: 'city',            label: 'City',     get: p => p.city || '—',                              full: null,  vis: true,  w: 60  },
             { key: 'regionName',      label: 'Region',   get: p => p.regionName || '—',                        full: null,  vis: true,  w: 55  },
             { key: 'country',         label: 'Country',  get: p => p.country || '—',                           full: null,  vis: true,  w: 70  },
@@ -102,7 +105,7 @@
             for (const [key, rawWidth] of Object.entries(widths)) {
                 if (!TABLE_COLUMN_KEYS.has(key)) continue;
                 const width = Number(rawWidth);
-                if (Number.isFinite(width)) normalized[key] = Math.round(sourceData.clamp(width, 30, 400));
+                if (Number.isFinite(width)) normalized[key] = Math.round(clamp(width, 30, 400));
             }
             return normalized;
         }
@@ -119,15 +122,15 @@
         }
 
         function saveTableDisplaySettings() {
-            actions.writeSavedDisplaySettings(Object.assign(
+            preferences.writeSavedDisplaySettings(Object.assign(
                 {},
-                actions.readSavedDisplaySettings(),
+                preferences.readSavedDisplaySettings(),
                 currentTableDisplaySettings()
             ));
         }
 
         function loadTableDisplaySettings() {
-            const saved = actions.readSavedDisplaySettings();
+            const saved = preferences.readSavedDisplaySettings();
 
             visibleColumns = normalizeVisibleColumns(saved.visibleColumns);
 
@@ -138,10 +141,10 @@
             if (autoFitColumns) userColumnWidths = {};
 
             if (Number.isFinite(Number(saved.panelOpacity))) {
-                panelOpacity = Math.round(sourceData.clamp(Number(saved.panelOpacity), 0, 100));
+                panelOpacity = Math.round(clamp(Number(saved.panelOpacity), 0, 100));
             }
             if (Number.isFinite(Number(saved.maxPeerRows))) {
-                maxPeerRows = Math.round(sourceData.clamp(Number(saved.maxPeerRows), 3, 40));
+                maxPeerRows = Math.round(clamp(Number(saved.maxPeerRows), 3, 40));
             }
             if (typeof saved.showAntarcticaPeers === 'boolean') {
                 showAntarcticaPeers = saved.showAntarcticaPeers;
@@ -162,7 +165,7 @@
                 document.body.classList.add('panel-focus-peers');
                 document.body.classList.remove('panel-focus-as');
             }
-            actions.scheduleDonutStackFit();
+            onAction({ type: 'layout' });
         });
 
         // [DISTRIBUTION] Clicking anywhere in peer panel body → bring peers to front
@@ -195,7 +198,7 @@
 
                 // Measure available width
                 const tableWrap = table.closest('.peer-table-wrap');
-                const availW = (tableWrap ? tableWrap.clientWidth : sourceData.W) - actionsW;
+                const availW = (tableWrap ? tableWrap.clientWidth : mapView.width) - actionsW;
 
                 const widths = [];
                 for (const key of visibleColumns) {
@@ -205,13 +208,13 @@
                     // Minimum: header label width
                     const headerW = col.label.length * charPx + headerPad;
 
-                    if (sourceData.lastPeers.length === 0) {
+                    if (dashboard.peers.length === 0) {
                         widths.push(Math.max(headerW, col.w));
                         continue;
                     }
 
                     // Gather string lengths for all values
-                    const lens = sourceData.lastPeers.map(p => String(col.get(p)).length);
+                    const lens = dashboard.peers.map(p => String(col.get(p)).length);
                     lens.sort((a, b) => a - b);
 
                     // Use ~95th percentile to ignore extreme outliers (e.g. Tor/I2P addresses)
@@ -287,7 +290,7 @@
         function updatePeerRow(row, peer, columns, rebuildCells) {
             const net = peer.network || 'ipv4';
             if (row.dataset.net !== net) row.dataset.net = net;
-            row.classList.toggle('row-highlight', sourceData.highlightedPeerId === peer.id);
+            row.classList.toggle('row-highlight', dashboard.interaction.highlightedPeerId === peer.id);
             if (rebuildCells || row.cells.length !== columns.length + 1) {
                 row.replaceChildren();
                 for (let i = 0; i < columns.length + 1; i++) {
@@ -312,12 +315,12 @@
         /** Build table body from lastPeers (filtered by active network filter) */
         function renderPeerTable() {
             if (!tbodyEl) return;
-            const filtered = global.BPMPeerTableModel.filterPeers(sourceData.lastPeers, {
+            const filtered = global.BPMPeerTableModel.filterPeers(dashboard.peers, {
                 privateMode: privateState.privateNetMode,
                 privateNetwork: privateState.pnSelectedNet,
-                passesNetwork: actions.passesNetFilter,
-                providerPeerIds: sourceData.asFilterPeerIds,
-                mapPeerIds: sourceData.mapFilterPeerIds,
+                passesNetwork: passesNetwork,
+                providerPeerIds: dashboard.interaction.asFilterPeerIds,
+                mapPeerIds: dashboard.interaction.mapFilterPeerIds,
             });
             const sorted = global.BPMPeerTableModel.sortPeers(
                 filtered, COLUMNS.find(column => column.key === sortKey), sortAsc
@@ -690,16 +693,16 @@
                 const currentPanelTop = panel.getBoundingClientRect().top;
                 panel.style.maxHeight = h + 'px';
                 if (finalPanelTop < currentPanelTop) {
-                    actions.fitDonutStackForPanelTop(finalPanelTop, true);
+                    onAction({ type: 'fit', top: finalPanelTop, immediate: true });
                     prefitForPanelGrowth = true;
                 }
             } else {
                 panel.style.maxHeight = '';
             }
             if (prefitForPanelGrowth) {
-                setTimeout(actions.fitDonutStackToViewport, 520);
+                setTimeout(() => onAction({ type: 'fit' }), 520);
             } else {
-                actions.scheduleDonutStackFit();
+                onAction({ type: 'layout' });
             }
         }
 

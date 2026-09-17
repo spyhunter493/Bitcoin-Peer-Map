@@ -18,14 +18,14 @@ loadScript(sandbox, 'src/static/js/core/modal.js');
     loadScript(sandbox, 'src/static/js/core/format.js');
 loadScript(sandbox, 'src/static/js/features/service-flags.js');
 loadScript(sandbox, 'src/static/js/features/distribution-state.js');
+loadScript(sandbox, 'src/static/js/features/private-network-state.js');
+loadScript(sandbox, 'src/static/js/core/dashboard-state.js');
+loadScript(sandbox, 'src/static/js/features/peer-filters.js');
 loadScript(sandbox, 'src/static/js/features/distribution-data.js');
 loadScript(sandbox, 'src/static/js/features/distribution-peer-detail.js');
 loadScript(sandbox, 'src/static/js/features/distribution-network-panel.js');
 loadScript(sandbox, 'src/static/js/features/distribution-donut.js');
 loadScript(sandbox, 'src/static/js/features/distribution-summary-panel.js');
-loadScript(sandbox, 'src/static/js/features/distribution-tooltips.js');
-loadScript(sandbox, 'src/static/js/features/distribution-summary-insights.js');
-loadScript(sandbox, 'src/static/js/features/distribution-summary.js');
 loadScript(sandbox, 'src/static/js/features/distribution-country-panel.js');
 loadScript(sandbox, 'src/static/js/features/distribution-provider-panel.js');
 
@@ -71,7 +71,8 @@ assert.strictEqual(sandbox.window.BPMDistributionCountryPanel.render({
         totalBytesSentFmt: '2 KB', totalBytesRecvFmt: '3 KB' },
     peers: [{ id: 7, direction: 'IN' }],
     providers: [{ asNumber: 'AS64500', name: 'Example Provider', peerCount: 1, peerIds: [7] }],
-    summaryController: panelSummary,
+    summaryView: panelSummary.view,
+    attachInteractiveRowHandlers() {}, attachPanelBlankClickHandler() {},
     connectionTypeLabels: {},
 }), true);
 assert.strictEqual(countryFixture.elements['.as-detail-asn'].textContent, 'NZ');
@@ -82,7 +83,8 @@ assert.strictEqual(providerPanel.render({
     panelEl: providerFixture,
     segment: nestedProvider.segment,
     group: providerGroups[0],
-    summaryController: panelSummary,
+    summaryView: panelSummary.view,
+    attachInteractiveRowHandlers() {}, attachPanelBlankClickHandler() {},
     connectionTypeLabels: {},
 }), true);
 assert.strictEqual(providerFixture.elements['.as-detail-asn'].textContent, 'AS64500');
@@ -179,40 +181,9 @@ summaryState.insightActiveType = 'fastest';
 assert.strictEqual(summaryState.snapshot().insightActiveAsNum, 'AS64500');
 assert.strictEqual(sandbox.window.BPMDistributionState.create().insightActiveAsNum, null);
 
-// Controllers are created before init/setHooks/update: they must read current data and hooks.
-let currentSegments = [];
-let drawLines = null;
-const filtered = [];
-const centerPreviews = [];
-const summary = sandbox.window.BPMDistributionSummary.create({
-    state: summaryState,
-    data: { get segments() { return currentSegments; } },
-    elements: { panel: null },
-    hooks: {
-        filterPeerTable: ids => filtered.push(Array.from(ids)),
-        get drawLinesForAllAs() { return drawLines; },
-    },
-    actions: { getActiveTotalPeers: () => 3 },
-    donut: { renderFilterCenter: (...args) => centerPreviews.push(args) },
-    serviceFlags,
-    connectionTypeLabels: {},
-});
-summary.previewSummaryLines([7]);
-currentSegments = [
-    { asNumber: 'AS64500', peerIds: [7, 8], color: '#58a6ff' },
-    { asNumber: 'AS64501', peerIds: [9], color: '#3fb950' },
-];
-let drawn;
-drawLines = groups => { drawn = JSON.parse(JSON.stringify(groups)); };
-summary.previewSummaryLines([8, 9]);
-assert.deepStrictEqual(filtered, [[7], [8, 9]]);
-assert.deepStrictEqual(drawn, [
-    { asNum: 'AS64500', peerIds: [8], color: '#58a6ff' },
-    { asNum: 'AS64501', peerIds: [9], color: '#3fb950' },
-]);
-summary.previewSummaryCenterText([8, 9], 'IPv4');
-assert.strictEqual(summaryState.summaryPreviewLabel, 'IPv4');
-assert.deepStrictEqual(centerPreviews, [[2, 'IPv4', 3]]);
+const summary = { view: sandbox.window.BPMDistributionSummaryPanel.create({
+    elements: { panel: null }, actions: {}, serviceFlags, connectionTypeLabels: {},
+}) };
 
 const summaryRow = summary.view.summaryInteractiveRow(hostile, '2p / 1prov', {
     peerIds: [7, 8],
@@ -244,35 +215,26 @@ for (const html of [
 loadScript(sandbox, 'src/static/js/distribution.js');
 assert.strictEqual(typeof sandbox.window.BPMDistribution.openPeerDetailPanel, 'function');
 
-for (const direction of ['IN', 'OUT']) {
-    const state = sandbox.window.BPMDistributionState.create({
-        summarySelected: true, subTooltipPinned: true,
-        filterCategory: direction === 'IN' ? 'conn-in' : 'conn-out',
-        filterLabel: 'AS64500', filterPeerIds: [7],
-    });
-    const current = { groups: [{ asNumber: 'AS64500', peers: [
-        { id: 7, direction }, { id: 8, direction: direction === 'IN' ? 'OUT' : 'IN' },
-    ] }] };
-    let visible, lines;
-    const controller = sandbox.window.BPMDistributionSummary.create({
-        state, data: current, elements: { panel: null },
-        actions: { isCountryLens: () => false, getColorForAsNum: () => '#58a6ff' },
-        hooks: {
-            filterPeerTable: ids => { visible = Array.from(ids); },
-            drawLinesForAs: (_as, ids) => { lines = Array.from(ids); },
-        },
-    });
-    controller.refresh();
-    assert.deepStrictEqual(visible, [7]);
-    assert.deepStrictEqual(lines, [7]);
-    current.groups[0].peers = [{ id: 9, direction }];
-    controller.refresh();
-    assert.deepStrictEqual(Array.from(state.filterPeerIds), [9]);
-    assert.deepStrictEqual(visible, [9]);
-    current.groups = [];
-    controller.refresh();
-    assert.deepStrictEqual(visible, []);
-    assert.deepStrictEqual(lines, []);
-}
-
 console.log('Distribution feature module tests passed');
+
+// Filter meaning survives snapshot replacement; no matches remain an empty set.
+const peerFilters = sandbox.window.BPMPeerFilters;
+const filterPeers = [
+    { id: 0, as: 'AS1 First', network: 'ipv4', direction: 'IN', countryCode: 'NZ', subver: 'Core', services_abbrev: 'N', ping_ms: 10 },
+    { id: 2, as: 'AS2 Second', network: 'ipv6', direction: 'OUT', countryCode: 'US', subver: 'Other', services_abbrev: 'W', ping_ms: 0 },
+];
+const filteredIds = (peers, descriptor, groups) => Array.from(peerFilters.resolve(peers, descriptor, groups), peer => peer.id);
+const inbound = peerFilters.forCategory('conn-in', 'AS1');
+assert.deepStrictEqual(filteredIds(filterPeers, inbound), [0]);
+assert.deepStrictEqual(filteredIds([{ ...filterPeers[0], id: 3 }, filterPeers[1]], inbound), [3]);
+assert.deepStrictEqual(filteredIds([filterPeers[1]], inbound), []);
+assert.deepStrictEqual(filteredIds(filterPeers, { kind: 'all', filters: [{ kind: 'network', key: 'ipv4' }, { kind: 'software', key: 'Other' }] }), []);
+assert.deepStrictEqual(filteredIds(filterPeers, peerFilters.forCategory('conn-out', 'Others'), { provider: ['AS1'] }), [2]);
+assert.deepStrictEqual(filteredIds(filterPeers, peerFilters.forCategory('insight-fastest', 'fastest')), [0]);
+const dashboardState = sandbox.window.BPMDashboardState.create();
+dashboardState.replace(filterPeers);
+assert.strictEqual(dashboardState.byId.get(0), filterPeers[0]);
+dashboardState.distribution.hoveredPeerId = 0;
+dashboardState.replace([filterPeers[1]]);
+assert.strictEqual(dashboardState.byId.has(0), false);
+assert.strictEqual(dashboardState.distribution.hoveredPeerId, null);

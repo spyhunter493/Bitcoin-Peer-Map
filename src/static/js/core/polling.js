@@ -40,5 +40,9 @@
         return Object.freeze({ run, start, stop, setIntervalMs });
     }
 
-    global.BPMPolling = Object.freeze({ create });
+    /** @param {number} intervalMs */
+    function effectiveInterval(intervalMs) {
+        return document.hidden ? Math.max(intervalMs, 60000) : intervalMs;
+    }
+    global.BPMPolling = Object.freeze({ create, effectiveInterval });
 })(window);

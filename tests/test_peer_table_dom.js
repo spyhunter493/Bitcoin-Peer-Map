@@ -18,6 +18,8 @@ const { chromium } = require('playwright');
             <button id="btn-autofit"></button><button id="btn-table-settings"></button>
         `);
         const repoRoot = path.resolve(__dirname, '..');
+        await page.addScriptTag({ path: path.join(repoRoot, 'src/static/js/core/format.js') });
+        await page.addScriptTag({ path: path.join(repoRoot, 'src/static/js/features/service-flags.js') });
         await page.addScriptTag({ path: path.join(repoRoot, 'src/static/js/features/peer-table-model.js') });
         await page.addScriptTag({ path: path.join(repoRoot, 'src/static/js/features/peer-table.js') });
         const result = await page.evaluate(() => {
@@ -31,23 +33,19 @@ const { chromium } = require('playwright');
             ];
             let saved = {};
             let filter = null;
+            const dashboard = {
+                peers,
+                privateNetwork: { privateNetMode: false, pnSelectedNet: null },
+                interaction: { enabledNets: new Set(['ipv4', 'ipv6']), asFilterPeerIds: null,
+                    mapFilterPeerIds: null, highlightedPeerId: null },
+            };
             const table = window.BPMPeerTable.create({
-                state: { privateNetMode: false, pnSelectedNet: null },
-                data: {
-                    NET_DISPLAY: { ipv4: 'IPv4', ipv6: 'IPv6' },
-                    clamp: (value, min, max) => Math.max(min, Math.min(max, value)),
-                    get lastPeers() { return peers; },
-                    W: 1000, asFilterPeerIds: null, mapFilterPeerIds: null,
-                    highlightedPeerId: null,
-                },
-                actions: {
-                    serviceAbbrev: () => '', serviceHover: () => '',
+                dashboard, mapView: { width: 1000 },
+                preferences: {
                     readSavedDisplaySettings: () => saved,
                     writeSavedDisplaySettings: value => { saved = value; },
-                    scheduleDonutStackFit: () => {},
-                    passesNetFilter: network => !filter || network === filter,
-                    fitDonutStackForPanelTop: () => {}, fitDonutStackToViewport: () => {},
                 },
+                onAction() {},
             });
             table.renderPeerTable();
             const body = document.getElementById('peer-tbody');
@@ -66,11 +64,11 @@ const { chromium } = require('playwright');
             document.querySelector('th[data-sort="ping_ms"]').click();
             const reordered = Array.from(body.rows, item => Number(item.dataset.id)).join(',') === '3,2,1' &&
                 body.querySelector('tr[data-id="1"]') === row;
-            filter = 'ipv6';
+            dashboard.interaction.enabledNets = new Set(['ipv6']);
             table.renderPeerTable();
             const filtered = body.rows.length === 1 && body.rows[0].dataset.id === '2';
-            filter = null;
-            peers = [peers[0], peers[1], { ...peers[2], id: 4 }];
+            dashboard.interaction.enabledNets = new Set(['ipv4', 'ipv6']);
+            dashboard.peers = peers = [peers[0], peers[1], { ...peers[2], id: 4 }];
             table.renderPeerTable();
             const membership = Array.from(body.rows, item => Number(item.dataset.id)).sort().join(',') === '1,2,4';
             saved = { visibleColumns: ['id', 'network', 'ping_ms'] };

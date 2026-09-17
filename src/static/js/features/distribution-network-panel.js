@@ -55,6 +55,7 @@
             providers,
             providerCategory: {
                 label: network.label + ' Connections by Provider',
+                filter: { kind: 'network', key: networkKey },
                 peerCount: networkPeers.length,
                 providerCount: providers.length,
                 peerIds: networkPeers.map(peer => peer.id),
@@ -87,7 +88,7 @@
         return '<div class="as-detail-sub-row as-interactive-row as-summary-row" ' +
             'role="button" tabindex="0" aria-label="' + safeLabel + ': ' + safeValue + '" ' +
             'data-peer-ids="' + peerData + '" data-providers="' + providerData +
-            '" data-cat-label="' + safeLabel + '">' +
+            '" data-filter="' + escapeHtml(JSON.stringify(category.filter || null)) + '" data-cat-label="' + safeLabel + '">' +
             '<span class="as-detail-sub-label">' + safeLabel + '</span>' +
             '<span class="as-detail-sub-val">' + safeValue + '</span></div>';
     }

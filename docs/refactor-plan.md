@@ -23,7 +23,7 @@ over wrappers, duplication, or compressed syntax.
   content, group navigation, actions, geometry, and focus; clean up listeners and
   timers, including replacement during drag/resize. Share identical byte/duration,
   connection-label, and service rendering helpers.
-- [ ] Stage 3 — State ownership: one authoritative peer snapshot/index, canvas-only
+- [x] Stage 3 — State ownership: one authoritative peer snapshot/index, canvas-only
   animation/projection state, one interaction owner for modes/lenses/selections/
   history/filter descriptors/previews. Recompute membership from stable semantic
   keys, preserve empty filters and outage snapshots, reconcile departing peers,
@@ -88,7 +88,21 @@ previous working application revision.
   scroll preservation, and 50 private-popup cycles without listener retention.
   Removed the private popup implementation and duplicate duration/byte/service
   rendering. The shared popup owns pending opening/closing timers and cleanup.
-- Next step: semantic filter reconciliation and frontend ownership.
+- Stage 2 commit: `2a4549f`.
+- Stage 3 validation: recursive syntax checks, JavaScript unit/DOM suites,
+  configured strict types, and the full browser suite pass. Added nested pinned
+  membership arrival/departure coverage and semantic-filter tests including peer
+  ID zero. Private filters retain an empty selection instead of broadening it.
+- Stage 3 implementation: one current snapshot/index; map nodes reference its
+  peer records; private selections use IDs. Distribution interactions now share
+  one owner without the 38-action summary interface. Removed the table/private
+  panels' parent getter adapters. Extracted map, private-network, node/status,
+  and preferences controllers; the application entrypoint is two lines. Preserved
+  unchanged-poll DOM identity and changed-poll scroll/focus/popup geometry.
+- Next step: Stage 4 backend polling caches and separate price delivery, then
+  native-module conversion and complete strict JavaScript coverage in Stage 5.
+- Final CI-equivalent verification, three post-refactor benchmark runs, and the
+  production line-count comparison remain outstanding.
 
 Resume by checking this checklist against the working tree and commit history,
 preserving unrelated changes, then implement the first incomplete stage. Update

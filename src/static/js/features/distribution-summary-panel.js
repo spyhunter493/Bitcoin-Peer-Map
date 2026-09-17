@@ -83,7 +83,7 @@
             return '<div class="as-detail-sub-row as-interactive-row as-summary-row" ' +
                 'role="button" tabindex="0" aria-label="' + safeLabel + ': ' + safeValue + '" ' +
                 'data-peer-ids="' + peerIdsJson + '" data-providers="' + providersJson +
-                '" data-cat-label="' + safeLabel + '">' +
+                '" data-filter="' + escapeHtml(JSON.stringify(catData.filter || null)) + '" data-cat-label="' + safeLabel + '">' +
                 '<span class="as-detail-sub-label">' + safeLabel + '</span>' +
                 '<span class="as-detail-sub-val">' + safeValue + '</span></div>';
         }
@@ -94,7 +94,7 @@
 
         function interactiveRow(label, value, peerIds, category) {
             var peerIdsJson = escapeHtml(JSON.stringify(peerIds));
-            return '<div class="as-detail-sub-row as-interactive-row" data-peer-ids="' + peerIdsJson + '" data-category="' + escapeHtml(category) + '">'
+            return '<div class="as-detail-sub-row as-interactive-row" data-peer-ids="' + peerIdsJson + '" data-filter="' + escapeHtml(JSON.stringify(global.BPMPeerFilters.forCategory(category, label))) + '" data-category="' + escapeHtml(category) + '">'
                  + '<span class="as-detail-sub-label">' + escapeHtml(label) + '</span>'
                  + '<span class="as-detail-sub-val">' + escapeHtml(value) + '</span>'
                  + '</div>';

@@ -39,7 +39,7 @@
         const panelEl = options.panelEl;
         const seg = options.segment;
         const fullGroup = options.group;
-        const summaryController = options.summaryController;
+        const view = options.summaryView;
         const CONN_TYPE_LABELS = options.connectionTypeLabels;
 
         var asnEl = panelEl.querySelector('.as-detail-asn');
@@ -100,9 +100,9 @@
             }
 
             html += '<div class="modal-section-title">Summary</div>';
-            html += summaryController.view.row('Total Peers', seg.peerCount);
-            html += summaryController.view.row('Providers', seg._othersGroups ? seg._othersGroups.length : '?');
-            html += summaryController.view.row('Share', seg.percentage.toFixed(1) + '%');
+            html += view.row('Total Peers', seg.peerCount);
+            html += view.row('Providers', seg._othersGroups ? seg._othersGroups.length : '?');
+            html += view.row('Share', seg.percentage.toFixed(1) + '%');
 
             // Connection type breakdown for Others
             var otherConnMap = Object.create(null);
@@ -117,7 +117,7 @@
                 var octKey = otherConnKeys[ock];
                 var octLabel = (Object.hasOwn(CONN_TYPE_LABELS, octKey) ? CONN_TYPE_LABELS[octKey] : null) || octKey;
                 var octPeerIds = otherConnMap[octKey].peers.map(function (p) { return p.id; });
-                html += summaryController.view.interactiveRow(octLabel, otherConnMap[octKey].count, octPeerIds, 'conntype');
+                html += view.interactiveRow(octLabel, otherConnMap[octKey].count, octPeerIds, 'conntype');
             }
 
             // Performance averages for Others
@@ -136,10 +136,10 @@
             var oAvgDur = otherDurations.length > 0 ? otherDurations.reduce(function (a, b) { return a + b; }, 0) / otherDurations.length : 0;
 
             html += '<div class="modal-section-title">Performance</div>';
-            html += summaryController.view.row('Avg Duration', fmtDuration(oAvgDur));
-            html += summaryController.view.row('Avg Ping', oAvgPing > 0 ? Math.round(oAvgPing) + 'ms' : '\u2014');
-            html += summaryController.view.row('Data Sent', fmtBytes(otherSent));
-            html += summaryController.view.row('Data Recv', fmtBytes(otherRecv));
+            html += view.row('Avg Duration', fmtDuration(oAvgDur));
+            html += view.row('Avg Ping', oAvgPing > 0 ? Math.round(oAvgPing) + 'ms' : '\u2014');
+            html += view.row('Data Sent', fmtBytes(otherSent));
+            html += view.row('Data Recv', fmtBytes(otherRecv));
 
             if (seg._othersGroups && seg._othersGroups.length > 0) {
                 html += '<div class="modal-section-title">All Providers</div>';
@@ -147,7 +147,7 @@
                     var g = seg._othersGroups[i];
                     var gName = g.asShort || g.asName || g.asNumber;
                     if (gName.length > 24) gName = gName.substring(0, 23) + '\u2026';
-                    html += summaryController.view.interactiveRow(
+                    html += view.interactiveRow(
                         g.asNumber + ' \u00b7 ' + gName,
                         g.peerCount + ' peer' + (g.peerCount !== 1 ? 's' : ''),
                         g.peerIds,
@@ -158,7 +158,7 @@
         } else {
             // ── Individual AS: connection types only (no duplicate inbound/outbound) ──
             html += '<div class="modal-section-title">Peers</div>';
-            html += summaryController.view.interactiveRow('Total', fullGroup.peerCount, fullGroup.peerIds, 'conntype');
+            html += view.interactiveRow('Total', fullGroup.peerCount, fullGroup.peerIds, 'conntype');
 
             // Show only connection types that exist, with short labels
             if (fullGroup.connTypesList && fullGroup.connTypesList.length > 0) {
@@ -166,21 +166,21 @@
                     var ctItem = fullGroup.connTypesList[cti];
                     var ctLabel = (Object.hasOwn(CONN_TYPE_LABELS, ctItem.type) ? CONN_TYPE_LABELS[ctItem.type] : null) || ctItem.type;
                     var ctPeerIds = ctItem.peers.map(function (p) { return p.id; });
-                    html += summaryController.view.interactiveRow(ctLabel, ctItem.count, ctPeerIds, 'conntype');
+                    html += view.interactiveRow(ctLabel, ctItem.count, ctPeerIds, 'conntype');
                 }
             }
 
             html += '<div class="modal-section-title">Performance</div>';
-            html += summaryController.view.row('Avg Duration', fullGroup.avgDurationFmt);
-            html += summaryController.view.row('Avg Ping', fullGroup.avgPingMs > 0 ? Math.round(fullGroup.avgPingMs) + 'ms' : '\u2014');
-            html += summaryController.view.row('Data Sent', fullGroup.totalBytesSentFmt);
-            html += summaryController.view.row('Data Recv', fullGroup.totalBytesRecvFmt);
+            html += view.row('Avg Duration', fullGroup.avgDurationFmt);
+            html += view.row('Avg Ping', fullGroup.avgPingMs > 0 ? Math.round(fullGroup.avgPingMs) + 'ms' : '\u2014');
+            html += view.row('Data Sent', fullGroup.totalBytesSentFmt);
+            html += view.row('Data Recv', fullGroup.totalBytesRecvFmt);
 
             if (fullGroup.versions && fullGroup.versions.length > 0) {
                 html += '<div class="modal-section-title">Software</div>';
                 for (var vi = 0; vi < fullGroup.versions.length; vi++) {
                     var vPeerIds = fullGroup.versions[vi].peers.map(function (p) { return p.id; });
-                    html += summaryController.view.interactiveRow(fullGroup.versions[vi].subver, fullGroup.versions[vi].count + ' peer' + (fullGroup.versions[vi].count !== 1 ? 's' : ''), vPeerIds, 'software');
+                    html += view.interactiveRow(fullGroup.versions[vi].subver, fullGroup.versions[vi].count + ' peer' + (fullGroup.versions[vi].count !== 1 ? 's' : ''), vPeerIds, 'software');
                 }
             }
 
@@ -188,7 +188,7 @@
                 html += '<div class="modal-section-title">Countries</div>';
                 for (var ci = 0; ci < fullGroup.countries.length; ci++) {
                     var cPeerIds = fullGroup.countries[ci].peers.map(function (p) { return p.id; });
-                    html += summaryController.view.interactiveRow(fullGroup.countries[ci].code + '  ' + fullGroup.countries[ci].name, fullGroup.countries[ci].count, cPeerIds, 'country');
+                    html += view.interactiveRow(fullGroup.countries[ci].code + '  ' + fullGroup.countries[ci].name, fullGroup.countries[ci].count, cPeerIds, 'country');
                 }
             }
 
@@ -196,7 +196,7 @@
                 html += '<div class="modal-section-title">Services</div>';
                 for (var si = 0; si < fullGroup.servicesCombos.length; si++) {
                     var sPeerIds = fullGroup.servicesCombos[si].peers.map(function (p) { return p.id; });
-                    html += summaryController.view.interactiveRow(fullGroup.servicesCombos[si].abbrev, fullGroup.servicesCombos[si].count + ' peer' + (fullGroup.servicesCombos[si].count !== 1 ? 's' : ''), sPeerIds, 'services');
+                    html += view.interactiveRow(fullGroup.servicesCombos[si].abbrev, fullGroup.servicesCombos[si].count + ' peer' + (fullGroup.servicesCombos[si].count !== 1 ? 's' : ''), sPeerIds, 'services');
                 }
             }
         }
@@ -205,8 +205,8 @@
         bodyEl.scrollTop = 0;
 
         // Attach hover/click handlers to all interactive rows
-        summaryController.attachInteractiveRowHandlers(bodyEl, seg);
-        summaryController.attachPanelBlankClickHandler(bodyEl);
+        options.attachInteractiveRowHandlers(bodyEl, seg);
+        options.attachPanelBlankClickHandler(bodyEl);
         return true;
     }
 

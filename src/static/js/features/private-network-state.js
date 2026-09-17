@@ -5,7 +5,7 @@
     function create() {
         return {
             privateNetMode: false,
-            privateNetSelectedPeer: null,
+            privateNetSelectedPeerId: null,
             privateNetLinePeer: null,
             pnMiniHover: false,
             pnPreviewPeerIds: null,
@@ -30,6 +30,7 @@
             pnHoveredNet: null,
             pnSubTooltipPinned: false,
             pnPinnedSubSrc: null,
+            pnFilter: null,
             pnCenterPreviewLabel: null,
             pnCenterPreviewPeerIds: null,
         };

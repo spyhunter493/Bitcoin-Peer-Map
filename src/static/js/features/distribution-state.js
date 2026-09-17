@@ -15,6 +15,7 @@
         summaryPreviewPeerIds: null,
         summaryPreviewLabel: null,
         filterPeerIds: null,
+        filterDescriptor: null,
         filterLabel: null,
         filterCategory: null,
         subTooltipPinned: false,
@@ -40,6 +41,7 @@
 
         function resetFilters() {
             values.filterPeerIds = null;
+            values.filterDescriptor = null;
             values.filterLabel = null;
             values.filterCategory = null;
             values.subTooltipPinned = false;
@@ -92,7 +94,11 @@
             Object.defineProperty(controller, key, {
                 enumerable: true,
                 get: () => values[key],
-                set: value => { values[key] = value; },
+                set: value => {
+                    if (key === 'filterCategory' && value !== values[key] && value !== 'summary') values.filterDescriptor = null;
+                    values[key] = value;
+                    if (key === "filterCategory" && value === null) values.filterDescriptor = null;
+                },
             });
         }
         return Object.freeze(controller);
