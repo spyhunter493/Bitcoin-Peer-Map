@@ -502,8 +502,8 @@ async function assertDistributionSummaryInteractions(page) {
         const peerLink = document.querySelector('#as-sub-sub-tooltip .as-sub-tt-id-link');
         const peerId = Number(peerLink.dataset.peerId);
         const scrollTop = body.scrollTop;
-        const peers = window.ASDistribution.getLastPeersRaw().map(peer => ({ ...peer }));
-        window.ASDistribution.update(peers);
+        const peers = window.BPMDistribution.getLastPeersRaw().map(peer => ({ ...peer }));
+        window.BPMDistribution.update(peers);
         return {
             rowPreserved: row === body.querySelector('[data-cat-label="IPv4"]'),
             providerPreserved: tip.querySelector('.as-provider-row-selected') !== null,
@@ -552,7 +552,7 @@ async function assertDistributionSummaryInteractions(page) {
         if (selector !== '.as-stable-link') {
             await page.locator('#as-sub-tooltip .as-provider-row').first().click();
             await page.waitForSelector('#as-sub-sub-tooltip .as-sub-tt-rank');
-            await page.evaluate(() => window.ASDistribution.update(window.ASDistribution.getLastPeersRaw()));
+            await page.evaluate(() => window.BPMDistribution.update(window.BPMDistribution.getLastPeersRaw()));
             assert.strictEqual(await page.locator('#as-sub-sub-tooltip').isVisible(), true);
             await page.keyboard.press('Escape');
         }
@@ -569,7 +569,7 @@ async function assertDistributionSummaryInteractions(page) {
     const summaryScroll = await page.locator('#as-detail-panel .as-detail-body').evaluate(body => {
         body.scrollTop = 100;
         const scrollTop = body.scrollTop;
-        window.ASDistribution.update(window.ASDistribution.getLastPeersRaw());
+        window.BPMDistribution.update(window.BPMDistribution.getLastPeersRaw());
         return [scrollTop, body.scrollTop];
     });
     assert.strictEqual(summaryScroll[1], summaryScroll[0]);

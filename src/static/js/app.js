@@ -728,7 +728,7 @@
     let mapFilterPeerIds = null;   // Set of peer IDs to show when a map dot is clicked (null = no filter)
     let groupedNodes = null;       // Array of nodes at clicked dot (for back navigation from drill-down)
 
-    // [AS-DISTRIBUTION] State for AS Distribution integration
+    // [DISTRIBUTION] State for AS Distribution integration
     let asFilterPeerIds = null;    // Set of peer IDs to show when AS is selected (null = no filter)
     let asLinePeerIds = null;      // Array of peer IDs to draw lines to (hover/selection)
     let asLineColor = null;        // Color string for AS lines
@@ -1057,12 +1057,12 @@
             } else {
                 // Public network chip (ipv4/ipv6) → exit private mode if active, open network panel
                 if (privateState.privateNetMode) exitPrivateNetMode();
-                if (window.ASDistribution) {
-                    if (!window.ASDistribution.isFocusedMode()) {
-                        window.ASDistribution.enterFocusedMode();
+                if (window.BPMDistribution) {
+                    if (!window.BPMDistribution.isFocusedMode()) {
+                        window.BPMDistribution.enterFocusedMode();
                     }
                     // Open the dedicated IPv4/IPv6 network detail panel
-                    window.ASDistribution.openNetworkPanel(netKey);
+                    window.BPMDistribution.openNetworkPanel(netKey);
                 }
             }
         });
@@ -1533,11 +1533,11 @@
         document.body.classList.add('private-net-mode');
 
         // Close any existing AS distribution panels/tooltips
-        if (window.ASDistribution) {
-            window.ASDistribution.closePeerPopup();
-            window.ASDistribution.deselect();
-            if (window.ASDistribution.isFocusedMode()) {
-                window.ASDistribution.exitFocusedMode();
+        if (window.BPMDistribution) {
+            window.BPMDistribution.closePeerPopup();
+            window.BPMDistribution.deselect();
+            if (window.BPMDistribution.isFocusedMode()) {
+                window.BPMDistribution.exitFocusedMode();
             }
         }
         hideTooltip();
@@ -2800,9 +2800,9 @@
         updateFlightDeck(nodes);
         updateHUD();
 
-        // [AS-DISTRIBUTION] Update AS Distribution donut with latest peer data (always active)
-        if (window.ASDistribution) {
-            window.ASDistribution.update(lastPeers);
+        // [DISTRIBUTION] Update AS Distribution donut with latest peer data (always active)
+        if (window.BPMDistribution) {
+            window.BPMDistribution.update(lastPeers);
         }
 
         // Refresh the peer table panel
@@ -3776,7 +3776,7 @@
         // (but always draw fading-out nodes so they dissolve gracefully)
         if (!passesNetFilter(node.net) && node.alive) return;
 
-        // [AS-DISTRIBUTION] Dim peers not in the selected AS
+        // [DISTRIBUTION] Dim peers not in the selected AS
         let asDimFactor = 1;
         if (asFilterPeerIds && node.alive && !asFilterPeerIds.has(node.peerId)) {
             asDimFactor = 0.15;
@@ -3835,7 +3835,7 @@
         const r = CFG.nodeRadius * scale;
         const gr = CFG.glowRadius * scale * pulse;
 
-        // [AS-DISTRIBUTION] Apply dim factor to opacity
+        // [DISTRIBUTION] Apply dim factor to opacity
         const finalOpacity = opacity * asDimFactor;
 
         // Draw at each wrap offset
@@ -3890,7 +3890,7 @@
     }
 
     // ═══════════════════════════════════════════════════════════
-    // [AS-DISTRIBUTION] Resolve which wrap copy of each peer to draw lines to.
+    // [DISTRIBUTION] Resolve which wrap copy of each peer to draw lines to.
     // Prefers the copy visible on the current map view, breaking ties by
     // proximity to viewport center.  Falls back to closest-to-center among
     // all wrap copies when nothing is on-screen.
@@ -3955,20 +3955,20 @@
     }
 
     // ═══════════════════════════════════════════════════════════
-    // [AS-DISTRIBUTION] Draw lines from LEGEND DOT to peers of a hovered/selected AS
+    // [DISTRIBUTION] Draw lines from LEGEND DOT to peers of a hovered/selected AS
     // Lines always originate from the legend dot, never the donut center.
     // Adapts to map pan/zoom since this runs every frame.
     // ═══════════════════════════════════════════════════════════
 
     function drawAsLines(wrapOffsets) {
         if (!asLinePeerIds || !asLineColor) return;
-        const ASD = window.ASDistribution;
-        if (!ASD) return;
+        const distribution = window.BPMDistribution;
+        if (!distribution) return;
 
         // Lines originate from legend dots (top-8 direct, Others for non-top-8, donut center fallback)
         let lineOrigin = null;
         if (asLineAsNum) {
-            lineOrigin = ASD.getLineOriginForAs(asLineAsNum);
+            lineOrigin = distribution.getLineOriginForAs(asLineAsNum);
         }
         if (!lineOrigin) return;
 
@@ -4058,8 +4058,8 @@
      *  Each group draws from its own legend dot in its own color. */
     function drawAsLinesAll(wrapOffsets) {
         if (!asLineGroups || asLineGroups.length === 0) return;
-        const ASD = window.ASDistribution;
-        if (!ASD) return;
+        const distribution = window.BPMDistribution;
+        if (!distribution) return;
 
         const canvasRect = canvas.getBoundingClientRect();
         const lwSlider = advSettings.asLineWidth;
@@ -4075,7 +4075,7 @@
 
         for (const grp of asLineGroups) {
             // Lines originate from legend dots (top-8 direct, Others for non-top-8, donut center fallback)
-            let lineOrigin = ASD.getLineOriginForAs(grp.asNum);
+            let lineOrigin = distribution.getLineOriginForAs(grp.asNum);
             if (!lineOrigin) continue;
 
             const originX = (lineOrigin.x - canvasRect.left) * (W / canvasRect.width);
@@ -4403,13 +4403,13 @@
                     peerTable.renderPeerTable();
                     hideTooltip(); // close the group list tooltip
 
-                    // [AS-DISTRIBUTION] Open full peer detail FIRST (before zoom)
-                    const ASD = window.ASDistribution;
-                    if (ASD) {
-                        const rawPeers = ASD.getLastPeersRaw();
+                    // [DISTRIBUTION] Open full peer detail FIRST (before zoom)
+                    const distribution = window.BPMDistribution;
+                    if (distribution) {
+                        const rawPeers = distribution.getLastPeersRaw();
                         const peerData = rawPeers.find(p => p.id === peerId);
                         if (peerData) {
-                            ASD.openPeerDetailPanel(peerData, 'map-group');
+                            distribution.openPeerDetailPanel(peerData, 'map-group');
                         }
                     }
 
@@ -4722,14 +4722,14 @@
             mapFilterPeerIds = new Set([node.peerId]);
             peerTable.renderPeerTable();
 
-            // [AS-DISTRIBUTION] Open full peer detail in right panel + animate donut
-            const ASD = window.ASDistribution;
+            // [DISTRIBUTION] Open full peer detail in right panel + animate donut
+            const distribution = window.BPMDistribution;
             let bigPopupOpened = false;
-            if (ASD) {
-                const rawPeers = ASD.getLastPeersRaw();
+            if (distribution) {
+                const rawPeers = distribution.getLastPeersRaw();
                 const peerData = rawPeers.find(p => p.id === peerId);
                 if (peerData) {
-                    ASD.openPeerDetailPanel(peerData, 'peerlist');
+                    distribution.openPeerDetailPanel(peerData, 'peerlist');
                     bigPopupOpened = true;
                 }
             }
@@ -4971,7 +4971,7 @@
             drawConnectionLines(now, wrapOffsets);
         }
 
-        // [AS-DISTRIBUTION] 9b. Draw lines from map center to AS peers (hover/selection)
+        // [DISTRIBUTION] 9b. Draw lines from map center to AS peers (hover/selection)
         if (!privateState.privateNetMode) {
             if (asLineGroups && asLineGroups.length > 0) {
                 drawAsLinesAll(wrapOffsets);
@@ -5135,15 +5135,15 @@
                 if (group.length === 1) {
                     const node = group[0];
                     // If clicking the same peer that's already shown in detail, close popup instead
-                    const ASD = window.ASDistribution;
-                    if (pinnedNode && pinnedNode.peerId === node.peerId && ASD && ASD.isPeerDetailActive()) {
+                    const distribution = window.BPMDistribution;
+                    if (pinnedNode && pinnedNode.peerId === node.peerId && distribution && distribution.isPeerDetailActive()) {
                         pinnedNode = null;
                         highlightedPeerId = null;
                         hoveredNode = null;
                         hideTooltip();
                         peerTable.highlightTableRow(null);
                         clearMapDotFilter();
-                        ASD.closePeerPopup();
+                        distribution.closePeerPopup();
                     } else {
                         // Single peer: open peer detail panel first, then zoom
                         // (must match table-row click order so focused-mode CSS
@@ -5153,12 +5153,12 @@
                         mapFilterPeerIds = new Set([node.peerId]);
                         peerTable.renderPeerTable();
 
-                        // [AS-DISTRIBUTION] Open full peer detail in right panel FIRST
-                        if (ASD) {
-                            const rawPeers = ASD.getLastPeersRaw();
+                        // [DISTRIBUTION] Open full peer detail in right panel FIRST
+                        if (distribution) {
+                            const rawPeers = distribution.getLastPeersRaw();
                             const peerData = rawPeers.find(p => p.id === node.peerId);
                             if (peerData) {
-                                ASD.openPeerDetailPanel(peerData, 'map');
+                                distribution.openPeerDetailPanel(peerData, 'map');
                             }
                         }
 
@@ -5196,8 +5196,8 @@
                 } else {
                     // Multi-peer dot: show small pinned selection list near the dot
                     // Close any existing peer detail popup first
-                    if (window.ASDistribution) {
-                        window.ASDistribution.closePeerPopup();
+                    if (window.BPMDistribution) {
+                        window.BPMDistribution.closePeerPopup();
                     }
                     pinnedNode = null;  // no single peer pinned yet
                     groupedNodes = group;
@@ -5241,9 +5241,9 @@
                         renderPnDonut();
                     }
                 }
-                // [AS-DISTRIBUTION] Two-stage collapse: first close sub-panels, then main panel
-                if (window.ASDistribution) {
-                    window.ASDistribution.onMapClick();
+                // [DISTRIBUTION] Two-stage collapse: first close sub-panels, then main panel
+                if (window.BPMDistribution) {
+                    window.BPMDistribution.onMapClick();
                 }
             }
         }
@@ -5649,8 +5649,8 @@
                 } else {
                     target.style.display = 'none';
                     // If hiding public donut, deselect any active AS
-                    if (targetId === 'as-distribution-container' && window.ASDistribution && window.ASDistribution.getSelectedAs()) {
-                        window.ASDistribution.deselect();
+                    if (targetId === 'as-distribution-container' && window.BPMDistribution && window.BPMDistribution.getSelectedAs()) {
+                        window.BPMDistribution.deselect();
                     }
                     // If hiding private donut, exit private mode if active
                     if (targetId === 'pn-mini-donut' && privateState.privateNetMode) {
@@ -5681,8 +5681,8 @@
                     pnMiniLegend.style.display = advSettings.showDonutLegends ? '' : 'none';
                 }
                 // Notify AS distribution module of the legend visibility state
-                if (window.ASDistribution && window.ASDistribution.setLegendsHidden) {
-                    window.ASDistribution.setLegendsHidden(!advSettings.showDonutLegends);
+                if (window.BPMDistribution && window.BPMDistribution.setLegendsHidden) {
+                    window.BPMDistribution.setLegendsHidden(!advSettings.showDonutLegends);
                 }
             });
         }
@@ -6125,14 +6125,14 @@
     }
 
     // ═══════════════════════════════════════════════════════════
-    // [AS-DISTRIBUTION] — Module initialization (always-on, no toggle)
+    // [DISTRIBUTION] — Module initialization (always-on, no toggle)
     // ═══════════════════════════════════════════════════════════
 
     function initAsDistribution() {
-        if (!window.ASDistribution) return;
+        if (!window.BPMDistribution) return;
 
-        const ASD = window.ASDistribution;
-        ASD.init();
+        const distribution = window.BPMDistribution;
+        distribution.init();
 
         // Apply initial "Display Top ISP/Net" toggle state
         if (!advSettings.showDonutLegends) {
@@ -6140,11 +6140,11 @@
             if (asCont) asCont.classList.add('legends-hidden');
             const pnMiniLegend = document.getElementById('pn-mini-legend');
             if (pnMiniLegend) pnMiniLegend.style.display = 'none';
-            ASD.setLegendsHidden(true);
+            distribution.setLegendsHidden(true);
         }
 
         // Provide integration hooks
-        ASD.setHooks({
+        distribution.setHooks({
             drawLinesForAs: function (asNum, peerIds, color) {
                 asLineGroups = null; // clear multi-group mode
                 asLinePeerIds = peerIds;
@@ -6176,13 +6176,13 @@
                 const node = nodes.find(n => n.peerId === peerId && n.alive);
                 if (!node) return;
                 // Draw line from the peer's AS legend dot to this peer
-                const ASD = window.ASDistribution;
-                if (ASD && node.peerId !== undefined) {
+                const distribution = window.BPMDistribution;
+                if (distribution && node.peerId !== undefined) {
                     const peer = lastPeers.find(p => p.id === peerId);
                     if (peer && peer.as) {
                         const asMatch = peer.as.match(/^(AS\d+)/);
                         const peerAsNum = asMatch ? asMatch[1] : peer.as;
-                        const color = ASD.getColorForAs(peerAsNum) || '#58a6ff';
+                        const color = distribution.getColorForAs(peerAsNum) || '#58a6ff';
                         asLineGroups = null;
                         asLinePeerIds = [peerId];
                         asLineColor = color;
@@ -6252,12 +6252,12 @@
 
         // Donut is always active — feed it initial data if available
         if (lastPeers.length > 0) {
-            ASD.update(lastPeers);
+            distribution.update(lastPeers);
         }
     }
 
     // ═══════════════════════════════════════════════════════════
-    // [AS-DISTRIBUTION] Peer panel + topbar button wiring
+    // [DISTRIBUTION] Peer panel + topbar button wiring
     // ═══════════════════════════════════════════════════════════
 
     function initNewButtons() {
@@ -6456,10 +6456,10 @@
         updateClock();
         setInterval(updateClock, 1000);
 
-        // [AS-DISTRIBUTION] Initialize AS Distribution module (always-on donut)
+        // [DISTRIBUTION] Initialize AS Distribution module (always-on donut)
         initAsDistribution();
 
-        // [AS-DISTRIBUTION] Wire up new peer panel buttons and topbar gear
+        // [DISTRIBUTION] Wire up new peer panel buttons and topbar gear
         initNewButtons();
 
         // Apply default visible row count to peer panel

@@ -157,7 +157,7 @@
         // Panel toggle (clicking the title bar)
         document.getElementById('peer-panel-handle').addEventListener('click', () => {
             panelEl.classList.toggle('collapsed');
-            // [AS-DISTRIBUTION] When expanding peer list, bring it on top of AS panel
+            // [DISTRIBUTION] When expanding peer list, bring it on top of AS panel
             if (!panelEl.classList.contains('collapsed')) {
                 document.body.classList.add('panel-focus-peers');
                 document.body.classList.remove('panel-focus-as');
@@ -165,7 +165,7 @@
             actions.scheduleDonutStackFit();
         });
 
-        // [AS-DISTRIBUTION] Clicking anywhere in peer panel body → bring peers to front
+        // [DISTRIBUTION] Clicking anywhere in peer panel body → bring peers to front
         const peerPanelBody = document.querySelector('.peer-panel-body');
         if (peerPanelBody) {
             peerPanelBody.addEventListener('click', () => {

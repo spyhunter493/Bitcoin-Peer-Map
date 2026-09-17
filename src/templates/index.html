@@ -6,7 +6,7 @@
     <title>Bitcoin Peer Map</title>
     <link rel="icon" type="image/svg+xml" href="/static/assets/favicon.svg?v={{ asset_revision }}">
     <link rel="stylesheet" href="/static/css/app.css?v={{ asset_revision }}">
-    <link rel="stylesheet" href="/static/css/as-distribution.css?v={{ asset_revision }}"><!-- [AS-DISTRIBUTION] -->
+    <link rel="stylesheet" href="/static/css/distribution.css?v={{ asset_revision }}"><!-- [DISTRIBUTION] -->
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;900&display=swap" rel="stylesheet">
 </head>
 <body data-repository-url="{{ repository_url }}" data-asset-revision="{{ asset_revision }}">
@@ -16,7 +16,7 @@
             <a href="{{ repository_url }}" target="_blank" rel="noopener" class="logo" title="Peer map, service provider distribution analysis, and tools for your Bitcoin node - View on GitHub"><span class="brand-primary">Bitcoin</span> <span class="brand-accent">Peer</span> <span class="brand-primary">Map</span></a>
             <a href="{{ revision_url }}" target="_blank" rel="noopener" class="revision" title="View commit {{ revision }} on GitHub">{{ revision }}</a>
         </div>
-        <!-- [AS-DISTRIBUTION] Flight deck moved to topbar center -->
+        <!-- [DISTRIBUTION] Flight deck moved to topbar center -->
         <div class="topbar-center" id="topbar-center">
             <div id="flight-deck" class="flight-deck-inline">
                 <div class="fd-content" id="fd-content">
@@ -110,7 +110,7 @@
         </div>
     </div>
 
-    <!-- [AS-DISTRIBUTION] Donut — fixed upper-right corner of map, always visible -->
+    <!-- [DISTRIBUTION] Donut — fixed upper-right corner of map, always visible -->
     <div id="as-distribution-container" class="as-distribution-container">
         <div class="as-lens-toggle" id="as-lens-toggle" role="tablist" aria-label="Distribution lens">
             <button class="as-lens-btn active" type="button" data-lens="provider" role="tab" aria-selected="true">Providers</button>
@@ -233,7 +233,7 @@
         </div>
     </div>
 
-    <!-- [AS-DISTRIBUTION] Detail panel — slides in from right, pushes content -->
+    <!-- [DISTRIBUTION] Detail panel — slides in from right, pushes content -->
     <div id="as-detail-panel" class="as-detail-panel hidden">
         <div class="as-detail-header">
             <div class="as-detail-header-info">
@@ -275,7 +275,9 @@
     <script src="/static/js/features/distribution-tooltips.js?v={{ asset_revision }}"></script>
     <script src="/static/js/features/distribution-summary-insights.js?v={{ asset_revision }}"></script>
     <script src="/static/js/features/distribution-summary.js?v={{ asset_revision }}"></script>
-    <script src="/static/js/as-distribution.js?v={{ asset_revision }}"></script><!-- [AS-DISTRIBUTION] loaded before app.js -->
+    <script src="/static/js/features/distribution-country-panel.js?v={{ asset_revision }}"></script>
+    <script src="/static/js/features/distribution-provider-panel.js?v={{ asset_revision }}"></script>
+    <script src="/static/js/distribution.js?v={{ asset_revision }}"></script><!-- [DISTRIBUTION] loaded before app.js -->
     <script src="/static/js/features/private-network-state.js?v={{ asset_revision }}"></script>
     <script src="/static/js/features/private-network-panel.js?v={{ asset_revision }}"></script>
     <script src="/static/js/features/private-peer-detail.js?v={{ asset_revision }}"></script>

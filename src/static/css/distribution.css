@@ -1,11 +1,9 @@
 /* ============================================================
-   AS Distribution Analysis — Stylesheet
-   Isolated CSS for the AS Distribution view.
-   Delete this file to fully revert the feature.
+   Distribution dashboard styles — provider and country lenses.
    ============================================================ */
 
 /* ==========================================================
-   2. AS DISTRIBUTION CONTAINER — Upper-right corner of map
+   2. DISTRIBUTION CONTAINER — Upper-right corner of map
    ========================================================== */
 .as-distribution-container {
     --as-donut-fit-scale: 1;
