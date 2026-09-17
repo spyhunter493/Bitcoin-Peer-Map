@@ -231,6 +231,12 @@ filtering/sorting in `peer-table-model.js`. Private panels and peer popups use
 `core/polling.js` owns peer/node-info timer lifecycles and prevents overlapping requests;
 `features/peer-refresh.js` handles snapshot delivery and freshness.
 
+Run `npm run benchmark:dashboard` to profile 14, 125, and 500 synthetic peers in
+Chromium. It reports main-thread task time over three idle seconds, DOM size,
+JavaScript heap use, and table mutations during an unchanged peer poll. The
+benchmark serves the checked-out frontend with local API fixtures; compare runs
+on the same machine and browser because absolute timings vary by environment.
+
 `types.d.ts` defines the shared peer API shape and controller interfaces. Type checking is
 incremental: `tsconfig.json` currently checks the poller, peer-refresh controller, table model,
 and private-network state in strict mode. The DOM adapters remain plain JavaScript and can

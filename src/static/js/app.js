@@ -95,6 +95,13 @@
         fadeOutEase: 2.0,          // exponent for ease-out curve
     };
 
+    const BACKGROUND_POLL_INTERVAL = 60000;
+    const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+    function effectivePollInterval(intervalMs) {
+        return document.hidden ? Math.max(intervalMs, BACKGROUND_POLL_INTERVAL) : intervalMs;
+    }
+
     // ═══════════════════════════════════════════════════════════
     // ADVANCED DISPLAY SETTINGS — tuneable from the floating panel
     // Persisted to localStorage when user clicks "Save".
@@ -1086,10 +1093,10 @@
     // ═══════════════════════════════════════════════════════════
 
     let btcCurrency = 'USD';
-    let btcPriceInterval = 10;  // seconds
+    let btcPriceInterval = CFG.infoPollInterval / 1000;  // seconds
     const infoPolling = window.BPMPolling.create({
         task: refreshNodeInfo,
-        intervalMs: CFG.infoPollInterval,
+        intervalMs: effectivePollInterval(CFG.infoPollInterval),
     });
 
     // ═══════════════════════════════════════════════════════════
@@ -1168,7 +1175,8 @@
                 freqInput.value = v;
                 btcPriceInterval = v;
                 // Restart info poll with new interval
-                infoPolling.setIntervalMs(btcPriceInterval * 1000);
+                CFG.infoPollInterval = btcPriceInterval * 1000;
+                syncPollingIntervals();
             });
         }
 
@@ -3761,6 +3769,8 @@
      */
     function drawNode(node, now, wrapOffsets) {
         if (now < node.spawnTime) return;
+        const reducedMotion = reducedMotionQuery.matches;
+        if (reducedMotion && !node.alive) return;
 
         // Network filter: skip nodes whose network isn't enabled
         // (but always draw fading-out nodes so they dissolve gracefully)
@@ -3781,20 +3791,20 @@
         const ageMs = now - node.spawnTime;
         const nowSec = Math.floor(now / 1000);
         const connAgeSec = (node.conntime > 0) ? Math.max(0, nowSec - node.conntime) : 0;
-        const inArrival = ageMs < CFG.arrivalDuration;
+        const inArrival = !reducedMotion && ageMs < CFG.arrivalDuration;
 
         // ── Connection-age brightness (dim newcomers, bright veterans) ──
         const brightness = getAgeBrightness(node, nowSec);
 
         // ── Fade-in: ease-out curve for smooth materialization ──
         let opacity = 1;
-        if (ageMs < CFG.fadeInDuration) {
+        if (!reducedMotion && ageMs < CFG.fadeInDuration) {
             const t = ageMs / CFG.fadeInDuration;
             opacity = 1 - Math.pow(1 - t, 2);
         }
 
         // ── Fade-out: eased curve so nodes dissolve gracefully ──
-        if (!node.alive && node.fadeOutStart) {
+        if (!reducedMotion && !node.alive && node.fadeOutStart) {
             const fadeAge = now - node.fadeOutStart;
             const t = clamp(fadeAge / CFG.fadeOutDuration, 0, 1);
             opacity = Math.pow(1 - t, CFG.fadeOutEase);
@@ -3803,7 +3813,9 @@
 
         // ── Pulse (direction-aware + nervousness for young peers) ──
         let pulse;
-        if (inArrival) {
+        if (reducedMotion) {
+            pulse = 1;
+        } else if (inArrival) {
             // During arrival: fast energetic pulse (unchanged)
             pulse = 0.55 + 0.45 * Math.abs(Math.sin(node.phase + ageMs * CFG.arrivalPulseSpeed));
         } else {
@@ -3815,7 +3827,7 @@
 
         // Spawn "pop" scale effect (first 600ms)
         let scale = 1;
-        if (ageMs < 600) {
+        if (!reducedMotion && ageMs < 600) {
             const t = ageMs / 600;
             scale = t < 0.6 ? (t / 0.6) * 1.4 : 1.4 - 0.4 * ((t - 0.6) / 0.4);
         }
@@ -4137,14 +4149,16 @@
     // Countdown timer state
     let lastPeerFetchTime = 0;
     let countdownInterval = null;
-    // Poll timer IDs (stored so they can be restarted when settings change)
+    // Peer polling follows the visible or background interval.
     const peerPolling = window.BPMPolling.create({
         task: fetchPeers,
-        intervalMs: CFG.pollInterval,
+        intervalMs: effectivePollInterval(CFG.pollInterval),
     });
 
     function startCountdownTimer() {
         if (countdownInterval) clearInterval(countdownInterval);
+        countdownInterval = null;
+        if (document.hidden) return;
         countdownInterval = setInterval(() => {
             peerRefresh.renderStatus();
             const cdEl = document.getElementById('mo-countdown');
@@ -4797,7 +4811,7 @@
     function drawHighlightRing(node, now, wrapOffsets, forcePinned) {
         if (!node.alive) return;
         const isPinned = forcePinned || (pinnedNode && pinnedNode.peerId === node.peerId);
-        const pulse = 0.7 + 0.3 * Math.sin(now * 0.005);
+        const pulse = reducedMotionQuery.matches ? 1 : 0.7 + 0.3 * Math.sin(now * 0.005);
         const r = CFG.nodeRadius * 2.5;
         for (const off of wrapOffsets) {
             const s = worldToScreen(node.lon + off, node.lat);
@@ -4900,10 +4914,11 @@
     function frame(timestamp) {
         const now = Date.now();
         const interacting = document.body.classList.contains('map-interacting');
+        const reducedMotion = reducedMotionQuery.matches;
 
         // Direct tracking keeps pointer-driven movement responsive. Programmatic
         // zoom and focus changes retain the existing eased camera movement.
-        if (interacting) {
+        if (interacting || reducedMotion) {
             view.x = targetView.x;
             view.y = targetView.y;
             view.zoom = targetView.zoom;
@@ -4930,9 +4945,10 @@
             transformCachedBasemap();
         }
 
-        // Peer effects remain animated, but idle rendering is capped at 30fps.
-        // Interaction and camera motion use 60fps for direct visual feedback.
-        const frameInterval = (interacting || !settled) ? (1000 / 60) : (1000 / 30);
+        // Large peer sets draw at 20fps while idle; the usual limit is 30fps.
+        // Reduced motion uses static effects at 10fps. Interaction stays responsive.
+        const idleFps = reducedMotion ? 10 : nodes.length >= 250 ? 20 : 30;
+        const frameInterval = (interacting || !settled) ? (1000 / 60) : (1000 / idleFps);
         if (timestamp - lastPeerFrameTime < frameInterval - 1) {
             requestAnimationFrame(frame);
             return;
@@ -5514,6 +5530,17 @@
         }
     }
 
+    const systemStatsPolling = window.BPMPolling.create({
+        task: fetchSystemStats,
+        intervalMs: effectivePollInterval(30000),
+    });
+
+    function syncPollingIntervals() {
+        peerPolling.setIntervalMs(effectivePollInterval(CFG.pollInterval));
+        infoPolling.setIntervalMs(effectivePollInterval(CFG.infoPollInterval));
+        systemStatsPolling.setIntervalMs(effectivePollInterval(30000));
+    }
+
     // ═══════════════════════════════════════════════════════════
     // DISPLAY SETTINGS POPUP — right overlay Update/Status rows
     // ═══════════════════════════════════════════════════════════
@@ -5589,7 +5616,7 @@
                 pollInput.value = v;
                 CFG.pollInterval = v * 1000;
                 // Restart the peer poll timer at the new interval
-                peerPolling.setIntervalMs(CFG.pollInterval);
+                syncPollingIntervals();
                 // Restart countdown display so it uses the new interval
                 lastPeerFetchTime = Date.now();
                 startCountdownTimer();
@@ -5601,8 +5628,9 @@
                 const v = clamp(parseInt(infoInput.value) || 15, 5, 120);
                 infoInput.value = v;
                 CFG.infoPollInterval = v * 1000;
+                btcPriceInterval = v;
                 // Restart info poll timer at the new interval
-                infoPolling.setIntervalMs(CFG.infoPollInterval);
+                syncPollingIntervals();
             });
         }
 
@@ -5687,6 +5715,7 @@
     /** SSE stream reference (declared early so renderSystemInfoCard can check it) */
     let sysStreamSource = null;
     let sysStreamRetryDelay = 1000;
+    let sysStreamRetryTimer = null;
 
     function renderSystemInfoCard(stats) {
         // Merge modal-only fields (uptime, load, disk) into lastSystemStats
@@ -5942,7 +5971,7 @@
             if (tween.current === null || tween.target === null || !tween.el) return false;
 
             const diff = tween.target - tween.current;
-            if (Math.abs(diff) < 0.15) {
+            if (reducedMotionQuery.matches || Math.abs(diff) < 0.15) {
                 tween.current = tween.target;
             } else {
                 tween.current += diff * 0.06;
@@ -5963,11 +5992,23 @@
     }
 
     // ── SSE EventSource for real-time system stats ──
-    function connectSystemStream() {
-        if (sysStreamSource) { sysStreamSource.close(); sysStreamSource = null; }
-        sysStreamSource = new EventSource('/api/stream/system');
+    function disconnectSystemStream() {
+        if (sysStreamRetryTimer !== null) clearTimeout(sysStreamRetryTimer);
+        sysStreamRetryTimer = null;
+        if (sysStreamSource) {
+            const source = sysStreamSource;
+            sysStreamSource = null;
+            source.close();
+        }
+    }
 
-        sysStreamSource.addEventListener('system', (e) => {
+    function connectSystemStream() {
+        if (document.hidden) return;
+        disconnectSystemStream();
+        const source = new EventSource('/api/stream/system');
+        sysStreamSource = source;
+
+        source.addEventListener('system', (e) => {
             try {
                 const d = JSON.parse(e.data);
                 let tweenChanged = false;
@@ -6035,13 +6076,30 @@
             }
         });
 
-        sysStreamSource.onerror = () => {
-            sysStreamSource.close();
+        source.onerror = () => {
+            if (sysStreamSource !== source) return;
+            source.close();
             sysStreamSource = null;
             // Reconnect with backoff (max 10s)
-            setTimeout(connectSystemStream, sysStreamRetryDelay);
+            if (!document.hidden) sysStreamRetryTimer = setTimeout(connectSystemStream, sysStreamRetryDelay);
             sysStreamRetryDelay = Math.min(sysStreamRetryDelay * 1.5, 10000);
         };
+    }
+
+    function handleVisibilityChange() {
+        syncPollingIntervals();
+        startCountdownTimer();
+        if (document.hidden) {
+            disconnectSystemStream();
+            return;
+        }
+        // The backend keeps sampling while this tab is hidden; show a fresh
+        // snapshot immediately instead of waiting for the next foreground tick.
+        peerPolling.run().catch(console.error);
+        infoPolling.run().catch(console.error);
+        systemStatsPolling.run().catch(console.error);
+        connectSystemStream();
+        updateClock();
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -6384,9 +6442,10 @@
         connectSystemStream();
 
         // Still fetch full system stats once for modal data (uptime, load, disk)
-        fetchSystemStats();
+        systemStatsPolling.run();
         // Re-fetch full stats every 30s for modal freshness (uptime, load, disk only)
-        setInterval(fetchSystemStats, 30000);
+        systemStatsPolling.start();
+        document.addEventListener('visibilitychange', handleVisibilityChange);
 
         showAntarcticaDisclaimerOnce();
 

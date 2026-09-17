@@ -8,7 +8,6 @@
         const privateState = options.state;
         const sourceData = options.data;
         const actions = options.actions;
-        const escapeHtml = global.BPMModal.escapeHtml;
 
         // Connection type acronyms: short form + full description for hover
         const CONN_TYPE_SHORT = {
@@ -275,6 +274,41 @@
             renderColgroup();
         }
 
+        /** Keep peer rows and unchanged cells in place across snapshots. */
+        let renderedColumns = '';
+
+        function setCell(cell, value, title) {
+            const text = String(value ?? '');
+            const tooltip = String(title ?? '');
+            if (cell.textContent !== text) cell.textContent = text;
+            if (cell.title !== tooltip) cell.title = tooltip;
+        }
+
+        function updatePeerRow(row, peer, columns, rebuildCells) {
+            const net = peer.network || 'ipv4';
+            if (row.dataset.net !== net) row.dataset.net = net;
+            row.classList.toggle('row-highlight', sourceData.highlightedPeerId === peer.id);
+            if (rebuildCells || row.cells.length !== columns.length + 1) {
+                row.replaceChildren();
+                for (let i = 0; i < columns.length + 1; i++) {
+                    row.appendChild(document.createElement('td'));
+                }
+                const button = document.createElement('button');
+                button.className = 'peer-action-btn';
+                button.dataset.action = 'disconnect';
+                button.dataset.id = String(peer.id);
+                button.textContent = 'Disconnect';
+                row.lastElementChild.appendChild(button);
+            }
+            for (let i = 0; i < columns.length; i++) {
+                const column = columns[i];
+                const value = column.get(peer);
+                setCell(row.cells[i], value, column.full ? column.full(peer) : value);
+            }
+            const button = row.lastElementChild.firstElementChild;
+            if (button.dataset.net !== net) button.dataset.net = net;
+        }
+
         /** Build table body from lastPeers (filtered by active network filter) */
         function renderPeerTable() {
             if (!tbodyEl) return;
@@ -290,26 +324,33 @@
             );
 
 
-            let html = '';
-            for (const peer of sorted) {
-                const isHighlighted = sourceData.highlightedPeerId === peer.id;
-                const cls = isHighlighted ? ' class="row-highlight"' : '';
-                const net = peer.network || 'ipv4';
-                html += `<tr data-id="${escapeHtml(peer.id)}" data-net="${escapeHtml(net)}"${cls}>`;
-                for (const key of visibleColumns) {
-                    const col = COLUMNS.find(c => c.key === key);
-                    if (!col) continue;
-                    const val = col.get(peer);
-                    const hoverVal = col.full ? col.full(peer) : val;
-                    html += `<td title="${escapeHtml(hoverVal)}">${escapeHtml(val)}</td>`;
+            const signature = visibleColumns.join('|');
+            const rebuildCells = signature !== renderedColumns;
+            const columns = visibleColumns.map(key => COLUMNS.find(column => column.key === key)).filter(Boolean);
+            const rowsById = new Map(Array.from(tbodyEl.rows, row => [Number(row.dataset.id), row]));
+            const activeIds = new Set(sorted.map(peer => peer.id));
+            for (const [id, row] of rowsById) {
+                if (!activeIds.has(id)) {
+                    row.remove();
+                    rowsById.delete(id);
                 }
-                // Action buttons — single Disconnect button opens confirmation dialog
-                html += '<td>';
-                html += `<button class="peer-action-btn" data-action="disconnect" data-id="${escapeHtml(peer.id)}" data-net="${escapeHtml(net)}">Disconnect</button>`;
-                html += '</td>';
-                html += '</tr>';
             }
-            tbodyEl.innerHTML = html;
+            // Walk backward so only rows whose order changed need to move.
+            let nextRow = null;
+            for (let i = sorted.length - 1; i >= 0; i--) {
+                const peer = sorted[i];
+                let row = rowsById.get(peer.id);
+                if (!row) {
+                    row = document.createElement('tr');
+                    row.dataset.id = String(peer.id);
+                }
+                updatePeerRow(row, peer, columns, rebuildCells);
+                if (row.parentNode !== tbodyEl || row.nextSibling !== nextRow) {
+                    tbodyEl.insertBefore(row, nextRow);
+                }
+                nextRow = row;
+            }
+            renderedColumns = signature;
         }
 
         // Initial header render
@@ -673,7 +714,8 @@
             if (row) {
                 row.classList.add('row-highlight');
                 if (scrollIntoView && !panelEl.classList.contains('collapsed')) {
-                    row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                    const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                    row.scrollIntoView({ block: 'nearest', behavior: reduceMotion ? 'auto' : 'smooth' });
                 }
             }
         }
