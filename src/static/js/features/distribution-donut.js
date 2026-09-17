@@ -334,6 +334,7 @@
 
     function create(options) {
         const state = options.state;
+        const motionQuery = global.matchMedia ? global.matchMedia('(prefers-reduced-motion: reduce)') : null;
         const config = Object.assign({
             size: 260,
             radius: 116,
@@ -415,6 +416,11 @@
                 return;
             }
             clearAnimationHandles();
+            if (motionQuery && motionQuery.matches) {
+                animation = { state: 'expanded', target: provider, progress: 1, startedAt: 0 };
+                renderDonut();
+                return;
+            }
             animation = {
                 state: 'expanding',
                 target: provider,
@@ -434,6 +440,11 @@
 
         function animateRevert() {
             clearAnimationHandles();
+            if (motionQuery && motionQuery.matches) {
+                animation = { state: 'idle', target: null, progress: 0, startedAt: 0 };
+                renderDonut();
+                return;
+            }
             animation = {
                 state: 'reverting',
                 target: animation.target,
@@ -453,6 +464,20 @@
         function stopAnimation() {
             clearAnimationHandles();
             animation = { state: 'idle', target: null, progress: 0, startedAt: 0 };
+        }
+
+        if (motionQuery && motionQuery.addEventListener) {
+            motionQuery.addEventListener('change', () => {
+                if (!motionQuery.matches || animation.state === 'idle' || animation.state === 'expanded') return;
+                clearAnimationHandles();
+                if (animation.state === 'expanding') {
+                    animation.state = 'expanded';
+                    animation.progress = 1;
+                } else {
+                    animation = { state: 'idle', target: null, progress: 0, startedAt: 0 };
+                }
+                renderDonut();
+            });
         }
 
         function renderLegend() {

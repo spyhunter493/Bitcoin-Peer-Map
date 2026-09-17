@@ -691,6 +691,87 @@ async function assertPeerRefreshReliability(browser, baseUrl) {
     }
 }
 
+async function assertDashboardLifecycle(browser, baseUrl) {
+    const context = await browser.newContext({
+        viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce',
+    });
+    await context.addInitScript(() => {
+        localStorage.setItem('bpm.antarcticaDisclaimerSeen', 'true');
+        window.testDashboardHidden = false;
+        Object.defineProperty(document, 'hidden', {
+            configurable: true, get: () => window.testDashboardHidden,
+        });
+        window.testDashboardIntervals = new Map();
+        const originalSetInterval = window.setInterval.bind(window);
+        const originalClearInterval = window.clearInterval.bind(window);
+        window.setInterval = (callback, interval, ...args) => {
+            const id = originalSetInterval(callback, interval, ...args);
+            window.testDashboardIntervals.set(id, interval);
+            return id;
+        };
+        window.clearInterval = id => {
+            window.testDashboardIntervals.delete(id);
+            originalClearInterval(id);
+        };
+    });
+    const page = await context.newPage();
+    const errors = [];
+    const requests = { peers: 0, info: 0, stats: 0, stream: 0 };
+    page.on('pageerror', error => errors.push(error.message));
+    page.on('request', request => {
+        const pathname = new URL(request.url()).pathname;
+        if (pathname === '/api/peers') requests.peers++;
+        if (pathname === '/api/info') requests.info++;
+        if (pathname === '/api/stats') requests.stats++;
+        if (pathname === '/api/stream/system') requests.stream++;
+    });
+    try {
+        await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+        await waitForDashboardReady(page);
+        const motion = await page.evaluate(() => ({
+            requested: matchMedia('(prefers-reduced-motion: reduce)').matches,
+            animation: getComputedStyle(document.getElementById('status-dot')).animationName,
+        }));
+        assert.deepStrictEqual(motion, { requested: true, animation: 'none' });
+
+        await page.evaluate(() => {
+            window.testDashboardHidden = true;
+            document.dispatchEvent(new Event('visibilitychange'));
+        });
+        const hiddenIntervals = await page.evaluate(() => Array.from(window.testDashboardIntervals.values()));
+        assert.strictEqual(hiddenIntervals.filter(interval => interval === 60000).length, 3);
+        assert.ok(!hiddenIntervals.includes(10000) && !hiddenIntervals.includes(15000) &&
+            !hiddenIntervals.includes(30000));
+
+        await page.route('**/api/stats', async route => {
+            await delay(400);
+            await route.continue();
+        });
+        const before = { ...requests };
+        await page.evaluate(() => {
+            window.testDashboardHidden = false;
+            for (let i = 0; i < 3; i++) document.dispatchEvent(new Event('visibilitychange'));
+        });
+        await page.waitForTimeout(650);
+        assert.ok(requests.peers > before.peers && requests.info > before.info);
+        assert.strictEqual(requests.stats, before.stats + 1, 'stats requests should not overlap');
+        assert.ok(requests.stream > before.stream, 'system stream should reconnect');
+        const visibleIntervals = await page.evaluate(() => Array.from(window.testDashboardIntervals.values()));
+        assert.ok(visibleIntervals.includes(10000) && visibleIntervals.includes(15000) &&
+            visibleIntervals.includes(30000));
+
+        const segment = page.locator('#as-donut .as-donut-segment').first();
+        await segment.click();
+        const settledPath = await segment.getAttribute('d');
+        await page.waitForTimeout(100);
+        assert.strictEqual(await segment.getAttribute('d'), settledPath,
+            'reduced-motion donut should settle without animated frames');
+        assert.deepStrictEqual(errors, []);
+    } finally {
+        await context.close();
+    }
+}
+
 (async () => {
     const externalBaseUrl = process.env.BPM_LAYOUT_TEST_BASE_URL;
     const port = externalBaseUrl ? null : await freePort();
@@ -759,6 +840,7 @@ async function assertPeerRefreshReliability(browser, baseUrl) {
         await assertPeerControlsResponsive(browser, baseUrl);
         await assertPeerRefreshReliability(browser, baseUrl);
         await assertPeerViews(browser, baseUrl);
+        await assertDashboardLifecycle(browser, baseUrl);
         console.log('Browser layout regression tests passed');
     } finally {
         if (browser) await browser.close();
