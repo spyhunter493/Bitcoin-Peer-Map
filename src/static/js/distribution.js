@@ -84,14 +84,7 @@ window.BPMDistribution = (function () {
         'inbound': 'IN',
     };
 
-    var CONN_TYPE_FULL = {
-        'outbound-full-relay': 'Outbound Full Relay',
-        'block-relay-only': 'Block Relay Only',
-        'manual': 'Manual',
-        'addr-fetch': 'Address Fetch',
-        'feeler': 'Feeler',
-        'inbound': 'Inbound',
-    };
+    const CONN_TYPE_FULL = window.BPMFormat.connectionTypes;
 
     // ═══════════════════════════════════════════════════════════
     // PARSING & AGGREGATION — delegated pure data module
@@ -1481,7 +1474,7 @@ window.BPMDistribution = (function () {
     // PEER DETAIL POPUP — delegated view controller
     // ═══════════════════════════════════════════════════════════
 
-    const peerDetailController = window.BPMDistributionPeerDetail.create({
+    const peerDetailController = window.BPMPeerDetail.create({
         getPeers: () => lastPeersRaw,
         getProviderColor: getColorForAsNum,
         connectionTypeLabels: CONN_TYPE_FULL,
@@ -1586,7 +1579,7 @@ window.BPMDistribution = (function () {
         if (_filterPeerTable) _filterPeerTable([peer.id]);
         if (_dimMapPeers) _dimMapPeers([peer.id]);
         showPeerInDonutCenter(peer, provColor);
-        peerDetailController.openPeer(peer, source);
+        peerDetailController.openPeer(peer.id, source);
     }
 
     /** Show peer ID and provider in donut center */
@@ -1803,7 +1796,7 @@ window.BPMDistribution = (function () {
         // If peer detail popup is open, skip all visual re-rendering to preserve
         // the donut expansion, lines, and center text for the selected peer.
         // Data is updated above so it's fresh when the popup is eventually closed.
-        if (distributionState.peerDetailActive) {
+        if (distributionState.peerDetailActive && peerDetailController.update()) {
             return;
         }
 

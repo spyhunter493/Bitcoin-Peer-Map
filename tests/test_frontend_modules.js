@@ -38,6 +38,7 @@ function loadScript(sandbox, path) {
 
     loadScript(sandbox, 'src/static/js/core/api.js');
     loadScript(sandbox, 'src/static/js/core/modal.js');
+    loadScript(sandbox, 'src/static/js/core/format.js');
     loadScript(sandbox, 'src/static/js/features/node-monitor.js');
     loadScript(sandbox, 'src/static/js/features/peer-actions.js');
     loadScript(sandbox, 'src/static/js/features/display-settings.js');

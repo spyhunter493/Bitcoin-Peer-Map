@@ -28,9 +28,7 @@
             renderedValue + '</span></div>';
     }
 
-    function serviceFlagDescription(flag) {
-        return flag.rpc ? flag.label + ' (' + flag.rpc + ')' : flag.label;
-    }
+    const serviceFlagDescription = global.BPMFormat.serviceFlagDescription;
 
     function renderServiceFlagList(abbreviations, serviceFlags) {
         if (!abbreviations || abbreviations === '\u2014') return '\u2014';
@@ -67,6 +65,7 @@
     function renderPeerDetails(peer, options) {
         const config = options || {};
         const presentation = peerPresentation(peer, config.providerColor);
+        if (config.privateNetwork) presentation.providerColor = presentation.networkColor;
         const nowSeconds = config.nowSeconds == null
             ? Math.floor(Date.now() / 1000)
             : config.nowSeconds;
@@ -97,7 +96,7 @@
         html += peerDetailRow('Direction', presentation.directionLabel);
         html += peerDetailRow(
             'Conn Type',
-            connectionTypes[peer.connection_type] || peer.connection_type || '\u2014'
+            (Object.hasOwn(connectionTypes, peer.connection_type) ? connectionTypes[peer.connection_type] : null) || peer.connection_type || '\u2014'
         );
         if (peer.addrlocal) html += peerDetailRow('Your Addr', peer.addrlocal);
         html += '</div>';
@@ -187,6 +186,10 @@
         }
         html += '</div>';
 
+        if (config.privateNetwork) {
+            html += '<div class="peer-popup-section"><div class="peer-popup-section-title">Privacy &amp; Status</div>';
+            html += peerDetailRow('Location', '<span style="color:var(--text-muted)">Private Network</span>', true);
+        } else {
         html += '<div class="peer-popup-section"><div class="peer-popup-section-title">Location</div>';
         html += peerDetailRow('Country', peer.country || '\u2014');
         html += peerDetailRow('Region', peer.regionName || '\u2014');
@@ -202,6 +205,7 @@
         html += '</div>';
 
         html += '<div class="peer-popup-section"><div class="peer-popup-section-title">Status</div>';
+        }
         html += peerDetailRow(
             'Relay Txs',
             peer.relaytxes != null ? (peer.relaytxes ? 'Yes' : 'No') : '\u2014'
@@ -272,33 +276,44 @@
 
     function create(options) {
         let popup = null;
-        let selectedPeer = null;
+        let selectedPeerId = null;
         let groupPeerIds = null;
+        let source = null;
         let returnFocus = null;
         let cleanupInteraction = null;
-        const closingPopups = new Set();
+        let openTimer = null;
+        let animationFrame = null;
+        const closingPopups = new Map();
+        const peerFor = id => options.getPeers().find(peer => peer.id === id);
 
         function removeClosingPopups() {
-            for (const closingPopup of closingPopups) {
-                if (closingPopup.parentNode) closingPopup.remove();
+            for (const [element, timer] of closingPopups) {
+                global.clearTimeout(timer);
+                element.remove();
             }
             closingPopups.clear();
         }
 
+        function cancelPending() {
+            if (openTimer !== null) global.clearTimeout(openTimer);
+            if (animationFrame !== null) global.cancelAnimationFrame(animationFrame);
+            openTimer = animationFrame = null;
+        }
+
         function removeCurrent() {
+            cancelPending();
             if (cleanupInteraction) cleanupInteraction();
             cleanupInteraction = null;
-            if (popup && popup.parentNode) popup.remove();
+            if (popup) popup.remove();
             popup = null;
         }
 
         function mount(html, ariaLabel, borderColor) {
-            const replacing = !!popup;
-            if (!replacing) returnFocus = document.activeElement;
+            if (!popup) returnFocus = document.activeElement;
             removeCurrent();
             removeClosingPopups();
             popup = document.createElement('div');
-            popup.className = 'peer-detail-popup';
+            popup.className = 'peer-detail-popup' + (options.privateNetwork ? ' pn-big-popup' : '');
             popup.setAttribute('role', 'dialog');
             popup.setAttribute('aria-modal', 'false');
             popup.setAttribute('aria-labelledby', 'peer-popup-title');
@@ -306,127 +321,149 @@
             if (borderColor) popup.style.borderColor = borderColor;
             popup.innerHTML = html;
             document.body.appendChild(popup);
-            const mountedPopup = popup;
-            const animate = global.requestAnimationFrame || (callback => global.setTimeout(callback, 0));
-            animate(() => {
-                if (mountedPopup.isConnected) mountedPopup.classList.add('visible');
+            const mounted = popup;
+            animationFrame = global.requestAnimationFrame(() => {
+                animationFrame = null;
+                if (mounted.isConnected) mounted.classList.add('visible');
             });
-            popup.addEventListener('click', event => event.stopPropagation());
+            popup.addEventListener('click', event => {
+                event.stopPropagation();
+                const target = event.target.closest('button');
+                if (!target) return;
+                if (target.classList.contains('peer-popup-close')) options.onRequestClose();
+                else if (target.classList.contains('peer-popup-back') && groupPeerIds) {
+                    options.onRequestGroup(groupPeerIds.slice());
+                } else if (target.classList.contains('peer-popup-disconnect')) {
+                    const peer = peerFor(selectedPeerId);
+                    if (peer) options.onDisconnect(peer.id, peer.network);
+                } else if (target.classList.contains('multi-peer-row')) {
+                    const peer = peerFor(Number(target.dataset.peerId));
+                    if (peer) options.onRequestPeer(peer, 'map-group');
+                }
+            });
             cleanupInteraction = bindPointerInteractions(popup);
-            const closeButton = popup.querySelector('.peer-popup-close');
-            if (closeButton) {
-                closeButton.addEventListener('click', () => options.onRequestClose());
-                closeButton.focus({ preventScroll: true });
-            }
+            popup.querySelector('.peer-popup-close')?.focus({ preventScroll: true });
             return popup;
         }
 
-        function openGroup(peerIds) {
-            groupPeerIds = peerIds.slice();
-            selectedPeer = null;
-            const wanted = new Set(groupPeerIds);
-            const peers = options.getPeers().filter(peer => wanted.has(peer.id));
-            const mounted = mount(renderPeerGroup(peers), 'Peers at this location');
-            mounted.querySelectorAll('.multi-peer-row').forEach(row => {
-                row.addEventListener('click', () => {
-                    const peerId = parseInt(row.dataset.peerId);
-                    const peer = options.getPeers().find(item => item.id === peerId);
-                    if (peer) options.onRequestPeer(peer, 'map-group');
-                });
-            });
-            return mounted;
-        }
-
-        function openPeer(peer, source) {
-            if (source !== 'map-group') groupPeerIds = null;
-            selectedPeer = peer;
+        function renderPeer(peer) {
             const asNumber = distributionData.parseAsNumber(peer.as);
-            const providerColor = asNumber ? options.getProviderColor(asNumber) : '#6e7681';
-            const rendered = renderPeerDetails(peer, {
-                providerColor,
+            return renderPeerDetails(peer, {
+                providerColor: options.privateNetwork ? null : options.getProviderColor(asNumber),
+                privateNetwork: options.privateNetwork,
                 showBack: source === 'map-group' && !!groupPeerIds,
                 connectionTypeLabels: options.connectionTypeLabels,
                 serviceFlags: options.serviceFlags,
             });
-            const mounted = mount(
-                rendered.html,
-                'Details for peer ' + peer.id,
-                rendered.presentation.networkColor
-            );
-            const backButton = mounted.querySelector('.peer-popup-back');
-            if (backButton) {
-                backButton.addEventListener('click', () => {
-                    options.onRequestGroup(groupPeerIds.slice());
-                });
+        }
+
+        function openGroup(peerIds) {
+            groupPeerIds = peerIds.slice();
+            selectedPeerId = null;
+            source = 'map-group';
+            const peers = groupPeerIds.map(peerFor).filter(Boolean);
+            return mount(renderPeerGroup(peers), 'Peers at this location');
+        }
+
+        function openPeer(peerId, from, delayMs = 0) {
+            cancelPending();
+            if (from !== 'map-group') groupPeerIds = null;
+            selectedPeerId = peerId;
+            source = from;
+            const show = () => {
+                openTimer = null;
+                const peer = peerFor(selectedPeerId);
+                if (!peer) { options.onRequestClose(); return null; }
+                const rendered = renderPeer(peer);
+                return mount(rendered.html, 'Details for peer ' + peer.id, rendered.presentation.networkColor);
+            };
+            if (delayMs) {
+                if (popup) removeCurrent();
+                openTimer = global.setTimeout(show, delayMs);
+                return null;
             }
-            const disconnectButton = mounted.querySelector('.peer-popup-disconnect');
-            if (disconnectButton) {
-                disconnectButton.addEventListener('click', event => {
-                    event.stopPropagation();
-                    options.onDisconnect(peer.id, rendered.presentation.network);
-                });
-            }
-            return mounted;
+            return show();
         }
 
         function previewPeer(peer) {
-            if (!popup || !selectedPeer) return;
-            const presentation = peerPresentation(
-                peer,
-                options.getProviderColor(distributionData.parseAsNumber(peer.as))
-            );
+            if (!popup || selectedPeerId === null) return;
+            const presentation = peerPresentation(peer, options.privateNetwork
+                ? null : options.getProviderColor(distributionData.parseAsNumber(peer.as)));
             const name = popup.querySelector('.peer-popup-name');
-            const address = popup.querySelector('.peer-popup-addr');
-            const meta = popup.querySelector('.peer-popup-meta');
-            const circle = popup.querySelector('.peer-popup-circle');
             if (!name) return;
             name.textContent = 'Peer #' + peer.id;
-            name.style.color = presentation.providerColor;
-            if (address) address.textContent = peer.addr || '';
-            if (meta) meta.textContent = presentation.networkLabel + ' \u00b7 ' + presentation.directionLabel;
-            if (circle) circle.style.background = presentation.networkColor;
+            name.style.color = options.privateNetwork ? presentation.networkColor : presentation.providerColor;
+            popup.querySelector('.peer-popup-addr').textContent = peer.addr || '';
+            popup.querySelector('.peer-popup-meta').textContent = presentation.networkLabel + ' \u00b7 ' + presentation.directionLabel;
+            popup.querySelector('.peer-popup-circle').style.background = presentation.networkColor;
             popup.classList.add('peer-popup-previewing');
         }
 
         function restorePreview() {
-            if (!selectedPeer) return;
-            previewPeer(selectedPeer);
+            const peer = peerFor(selectedPeerId);
+            if (peer) previewPeer(peer);
             if (popup) popup.classList.remove('peer-popup-previewing');
         }
 
-        function close(optionsForClose) {
-            const closingPopup = popup;
+        function update() {
+            if (selectedPeerId !== null && !peerFor(selectedPeerId)) {
+                options.onRequestClose();
+                return false;
+            }
+            if (!popup) return openTimer !== null;
+            let html;
+            if (selectedPeerId !== null) {
+                const peer = peerFor(selectedPeerId);
+                html = renderPeer(peer).html;
+                if (!popup.classList.contains('peer-popup-previewing')) restorePreview();
+            } else {
+                groupPeerIds = (groupPeerIds || []).filter(id => peerFor(id));
+                if (!groupPeerIds.length) { options.onRequestClose(); return false; }
+                html = renderPeerGroup(groupPeerIds.map(peerFor));
+                popup.querySelector('.peer-popup-name').textContent = groupPeerIds.length + ' Peers at This Location';
+            }
+            // Keep the popup shell, header, focus, drag handlers, geometry and scroll.
+            const template = document.createElement('template');
+            template.innerHTML = html;
+            const content = template.content.querySelector('.peer-popup-scroll');
+            const scroll = popup.querySelector('.peer-popup-scroll');
+            if (scroll.innerHTML !== content.innerHTML) {
+                const top = scroll.scrollTop;
+                const focusedId = document.activeElement?.dataset?.peerId;
+                scroll.innerHTML = content.innerHTML;
+                scroll.scrollTop = top;
+                if (focusedId) scroll.querySelector(`[data-peer-id="${Number(focusedId)}"]`)?.focus({ preventScroll: true });
+            }
+            return true;
+        }
+
+        function close(closeOptions) {
+            cancelPending();
+            const closing = popup;
             if (cleanupInteraction) cleanupInteraction();
             cleanupInteraction = null;
             popup = null;
-            selectedPeer = null;
+            selectedPeerId = null;
             groupPeerIds = null;
-            if (closingPopup) {
-                closingPopups.add(closingPopup);
-                closingPopup.classList.remove('visible');
-                global.setTimeout(() => {
-                    if (closingPopup.parentNode) closingPopup.remove();
-                    closingPopups.delete(closingPopup);
-                }, 200);
+            if (closing) {
+                closing.classList.remove('visible');
+                const timer = global.setTimeout(() => { closing.remove(); closingPopups.delete(closing); }, 200);
+                closingPopups.set(closing, timer);
             }
-            if (
-                (!optionsForClose || optionsForClose.restoreFocus !== false) &&
-                returnFocus && returnFocus.isConnected && returnFocus.focus
-            ) {
+            if (closeOptions?.restoreFocus !== false && returnFocus?.isConnected) {
                 returnFocus.focus({ preventScroll: true });
             }
             returnFocus = null;
         }
 
-        return Object.freeze({
-            openGroup,
-            openPeer,
-            previewPeer,
-            restorePreview,
-            close,
-            isOpen: () => !!popup,
-            getSelectedPeerId: () => selectedPeer ? selectedPeer.id : null,
-        });
+        function dispose() {
+            close({ restoreFocus: false });
+            removeCurrent();
+            removeClosingPopups();
+        }
+
+        return Object.freeze({ openGroup, openPeer, update, close, dispose, previewPeer, restorePreview,
+            isOpen: () => !!popup || openTimer !== null, getSelectedPeerId: () => selectedPeerId });
     }
 
     function bindPointerInteractions(popup) {
@@ -500,7 +537,7 @@
         };
     }
 
-    global.BPMDistributionPeerDetail = Object.freeze({
+    global.BPMPeerDetail = Object.freeze({
         create,
         peerDetailRow,
         renderServiceFlagList,

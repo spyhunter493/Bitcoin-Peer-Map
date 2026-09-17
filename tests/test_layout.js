@@ -8,6 +8,7 @@ const { once } = require('events');
 const { spawn } = require('child_process');
 const { chromium } = require('playwright');
 const assertPeerViews = require('./test_peer_views');
+const assertPeerLifecycle = require('./test_peer_lifecycle');
 
 const repoRoot = path.resolve(__dirname, '..');
 
@@ -840,6 +841,7 @@ async function assertDashboardLifecycle(browser, baseUrl) {
         await assertPeerControlsResponsive(browser, baseUrl);
         await assertPeerRefreshReliability(browser, baseUrl);
         await assertPeerViews(browser, baseUrl);
+        await assertPeerLifecycle(browser, baseUrl);
         await assertDashboardLifecycle(browser, baseUrl);
         console.log('Browser layout regression tests passed');
     } finally {

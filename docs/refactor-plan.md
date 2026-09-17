@@ -18,7 +18,7 @@ over wrappers, duplication, or compressed syntax.
   separate deferred list, database checks even with external lookups disabled,
   dataset generation invalidation including in-flight work, disconnected-host
   pruning. Preserve existing merge policy and response fields.
-- [ ] Stage 2 — Shared peer detail: one public/private controller with `openPeer`,
+- [x] Stage 2 — Shared peer detail: one public/private controller with `openPeer`,
   `openGroup`, `update`, `close`, and `dispose`; select by ID, preserve per-network
   content, group navigation, actions, geometry, and focus; clean up listeners and
   timers, including replacement during drag/resize. Share identical byte/duration,
@@ -82,7 +82,13 @@ previous working application revision.
   `0.451/0.869/1.362`, `0.455/0.859/1.358`, `0.497/0.835/1.380`.
   Medians: `0.455/0.859/1.362`; DOM nodes `666/2775/9900`; unchanged-poll
   mutations are zero in every run.
-- Next step: shared popup and live detail reconciliation.
+- Stage 1 commit: `e400176`.
+- Stage 2 validation: JavaScript unit suites/type check and full browser suite
+  pass, including live public/private details, departure during dragging, geometry/
+  scroll preservation, and 50 private-popup cycles without listener retention.
+  Removed the private popup implementation and duplicate duration/byte/service
+  rendering. The shared popup owns pending opening/closing timers and cleanup.
+- Next step: semantic filter reconciliation and frontend ownership.
 
 Resume by checking this checklist against the working tree and commit history,
 preserving unrelated changes, then implement the first incomplete stage. Update

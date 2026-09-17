@@ -15,6 +15,7 @@ const sandbox = {
     },
 };
 loadScript(sandbox, 'src/static/js/core/modal.js');
+    loadScript(sandbox, 'src/static/js/core/format.js');
 loadScript(sandbox, 'src/static/js/features/service-flags.js');
 loadScript(sandbox, 'src/static/js/features/distribution-state.js');
 loadScript(sandbox, 'src/static/js/features/distribution-data.js');
@@ -87,7 +88,7 @@ assert.strictEqual(providerPanel.render({
 assert.strictEqual(providerFixture.elements['.as-detail-asn'].textContent, 'AS64500');
 assert.ok(providerFixture.elements['.as-detail-body'].innerHTML.includes('Peers'));
 
-const peerDetail = sandbox.window.BPMDistributionPeerDetail;
+const peerDetail = sandbox.window.BPMPeerDetail;
 const escapeHtml = sandbox.window.BPMModal.escapeHtml;
 const hostile = `<img src=x onerror="alert(1)"> & '`;
 const escaped = '&lt;img src=x onerror=&quot;alert(1)&quot;&gt; &amp; &#39;';

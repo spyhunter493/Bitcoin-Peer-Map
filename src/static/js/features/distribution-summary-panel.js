@@ -235,9 +235,7 @@
             return html;
         }
 
-        function serviceFlagDescription(flag) {
-            return flag.rpc ? flag.label + ' (' + flag.rpc + ')' : flag.label;
-        }
+        const serviceFlagDescription = global.BPMFormat.serviceFlagDescription;
 
         function renderProvider(data) {
             if (!elements.panel) return;

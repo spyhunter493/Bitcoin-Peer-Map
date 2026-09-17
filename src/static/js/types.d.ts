@@ -134,7 +134,6 @@ export interface PrivateNetworkState {
     privateNetMode: boolean;
     privateNetSelectedPeer: PeerMapNode | null;
     privateNetLinePeer: number | null;
-    pnBigPopupEl: HTMLElement | null;
     pnMiniHover: boolean;
     pnPreviewPeerIds: number[] | null;
     pnMiniHoverNet: PeerNetwork | null;
@@ -156,7 +155,6 @@ export interface PrivateNetworkState {
     pnSegments: {net: PeerNetwork; count: number; color: string; label: string}[];
     pnSelectedNet: PeerNetwork | null;
     pnHoveredNet: PeerNetwork | null;
-    pnPopupTimer: number | null;
     pnSubTooltipPinned: boolean;
     pnPinnedSubSrc: HTMLElement | null;
     pnCenterPreviewLabel: string | null;
@@ -242,30 +240,6 @@ export interface PrivatePanelController {
     hidePnSubTooltip(): void;
     fmtBytesShort(bytes: number): string;
 }
-export interface PrivatePeerDetailOptions {
-    state: PrivateNetworkState;
-    data: {
-        readonly lastPeers: Peer[];
-        readonly PN_CONN_TYPE_FULL: Record<string, string>;
-        highlightedPeerId: number | null;
-        pinnedNode: PeerMapNode | null;
-    };
-    actions: {
-        pnEsc(value: unknown): string;
-        pnFmtDuration(seconds: number): string;
-        pnFmtBytes(bytes: number): string;
-        renderServiceFlagList(abbreviations: string): string;
-        cachePnElements(): void;
-        updatePrivateNetUI(): void;
-        showDisconnectDialog(peerId: number, network: PeerNetwork): void;
-    };
-}
-export interface PrivatePeerDetailController {
-    closePnBigPopup(): void;
-    closePnBigPopupSync(): void;
-    showPnBigPopup(node: PeerMapNode): void;
-}
-
 declare global {
     interface Window {
         BPMApi: NonNullable<PeerRefreshOptions['api']>;

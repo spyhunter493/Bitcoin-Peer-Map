@@ -621,9 +621,7 @@
 
     const SERVICE_FLAGS = window.BPMServiceFlags;
 
-    function serviceFlagDescription(flag) {
-        return flag.rpc ? `${flag.label} (${flag.rpc})` : flag.label;
-    }
+    const serviceFlagDescription = window.BPMFormat.serviceFlagDescription;
 
     /** Build unique short abbreviation string from services array */
     function serviceAbbrev(services) {
@@ -645,26 +643,6 @@
             if (flag.abbr === abbr) return flag;
         }
         return null;
-    }
-
-    function renderServiceFlagList(abbrev) {
-        if (!abbrev || abbrev === '\u2014') return '\u2014';
-        const flags = abbrev.split(/\s+/).map(f => f.trim()).filter(Boolean);
-        if (!flags.length) return '\u2014';
-
-        return '<div class="service-flag-list">'
-            + flags.map(abbr => {
-                const flag = serviceFlagFromAbbr(abbr);
-                const label = flag ? flag.label : 'Unknown service flag';
-                const rpc = flag ? flag.rpc : abbr;
-                const title = flag ? serviceFlagDescription(flag) : abbr;
-                return '<div class="service-flag-row" title="' + escapeHtml(title) + '">'
-                    + '<span class="service-flag-abbr">' + escapeHtml(abbr) + '</span>'
-                    + '<span class="service-flag-label">' + escapeHtml(label) + '</span>'
-                    + '<span class="service-flag-rpc">' + escapeHtml(rpc) + '</span>'
-                    + '</div>';
-            }).join('')
-            + '</div>';
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -1433,6 +1411,8 @@
     // (mirrors the AS Distribution panel pattern)
     // ═══════════════════════════════════════════════════════════
 
+    const { fmtBytes: pnFmtBytes, fmtDuration: pnFmtDuration } = window.BPMFormat;
+
     const privatePanel = window.BPMPrivateNetworkPanel.create({
         state: privateState,
         data: {
@@ -1455,25 +1435,25 @@
         },
     });
 
-    const privatePopup = window.BPMPrivatePeerDetail.create({
-        state: privateState,
-        data: {
-            get lastPeers() { return lastPeers; },
-            get PN_CONN_TYPE_FULL() { return PN_CONN_TYPE_FULL; },
-            get highlightedPeerId() { return highlightedPeerId; },
-            set highlightedPeerId(value) { highlightedPeerId = value; },
-            get pinnedNode() { return pinnedNode; },
-            set pinnedNode(value) { pinnedNode = value; },
+    const PN_CONN_TYPE_FULL = window.BPMFormat.connectionTypes;
+
+    const privatePopup = window.BPMPeerDetail.create({
+        getPeers: () => lastPeers,
+        privateNetwork: true,
+        connectionTypeLabels: PN_CONN_TYPE_FULL,
+        serviceFlags: SERVICE_FLAGS,
+        onRequestClose: () => {
+            privatePopup.close();
+            privateState.privateNetSelectedPeer = null;
+            privateState.privateNetLinePeer = null;
+            highlightedPeerId = null;
+            pinnedNode = null;
+            if (!privateState.privateNetMode && !privateState.pnSelectedNet) {
+                privateState.pnContainerEl?.classList.remove('pn-focused');
+            }
+            updatePrivateNetUI();
         },
-        actions: {
-            pnEsc: escapeHtml,
-            pnFmtDuration,
-            pnFmtBytes,
-            renderServiceFlagList,
-            cachePnElements,
-            updatePrivateNetUI,
-            showDisconnectDialog,
-        },
+        onDisconnect: showDisconnectDialog,
     });
 
     // Donut configuration
@@ -1614,7 +1594,7 @@
 
         // Clear state
         hideTooltip();
-        privatePopup.closePnBigPopup();
+        privatePopup.close();
         clearMapDotFilter();
         highlightedPeerId = null;
         pinnedNode = null;
@@ -1663,14 +1643,7 @@
         cachePnElements();
         if (privateState.pnContainerEl) privateState.pnContainerEl.classList.add('pn-focused');
 
-        // Cancel any pending popup timer, close existing popup immediately (sync),
-        // then schedule the new one
-        if (privateState.pnPopupTimer) clearTimeout(privateState.pnPopupTimer);
-        privatePopup.closePnBigPopupSync();
-        privateState.pnPopupTimer = setTimeout(() => {
-            privateState.pnPopupTimer = null;
-            privatePopup.showPnBigPopup(node);
-        }, 350);
+        privatePopup.openPeer(peerId, 'private', 350);
 
         updatePrivateNetUI();
     }
@@ -2537,33 +2510,7 @@
     // PRIVATE-NET BIG POPUP — full peer detail for private peers
     // ═══════════════════════════════════════════════════════════
 
-    const PN_CONN_TYPE_FULL = {
-        'outbound-full-relay': 'Outbound Full Relay',
-        'block-relay-only': 'Block Relay Only',
-        'manual': 'Manual',
-        'addr-fetch': 'Address Fetch',
-        'feeler': 'Feeler',
-        'inbound': 'Inbound',
-    };
 
-
-    function pnFmtBytes(b) {
-        if (b == null || isNaN(b)) return '\u2014';
-        if (b < 1024) return b + ' B';
-        if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
-        if (b < 1073741824) return (b / 1048576).toFixed(1) + ' MB';
-        return (b / 1073741824).toFixed(2) + ' GB';
-    }
-
-    function pnFmtDuration(secs) {
-        if (!secs || secs <= 0) return '\u2014';
-        const d = Math.floor(secs / 86400);
-        const h = Math.floor((secs % 86400) / 3600);
-        const m = Math.floor((secs % 3600) / 60);
-        if (d > 0) return d + 'd ' + h + 'h';
-        if (h > 0) return h + 'h ' + m + 'm';
-        return m + 'm';
-    }
 
     // ═══════════════════════════════════════════════════════════
     // WORLD MAP PROJECTION, PRIVATE-PEER PLACEMENT & DATA LOADING
@@ -2695,7 +2642,7 @@
             privateState.privateNetLinePeer = null;
             highlightedPeerId = null;
             pinnedNode = null;
-            privatePopup.closePnBigPopup();
+            privatePopup.close();
         }
 
         // ── Add or update existing peers ──
@@ -2799,6 +2746,8 @@
 
         // Refresh the peer table panel
         peerTable.renderPeerTable();
+
+        privatePopup.update();
 
         // [PRIVATE-NET] Update private network UI if in that mode
         updatePrivateNetUI();
@@ -5092,7 +5041,7 @@
                     pinnedNode = null;
                     highlightedPeerId = null;
                     hideTooltip();
-                    privatePopup.closePnBigPopup();
+                    privatePopup.close();
                     privatePanel.hidePnSubTooltip();
                     // Dismiss insight rect if active
                     if (privateState.pnInsightRectVisible) {
@@ -5213,7 +5162,7 @@
                         // Stage 1: deselect peer, go back to segment/overview view
                         privateState.privateNetSelectedPeer = null;
                         privateState.privateNetLinePeer = null;
-                        privatePopup.closePnBigPopup();
+                        privatePopup.close();
                         highlightedPeerId = null;
                         // Zoom back to Antarctica overview
                         const antCenter = project(40, -75);
@@ -6343,7 +6292,7 @@
                     privateState.privateNetLinePeer = null;
                     pinnedNode = null;
                     highlightedPeerId = null;
-                    privatePopup.closePnBigPopup();
+                    privatePopup.close();
                 }
                 // Move donut to center and open overview panel
                 cachePnElements();
