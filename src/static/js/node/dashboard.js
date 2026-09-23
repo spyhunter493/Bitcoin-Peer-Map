@@ -793,12 +793,12 @@ function create({ config: CFG, onAction }) {
         const uploaded = Number(traffic.upload_bytes || 0);
         if (inEl) {
             inEl.textContent = traffic.download_fmt || BPMFormat.fmtBytesShort(downloaded);
-            inEl.title = `${downloaded.toLocaleString()} bytes downloaded since Bitcoin Peer Map started`;
+            inEl.title = `${downloaded.toLocaleString()} bytes downloaded since the Bitcoin node started`;
             pulseOnChange('mo-p2p-in', downloaded, 'white');
         }
         if (outEl) {
             outEl.textContent = traffic.upload_fmt || BPMFormat.fmtBytesShort(uploaded);
-            outEl.title = `${uploaded.toLocaleString()} bytes uploaded since Bitcoin Peer Map started`;
+            outEl.title = `${uploaded.toLocaleString()} bytes uploaded since the Bitcoin node started`;
             pulseOnChange('mo-p2p-out', uploaded, 'white');
         }
     }

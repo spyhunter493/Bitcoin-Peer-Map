@@ -142,10 +142,10 @@ def test_dashboard_info_snapshots_connectivity_after_price_fetch(monkeypatch) ->
     assert result["network_details"]["i2p"]["localaddresses"][0]["address"].endswith(".i2p")
     assert result["network_details"]["cjdns"]["localaddresses"][0]["address"] == "fc00::1"
     assert result["node_traffic"] == {
-        "download_bytes": 0,
-        "upload_bytes": 0,
-        "download_fmt": "0B",
-        "upload_fmt": "0B",
+        "download_bytes": 1000,
+        "upload_bytes": 2000,
+        "download_fmt": "1000B",
+        "upload_fmt": "2.0KB",
     }
 
     now[0] = 5.0
@@ -153,10 +153,32 @@ def test_dashboard_info_snapshots_connectivity_after_price_fetch(monkeypatch) ->
     result = service.dashboard_info("nzd")
 
     assert result["node_traffic"] == {
-        "download_bytes": 1536,
-        "upload_bytes": 5120,
-        "download_fmt": "1.5KB",
-        "upload_fmt": "5.0KB",
+        "download_bytes": 2536,
+        "upload_bytes": 7120,
+        "download_fmt": "2.5KB",
+        "upload_fmt": "7.0KB",
+    }
+
+
+def test_node_traffic_follows_node_counters_across_bpm_and_node_restarts(monkeypatch) -> None:
+    now = [0.0]
+    monkeypatch.setattr("services.node.time.monotonic", lambda: now[0])
+    rpc = Rpc()
+    service = NodeService(rpc, Connectivity(), GeoDatabase(), lambda: True)
+    initial_traffic = service.dashboard_info("nzd")["node_traffic"]
+
+    # Restarting BPM must preserve the node's existing traffic totals.
+    restarted_service = NodeService(rpc, Connectivity(), GeoDatabase(), lambda: True)
+    assert restarted_service.dashboard_info("nzd")["node_traffic"] == initial_traffic
+
+    # A node restart resets its counters; the next refresh shows those values.
+    now[0] = 5.0
+    rpc.net_totals = {"totalbytesrecv": 128, "totalbytessent": 256}
+    assert restarted_service.dashboard_info("nzd")["node_traffic"] == {
+        "download_bytes": 128,
+        "upload_bytes": 256,
+        "download_fmt": "128B",
+        "upload_fmt": "256B",
     }
 
 

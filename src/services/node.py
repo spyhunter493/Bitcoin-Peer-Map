@@ -31,8 +31,6 @@ class NodeService:
         self.connectivity = connectivity
         self.geo_database = geo_database
         self.auto_update_enabled = auto_update_enabled
-        self._traffic_baseline: tuple[int, int] | None = None
-        self._traffic_lock = threading.Lock()
         self._recent_blocks: OrderedDict[str, dict[str, Any]] = OrderedDict()
         self._recent_blocks_lock = threading.Lock()
         self._chain_tips_lock = threading.Lock()
@@ -98,20 +96,10 @@ class NodeService:
             )
         return details
 
-    def _node_traffic_summary(self, net_totals: dict[str, Any]) -> dict[str, Any]:
-        received = max(0, int(net_totals.get("totalbytesrecv") or 0))
-        sent = max(0, int(net_totals.get("totalbytessent") or 0))
-
-        with self._traffic_lock:
-            if self._traffic_baseline is None:
-                self._traffic_baseline = (received, sent)
-            baseline_received, baseline_sent = self._traffic_baseline
-            if received < baseline_received or sent < baseline_sent:
-                self._traffic_baseline = (received, sent)
-                baseline_received, baseline_sent = self._traffic_baseline
-
-        downloaded = received - baseline_received
-        uploaded = sent - baseline_sent
+    @staticmethod
+    def _node_traffic_summary(net_totals: dict[str, Any]) -> dict[str, Any]:
+        downloaded = max(0, int(net_totals.get("totalbytesrecv") or 0))
+        uploaded = max(0, int(net_totals.get("totalbytessent") or 0))
         return {
             "download_bytes": downloaded,
             "upload_bytes": uploaded,
