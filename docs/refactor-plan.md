@@ -110,6 +110,7 @@ previous working application revision.
 - Stage 5 implementation: explicit native imports, one revisioned module
   entrypoint, feature directories, direct-import unit tests, recursive syntax/unit
   discovery, and strict checking of all 33 production browser modules.
+- Stage 5 commit: `122facf`.
 - Stage 5 validation: JavaScript syntax/strict types pass; all six unit-test files
   pass under Node 22 and Node 24; 67 Python tests, Python compilation, Ruff lint
   and formatting, the full browser suite, Docker Compose validation, and the
