@@ -1,7 +1,6 @@
-'use strict';
-const assert = require('assert');
+import assert from 'assert';
 
-module.exports = async function assertPeerViews(browser, baseUrl) {
+export default async function assertPeerViews(browser, baseUrl) {
     const context = await browser.newContext({ viewport: { width: 1638, height: 900 } });
     await context.addInitScript(() => {
         localStorage.setItem('bpm.antarcticaDisclaimerSeen', 'true');
@@ -53,7 +52,7 @@ module.exports = async function assertPeerViews(browser, baseUrl) {
         assert.match(await servicesCell.getAttribute('title'), /BL = BLAKE2b fork support \(NODE_BLAKE2B\)/);
         await safe();
 
-        await page.evaluate(() => window.BPMDistribution.enterFocusedMode());
+        await page.click('#as-donut-center');
         await page.waitForSelector('#as-detail-panel .as-summary-row');
         const software = page.locator('#as-detail-panel .as-summary-row').filter({ hasText: hostile }).first();
         await software.click();
@@ -90,10 +89,8 @@ module.exports = async function assertPeerViews(browser, baseUrl) {
             await safe();
             await page.keyboard.press('Escape');
         }
-        await page.evaluate(() => {
-            window.BPMDistribution.exitFocusedMode();
-            window.BPMDistribution.enterFocusedMode();
-        });
+        await page.click('#as-focused-close');
+        await page.click('#as-donut-center');
         // Assert table contents, not just counts, through both connection-direction filters.
         for (const [selector, direction] of [['.as-conn-dir-row', 'IN'], ['.as-conn-out-row', 'OUT']]) {
             const row = page.locator('#as-detail-panel ' + selector).first();
@@ -114,21 +111,38 @@ module.exports = async function assertPeerViews(browser, baseUrl) {
             await page.keyboard.press('Escape');
         }
 
-        await page.evaluate(() => {
-            const peer = window.BPMDistribution.getLastPeersRaw().find(p => p.network === 'ipv4');
-            window.BPMDistribution.openPeerDetailPanel(peer, 'peer-table');
-        });
+        await page.click('#as-focused-close');
+        const publicPeer = peers.find(peer => peer.network === 'ipv4');
+        await page.locator(`#peer-tbody tr[data-id="${publicPeer.id}"]`).click();
         await page.waitForSelector('.peer-detail-popup.visible');
         await safe();
         assert.ok((await page.locator('.peer-detail-popup').textContent()).includes(hostile));
         await page.keyboard.press('Escape');
-        await page.evaluate(() => window.BPMDistribution.exitFocusedMode());
+
+        await page.click('#as-focused-close');
 
         // Private overview, software drill-down, network panel, and full peer details.
         await page.click('#pn-mini-donut');
         await page.waitForSelector('#pn-detail-panel.visible');
         await safe();
         assert.ok((await page.locator('#pn-detail-body').textContent()).includes('constructor'));
+        // Network drill-downs use the same live descriptor as software filters.
+        const networkRow = page.locator('#pn-detail-body .pn-net-link-row[data-net="onion"]');
+        await networkRow.click();
+        await page.waitForSelector('#pn-sub-tooltip .as-sub-tt-peer');
+        const savedPeers = peers;
+        const tor = peers.filter(peer => peer.network === 'onion');
+        peers = peers.concat({ ...tor[0], id: 990 });
+        await poll();
+        assert.equal(await page.locator('#pn-sub-tooltip .as-sub-tt-peer').count(), tor.length + 1);
+        peers = peers.filter(peer => peer.network !== 'onion');
+        await poll();
+        assert.equal(await page.locator('#pn-sub-tooltip .as-sub-tt-peer').count(), 0);
+        assert.equal(await page.locator('#peer-tbody tr').count(), 0);
+        peers = savedPeers;
+        await poll();
+        assert.equal(await page.locator('#pn-sub-tooltip .as-sub-tt-peer').count(), tor.length);
+        await networkRow.click();
         const privateSoftware = page.locator('#pn-detail-body .pn-interactive-row[data-category="software"]')
             .filter({ hasText: hostile });
         await privateSoftware.click();

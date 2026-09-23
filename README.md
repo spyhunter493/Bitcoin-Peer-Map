@@ -217,22 +217,23 @@ bitcoin-peer-map/
 
 The application uses FastAPI lifespan hooks to start and stop peer polling, GeoIP enrichment, connectivity monitoring, and container metric workers. API routers obtain services through the application runtime rather than module-level global state.
 
-Browser code is split by responsibility: `static/js/core/` contains shared API and accessible-modal
-infrastructure, while `static/js/features/` contains independently testable controllers for node
-monitoring, peer actions, display settings, map data/projection, distribution aggregation, peer
-detail rendering, IPv4/IPv6 panel rendering, distribution donut rendering/animation, and
-summary panels, tooltips, and insight drill-downs. The summary controller preserves filters,
-hover previews, and pinned drill-downs as peer data refreshes, using the shared distribution state.
-`app.js` remains the dashboard composition and canvas-rendering root; `distribution.js`
-coordinates the provider and country views through the extracted state and view
-controllers. `distribution-provider-panel.js` and `distribution-country-panel.js` render
-their respective detail panels. `distribution.css` styles both lenses. Peer table rendering
-and preferences live in `features/peer-table.js`, with pure filtering/sorting in
-`peer-table-model.js`. Private panels and peer popups use
-`private-network-panel.js` and `private-peer-detail.js`, sharing `private-network-state.js`.
-`features/service-flags.js` supplies the peer service labels used by the table and detail panels.
-`core/polling.js` owns peer/node-info timer lifecycles and prevents overlapping requests;
-`features/peer-refresh.js` handles snapshot delivery and freshness.
+Browser code uses native ES modules with one small `static/js/app.js` entrypoint and
+no bundler or production build step. Features live in `map/`, `peers/`,
+`distribution/`, `node/`, and `settings/`; `core/` contains shared state, polling,
+HTTP, formatting, and modal helpers. Peer views read one current snapshot and
+resolve pinned filters against it. Public and private peer details share one
+controller that owns popup interactions and cleanup.
+
+The entire module graph is served under `/static/v/<asset_revision>/`, so a new
+revision invalidates every relative dependency. Existing static URLs remain
+available. `npm run check:js` discovers JavaScript files recursively,
+`npm run check:types` strictly checks all production modules, and `npm run test:js`
+uses Node's built-in test discovery under `tests/unit/`. Browser regression tests
+remain separate in `npm run test:layout`.
+
+Node data and currency-specific prices use independent five-second caches shared
+across browser clients. The dashboard polls `/api/info?include_price=false` and
+`/api/price` separately; `/api/info` still includes prices by default.
 
 Run `npm run benchmark:dashboard` to profile 14, 125, and 500 synthetic peers in
 Chromium. It reports main-thread task time over three idle seconds, DOM size,

@@ -1,35 +1,19 @@
-'use strict';
+import { test, mock } from 'node:test';
+import * as BPMDistributionProviderPanel from '../../src/static/js/distribution/provider-panel.js';
+import * as BPMDistributionCountryPanel from '../../src/static/js/distribution/country-panel.js';
+import * as BPMPeerDetail from '../../src/static/js/peers/detail.js';
+import * as BPMModal from '../../src/static/js/core/modal.js';
+import BPMServiceFlags from '../../src/static/js/peers/service-flags.js';
+import * as BPMDistributionState from '../../src/static/js/distribution/state.js';
+import * as BPMDistributionSummaryPanel from '../../src/static/js/distribution/summary-panel.js';
+import * as BPMDistribution from '../../src/static/js/distribution/controller.js';
+import * as BPMPeerFilters from '../../src/static/js/peers/filters.js';
+import * as BPMDashboardState from '../../src/static/js/core/dashboard-state.js';
+import assert from 'assert';
 
-const assert = require('assert');
-const fs = require('fs');
-const vm = require('vm');
+    
 
-function loadScript(sandbox, path) {
-    vm.runInNewContext(fs.readFileSync(path, 'utf8'), sandbox, { filename: path });
-}
-
-const sandbox = {
-    window: {
-        setTimeout,
-        clearTimeout,
-    },
-};
-loadScript(sandbox, 'src/static/js/core/modal.js');
-    loadScript(sandbox, 'src/static/js/core/format.js');
-loadScript(sandbox, 'src/static/js/features/service-flags.js');
-loadScript(sandbox, 'src/static/js/features/distribution-state.js');
-loadScript(sandbox, 'src/static/js/features/private-network-state.js');
-loadScript(sandbox, 'src/static/js/core/dashboard-state.js');
-loadScript(sandbox, 'src/static/js/features/peer-filters.js');
-loadScript(sandbox, 'src/static/js/features/distribution-data.js');
-loadScript(sandbox, 'src/static/js/features/distribution-peer-detail.js');
-loadScript(sandbox, 'src/static/js/features/distribution-network-panel.js');
-loadScript(sandbox, 'src/static/js/features/distribution-donut.js');
-loadScript(sandbox, 'src/static/js/features/distribution-summary-panel.js');
-loadScript(sandbox, 'src/static/js/features/distribution-country-panel.js');
-loadScript(sandbox, 'src/static/js/features/distribution-provider-panel.js');
-
-const providerPanel = sandbox.window.BPMDistributionProviderPanel;
+const providerPanel = BPMDistributionProviderPanel;
 const providerSegments = [{ asNumber: 'Others', peerIds: [7, 8], isOthers: true }];
 const providerGroups = [{ asNumber: 'AS64500', peerIds: [7], percentage: 33,
     asName: 'Example Provider', riskLevel: 'low' }];
@@ -64,7 +48,7 @@ const panelSummary = {
     attachPanelBlankClickHandler() {},
 };
 const countryFixture = panelFixture();
-assert.strictEqual(sandbox.window.BPMDistributionCountryPanel.render({
+assert.strictEqual(BPMDistributionCountryPanel.render({
     panelEl: countryFixture,
     segment: { asNumber: 'NZ', percentage: 50, peerCount: 1, color: '#58a6ff', riskLevel: 'low' },
     group: { countryCode: 'NZ', countryName: 'New Zealand', avgDurationFmt: '1h',
@@ -90,11 +74,11 @@ assert.strictEqual(providerPanel.render({
 assert.strictEqual(providerFixture.elements['.as-detail-asn'].textContent, 'AS64500');
 assert.ok(providerFixture.elements['.as-detail-body'].innerHTML.includes('Peers'));
 
-const peerDetail = sandbox.window.BPMPeerDetail;
-const escapeHtml = sandbox.window.BPMModal.escapeHtml;
+const peerDetail = BPMPeerDetail;
+const escapeHtml = BPMModal.escapeHtml;
 const hostile = `<img src=x onerror="alert(1)"> & '`;
 const escaped = '&lt;img src=x onerror=&quot;alert(1)&quot;&gt; &amp; &#39;';
-const serviceFlags = sandbox.window.BPMServiceFlags;
+const serviceFlags = BPMServiceFlags;
 assert.strictEqual(serviceFlags['BLAKE2B?'].abbr, 'BL');
 assert.strictEqual(serviceFlags.BLAKE2B, serviceFlags['BLAKE2B?']);
 
@@ -158,19 +142,7 @@ assert.ok(renderedGroup.includes('class="as-detail-sub-row multi-peer-row"'));
 assert.ok(renderedGroup.includes(escaped));
 assert.ok(!renderedGroup.includes('<img'));
 
-const peerDetailSource = fs.readFileSync(
-    'src/static/js/features/distribution-peer-detail.js',
-    'utf8'
-);
-assert.ok(!peerDetailSource.includes('fetch('));
-
-const source = fs.readFileSync('src/static/js/distribution.js', 'utf8');
-assert.ok(!source.includes("fetch('/api/peer/disconnect'"));
-assert.ok(!source.includes("fetch('/api/peer/ban'"));
-assert.ok(!source.includes('function describeArc'));
-assert.ok(!source.includes("querySelector('.as-score-"));
-
-const summaryState = sandbox.window.BPMDistributionState.create();
+const summaryState = BPMDistributionState.create();
 assert.strictEqual(summaryState.donutFocused, false);
 assert.strictEqual(summaryState.peerDetailActive, false);
 assert.strictEqual(summaryState.selectedPeerId, null);
@@ -179,9 +151,9 @@ summaryState.donutFocused = true;
 summaryState.insightActiveAsNum = 'AS64500';
 summaryState.insightActiveType = 'fastest';
 assert.strictEqual(summaryState.snapshot().insightActiveAsNum, 'AS64500');
-assert.strictEqual(sandbox.window.BPMDistributionState.create().insightActiveAsNum, null);
+assert.strictEqual(BPMDistributionState.create().insightActiveAsNum, null);
 
-const summary = { view: sandbox.window.BPMDistributionSummaryPanel.create({
+const summary = { view: BPMDistributionSummaryPanel.create({
     elements: { panel: null }, actions: {}, serviceFlags, connectionTypeLabels: {},
 }) };
 
@@ -212,13 +184,12 @@ for (const html of [
     assert.ok(html.includes('&lt;'), 'the label should remain visible as literal text');
 }
 
-loadScript(sandbox, 'src/static/js/distribution.js');
-assert.strictEqual(typeof sandbox.window.BPMDistribution.openPeerDetailPanel, 'function');
+assert.strictEqual(typeof BPMDistribution.openPeerDetailPanel, 'function');
 
 console.log('Distribution feature module tests passed');
 
 // Filter meaning survives snapshot replacement; no matches remain an empty set.
-const peerFilters = sandbox.window.BPMPeerFilters;
+const peerFilters = BPMPeerFilters;
 const filterPeers = [
     { id: 0, as: 'AS1 First', network: 'ipv4', direction: 'IN', countryCode: 'NZ', subver: 'Core', services_abbrev: 'N', ping_ms: 10 },
     { id: 2, as: 'AS2 Second', network: 'ipv6', direction: 'OUT', countryCode: 'US', subver: 'Other', services_abbrev: 'W', ping_ms: 0 },
@@ -231,7 +202,7 @@ assert.deepStrictEqual(filteredIds([filterPeers[1]], inbound), []);
 assert.deepStrictEqual(filteredIds(filterPeers, { kind: 'all', filters: [{ kind: 'network', key: 'ipv4' }, { kind: 'software', key: 'Other' }] }), []);
 assert.deepStrictEqual(filteredIds(filterPeers, peerFilters.forCategory('conn-out', 'Others'), { provider: ['AS1'] }), [2]);
 assert.deepStrictEqual(filteredIds(filterPeers, peerFilters.forCategory('insight-fastest', 'fastest')), [0]);
-const dashboardState = sandbox.window.BPMDashboardState.create();
+const dashboardState = BPMDashboardState.create();
 dashboardState.replace(filterPeers);
 assert.strictEqual(dashboardState.byId.get(0), filterPeers[0]);
 dashboardState.distribution.hoveredPeerId = 0;

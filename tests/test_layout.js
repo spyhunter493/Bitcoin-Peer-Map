@@ -1,17 +1,18 @@
-'use strict';
+import assert from 'assert';
+import http from 'http';
+import net from 'net';
+import path from 'path';
+import { once } from 'events';
+import { spawn } from 'child_process';
+import { chromium } from 'playwright';
+import assertPeerViews from './test_peer_views.js';
+import assertPeerLifecycle from './test_peer_lifecycle.js';
+import assertPriceDelivery from './test_price_delivery.js';
+import assertTableDom from './test_peer_table_dom.js';
+import assertModules from './test_modules.js';
+import assertMapGroups from './test_map_groups.js';
 
-const assert = require('assert');
-const http = require('http');
-const net = require('net');
-const path = require('path');
-const { once } = require('events');
-const { spawn } = require('child_process');
-const { chromium } = require('playwright');
-const assertPeerViews = require('./test_peer_views');
-const assertPeerLifecycle = require('./test_peer_lifecycle');
-const assertPriceDelivery = require('./test_price_delivery');
-
-const repoRoot = path.resolve(__dirname, '..');
+const repoRoot = path.resolve(import.meta.dirname, '..');
 
 function delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
@@ -123,7 +124,9 @@ async function assertDonutFits(page, label) {
         if (!container || !panel) return false;
         const containerRect = container.getBoundingClientRect();
         const panelRect = panel.getBoundingClientRect();
-        return panelRect.top - containerRect.bottom >= 8;
+        const moving = [...panel.getAnimations(), ...container.getAnimations()]
+            .some(animation => animation.playState === 'running');
+        return !moving && panelRect.top - containerRect.bottom >= 8;
     }, null, { timeout: 2500 });
 
     const layout = await donutLayout(page);
@@ -480,6 +483,13 @@ async function assertAdvancedDisplaySettings(page) {
     await page.keyboard.press('Escape');
 }
 
+async function pollPeers(page) {
+    const response = page.waitForResponse(response => response.url().includes('/api/peers?include_status=true'));
+    await page.evaluate(() => window.testPeerPoll());
+    await response;
+    await page.waitForTimeout(100);
+}
+
 async function assertDistributionSummaryInteractions(page) {
     await page.waitForSelector('#as-detail-panel .as-detail-asn.as-summary-title');
     const category = page.locator('#as-detail-panel .as-summary-row[data-cat-label="IPv4"]');
@@ -497,15 +507,18 @@ async function assertDistributionSummaryInteractions(page) {
     await page.waitForSelector('#as-sub-sub-tooltip .as-sub-tt-id-link');
 
     // Polling must preserve the actual pinned DOM and its source row for toggling.
-    const preserved = await page.evaluate(() => {
+    await page.evaluate(() => {
         const body = document.querySelector('#as-detail-panel .as-detail-body');
         const row = body.querySelector('[data-cat-label="IPv4"]');
         const tip = document.getElementById('as-sub-tooltip');
         const peerLink = document.querySelector('#as-sub-sub-tooltip .as-sub-tt-id-link');
         const peerId = Number(peerLink.dataset.peerId);
         const scrollTop = body.scrollTop;
-        const peers = window.BPMDistribution.getLastPeersRaw().map(peer => ({ ...peer }));
-        window.BPMDistribution.update(peers);
+        window.testPinnedElements = { body, row, tip, peerLink, peerId, scrollTop };
+    });
+    await pollPeers(page);
+    const preserved = await page.evaluate(() => {
+        const { body, row, tip, peerLink, peerId, scrollTop } = window.testPinnedElements;
         return {
             rowPreserved: row === body.querySelector('[data-cat-label="IPv4"]'),
             providerPreserved: tip.querySelector('.as-provider-row-selected') !== null,
@@ -554,7 +567,7 @@ async function assertDistributionSummaryInteractions(page) {
         if (selector !== '.as-stable-link') {
             await page.locator('#as-sub-tooltip .as-provider-row').first().click();
             await page.waitForSelector('#as-sub-sub-tooltip .as-sub-tt-rank');
-            await page.evaluate(() => window.BPMDistribution.update(window.BPMDistribution.getLastPeersRaw()));
+            await pollPeers(page);
             assert.strictEqual(await page.locator('#as-sub-sub-tooltip').isVisible(), true);
             await page.keyboard.press('Escape');
         }
@@ -571,10 +584,10 @@ async function assertDistributionSummaryInteractions(page) {
     const summaryScroll = await page.locator('#as-detail-panel .as-detail-body').evaluate(body => {
         body.scrollTop = 100;
         const scrollTop = body.scrollTop;
-        window.BPMDistribution.update(window.BPMDistribution.getLastPeersRaw());
-        return [scrollTop, body.scrollTop];
+        return scrollTop;
     });
-    assert.strictEqual(summaryScroll[1], summaryScroll[0]);
+    await pollPeers(page);
+    assert.strictEqual(await page.locator('#as-detail-panel .as-detail-body').evaluate(body => body.scrollTop), summaryScroll);
 
     await page.locator('.as-lens-btn[data-lens="country"]').click();
     await page.waitForSelector('#as-detail-panel .as-country-summary-row');
@@ -792,6 +805,14 @@ async function assertDashboardLifecycle(browser, baseUrl) {
         });
         await context.addInitScript(() => {
             localStorage.setItem('bpm.antarcticaDisclaimerSeen', 'true');
+            const original = window.setInterval.bind(window);
+            window.setInterval = (handler, interval, ...args) => {
+                if (interval === 10000) {
+                    window.testPeerPoll = handler;
+                    return original(handler, 3600000, ...args);
+                }
+                return original(handler, interval, ...args);
+            };
         });
         const page = await context.newPage();
         const pageErrors = [];
@@ -845,7 +866,10 @@ async function assertDashboardLifecycle(browser, baseUrl) {
         await assertPeerViews(browser, baseUrl);
         await assertPeerLifecycle(browser, baseUrl);
         await assertPriceDelivery(browser, baseUrl);
+        await assertTableDom(browser, baseUrl);
         await assertDashboardLifecycle(browser, baseUrl);
+        await assertModules(browser);
+        await assertMapGroups(browser, baseUrl);
         console.log('Browser layout regression tests passed');
     } finally {
         if (browser) await browser.close();

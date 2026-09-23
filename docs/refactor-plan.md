@@ -37,7 +37,7 @@ over wrappers, duplication, or compressed syntax.
   statistics until writes/merges; calculate ages at response time. Add `/api/price`
   and default-compatible `/api/info?include_price=false`; poll price independently,
   reject late responses for a previous currency, preserve partial RPC failures.
-- [ ] Stage 5 — Native modules: group code into core/map/peers/distribution/node/
+- [x] Stage 5 — Native modules: group code into core/map/peers/distribution/node/
   settings, small entrypoint, explicit imports, no BPM runtime globals. Convert
   Node tooling/tests to ESM. Serve a revisioned module tree under
   `/static/v/<asset_revision>/...` while retaining existing static URLs. Update
@@ -45,7 +45,7 @@ over wrappers, duplication, or compressed syntax.
   runner, retain npm command names, and strictly check all production JavaScript
   with JSDoc/shared types (no blanket any or ts-nocheck). Browser tests use UI
   interactions; unit tests import functions.
-- [ ] Completion: full CI-equivalent verification, three final benchmark runs,
+- [x] Completion: full CI-equivalent verification, three final benchmark runs,
   investigate repeatable >10% idle-task/mutation regressions, report production
   line-count changes and removed duplication.
 
@@ -106,11 +106,33 @@ previous working application revision.
   node work, independent currency caches, partial RPC failures, cached headers,
   and statistics invalidation. Browser tests verify that a delayed price leaves
   node rendering responsive and cannot overwrite a newer currency selection.
-- Next step: native-module conversion and complete strict JavaScript coverage
-  in Stage 5.
-- Final CI-equivalent verification, three post-refactor benchmark runs, and the
-  production line-count comparison remain outstanding.
+- Stage 4 commit: `9f85c2b`.
+- Stage 5 implementation: explicit native imports, one revisioned module
+  entrypoint, feature directories, direct-import unit tests, recursive syntax/unit
+  discovery, and strict checking of all 33 production browser modules.
+- Stage 5 validation: JavaScript syntax/strict types pass; all six unit-test files
+  pass under Node 22 and Node 24; 67 Python tests, Python compilation, Ruff lint
+  and formatting, the full browser suite, Docker Compose validation, and the
+  production Docker image build pass.
+- Added acceptance regressions for warm-cache revision replacement across the
+  entire dependency graph, invalid revision namespaces and JavaScript MIME types,
+  map-group arrivals/departures and navigation, popup replacement while dragging
+  or resizing, focus restoration, and 50 public plus 50 private popup cycles.
+- Final acceptance checks exposed two remaining integration gaps, now fixed:
+  private-network drill-down rows needed semantic descriptors, and the table
+  needed to apply their pinned filters (including empty results). Map group lists
+  now reconcile arrivals and departures without changing popup position. The
+  layout assertion waits for existing CSS transitions before measuring the gap.
+- Three final benchmark runs and three verification-day repeats of the original
+  commit are complete. Median idle-work differences are +0.4% / +1.7% / +0.1%
+  for 14 / 125 / 500 peers; unchanged-poll table mutations remain zero. See
+  [benchmark measurements and source counts](refactor-benchmarks.md) for raw runs,
+  the historical-baseline investigation, and the production line-count increase
+  from strict annotations, formatting, and backend cache behavior.
+- All five stages are complete. No database migration or application deployment
+  was performed. The final changes are ready for review and deployment through
+  the existing workflow.
 
-Resume by checking this checklist against the working tree and commit history,
-preserving unrelated changes, then implement the first incomplete stage. Update
-this document after each stage with its commit, validation, and remaining work.
+For a future session, review this checklist and the benchmark report before making
+additional changes. Rollback remains the preceding working application revision.
+There are no incomplete implementation stages.

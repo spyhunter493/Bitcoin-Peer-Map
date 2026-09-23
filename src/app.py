@@ -12,6 +12,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.exceptions import HTTPException
 
 from api import geoip, node, peers, system
 from runtime import AppRuntime
@@ -35,10 +36,27 @@ class RevisionedStaticFiles(StaticFiles):
         self.asset_revision = asset_revision
 
     async def get_response(self, path: str, scope):
+        # StaticFiles normalizes dot segments before calling get_response. Validate
+        # the original route first so a bad revision cannot escape its namespace.
+        route = scope["path"].removeprefix(scope.get("root_path", "")).lstrip("/")
+        if route.startswith("v/"):
+            parts = route.split("/")
+            if (
+                len(parts) < 3
+                or parts[1] != self.asset_revision
+                or any(part in {".", ".."} for part in parts)
+            ):
+                raise HTTPException(status_code=404)
+        versioned = path.startswith("v/")
+        if versioned:
+            _, revision, asset = (path.split("/", 2) + [""])[:3]
+            if revision != self.asset_revision or not asset:
+                raise HTTPException(status_code=404)
+            path = asset
         response = await super().get_response(path, scope)
         if response.status_code in {200, 304}:
             query = parse_qs(scope.get("query_string", b"").decode("ascii", "ignore"))
-            if query.get("v") == [self.asset_revision]:
+            if versioned or query.get("v") == [self.asset_revision]:
                 response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
             else:
                 response.headers["Cache-Control"] = "public, max-age=0, must-revalidate"

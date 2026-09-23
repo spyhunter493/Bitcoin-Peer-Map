@@ -1,10 +1,8 @@
-'use strict';
-const assert = require('assert');
-const fs = require('fs');
-const vm = require('vm');
-const sandbox = { window: {} };
-vm.runInNewContext(fs.readFileSync('src/static/js/features/peer-table-model.js', 'utf8'), sandbox);
-const model = sandbox.window.BPMPeerTableModel;
+import { test, mock } from 'node:test';
+import * as BPMPeerTableModel from '../../src/static/js/peers/table-model.js';
+import assert from 'assert';
+
+const model = BPMPeerTableModel;
 const peers = [
     { id: 1, network: 'ipv4', direction: 'IN', bytessent: 1024, conntime: 100, subver: '<b>one</b>' },
     { id: 2, network: 'ipv6', direction: 'OUT', bytessent: 999, conntime: 200 },

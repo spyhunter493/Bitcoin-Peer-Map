@@ -122,47 +122,11 @@ def test_application_factory_serves_health_dashboard_and_assets(tmp_path: Path) 
             "/static/assets/favicon.svg?v=abcdef0123456789abcdef0123456789abcdef01"
             in dashboard.text
         )
-        assert "/static/js/core/api.js?v=abcdef0123456789abcdef0123456789abcdef01" in dashboard.text
         assert (
-            "/static/js/core/modal.js?v=abcdef0123456789abcdef0123456789abcdef01" in dashboard.text
-        )
-        assert (
-            "/static/js/features/node-monitor.js?v=abcdef0123456789abcdef0123456789abcdef01"
+            '<script type="module" src="/static/v/abcdef0123456789abcdef0123456789abcdef01/js/app.js"'
             in dashboard.text
         )
-        assert (
-            "/static/js/features/peer-actions.js?v=abcdef0123456789abcdef0123456789abcdef01"
-            in dashboard.text
-        )
-        assert (
-            "/static/js/features/display-settings.js?v=abcdef0123456789abcdef0123456789abcdef01"
-            in dashboard.text
-        )
-        assert (
-            "/static/js/features/world-map.js?v=abcdef0123456789abcdef0123456789abcdef01"
-            in dashboard.text
-        )
-        assert (
-            "/static/js/features/distribution-state.js?v=abcdef0123456789abcdef0123456789abcdef01"
-            in dashboard.text
-        )
-        assert (
-            "/static/js/features/distribution-data.js?v=abcdef0123456789abcdef0123456789abcdef01"
-            in dashboard.text
-        )
-        assert (
-            "/static/js/features/distribution-peer-detail.js?v=abcdef0123456789abcdef0123456789abcdef01"
-            in dashboard.text
-        )
-        assert (
-            "/static/js/features/distribution-network-panel.js?v=abcdef0123456789abcdef0123456789abcdef01"
-            in dashboard.text
-        )
-        assert (
-            "/static/js/features/distribution-donut.js?v=abcdef0123456789abcdef0123456789abcdef01"
-            in dashboard.text
-        )
-        assert "/static/js/app.js?v=abcdef0123456789abcdef0123456789abcdef01" in dashboard.text
+        assert dashboard.text.count("<script") == 1
         assert (
             "https://github.com/spyhunter493/bitcoin-peer-map/commit/"
             "abcdef0123456789abcdef0123456789abcdef01" in dashboard.text
@@ -221,3 +185,54 @@ def test_price_endpoint_and_opt_out_preserve_default_info_contract(tmp_path: Pat
             "last_price_error",
         }
         assert client.get("/api/info?include_price=false").json() == {"connected": 3}
+
+
+def test_revisioned_modules_validate_namespace_and_serve_relative_imports(tmp_path: Path) -> None:
+    import re
+    from urllib.parse import urljoin
+
+    app_settings = settings(tmp_path)
+    app = create_app(app_settings, FakeRuntime(app_settings))
+    prefix = f"/static/v/{app.state.asset_revision}/"
+    with TestClient(app) as client:
+        pending = [prefix + "js/app.js"]
+        visited = set()
+        while pending:
+            url = pending.pop()
+            if url in visited:
+                continue
+            visited.add(url)
+            assert url.startswith(prefix)
+            response = client.get(url)
+            assert response.status_code == 200
+            assert response.headers["content-type"].split(";")[0] in {
+                "text/javascript",
+                "application/javascript",
+            }
+            assert response.headers["cache-control"].endswith("immutable")
+            pending.extend(
+                urljoin(url, module)
+                for module in re.findall(r"from\s+['\"]([^'\"]+\.js)['\"]", response.text)
+            )
+        assert len(visited) == len(list(Path("src/static/js").rglob("*.js")))
+        for asset in [
+            "/static/v/incorrect/js/app.js",
+            "/static/v/incorrect/%2e%2e/%2e%2e/js/app.js",
+            prefix + "%2e%2e/%2e%2e/js/app.js",
+            prefix.rstrip("/"),
+            prefix + "js/does-not-exist.js",
+        ]:
+            assert client.get(asset).status_code == 404, asset
+        assert client.get("/static/js/app.js").status_code == 200
+
+
+def test_asset_content_revision_changes_with_dependency(tmp_path: Path) -> None:
+    from app import _asset_revision
+
+    entry = tmp_path / "app.js"
+    dependency = tmp_path / "feature.js"
+    entry.write_text("import './feature.js';")
+    dependency.write_text("export const value = 1;")
+    before = _asset_revision(tmp_path, "unknown")
+    dependency.write_text("export const value = 2;")
+    assert _asset_revision(tmp_path, "unknown") != before

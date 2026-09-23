@@ -1,24 +1,18 @@
-'use strict';
+import { test, mock } from 'node:test';
+import * as BPMDisplaySettings from '../../src/static/js/settings/advanced.js';
+import * as BPMDistributionState from '../../src/static/js/distribution/state.js';
+import * as BPMModal from '../../src/static/js/core/modal.js';
+import * as BPMDistributionDonut from '../../src/static/js/distribution/donut.js';
+import * as BPMNodeMonitor from '../../src/static/js/node/monitor.js';
+import * as BPMApi from '../../src/static/js/core/api.js';
+import * as BPMWorldMap from '../../src/static/js/map/geometry.js';
+import * as BPMDistributionData from '../../src/static/js/distribution/data.js';
+import * as BPMDistributionNetworkPanel from '../../src/static/js/distribution/network-panel.js';
+import assert from 'assert';
 
-const assert = require('assert');
-const fs = require('fs');
-const vm = require('vm');
-
-function loadScript(sandbox, path) {
-    vm.runInNewContext(fs.readFileSync(path, 'utf8'), sandbox, { filename: path });
-}
-
-(async () => {
+test('frontend modules', async () => {
     const requests = [];
-    const sandbox = {
-        console,
-        setTimeout,
-        clearTimeout,
-        window: {
-            AbortController,
-            setTimeout,
-            confirm: () => true,
-            fetch: async (url, options) => {
+    mock.method(globalThis, 'fetch', async (url, options) => {
                 requests.push({ url, options });
                 if (url === '/failure') {
                     return {
@@ -32,26 +26,24 @@ function loadScript(sandbox, path) {
                     status: 200,
                     json: async () => ({ success: true }),
                 };
-            },
-        },
-    };
+            });
 
-    loadScript(sandbox, 'src/static/js/core/api.js');
-    loadScript(sandbox, 'src/static/js/core/modal.js');
-    loadScript(sandbox, 'src/static/js/core/format.js');
-    loadScript(sandbox, 'src/static/js/features/node-monitor.js');
-    loadScript(sandbox, 'src/static/js/features/peer-actions.js');
-    loadScript(sandbox, 'src/static/js/features/display-settings.js');
-    loadScript(sandbox, 'src/static/js/features/world-map.js');
-    loadScript(sandbox, 'src/static/js/features/distribution-state.js');
-    loadScript(sandbox, 'src/static/js/features/distribution-data.js');
-    loadScript(sandbox, 'src/static/js/features/distribution-peer-detail.js');
-    loadScript(sandbox, 'src/static/js/features/distribution-network-panel.js');
-    loadScript(sandbox, 'src/static/js/features/distribution-donut.js');
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
 
-    assert.strictEqual(typeof sandbox.window.BPMDisplaySettings.create, 'function');
+    assert.strictEqual(typeof BPMDisplaySettings.create, 'function');
 
-    const distributionState = sandbox.window.BPMDistributionState.create();
+    const distributionState = BPMDistributionState.create();
     assert.strictEqual(distributionState.lens, 'provider');
     assert.strictEqual(distributionState.selectedProvider, null);
     distributionState.selectedProvider = 'AS64500';
@@ -73,9 +65,9 @@ function loadScript(sandbox, path) {
 
     const hostile = `<img src=x onerror="alert(1)"> & '`;
     const escaped = '&lt;img src=x onerror=&quot;alert(1)&quot;&gt; &amp; &#39;';
-    assert.strictEqual(sandbox.window.BPMModal.escapeHtml(hostile), escaped);
+    assert.strictEqual(BPMModal.escapeHtml(hostile), escaped);
 
-    const donut = sandbox.window.BPMDistributionDonut;
+    const donut = BPMDistributionDonut;
     assert.strictEqual(typeof donut.create, 'function');
     assert.ok(donut.describeArc(10, 10, 8, 4, 0, Math.PI).endsWith('Z'));
     assert.strictEqual(donut.getQuality(8).word, 'Excellent');
@@ -150,12 +142,12 @@ function loadScript(sandbox, path) {
     assert.ok(insight.includes(escaped));
     assert.ok(!insight.includes('<img'));
 
-    const row = sandbox.window.BPMModal.row(hostile, hostile, hostile, hostile, 'ok" onclick="bad');
+    const row = BPMModal.row(hostile, hostile, hostile, hostile, 'ok" onclick="bad');
     assert.ok(row.includes(escaped));
     assert.ok(!row.includes('<img'));
     assert.ok(!row.includes('onclick='));
 
-    const chainTips = sandbox.window.BPMNodeMonitor.renderChainTips({
+    const chainTips = BPMNodeMonitor.renderChainTips({
         success: true,
         summary: {
             chain: 'main',
@@ -178,13 +170,13 @@ function loadScript(sandbox, path) {
     assert.ok(chainTips.includes(escaped));
     assert.ok(!chainTips.includes('<img'));
 
-    await sandbox.window.BPMApi.postJson('/success', { peer_id: 7 });
+    await BPMApi.postJson('/success', { peer_id: 7 });
     assert.strictEqual(requests[0].options.method, 'POST');
     assert.strictEqual(requests[0].options.headers['Content-Type'], 'application/json');
     assert.strictEqual(requests[0].options.body, '{"peer_id":7}');
 
     await assert.rejects(
-        sandbox.window.BPMApi.getJson('/failure'),
+        BPMApi.getJson('/failure'),
         error => (
             error.name === 'HttpError' &&
             error.status === 503 &&
@@ -192,7 +184,7 @@ function loadScript(sandbox, path) {
         )
     );
 
-    const map = sandbox.window.BPMWorldMap;
+    const map = BPMWorldMap;
     const origin = map.project(0, 0);
     assert.ok(Math.abs(origin.x - 0.5) < 1e-12);
     assert.ok(Math.abs(origin.y - 0.5) < 1e-12);
@@ -232,7 +224,7 @@ function loadScript(sandbox, path) {
     await failingLoader.loadWorld();
     assert.ok(Array.isArray(fallbackWorld) && fallbackWorld.length > 0);
 
-    const distribution = sandbox.window.BPMDistributionData;
+    const distribution = BPMDistributionData;
     const peers = [
         { id: 1, as: 'AS64500 Alpha Net', asname: 'Alpha', countryCode: 'NZ', country: 'New Zealand', direction: 'IN', connection_type: 'inbound', network: 'ipv4', subver: '/Satoshi:27.0/', services_abbrev: 'N W', ping_ms: 20, conntime: 900, bytessent: 1024, bytesrecv: 2048 },
         { id: 2, as: 'AS64500 Alpha Net', asname: 'Alpha', countryCode: 'NZ', country: 'New Zealand', direction: 'OUT', connection_type: 'outbound-full-relay', network: 'ipv6', subver: '/Satoshi:27.0/', services_abbrev: 'N', ping_ms: 40, conntime: 800, hosting: true },
@@ -303,7 +295,7 @@ function loadScript(sandbox, path) {
     assert.strictEqual(countrySummary.totalPeers, 3);
     assert.strictEqual(countrySummary.topCountry.countryCode, 'NZ');
 
-    const networkPanel = sandbox.window.BPMDistributionNetworkPanel;
+    const networkPanel = BPMDistributionNetworkPanel;
     const ipv4Panel = networkPanel.computeNetworkPanelData(peers, 'ipv4', segments);
     assert.strictEqual(ipv4Panel.network.label, 'IPv4');
     assert.strictEqual(ipv4Panel.peerCount, 2);
@@ -342,7 +334,4 @@ function loadScript(sandbox, path) {
     assert.ok(!safeNetworkRow.includes('<img'));
 
     console.log('Frontend module tests passed');
-})().catch(error => {
-    console.error(error);
-    process.exit(1);
 });

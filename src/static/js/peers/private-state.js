@@ -1,0 +1,35 @@
+/** @returns {import('../types').PrivateNetworkState} */
+function create() {
+    return {
+        privateNetMode: false,
+        privateNetSelectedPeerId: null,
+        privateNetLinePeer: null,
+        pnMiniHover: false,
+        pnPreviewPeerIds: null,
+        pnMiniHoverNet: null,
+        pnInsightRectEl: null,
+        pnInsightRectVisible: false,
+        pnInsightActiveType: null,
+        pnInsightActivePeerId: null,
+        pnInsightActiveData: null,
+        pnContainerEl: null,
+        pnDonutSvg: null,
+        pnCenterCount: null,
+        pnCenterLabel: null,
+        pnCenterSub: null,
+        pnDetailPanelEl: null,
+        pnDetailBodyEl: null,
+        pnDetailBodyHandlerAttached: false,
+        pnDetailNetNameEl: null,
+        pnDetailMetaEl: null,
+        pnSegments: [],
+        pnSelectedNet: null,
+        pnHoveredNet: null,
+        pnSubTooltipPinned: false,
+        pnPinnedSubSrc: null,
+        pnFilter: null,
+        pnCenterPreviewLabel: null,
+        pnCenterPreviewPeerIds: null,
+    };
+}
+export { create };

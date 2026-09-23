@@ -1,29 +1,39 @@
-/* Private-network navigation, donut presentation, and peer selection. */
-(function(global) {
-'use strict';
+import { queryAll, query } from '../core/dom.js';
+import { dashboard as BPMDashboard } from '../core/dashboard-state.js';
+import BPMServiceFlags from './service-flags.js';
+import * as BPMWorldMap from '../map/geometry.js';
+import * as BPMFormat from '../core/format.js';
+import * as BPMPrivateNetworkPanel from './private-panel.js';
+import * as BPMPeerDetail from './detail.js';
+import * as BPMDistribution from '../distribution/controller.js';
+import * as BPMDomState from '../core/dom-state.js';
+/**
+ * @param {{mapView: import('../types').MapView; settings: import('../types').AdvancedSettings; onAction: (action: import('../types').PrivateNetworkAction) => void}} options
+ */
 function create({ mapView, settings: advSettings, onAction }) {
-const dashboard = global.BPMDashboard;
-const privateState = dashboard.privateNetwork;
-const PRIVATE_NETS = new Set(['onion','i2p','cjdns']);
-const ALL_NETS = new Set(['ipv4','ipv6',...PRIVATE_NETS]);
-const SERVICE_FLAGS = global.BPMServiceFlags;
-const project = global.BPMWorldMap.project;
-    const { fmtBytes: pnFmtBytes, fmtDuration: pnFmtDuration } = window.BPMFormat;
+    const dashboard = BPMDashboard;
+    const privateState = dashboard.privateNetwork;
+    const PRIVATE_NETS = new Set(['onion', 'i2p', 'cjdns']);
+    const ALL_NETS = new Set(['ipv4', 'ipv6', ...PRIVATE_NETS]);
+    const SERVICE_FLAGS = BPMServiceFlags;
+    const project = BPMWorldMap.project;
+    const { fmtBytes: pnFmtBytes, fmtDuration: pnFmtDuration } = BPMFormat;
 
-    const privatePanel = window.BPMPrivateNetworkPanel.create({
+    const privatePanel = BPMPrivateNetworkPanel.create({
         state: privateState,
         getColor: getPnNetColor,
         onAction(action) {
             if (action.type === 'select') selectPrivatePeer(action.peerId);
             else if (action.type === 'highlight') onAction(action);
             else if (action.type === 'redraw') renderPnDonut();
+            else if (action.type === 'table') onAction({ type: 'table' });
         },
     });
     const cachePnElements = privatePanel.cachePnElements;
 
-    const PN_CONN_TYPE_FULL = window.BPMFormat.connectionTypes;
+    const PN_CONN_TYPE_FULL = BPMFormat.connectionTypes;
 
-    const privatePopup = window.BPMPeerDetail.create({
+    const privatePopup = BPMPeerDetail.create({
         getPeers: () => dashboard.peers,
         privateNetwork: true,
         connectionTypeLabels: PN_CONN_TYPE_FULL,
@@ -50,11 +60,13 @@ const project = global.BPMWorldMap.project;
     const PN_DONUT_WIDTH_DIMMED = 14;
     const PN_INNER_RADIUS = PN_DONUT_RADIUS - PN_DONUT_WIDTH;
 
-
-
-    /** Enter private network mode: zoom to Antarctica, show circular donut */
-    /** Enter private network mode: zoom to Antarctica, show circular donut.
-     *  If targetNet is provided, skip overview and go directly to that net's panel. */
+    /** Enter private network mode: zoom to Antarctica, show circular donut
+     * Enter private network mode: zoom to Antarctica, show circular donut.
+     *  If targetNet is provided, skip overview and go directly to that net's panel.
+     *
+     * @param {number | null} [selectedPeerId]
+     * @param {string | null} [targetNet]
+     */
     function enterPrivateNetMode(selectedPeerId, targetNet) {
         if (privateState.privateNetMode) {
             if (selectedPeerId != null) selectPrivatePeer(selectedPeerId);
@@ -64,11 +76,11 @@ const project = global.BPMWorldMap.project;
         document.body.classList.add('private-net-mode');
 
         // Close any existing AS distribution panels/tooltips
-        if (window.BPMDistribution) {
-            window.BPMDistribution.closePeerPopup();
-            window.BPMDistribution.deselect();
-            if (window.BPMDistribution.isFocusedMode()) {
-                window.BPMDistribution.exitFocusedMode();
+        if (BPMDistribution) {
+            BPMDistribution.closePeerPopup();
+            BPMDistribution.deselect();
+            if (BPMDistribution.isFocusedMode()) {
+                BPMDistribution.exitFocusedMode();
             }
         }
         onAction({ type: 'hide-tooltip' });
@@ -94,7 +106,7 @@ const project = global.BPMWorldMap.project;
         if (privateState.pnContainerEl) {
             privateState.pnContainerEl.classList.remove('hidden');
             requestAnimationFrame(() => {
-                privateState.pnContainerEl.classList.add('visible', 'pn-focused');
+                privateState.pnContainerEl?.classList.add('visible', 'pn-focused');
             });
         }
 
@@ -144,11 +156,11 @@ const project = global.BPMWorldMap.project;
         cachePnElements();
         if (privateState.pnContainerEl) {
             privateState.pnContainerEl.classList.remove('visible', 'pn-focused');
-            setTimeout(() => privateState.pnContainerEl.classList.add('hidden'), 500);
+            setTimeout(() => privateState.pnContainerEl?.classList.add('hidden'), 500);
         }
         if (privateState.pnDetailPanelEl) {
             privateState.pnDetailPanelEl.classList.remove('visible');
-            setTimeout(() => privateState.pnDetailPanelEl.classList.add('hidden'), 350);
+            setTimeout(() => privateState.pnDetailPanelEl?.classList.add('hidden'), 350);
         }
 
         // Clear state
@@ -172,9 +184,10 @@ const project = global.BPMWorldMap.project;
         onAction({ type: 'table' });
     }
 
-    /** Select a specific private peer in Antarctica view */
+    /** Select a specific private peer in Antarctica view
+     * @param {number} peerId */
     function selectPrivatePeer(peerId) {
-        const node = mapView.nodes.find(n => n.peerId === peerId && n.alive);
+        const node = mapView.nodes.find((n) => n.peerId === peerId && n.alive);
         if (!node) return;
 
         privateState.privateNetSelectedPeerId = node.peerId;
@@ -200,7 +213,7 @@ const project = global.BPMWorldMap.project;
 
         // Move donut to top-center (focused state)
         cachePnElements();
-        if (privateState.pnContainerEl) privateState.pnContainerEl.classList.add('pn-focused');
+        if (privateState.pnContainerEl) privateState.pnContainerEl?.classList.add('pn-focused');
 
         privatePopup.openPeer(peerId, 'private', 350);
 
@@ -209,6 +222,14 @@ const project = global.BPMWorldMap.project;
 
     // ── SVG Arc Path (same approach as AS distribution donut) ──
 
+    /** @param {number} cx
+     * @param {number} cy
+     * @param {number} startAngle
+     * @param {number} endAngle
+     *
+     * @param {number} outerR
+     * @param {number} innerR
+     */
     function pnDescribeArc(cx, cy, outerR, innerR, startAngle, endAngle) {
         const sweep = endAngle - startAngle;
         const actualEnd = sweep >= 2 * Math.PI ? startAngle + 2 * Math.PI - 0.001 : endAngle;
@@ -232,10 +253,14 @@ const project = global.BPMWorldMap.project;
 
     // ── Network metadata ──
 
+    /** @type {Record<string, string>} */
     const PN_NET_COLORS_HEX = { onion: '#1565c0', i2p: '#d29922', cjdns: '#bc8cff' };
+    /** @type {Record<string, string>} */
     const PN_NET_LABELS = { onion: 'Tor', i2p: 'I2P', cjdns: 'CJDNS' };
 
+    /** @param {string} net */
     function getPnNetColor(net) {
+        /** @type {Record<string, string>} */
         const varMap = { onion: '--net-tor', i2p: '--net-i2p', cjdns: '--net-cjdns' };
         const v = varMap[net];
         if (v) {
@@ -251,7 +276,8 @@ const project = global.BPMWorldMap.project;
         cachePnElements();
         if (!privateState.pnDonutSvg) return;
 
-        const privateNodes = mapView.nodes.filter(n => n.alive && PRIVATE_NETS.has(n.peer.network));
+        const privateNodes = mapView.nodes.filter((n) => n.alive && PRIVATE_NETS.has(n.peer.network));
+        /** @type {Record<string, number>} */
         const counts = { onion: 0, i2p: 0, cjdns: 0 };
         for (const n of privateNodes) {
             if (counts.hasOwnProperty(n.peer.network)) counts[n.peer.network]++;
@@ -270,7 +296,9 @@ const project = global.BPMWorldMap.project;
         if (privateState.pnCenterLabel && privateState.pnCenterCount && privateState.pnCenterSub) {
             // If a peer row is hovered in a sub-tooltip, preserve that peer's info
             if (dashboard.interaction.highlightedPeerId && privateState.pnSubTooltipPinned) {
-                var peer = dashboard.peers.find(function(p) { return p.id === dashboard.interaction.highlightedPeerId; });
+                var peer = dashboard.peers.find(function (p) {
+                    return p.id === dashboard.interaction.highlightedPeerId;
+                });
                 if (peer) {
                     var netLabel = PN_NET_LABELS[peer.network] || peer.network || 'PEER';
                     var netColor = getPnNetColor(peer.network);
@@ -282,7 +310,7 @@ const project = global.BPMWorldMap.project;
                     privateState.pnCenterCount.style.color = netColor;
                     privateState.pnCenterSub.textContent = peer.direction === 'IN' ? 'inbound' : 'outbound';
                 }
-            // If a category row preview is active (hover or pinned), preserve it across refresh
+                // If a category row preview is active (hover or pinned), preserve it across refresh
             } else if (privateState.pnCenterPreviewLabel && privateState.pnCenterPreviewPeerIds) {
                 var cnt = privateState.pnCenterPreviewPeerIds.length;
                 privateState.pnCenterLabel.textContent = cnt + ' PEER' + (cnt !== 1 ? 'S' : '');
@@ -294,20 +322,24 @@ const project = global.BPMWorldMap.project;
                 var pct = total > 0 ? Math.round((cnt / total) * 100) : 0;
                 privateState.pnCenterSub.innerHTML = pct + '% of anonymous<br>peers';
             } else if (privateState.privateNetSelectedPeerId !== null) {
-                privateState.pnCenterLabel.textContent = PN_NET_LABELS[dashboard.byId.get(privateState.privateNetSelectedPeerId)?.network] || 'PEER';
+                privateState.pnCenterLabel.textContent =
+                    PN_NET_LABELS[dashboard.byId.get(privateState.privateNetSelectedPeerId)?.network || ''] || 'PEER';
                 privateState.pnCenterLabel.style.color = '';
                 privateState.pnCenterCount.textContent = '#' + privateState.privateNetSelectedPeerId;
                 privateState.pnCenterCount.style.fontSize = '22px';
                 privateState.pnCenterCount.style.fontFamily = '';
                 privateState.pnCenterCount.style.color = '';
-                privateState.pnCenterSub.textContent = dashboard.byId.get(privateState.privateNetSelectedPeerId)?.direction === 'IN' ? 'inbound' : 'outbound';
+                privateState.pnCenterSub.textContent =
+                    dashboard.byId.get(privateState.privateNetSelectedPeerId)?.direction === 'IN' ? 'inbound' : 'outbound';
             } else if (privateState.pnSelectedNet) {
-                const seg = privateState.pnSegments.find(s => s.net === privateState.pnSelectedNet);
+                const seg = privateState.pnSegments.find((s) => s.net === privateState.pnSelectedNet);
                 var netCount = seg ? seg.count : 0;
                 var netPct = total > 0 ? Math.round((netCount / total) * 100) : 0;
                 privateState.pnCenterLabel.textContent = netCount + ' PEER' + (netCount !== 1 ? 'S' : '');
                 privateState.pnCenterLabel.style.color = 'var(--logo-accent, #7ec8e3)';
-                privateState.pnCenterCount.textContent = (PN_NET_LABELS[privateState.pnSelectedNet] || privateState.pnSelectedNet).toUpperCase();
+                privateState.pnCenterCount.textContent = (
+                    PN_NET_LABELS[privateState.pnSelectedNet] || privateState.pnSelectedNet
+                ).toUpperCase();
                 privateState.pnCenterCount.style.fontSize = '22px';
                 privateState.pnCenterCount.style.fontFamily = 'var(--font-display, Cinzel, serif)';
                 privateState.pnCenterCount.style.color = seg ? seg.color : '';
@@ -344,24 +376,73 @@ const project = global.BPMWorldMap.project;
         html += '</defs>';
 
         // Background track ring
-        html += '<circle cx="' + cx + '" cy="' + cy + '" r="' + (PN_DONUT_RADIUS - PN_DONUT_WIDTH / 2) + '" fill="none" stroke="rgba(240,136,62,0.04)" stroke-width="' + PN_DONUT_WIDTH + '" />';
+        html +=
+            '<circle cx="' +
+            cx +
+            '" cy="' +
+            cy +
+            '" r="' +
+            (PN_DONUT_RADIUS - PN_DONUT_WIDTH / 2) +
+            '" fill="none" stroke="rgba(240,136,62,0.04)" stroke-width="' +
+            PN_DONUT_WIDTH +
+            '" />';
         // Outer decorative ring
-        html += '<circle cx="' + cx + '" cy="' + cy + '" r="' + (PN_DONUT_RADIUS + 3) + '" fill="none" stroke="rgba(240,136,62,0.08)" stroke-width="1" />';
+        html +=
+            '<circle cx="' +
+            cx +
+            '" cy="' +
+            cy +
+            '" r="' +
+            (PN_DONUT_RADIUS + 3) +
+            '" fill="none" stroke="rgba(240,136,62,0.08)" stroke-width="1" />';
         // Inner decorative ring
-        html += '<circle cx="' + cx + '" cy="' + cy + '" r="' + (PN_INNER_RADIUS - 3) + '" fill="none" stroke="rgba(240,136,62,0.06)" stroke-width="0.5" />';
+        html +=
+            '<circle cx="' +
+            cx +
+            '" cy="' +
+            cy +
+            '" r="' +
+            (PN_INNER_RADIUS - 3) +
+            '" fill="none" stroke="rgba(240,136,62,0.06)" stroke-width="0.5" />';
 
         if (privateState.pnSegments.length === 0) {
             // Empty state
-            html += '<circle cx="' + cx + '" cy="' + cy + '" r="' + (PN_DONUT_RADIUS - PN_DONUT_WIDTH / 2) + '" fill="none" stroke="#2d333b" stroke-width="' + PN_DONUT_WIDTH + '" opacity="0.5" />';
+            html +=
+                '<circle cx="' +
+                cx +
+                '" cy="' +
+                cy +
+                '" r="' +
+                (PN_DONUT_RADIUS - PN_DONUT_WIDTH / 2) +
+                '" fill="none" stroke="#2d333b" stroke-width="' +
+                PN_DONUT_WIDTH +
+                '" opacity="0.5" />';
         } else if (privateState.pnSegments.length === 1) {
             const seg = privateState.pnSegments[0];
-            const w = (privateState.pnSelectedNet === seg.net) ? PN_DONUT_WIDTH_SELECTED : PN_DONUT_WIDTH;
-            html += '<circle cx="' + cx + '" cy="' + cy + '" r="' + (PN_DONUT_RADIUS - PN_DONUT_WIDTH / 2) + '" fill="none" stroke="' + seg.color + '" stroke-width="' + w + '" class="pn-donut-segment" data-net="' + seg.net + '" filter="url(#pn-donut-shadow)" style="cursor:pointer" />';
+            const w = privateState.pnSelectedNet === seg.net ? PN_DONUT_WIDTH_SELECTED : PN_DONUT_WIDTH;
+            html +=
+                '<circle cx="' +
+                cx +
+                '" cy="' +
+                cy +
+                '" r="' +
+                (PN_DONUT_RADIUS - PN_DONUT_WIDTH / 2) +
+                '" fill="none" stroke="' +
+                seg.color +
+                '" stroke-width="' +
+                w +
+                '" class="pn-donut-segment" data-net="' +
+                seg.net +
+                '" filter="url(#pn-donut-shadow)" style="cursor:pointer" />';
         } else {
             const totalGap = gap * privateState.pnSegments.length;
             const available = 2 * Math.PI - totalGap;
             let angle = -Math.PI / 2;
-            const highlightNet = privateState.pnSelectedNet || (privateState.privateNetSelectedPeerId !== null ? dashboard.byId.get(privateState.privateNetSelectedPeerId)?.network : null);
+            const highlightNet =
+                privateState.pnSelectedNet ||
+                (privateState.privateNetSelectedPeerId !== null
+                    ? dashboard.byId.get(privateState.privateNetSelectedPeerId)?.network
+                    : null);
 
             html += '<g filter="url(#pn-donut-shadow)">';
             for (const seg of privateState.pnSegments) {
@@ -373,7 +454,7 @@ const project = global.BPMWorldMap.project;
 
                 const isSelected = highlightNet === seg.net;
                 const isDimmed = highlightNet && highlightNet !== seg.net;
-                const segW = isSelected ? PN_DONUT_WIDTH_SELECTED : (isDimmed ? PN_DONUT_WIDTH_DIMMED : PN_DONUT_WIDTH);
+                const segW = isSelected ? PN_DONUT_WIDTH_SELECTED : isDimmed ? PN_DONUT_WIDTH_DIMMED : PN_DONUT_WIDTH;
                 const segOuter = PN_DONUT_RADIUS - (PN_DONUT_WIDTH - segW) / 2;
                 const segInner = segOuter - segW;
                 const d = pnDescribeArc(cx, cy, segOuter, segInner, startA, endA);
@@ -382,43 +463,54 @@ const project = global.BPMWorldMap.project;
                 if (isSelected) cls += ' selected';
                 if (isDimmed) cls += ' dimmed';
 
-                html += '<path d="' + d + '" fill="' + seg.color + '" class="' + cls + '" data-net="' + seg.net + '" style="cursor:pointer" />';
+                html +=
+                    '<path d="' + d + '" fill="' + seg.color + '" class="' + cls + '" data-net="' + seg.net + '" style="cursor:pointer" />';
                 angle += sweep + gap;
             }
             html += '</g>';
 
             // 3D highlight overlay
-            html += '<circle cx="' + cx + '" cy="' + cy + '" r="' + (PN_DONUT_RADIUS - PN_DONUT_WIDTH / 2) + '" fill="none" stroke="url(#pn-donut-highlight)" stroke-width="' + PN_DONUT_WIDTH + '" pointer-events="none" />';
+            html +=
+                '<circle cx="' +
+                cx +
+                '" cy="' +
+                cy +
+                '" r="' +
+                (PN_DONUT_RADIUS - PN_DONUT_WIDTH / 2) +
+                '" fill="none" stroke="url(#pn-donut-highlight)" stroke-width="' +
+                PN_DONUT_WIDTH +
+                '" pointer-events="none" />';
         }
 
         privateState.pnDonutSvg.innerHTML = html;
 
         // Attach segment event handlers (hover preview + click)
         // Safe: innerHTML above replaced all children, so old listeners are GC'd with old elements
-        privateState.pnDonutSvg.querySelectorAll('.pn-donut-segment').forEach(el => {
+        queryAll('.pn-donut-segment', privateState.pnDonutSvg).forEach((el) => {
             el.addEventListener('click', onPnSegmentClick);
             el.addEventListener('mouseenter', onPnSegmentHover);
             el.addEventListener('mouseleave', onPnSegmentLeave);
         });
     }
 
-    /** Hover over a donut segment → preview network, dim others, draw lines to that net's peers */
+    /** Hover over a donut segment → preview network, dim others, draw lines to that net's peers
+     * @param {MouseEvent} e */
     function onPnSegmentHover(e) {
         if (privateState.pnSelectedNet || privateState.privateNetSelectedPeerId !== null) return;
-        const net = e.currentTarget.dataset.net;
-        const seg = privateState.pnSegments.find(s => s.net === net);
+        const net = e.currentTarget instanceof Element ? e.currentTarget.getAttribute('data-net') || '' : '';
+        const seg = privateState.pnSegments.find((s) => s.net === net);
         if (!seg) return;
         privateState.pnHoveredNet = net;
         if (privateState.pnCenterLabel) privateState.pnCenterLabel.textContent = seg.label.toUpperCase();
         if (privateState.pnCenterCount) {
-            privateState.pnCenterCount.textContent = seg.count;
+            privateState.pnCenterCount.textContent = String(seg.count);
             privateState.pnCenterCount.style.color = seg.color;
         }
         if (privateState.pnCenterSub) privateState.pnCenterSub.textContent = 'peers';
 
         // Dim non-matching donut segments
         if (privateState.pnDonutSvg) {
-            privateState.pnDonutSvg.querySelectorAll('.pn-donut-segment').forEach(el => {
+            queryAll('.pn-donut-segment', privateState.pnDonutSvg).forEach((el) => {
                 if (el.dataset.net !== net) el.classList.add('dimmed');
                 else el.classList.remove('dimmed');
             });
@@ -446,16 +538,17 @@ const project = global.BPMWorldMap.project;
 
         // Undim all segments
         if (privateState.pnDonutSvg) {
-            privateState.pnDonutSvg.querySelectorAll('.pn-donut-segment').forEach(el => {
+            queryAll('.pn-donut-segment', privateState.pnDonutSvg).forEach((el) => {
                 el.classList.remove('dimmed');
             });
         }
     }
 
-    /** Handle click on a donut segment */
+    /** Handle click on a donut segment
+     * @param {MouseEvent} e */
     function onPnSegmentClick(e) {
         e.stopPropagation();
-        const net = e.currentTarget.dataset.net;
+        const net = e.currentTarget instanceof Element ? e.currentTarget.getAttribute('data-net') || '' : '';
         if (!net) return;
 
         // Dismiss insight rect when switching to a network selection
@@ -477,7 +570,7 @@ const project = global.BPMWorldMap.project;
         } else {
             privateState.pnSelectedNet = net;
             cachePnElements();
-            if (privateState.pnContainerEl) privateState.pnContainerEl.classList.add('pn-focused');
+            if (privateState.pnContainerEl) privateState.pnContainerEl?.classList.add('pn-focused');
             privatePanel.openPnDetailPanel(net);
         }
         updatePrivateNetUI();
@@ -502,12 +595,12 @@ const project = global.BPMWorldMap.project;
         // Restore donut visual state after SVG rebuild
         // (renderPnDonut resets innerHTML, losing DOM classes)
         if (savedSelectedNet && privateState.pnDonutSvg) {
-            privateState.pnDonutSvg.querySelectorAll('.pn-donut-segment').forEach(el => {
+            queryAll('.pn-donut-segment', privateState.pnDonutSvg).forEach((el) => {
                 if (el.dataset.net === savedSelectedNet) el.classList.add('selected');
                 else el.classList.add('dimmed');
             });
         } else if (savedHoveredNet && privateState.pnDonutSvg) {
-            privateState.pnDonutSvg.querySelectorAll('.pn-donut-segment').forEach(el => {
+            queryAll('.pn-donut-segment', privateState.pnDonutSvg).forEach((el) => {
                 if (el.dataset.net !== savedHoveredNet) el.classList.add('dimmed');
             });
         }
@@ -519,7 +612,7 @@ const project = global.BPMWorldMap.project;
             if (pnDonutCenter) pnDonutCenter.style.opacity = '0';
         }
 
-        const restorePrivatePanel = window.BPMDomState.capture(privateState.pnDetailPanelEl);
+        const restorePrivatePanel = BPMDomState.capture(privateState.pnDetailPanelEl);
 
         // Only update detail panel content — do NOT close/reopen it
         if (privateState.pnDetailPanelEl && privateState.pnDetailPanelEl.classList.contains('visible')) {
@@ -538,9 +631,9 @@ const project = global.BPMWorldMap.project;
             privateState.pnPreviewPeerIds = [savedInsightPeerId];
 
             // Try to find the updated peer data for a fresh stat
-            const allPN = mapView.nodes.filter(n => n.alive && PRIVATE_NETS.has(n.peer.network));
-            const rawPeers = allPN.map(n => dashboard.peers.find(p => p.id === n.peerId)).filter(Boolean);
-            const updatedPeer = rawPeers.find(p => p.id === savedInsightPeerId);
+            const allPN = mapView.nodes.filter((n) => n.alive && PRIVATE_NETS.has(n.peer.network));
+            const rawPeers = allPN.map((n) => dashboard.peers.find((p) => p.id === n.peerId)).filter((peer) => peer !== undefined);
+            const updatedPeer = rawPeers.find((p) => p.id === savedInsightPeerId);
             if (updatedPeer) {
                 privateState.pnInsightActiveData = privatePanel.buildPnInsightData(updatedPeer, savedInsightType);
                 privatePanel.showPnInsightRect(savedInsightType, privateState.pnInsightActiveData);
@@ -551,9 +644,8 @@ const project = global.BPMWorldMap.project;
 
             // Re-highlight the active insight row in the rebuilt panel
             if (privateState.pnDetailBodyEl) {
-                privateState.pnDetailBodyEl.querySelectorAll('.pn-insight-row').forEach(r => {
-                    if (r.dataset.insightType === savedInsightType &&
-                        parseInt(r.dataset.peerId) === savedInsightPeerId) {
+                queryAll('.pn-insight-row', privateState.pnDetailBodyEl).forEach((r) => {
+                    if (r.dataset.insightType === savedInsightType && parseInt(r.dataset.peerId || '') === savedInsightPeerId) {
                         r.classList.add('pn-insight-active');
                     }
                 });
@@ -565,7 +657,6 @@ const project = global.BPMWorldMap.project;
         onAction({ type: 'table' });
     }
 
-
     function renderPnMiniDonut() {
         const miniWrap = document.getElementById('pn-mini-donut');
         const miniSvg = document.getElementById('pn-mini-svg');
@@ -573,7 +664,7 @@ const project = global.BPMWorldMap.project;
         if (!miniWrap || !miniSvg) return;
 
         // Count private peers
-        const privateNodes = mapView.nodes.filter(n => n.alive && PRIVATE_NETS.has(n.peer.network));
+        const privateNodes = mapView.nodes.filter((n) => n.alive && PRIVATE_NETS.has(n.peer.network));
         const total = privateNodes.length;
 
         if (total === 0 || privateState.privateNetMode) {
@@ -591,13 +682,15 @@ const project = global.BPMWorldMap.project;
         });
 
         // Build mini segments
+        /** @type {Record<string, number>} */
         const counts = { onion: 0, i2p: 0, cjdns: 0 };
         for (const n of privateNodes) {
             if (counts.hasOwnProperty(n.peer.network)) counts[n.peer.network]++;
         }
 
         // Mini center count (matches the big donut's "Private / count / Peers" layout)
-        if (miniCount) miniCount.textContent = total;
+        if (miniCount) miniCount.textContent = String(total);
+        /** @type {{net: string; count: number; color: string}[]} */
         const segs = [];
         for (const net of ['onion', 'i2p', 'cjdns']) {
             if (counts[net] > 0) segs.push({ net, count: counts[net], color: getPnNetColor(net) });
@@ -609,7 +702,20 @@ const project = global.BPMWorldMap.project;
         const innerR = PN_INNER_RADIUS;
         let html = '';
         if (segs.length === 1) {
-            html += '<circle cx="' + cx + '" cy="' + cy + '" r="' + ((outerR + innerR) / 2) + '" fill="none" stroke="' + segs[0].color + '" stroke-width="' + (outerR - innerR) + '" class="pn-mini-segment" data-net="' + segs[0].net + '" style="cursor:pointer" />';
+            html +=
+                '<circle cx="' +
+                cx +
+                '" cy="' +
+                cy +
+                '" r="' +
+                (outerR + innerR) / 2 +
+                '" fill="none" stroke="' +
+                segs[0].color +
+                '" stroke-width="' +
+                (outerR - innerR) +
+                '" class="pn-mini-segment" data-net="' +
+                segs[0].net +
+                '" style="cursor:pointer" />';
         } else if (segs.length > 1) {
             const gap = 0.03;
             const totalGap = gap * segs.length;
@@ -619,44 +725,54 @@ const project = global.BPMWorldMap.project;
                 const sweep = (seg.count / total) * totalAngle;
                 const endA = angle + sweep;
                 const d = pnDescribeArc(cx, cy, outerR, innerR, angle, endA);
-                html += '<path d="' + d + '" fill="' + seg.color + '" class="pn-mini-segment" data-net="' + seg.net + '" style="cursor:pointer" />';
+                html +=
+                    '<path d="' +
+                    d +
+                    '" fill="' +
+                    seg.color +
+                    '" class="pn-mini-segment" data-net="' +
+                    seg.net +
+                    '" style="cursor:pointer" />';
                 angle = endA + gap;
             }
         }
         miniSvg.innerHTML = html;
 
         // Attach hover/click to mini donut segments
-        miniSvg.querySelectorAll('.pn-mini-segment').forEach(el => {
+        queryAll('.pn-mini-segment', miniSvg).forEach((el) => {
             el.addEventListener('mouseenter', (e) => {
                 e.stopPropagation();
-                const net = el.dataset.net;
+                const net = el.dataset.net || '';
                 privateState.pnMiniHoverNet = net;
                 privateState.pnMiniHover = true;
                 // Dim other segments
-                miniSvg.querySelectorAll('.pn-mini-segment').forEach(s => {
+                queryAll('.pn-mini-segment', miniSvg).forEach((s) => {
                     if (s.dataset.net !== net) s.style.opacity = '0.3';
                     else s.style.opacity = '1';
                 });
                 // Dim other legend items
                 const miniLegendEl = document.getElementById('pn-mini-legend');
                 if (miniLegendEl) {
-                    miniLegendEl.querySelectorAll('.pn-mini-legend-item').forEach(item => {
+                    queryAll('.pn-mini-legend-item', miniLegendEl).forEach((item) => {
                         if (item.dataset.net !== net) item.classList.add('dimmed');
-                        else { item.classList.remove('dimmed'); item.classList.add('highlighted'); }
+                        else {
+                            item.classList.remove('dimmed');
+                            item.classList.add('highlighted');
+                        }
                     });
                 }
                 // When legends hidden, show network info in mini donut center
                 if (!advSettings.showDonutLegends) {
-                    const seg = segs.find(s => s.net === net);
+                    const seg = segs.find((s) => s.net === net);
                     const label = PN_NET_LABELS[net] || net.toUpperCase();
                     const miniCenter = document.getElementById('pn-mini-center');
                     if (miniCenter) {
-                        const labelEl = miniCenter.querySelector('.pn-mini-center-label');
-                        const countEl = miniCenter.querySelector('.pn-mini-center-count');
-                        const subEl = miniCenter.querySelector('.pn-mini-center-sub');
+                        const labelEl = query('.pn-mini-center-label', miniCenter);
+                        const countEl = query('.pn-mini-center-count', miniCenter);
+                        const subEl = query('.pn-mini-center-sub', miniCenter);
                         if (labelEl) labelEl.textContent = label;
                         if (countEl) {
-                            countEl.textContent = seg ? seg.count : '';
+                            countEl.textContent = String(seg ? seg.count : '');
                             countEl.style.color = seg ? seg.color : '';
                         }
                         if (subEl) subEl.textContent = 'peers';
@@ -666,10 +782,10 @@ const project = global.BPMWorldMap.project;
             el.addEventListener('mouseleave', () => {
                 privateState.pnMiniHoverNet = null;
                 // Undim all segments
-                miniSvg.querySelectorAll('.pn-mini-segment').forEach(s => s.style.opacity = '');
+                queryAll('.pn-mini-segment', miniSvg).forEach((s) => (s.style.opacity = ''));
                 const miniLegendEl = document.getElementById('pn-mini-legend');
                 if (miniLegendEl) {
-                    miniLegendEl.querySelectorAll('.pn-mini-legend-item').forEach(item => {
+                    queryAll('.pn-mini-legend-item', miniLegendEl).forEach((item) => {
                         item.classList.remove('dimmed', 'highlighted');
                     });
                 }
@@ -677,12 +793,12 @@ const project = global.BPMWorldMap.project;
                 if (!advSettings.showDonutLegends) {
                     const miniCenter = document.getElementById('pn-mini-center');
                     if (miniCenter) {
-                        const labelEl = miniCenter.querySelector('.pn-mini-center-label');
-                        const countEl = miniCenter.querySelector('.pn-mini-center-count');
-                        const subEl = miniCenter.querySelector('.pn-mini-center-sub');
+                        const labelEl = query('.pn-mini-center-label', miniCenter);
+                        const countEl = query('.pn-mini-center-count', miniCenter);
+                        const subEl = query('.pn-mini-center-sub', miniCenter);
                         if (labelEl) labelEl.textContent = 'Private';
                         if (countEl) {
-                            countEl.textContent = total;
+                            countEl.textContent = String(total);
                             countEl.style.color = '';
                         }
                         if (subEl) subEl.textContent = 'Peers';
@@ -691,7 +807,7 @@ const project = global.BPMWorldMap.project;
             });
             el.addEventListener('click', (e) => {
                 e.stopPropagation();
-                const net = el.dataset.net;
+                const net = el.dataset.net || '';
                 privateState.pnMiniHover = false;
                 privateState.pnMiniHoverNet = null;
                 enterPrivateNetMode(null, net);
@@ -714,31 +830,34 @@ const project = global.BPMWorldMap.project;
             miniLegendEl.innerHTML = legendHtml;
 
             // Attach hover/click to mini legend items (same behavior as segment hover)
-            miniLegendEl.querySelectorAll('.pn-mini-legend-item').forEach(item => {
+            queryAll('.pn-mini-legend-item', miniLegendEl).forEach((item) => {
                 item.addEventListener('mouseenter', () => {
-                    const net = item.dataset.net;
+                    const net = item.dataset.net || '';
                     privateState.pnMiniHoverNet = net;
                     privateState.pnMiniHover = true;
                     // Dim other segments
-                    miniSvg.querySelectorAll('.pn-mini-segment').forEach(s => {
+                    queryAll('.pn-mini-segment', miniSvg).forEach((s) => {
                         s.style.opacity = s.dataset.net !== net ? '0.3' : '1';
                     });
                     // Dim other legend items
-                    miniLegendEl.querySelectorAll('.pn-mini-legend-item').forEach(li => {
+                    queryAll('.pn-mini-legend-item', miniLegendEl).forEach((li) => {
                         if (li.dataset.net !== net) li.classList.add('dimmed');
-                        else { li.classList.remove('dimmed'); li.classList.add('highlighted'); }
+                        else {
+                            li.classList.remove('dimmed');
+                            li.classList.add('highlighted');
+                        }
                     });
                 });
                 item.addEventListener('mouseleave', () => {
                     privateState.pnMiniHoverNet = null;
-                    miniSvg.querySelectorAll('.pn-mini-segment').forEach(s => s.style.opacity = '');
-                    miniLegendEl.querySelectorAll('.pn-mini-legend-item').forEach(li => {
+                    queryAll('.pn-mini-segment', miniSvg).forEach((s) => (s.style.opacity = ''));
+                    queryAll('.pn-mini-legend-item', miniLegendEl).forEach((li) => {
                         li.classList.remove('dimmed', 'highlighted');
                     });
                 });
                 item.addEventListener('click', (e) => {
                     e.stopPropagation();
-                    const net = item.dataset.net;
+                    const net = item.dataset.net || '';
                     privateState.pnMiniHover = false;
                     privateState.pnMiniHoverNet = null;
                     enterPrivateNetMode(null, net);
@@ -748,15 +867,15 @@ const project = global.BPMWorldMap.project;
         onAction({ type: 'layout' });
     }
 
-    /** Draw "PRIVATE NETWORKS" text tiled across Antarctica on the canvas */
-
+    /** Draw "PRIVATE NETWORKS" text tiled across Antarctica on the canvas
+     * @param {string} net */
     function getPnMiniLegendDotPos(net) {
         const legendEl = document.getElementById('pn-mini-legend');
         if (!legendEl) return null;
-        const items = legendEl.querySelectorAll('.pn-mini-legend-item');
+        const items = queryAll('.pn-mini-legend-item', legendEl);
         for (const item of items) {
             if (item.dataset.net === net) {
-                const dot = item.querySelector('.pn-mini-legend-dot');
+                const dot = query('.pn-mini-legend-dot', item);
                 if (dot) {
                     const r = dot.getBoundingClientRect();
                     if (r.width > 0 && r.height > 0) {
@@ -778,7 +897,17 @@ const project = global.BPMWorldMap.project;
      *  6. pnMiniHover (default view) → lines from mini legend dots to private peers
      *  7. pnMiniHoverNet (default view segment hover) → lines from that legend dot */
 
-return Object.freeze({ privatePanel, cachePnElements, privatePopup, enterPrivateNetMode, exitPrivateNetMode, selectPrivatePeer, renderPnDonut, updatePrivateNetUI, renderPnMiniDonut, getPnMiniLegendDotPos });
+    return Object.freeze({
+        privatePanel,
+        cachePnElements,
+        privatePopup,
+        enterPrivateNetMode,
+        exitPrivateNetMode,
+        selectPrivatePeer,
+        renderPnDonut,
+        updatePrivateNetUI,
+        renderPnMiniDonut,
+        getPnMiniLegendDotPos,
+    });
 }
-global.BPMPrivateNetwork = Object.freeze({ create });
-})(window);
+export { create };

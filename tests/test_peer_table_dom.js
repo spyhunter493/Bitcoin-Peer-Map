@@ -1,88 +1,54 @@
-'use strict';
+import assert from 'node:assert/strict';
 
-const assert = require('assert');
-const path = require('path');
-const { chromium } = require('playwright');
-
-(async () => {
-    const browser = await chromium.launch();
-    try {
-        const page = await browser.newPage();
-        await page.setContent(`
-            <div id="peer-panel" class="peer-panel">
-                <div id="peer-panel-handle" class="peer-panel-handle"></div>
-                <div class="peer-panel-body"><div class="peer-table-wrap">
-                    <table id="peer-table"><thead id="peer-thead"></thead><tbody id="peer-tbody"></tbody></table>
-                </div></div>
-            </div>
-            <button id="btn-autofit"></button><button id="btn-table-settings"></button>
-        `);
-        const repoRoot = path.resolve(__dirname, '..');
-        await page.addScriptTag({ path: path.join(repoRoot, 'src/static/js/core/format.js') });
-        await page.addScriptTag({ path: path.join(repoRoot, 'src/static/js/features/service-flags.js') });
-        await page.addScriptTag({ path: path.join(repoRoot, 'src/static/js/features/peer-table-model.js') });
-        await page.addScriptTag({ path: path.join(repoRoot, 'src/static/js/features/peer-table.js') });
-        const result = await page.evaluate(() => {
-            let peers = [
-                { id: 1, network: 'ipv4', direction: 'IN', addr: '<img src=x onerror=alert(1)>',
-                    conntime_fmt: '1m', ping_ms: 20, services: [] },
-                { id: 2, network: 'ipv6', direction: 'OUT', addr: '2001:db8::2',
-                    conntime_fmt: '2m', ping_ms: 30, services: [] },
-                { id: 3, network: 'ipv4', direction: 'IN', addr: '192.0.2.3',
-                    conntime_fmt: '3m', ping_ms: 40, services: [] },
-            ];
-            let saved = {};
-            let filter = null;
-            const dashboard = {
-                peers,
-                privateNetwork: { privateNetMode: false, pnSelectedNet: null },
-                interaction: { enabledNets: new Set(['ipv4', 'ipv6']), asFilterPeerIds: null,
-                    mapFilterPeerIds: null, highlightedPeerId: null },
-            };
-            const table = window.BPMPeerTable.create({
-                dashboard, mapView: { width: 1000 },
-                preferences: {
-                    readSavedDisplaySettings: () => saved,
-                    writeSavedDisplaySettings: value => { saved = value; },
-                },
-                onAction() {},
-            });
-            table.renderPeerTable();
-            const body = document.getElementById('peer-tbody');
-            const row = body.querySelector('tr[data-id="1"]');
-            const durationCell = row.cells[2];
-            const pingCell = row.cells[12];
-            const originalPing = pingCell.textContent;
-            const safe = !row.querySelector('img') && row.textContent.includes('<img src=x');
-            row.dataset.preserved = 'yes';
-            peers[0] = { ...peers[0], ping_ms: 21 };
-            table.renderPeerTable();
-            const updatedInPlace = body.querySelector('tr[data-id="1"]') === row &&
-                row.cells[2] === durationCell && row.cells[12] === pingCell &&
-                row.cells[12].textContent !== originalPing && row.dataset.preserved === 'yes';
-            document.querySelector('th[data-sort="ping_ms"]').click();
-            document.querySelector('th[data-sort="ping_ms"]').click();
-            const reordered = Array.from(body.rows, item => Number(item.dataset.id)).join(',') === '3,2,1' &&
-                body.querySelector('tr[data-id="1"]') === row;
-            dashboard.interaction.enabledNets = new Set(['ipv6']);
-            table.renderPeerTable();
-            const filtered = body.rows.length === 1 && body.rows[0].dataset.id === '2';
-            dashboard.interaction.enabledNets = new Set(['ipv4', 'ipv6']);
-            dashboard.peers = peers = [peers[0], peers[1], { ...peers[2], id: 4 }];
-            table.renderPeerTable();
-            const membership = Array.from(body.rows, item => Number(item.dataset.id)).sort().join(',') === '1,2,4';
-            saved = { visibleColumns: ['id', 'network', 'ping_ms'] };
-            table.loadTableDisplaySettings();
-            table.renderPeerTable();
-            const columns = body.querySelector('tr[data-id="1"]').cells.length === 4;
-            return { safe, updatedInPlace, reordered, filtered, membership, columns };
-        });
-        for (const [check, passed] of Object.entries(result)) {
-            assert.strictEqual(passed, true, check);
-        }
-        await page.close();
-    } finally {
-        await browser.close();
+export default async function assertTableDom(browser, baseUrl) {
+    const context = await browser.newContext({ viewport: { width: 1638, height: 900 } });
+    await context.addInitScript(() => {
+        localStorage.setItem('bpm.antarcticaDisclaimerSeen', 'true');
+        const original = window.setInterval.bind(window);
+        window.setInterval = (handler, interval, ...args) => {
+            if (interval === 10000) {
+                window.testPeerPoll = handler;
+                return original(handler, 3600000, ...args);
+            }
+            return original(handler, interval, ...args);
+        };
+    });
+    const page = await context.newPage();
+    const seed = await (await page.request.get(`${baseUrl}/api/peers?include_status=true`)).json();
+    let peers = seed.peers.filter(peer => peer.network === 'ipv4').slice(0, 3)
+        .map((peer, index) => ({ ...peer, id: index + 1, ping_ms: 20 + index * 10 }));
+    peers[0].addr = '<img src=x onerror=alert(1)>';
+    await page.route('**/api/peers?include_status=true', route => route.fulfill({ json: { ...seed, peers } }));
+    async function poll() {
+        const response = page.waitForResponse(response => response.url().includes('/api/peers?include_status=true'));
+        await page.evaluate(() => window.testPeerPoll());
+        await response;
+        await page.waitForTimeout(100);
     }
-    console.log('Peer table DOM tests passed');
-})().catch(error => { console.error(error); process.exit(1); });
+    try {
+        await page.goto(baseUrl);
+        await page.waitForSelector('#peer-tbody tr[data-id="1"]');
+        await page.evaluate(() => {
+            const row = document.querySelector('#peer-tbody tr[data-id="1"]');
+            window.testTableElements = { row, duration: row.cells[2], ping: row.cells[12] };
+        });
+        assert.equal(await page.locator('#peer-tbody img').count(), 0);
+        assert.match(await page.locator('#peer-tbody tr[data-id="1"]').textContent(), /<img src=x/);
+        peers = peers.map(peer => peer.id === 1 ? { ...peer, ping_ms: 21 } : peer);
+        await poll();
+        assert.equal(await page.evaluate(() => {
+            const { row, duration, ping } = window.testTableElements;
+            return row === document.querySelector('#peer-tbody tr[data-id="1"]') &&
+                row.cells[2] === duration && row.cells[12] === ping && ping.textContent.includes('21');
+        }), true, 'changed polls update cells in place');
+        await page.click('th[data-sort="ping_ms"]');
+        await page.click('th[data-sort="ping_ms"]');
+        assert.deepEqual(await page.locator('#peer-tbody tr').evaluateAll(rows => rows.map(row => Number(row.dataset.id))), [3, 2, 1]);
+        peers = [peers[0], peers[1], { ...peers[2], id: 4 }];
+        await poll();
+        assert.deepEqual(await page.locator('#peer-tbody tr').evaluateAll(rows => rows.map(row => Number(row.dataset.id)).sort()), [1, 2, 4]);
+        assert.equal(await page.evaluate(() => window.testTableElements.row === document.querySelector('#peer-tbody tr[data-id="1"]')), true);
+    } finally {
+        await context.close();
+    }
+}

@@ -1,7 +1,6 @@
-'use strict';
-const { readdirSync } = require('node:fs');
-const { join } = require('node:path');
-const { spawnSync } = require('node:child_process');
+import { readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 
 function checkDirectory(directory) {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {

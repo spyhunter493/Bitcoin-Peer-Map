@@ -1,7 +1,6 @@
-'use strict';
-const assert = require('node:assert/strict');
+import assert from 'node:assert/strict';
 
-module.exports = async function assertPriceDelivery(browser, baseUrl) {
+export default async function assertPriceDelivery(browser, baseUrl) {
     const context = await browser.newContext({ viewport: { width: 1638, height: 900 } });
     await context.addInitScript(() => localStorage.setItem('bpm.antarcticaDisclaimerSeen', 'true'));
     const page = await context.newPage();

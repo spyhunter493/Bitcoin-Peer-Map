@@ -1,16 +1,14 @@
-'use strict';
-
 // Repeatable, synthetic browser profile for the dashboard's large-peer path.
 // Run with: npm run benchmark:dashboard
-const fs = require('fs');
-const http = require('http');
-const path = require('path');
-const { chromium } = require('playwright');
+import fs from 'fs';
+import http from 'http';
+import path from 'path';
+import { pathToFileURL } from 'node:url';
+import { chromium } from 'playwright';
 
-const root = path.resolve(__dirname, '..');
+const root = path.resolve(import.meta.dirname, '..');
 const staticRoot = path.join(root, 'src/static');
 const html = fs.readFileSync(path.join(root, 'src/templates/index.html'), 'utf8')
-    .replaceAll('{{ asset_revision }}', 'benchmark')
     .replaceAll('{{ repository_url }}', '#')
     .replaceAll('{{ revision_url }}', '#')
     .replaceAll('{{ revision }}', 'benchmark')
@@ -44,24 +42,32 @@ function peersForCount(count) {
     });
 }
 
-function createServer() {
+export function createServer() {
+    let revision = 'benchmark';
     let peers = [];
     let peerRequests = 0;
     const server = http.createServer((request, response) => {
         const pathname = new URL(request.url, 'http://localhost').pathname;
         if (pathname === '/') {
-            response.writeHead(200, { 'Content-Type': 'text/html' });
-            response.end(html);
+            response.writeHead(200, { 'Content-Type': 'text/html', 'Cache-Control': 'no-store' });
+            response.end(html.replaceAll('{{ asset_revision }}', revision));
             return;
         }
         if (pathname.startsWith('/static/')) {
-            const filename = path.resolve(staticRoot, pathname.slice('/static/'.length));
+            const assetPath = pathname.slice('/static/'.length);
+            if (assetPath.startsWith('v/') && !assetPath.startsWith(`v/${revision}/`)) {
+                response.writeHead(404); response.end(); return;
+            }
+            const filename = path.resolve(staticRoot, assetPath.startsWith('v/') ? assetPath.slice(`v/${revision}/`.length) : assetPath);
             if (!filename.startsWith(staticRoot + path.sep)) {
                 response.writeHead(403); response.end(); return;
             }
             fs.readFile(filename, (error, body) => {
                 if (error) { response.writeHead(404); response.end(); return; }
-                response.writeHead(200, { 'Content-Type': contentTypes[path.extname(filename)] || 'application/octet-stream' });
+                response.writeHead(200, {
+                    'Content-Type': contentTypes[path.extname(filename)] || 'application/octet-stream',
+                    'Cache-Control': assetPath.startsWith('v/') ? 'public, max-age=31536000, immutable' : 'no-cache',
+                });
                 response.end(body);
             });
             return;
@@ -78,6 +84,8 @@ function createServer() {
                 connected: true, last_success_at: Date.now() / 1000,
                 age_seconds: 0, stale_after_seconds: 30,
             } };
+        } else if (pathname === '/api/price') {
+            body = { btc_price: 85000, btc_currency: 'USD', last_known_price: '85000', last_price_currency: 'USD', last_price_error: null };
         } else if (pathname === '/api/info') {
             body = {
                 blockchain: { ibd: false }, internet_state: 'green', api_available: true,
@@ -91,6 +99,7 @@ function createServer() {
     });
     return {
         server,
+        setRevision(value) { revision = value; },
         setPeerCount(count) { peers = peersForCount(count); peerRequests = 0; },
         get peerRequests() { return peerRequests; },
     };
@@ -155,4 +164,6 @@ async function main() {
     }
 }
 
-main().catch(error => { console.error(error); process.exitCode = 1; });
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+    main().catch(error => { console.error(error); process.exitCode = 1; });
+}

@@ -1,10 +1,6 @@
-'use strict';
-
-const assert = require('assert');
-const fs = require('fs');
-const vm = require('vm');
-const sandbox = { window: { AbortController, setTimeout, clearTimeout } };
-vm.runInNewContext(fs.readFileSync('src/static/js/features/peer-refresh.js', 'utf8'), sandbox);
+import { test, mock } from 'node:test';
+import * as BPMPeerRefresh from '../../src/static/js/peers/refresh.js';
+import assert from 'assert';
 
 function snapshot(peers, connected, lastSuccess = 1000, age = 0) {
     return { peers, status: {
@@ -12,12 +8,12 @@ function snapshot(peers, connected, lastSuccess = 1000, age = 0) {
     } };
 }
 
-(async () => {
+test('peer refresh', async () => {
     let now = 0;
     let response = snapshot([], null, null, null);
     const applied = [];
     const statuses = [];
-    const client = sandbox.window.BPMPeerRefresh.create({
+    const client = BPMPeerRefresh.create({
         now: () => now,
         api: { getJson: async () => {
             if (response instanceof Error) throw response;
@@ -71,7 +67,7 @@ function snapshot(peers, connected, lastSuccess = 1000, age = 0) {
 
     // A new page can display the server's cached peers during an RPC outage.
     const cached = [];
-    const initialCached = sandbox.window.BPMPeerRefresh.create({
+    const initialCached = BPMPeerRefresh.create({
         api: { getJson: async () => snapshot([{ id: 8 }], false, 900, 100) },
         onPeers: peers => cached.push(peers), onStatus: () => {},
     });
@@ -81,7 +77,7 @@ function snapshot(peers, connected, lastSuccess = 1000, age = 0) {
 
     let resolve;
     let requests = 0;
-    const delayed = sandbox.window.BPMPeerRefresh.create({
+    const delayed = BPMPeerRefresh.create({
         api: { getJson: () => { requests++; return new Promise(done => { resolve = done; }); } },
         onPeers: () => {}, onStatus: () => {},
     });
@@ -93,7 +89,7 @@ function snapshot(peers, connected, lastSuccess = 1000, age = 0) {
     resolve(snapshot([], true));
     await first;
 
-    const timedOut = sandbox.window.BPMPeerRefresh.create({
+    const timedOut = BPMPeerRefresh.create({
         timeoutMs: 5,
         api: { getJson: (_url, options) => new Promise((_resolve, reject) => {
             options.signal.addEventListener('abort', () => reject(new Error('aborted')));
@@ -102,10 +98,10 @@ function snapshot(peers, connected, lastSuccess = 1000, age = 0) {
     });
     await timedOut.refresh();
     assert.strictEqual(timedOut.getStatus().state, 'dashboard-unavailable');
-    const renderFailure = sandbox.window.BPMPeerRefresh.create({
+    const renderFailure = BPMPeerRefresh.create({
         api: { getJson: async () => snapshot([], true) },
         onPeers: () => { throw new Error('render bug'); }, onStatus: () => {},
     });
     await assert.rejects(renderFailure.refresh(), /render bug/);
     console.log('Peer refresh tests passed');
-})().catch(error => { console.error(error); process.exit(1); });
+});

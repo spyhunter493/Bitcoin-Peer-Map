@@ -1,19 +1,17 @@
-'use strict';
-const assert = require('assert');
-const fs = require('fs');
-const vm = require('vm');
+import { test, mock } from 'node:test';
+import * as BPMPolling from '../../src/static/js/core/polling.js';
+import assert from 'assert';
+
 const timers = new Map();
 let nextTimer = 0;
-const sandbox = { console, window: {
-    setInterval: (callback, interval) => { timers.set(++nextTimer, { callback, interval }); return nextTimer; },
-    clearInterval: id => timers.delete(id),
-} };
-vm.runInNewContext(fs.readFileSync('src/static/js/core/polling.js', 'utf8'), sandbox);
-(async () => {
+mock.method(globalThis, 'setInterval', (callback, interval) => { timers.set(++nextTimer, { callback, interval }); return nextTimer; });
+mock.method(globalThis, 'clearInterval', id => timers.delete(id));
+
+test('polling', async () => {
     let requests = 0;
     let finish;
     const errors = [];
-    const poller = sandbox.window.BPMPolling.create({ intervalMs: 10000,
+    const poller = BPMPolling.create({ intervalMs: 10000,
         task: () => { requests++; return new Promise(resolve => { finish = resolve; }); },
         onError: error => errors.push(error),
     });
@@ -38,7 +36,7 @@ vm.runInNewContext(fs.readFileSync('src/static/js/core/polling.js', 'utf8'), san
     await second;
     assert.strictEqual(timers.size, 0);
     assert.throws(() => poller.setIntervalMs(0), /Invalid/);
-    const failing = sandbox.window.BPMPolling.create({ intervalMs: 5,
+    const failing = BPMPolling.create({ intervalMs: 5,
         task: async () => { throw new Error('render failed'); }, onError: error => errors.push(error),
     });
     failing.start();
@@ -48,4 +46,4 @@ vm.runInNewContext(fs.readFileSync('src/static/js/core/polling.js', 'utf8'), san
     assert.strictEqual(errors[0].message, 'render failed');
     failing.stop();
     console.log('Polling lifecycle tests passed');
-})().catch(error => { console.error(error); process.exit(1); });
+});

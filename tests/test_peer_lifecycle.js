@@ -1,7 +1,6 @@
-'use strict';
-const assert = require('node:assert/strict');
+import assert from 'node:assert/strict';
 
-module.exports = async function assertPeerLifecycle(browser, baseUrl) {
+export default async function assertPeerLifecycle(browser, baseUrl) {
     for (const privateMode of [false, true]) {
         const context = await browser.newContext({ viewport: { width: 1638, height: 900 } });
         await context.addInitScript(() => {
@@ -45,13 +44,20 @@ module.exports = async function assertPeerLifecycle(browser, baseUrl) {
                 Object.entries(window.testDocumentListeners).map(([key, value]) => [key, value.size])
             ));
             const before = await listenerCounts();
-            for (let i = 0; i < (privateMode ? 50 : 2); i++) {
+            for (let i = 0; i < 50; i++) {
                 await row.click();
                 await page.waitForSelector('.peer-detail-popup.visible');
                 await page.locator('.peer-popup-close').click();
                 await page.waitForSelector('.peer-detail-popup', { state: 'detached' });
             }
             assert.deepEqual(await listenerCounts(), before, 'closing popups must release document listeners');
+            // Restore a still-connected focus target when the popup closes.
+            await page.locator('#zoom-in').focus();
+            await row.dispatchEvent('click');
+            await page.waitForSelector('.peer-detail-popup.visible');
+            await page.locator('.peer-popup-close').click();
+            await page.waitForSelector('.peer-detail-popup', { state: 'detached' });
+            assert.equal(await page.evaluate(() => document.activeElement.id), 'zoom-in');
             await row.click();
             await page.waitForSelector('.peer-detail-popup.visible');
             const popup = page.locator('.peer-detail-popup');

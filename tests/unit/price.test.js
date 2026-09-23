@@ -1,15 +1,14 @@
-'use strict';
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const vm = require('node:vm');
+import { test, mock } from 'node:test';
+import * as BPMPrice from '../../src/static/js/node/price.js';
+import assert from 'node:assert/strict';
 
-(async () => {
-    const sandbox = { window: {}, AbortSignal, Error };
-    vm.runInNewContext(fs.readFileSync('src/static/js/node/price.js', 'utf8'), sandbox);
+test('price', async () => {
+    
+    
     const requests = [];
     const api = { getJson: url => new Promise((resolve, reject) => requests.push({ url, resolve, reject })) };
     const shown = [];
-    const controller = sandbox.window.BPMPrice.create({ api, onPrice: data => shown.push(data) });
+    const controller = BPMPrice.create({ api, onPrice: data => shown.push(data) });
     const usd = controller.refresh();
     const anotherUsd = controller.refresh();
     assert.equal(requests.length, 1, 'concurrent refreshes share a currency request');
@@ -31,4 +30,4 @@ const vm = require('node:vm');
     assert.equal(shown.at(-1).last_price_currency, 'EUR');
     assert.equal(shown.at(-1).last_price_error, 'temporarily unavailable');
     console.log('Independent price refresh tests passed');
-})().catch(error => { console.error(error); process.exitCode = 1; });
+});

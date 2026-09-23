@@ -2,10 +2,10 @@
   "name": "bitcoin-peer-map",
   "version": "0.0.0",
   "private": true,
-  "type": "commonjs",
+  "type": "module",
   "scripts": {
     "check:js": "node scripts/check-js.js",
-    "test:js": "node tests/test_frontend_modules.js && node tests/test_distribution.js && node tests/test_peer_refresh.js && node tests/test_peer_table_model.js && node tests/test_peer_table_dom.js && node tests/test_polling.js && node tests/test_price.js",
+    "test:js": "cd tests/unit && node --test",
     "benchmark:dashboard": "node scripts/benchmark-dashboard.js",
     "test:layout": "node tests/test_layout.js",
     "test:layout:docker": "scripts/test-layout-docker.sh",

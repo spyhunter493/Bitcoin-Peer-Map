@@ -1,54 +1,88 @@
-/* Node health, prices, network counters, and system-stat presentation. */
-(function(global) {
-'use strict';
+import { errorMessage } from '../core/api.js';
+import { query, queryAll, required } from '../core/dom.js';
+import { dashboard as BPMDashboard } from '../core/dashboard-state.js';
+import * as BPMModal from '../core/modal.js';
+import * as BPMWorldMap from '../map/geometry.js';
+import * as BPMPolling from '../core/polling.js';
+import * as BPMPrice from './price.js';
+import * as BPMFormat from '../core/format.js';
+import * as BPMNodeMonitor from './monitor.js';
+/**
+ * @param {{config: import('../types').DashboardConfig; onAction: (action: import('../types').NodeAction) => void | Promise<void>}} options
+ */
 function create({ config: CFG, onAction }) {
-const dashboard = global.BPMDashboard;
-const escapeHtml = global.BPMModal.escapeHtml;
-const mrow = global.BPMModal.row;
-const clamp = global.BPMWorldMap.clamp;
-const effectivePollInterval = global.BPMPolling.effectiveInterval;
-const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
-const PRIVATE_NETS = new Set(['onion','i2p','cjdns']);
-const NET_DISPLAY = { ipv4: 'IPv4', ipv6: 'IPv6', onion: 'Tor', i2p: 'I2P', cjdns: 'CJDNS' };
-const fetchPeers = () => onAction({ type: 'refresh-peers' });
-const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor });
-    const prevValues = {};  // elementId -> previous numeric value
+    const dashboard = BPMDashboard;
+    const escapeHtml = BPMModal.escapeHtml;
+    const mrow = BPMModal.row;
+    const clamp = BPMWorldMap.clamp;
+    const effectivePollInterval = BPMPolling.effectiveInterval;
+    const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const PRIVATE_NETS = new Set(['onion', 'i2p', 'cjdns']);
+    /** @type {Record<string,string>} */
+    const NET_DISPLAY = { ipv4: 'IPv4', ipv6: 'IPv6', onion: 'Tor', i2p: 'I2P', cjdns: 'CJDNS' };
+    const fetchPeers = () => onAction({ type: 'refresh-peers' });
+    /** @param {HTMLElement | null} anchor */
+    const openDisplaySettingsPopup = (anchor) => onAction({ type: 'settings', anchor });
+    /** @type {Record<string, number | null>} */
+    const prevValues = {}; // elementId -> previous numeric value
 
+    /**
+     * @param {string} elementId
+     * @param {unknown} newValue
+     * @param {string} [mode]
+     */
     function pulseOnChange(elementId, newValue, mode) {
         const el = document.getElementById(elementId);
         if (!el) return;
         const numNew = parseFloat(String(newValue).replace(/[^0-9.\-]/g, ''));
-        if (isNaN(numNew)) { prevValues[elementId] = null; return; }
+        if (isNaN(numNew)) {
+            prevValues[elementId] = null;
+            return;
+        }
         const prev = prevValues[elementId];
         prevValues[elementId] = numNew;
         if (prev === null || prev === undefined) return;
         if (numNew === prev) return;
         const up = numNew > prev;
-        const allClasses = ['pulse-up','pulse-down','pulse-up-long','pulse-down-long','pulse-white','price-up','price-down','price-pulse-up','price-pulse-down'];
-        allClasses.forEach(c => el.classList.remove(c));
-        void el.offsetWidth;  // force reflow
+        const allClasses = [
+            'pulse-up',
+            'pulse-down',
+            'pulse-up-long',
+            'pulse-down-long',
+            'pulse-white',
+            'price-up',
+            'price-down',
+            'price-pulse-up',
+            'price-pulse-down',
+        ];
+        allClasses.forEach((c) => el.classList.remove(c));
+        void el.offsetWidth; // force reflow
         if (mode === 'white') {
             el.classList.add('pulse-white');
             setTimeout(() => el.classList.remove('pulse-white'), 1500);
         } else if (mode === 'long') {
             el.classList.add(up ? 'pulse-up-long' : 'pulse-down-long');
-            setTimeout(() => el.classList.remove('pulse-up-long','pulse-down-long'), 5000);
+            setTimeout(() => el.classList.remove('pulse-up-long', 'pulse-down-long'), 5000);
         } else if (mode === 'persistent') {
             el.classList.add(up ? 'price-pulse-up' : 'price-pulse-down');
             setTimeout(() => {
-                el.classList.remove('price-pulse-up','price-pulse-down');
+                el.classList.remove('price-pulse-up', 'price-pulse-down');
                 el.classList.add(up ? 'price-up' : 'price-down');
             }, 2000);
         } else {
             el.classList.add(up ? 'pulse-up' : 'pulse-down');
-            setTimeout(() => el.classList.remove('pulse-up','pulse-down'), 1500);
+            setTimeout(() => el.classList.remove('pulse-up', 'pulse-down'), 1500);
         }
         return up ? 1 : -1;
     }
 
+    /**
+     * @param {HTMLElement | null} parentEl
+     * @param {number} delta
+     */
     function showDeltaIndicator(parentEl, delta) {
         if (!parentEl || delta === 0) return;
-        const existing = parentEl.querySelector('.delta-indicator');
+        const existing = query('.delta-indicator', parentEl);
         if (existing) existing.remove();
         const span = document.createElement('span');
         span.className = 'delta-indicator ' + (delta > 0 ? 'delta-up' : 'delta-down');
@@ -69,31 +103,48 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
     // Flight deck is always visible (toggle removed)
 
     // Previous flight deck counts for delta indicators
+    /** @type {Record<string, number>} */
     const fdPrevCounts = {};
 
     // Cached flight deck counts and scores for tooltip use
-    let fdCachedCounts = { ipv4: {in:0,out:0}, ipv6: {in:0,out:0}, onion: {in:0,out:0}, i2p: {in:0,out:0}, cjdns: {in:0,out:0} };
+    /** @type {Record<string, {in: number; out: number}>} */
+    let fdCachedCounts = {
+        ipv4: { in: 0, out: 0 },
+        ipv6: { in: 0, out: 0 },
+        onion: { in: 0, out: 0 },
+        i2p: { in: 0, out: 0 },
+        cjdns: { in: 0, out: 0 },
+    };
+    /** @type {Record<string, number | null>} */
     let fdCachedScores = { ipv4: null, ipv6: null };
+    /** @type {Record<string, import('../types').NetworkDetails>} */
     let fdCachedNetworkDetails = {};
 
+    /** @param {import('../types').Peer[]} peers */
     function updateFlightDeck(peers) {
-        const counts = { ipv4: {in:0,out:0}, ipv6: {in:0,out:0}, onion: {in:0,out:0}, i2p: {in:0,out:0}, cjdns: {in:0,out:0} };
+        /** @type {Record<string, {in: number; out: number}>} */
+        const counts = {
+            ipv4: { in: 0, out: 0 },
+            ipv6: { in: 0, out: 0 },
+            onion: { in: 0, out: 0 },
+            i2p: { in: 0, out: 0 },
+            cjdns: { in: 0, out: 0 },
+        };
         for (const n of peers) {
-
             const net = n.network || 'ipv4';
             if (!counts[net]) continue;
             if (n.direction === 'IN') counts[net].in++;
             else counts[net].out++;
         }
         fdCachedCounts = counts;
-        const netMap = { ipv4:'ipv4', ipv6:'ipv6', onion:'tor', i2p:'i2p', cjdns:'cjdns' };
+        const netMap = { ipv4: 'ipv4', ipv6: 'ipv6', onion: 'tor', i2p: 'i2p', cjdns: 'cjdns' };
         for (const [net, label] of Object.entries(netMap)) {
             const c = counts[net];
             const inEl = document.getElementById(`fd-${label}-in`);
             const outEl = document.getElementById(`fd-${label}-out`);
             if (inEl) {
                 const oldIn = fdPrevCounts[`${net}-in`] || 0;
-                inEl.textContent = c.in;
+                inEl.textContent = String(c.in);
                 if (oldIn !== c.in && fdPrevCounts[`${net}-in`] !== undefined) {
                     pulseOnChange(`fd-${label}-in`, c.in);
                     showDeltaIndicator(inEl.parentElement, c.in - oldIn);
@@ -102,7 +153,7 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
             }
             if (outEl) {
                 const oldOut = fdPrevCounts[`${net}-out`] || 0;
-                outEl.textContent = c.out;
+                outEl.textContent = String(c.out);
                 if (oldOut !== c.out && fdPrevCounts[`${net}-out`] !== undefined) {
                     pulseOnChange(`fd-${label}-out`, c.out);
                     showDeltaIndicator(outEl.parentElement, c.out - oldOut);
@@ -119,7 +170,7 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
                     dotEl.className = 'fd-net-dot disabled';
                 }
             }
-            const chipEl = document.querySelector(`.fd-net-chip[data-net="${net}"]`);
+            const chipEl = query(`.fd-net-chip[data-net="${net}"]`, document);
             if (chipEl) {
                 const addresses = fdCachedNetworkDetails[net]?.localaddresses || [];
                 chipEl.classList.toggle('has-local-address', addresses.length > 0);
@@ -134,29 +185,35 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
     const fdTooltipEl = document.getElementById('fd-tooltip');
 
     // Friendly names and descriptions for each network
+    /** @type {Record<string, {full: string; label: string; isOverlay: boolean}>} */
     const FD_NET_INFO = {
-        ipv4:  { full: 'Public IPv4 network', label: 'Public IPv4', isOverlay: false },
-        ipv6:  { full: 'Public IPv6 network', label: 'Public IPv6', isOverlay: false },
+        ipv4: { full: 'Public IPv4 network', label: 'Public IPv4', isOverlay: false },
+        ipv6: { full: 'Public IPv6 network', label: 'Public IPv6', isOverlay: false },
         onion: { full: 'Tor onion routing network', label: 'Tor onion routing network', isOverlay: true },
-        i2p:   { full: 'I2P anonymous network', label: 'I2P anonymous network', isOverlay: true },
+        i2p: { full: 'I2P anonymous network', label: 'I2P anonymous network', isOverlay: true },
         cjdns: { full: 'CJDNS encrypted mesh network', label: 'CJDNS encrypted mesh network', isOverlay: true },
     };
 
+    /** @param {import('../types').NodeAddress} address */
     function formatNodeAddress(address) {
         if (!address || !address.address) return '';
         const host = String(address.address);
         const port = Number(address.port || 0);
         if (!port) return host;
-        return host.includes(':') && !host.endsWith('.onion') && !host.endsWith('.i2p')
-            ? `[${host}]:${port}`
-            : `${host}:${port}`;
+        return host.includes(':') && !host.endsWith('.onion') && !host.endsWith('.i2p') ? `[${host}]:${port}` : `${host}:${port}`;
     }
 
+    /** @param {string} value */
     function shortNodeAddress(value) {
         if (value.length <= 36) return value;
         return `${value.slice(0, 16)}...${value.slice(-15)}`;
     }
 
+    /** @param {string} netKey
+     *
+     * @param {string} rowClass
+     * @param {string} mutedClass
+     */
     function buildNetworkIdentityRows(netKey, rowClass, mutedClass) {
         const details = fdCachedNetworkDetails[netKey];
         if (!details) return '';
@@ -188,6 +245,7 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
         return html;
     }
 
+    /** @param {string} netKey */
     function buildFdTooltip(netKey) {
         const info = FD_NET_INFO[netKey];
         if (!info) return '';
@@ -224,16 +282,17 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
                 html += '<div class="fdt-row-muted">Appears to be properly configured</div>';
             }
         } else {
-            html += '<div class="fdt-warn">This network is either disabled or not currently connected.<br>Please check your node network settings.</div>';
+            html +=
+                '<div class="fdt-warn">This network is either disabled or not currently connected.<br>Please check your node network settings.</div>';
         }
 
         return html;
     }
 
     // Attach hover + click listeners to all flight deck chips
-    document.querySelectorAll('.fd-net-chip').forEach(chip => {
+    queryAll('.fd-net-chip', document).forEach((chip) => {
         chip.addEventListener('mouseenter', () => {
-            const netKey = chip.dataset.net;
+            const netKey = chip.dataset.net || '';
             if (!fdTooltipEl) return;
             const html = buildFdTooltip(netKey);
             if (!html) return;
@@ -242,7 +301,7 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
             // Position below the chip
             const rect = chip.getBoundingClientRect();
             fdTooltipEl.style.left = rect.left + 'px';
-            fdTooltipEl.style.top = (rect.bottom + 6) + 'px';
+            fdTooltipEl.style.top = rect.bottom + 6 + 'px';
         });
         chip.addEventListener('mouseleave', () => {
             if (fdTooltipEl) fdTooltipEl.classList.add('hidden');
@@ -251,23 +310,26 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
         chip.addEventListener('click', (e) => {
             e.stopPropagation();
             if (fdTooltipEl) fdTooltipEl.classList.add('hidden');
-            const netKey = chip.dataset.net;
+            const netKey = chip.dataset.net || '';
             onAction({ type: 'network', network: netKey });
         });
     });
 
     // ═══════════════════════════════════════════════════════════
 
+    /** @type {import('../types').PriceInfo | null} */
     let lastPriceInfo = null;
-    const priceController = window.BPMPrice.create({ onPrice(info) {
-        lastPriceInfo = info;
-        updateBtcPricePanel(info);
-    } });
-    const pricePolling = window.BPMPolling.create({
+    const priceController = BPMPrice.create({
+        onPrice(info) {
+            lastPriceInfo = info;
+            updateBtcPricePanel(info);
+        },
+    });
+    const pricePolling = BPMPolling.create({
         task: priceController.refresh,
         intervalMs: effectivePollInterval(CFG.infoPollInterval),
     });
-    const infoPolling = window.BPMPolling.create({
+    const infoPolling = BPMPolling.create({
         task: refreshNodeInfo,
         intervalMs: effectivePollInterval(CFG.infoPollInterval),
     });
@@ -276,28 +338,37 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
     // CURRENCY SELECTOR DROPDOWN
     // ═══════════════════════════════════════════════════════════
 
-    const CURRENCIES = ['USD','EUR','GBP','JPY','CHF','CAD','AUD','CNY','NZD','SGD'];
+    const CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'CHF', 'CAD', 'AUD', 'CNY', 'NZD', 'SGD'];
+    /** @type {Record<string, {symbol: string; decimals: number}>} */
     const CURRENCY_META = {
-        USD: { symbol: '$',   decimals: 2 },
-        EUR: { symbol: '\u20AC',  decimals: 2 },  // €
-        GBP: { symbol: '\u00A3',  decimals: 2 },  // £
-        JPY: { symbol: '\u00A5',  decimals: 0 },  // ¥
+        USD: { symbol: '$', decimals: 2 },
+        EUR: { symbol: '\u20AC', decimals: 2 }, // €
+        GBP: { symbol: '\u00A3', decimals: 2 }, // £
+        JPY: { symbol: '\u00A5', decimals: 0 }, // ¥
         CHF: { symbol: 'CHF ', decimals: 2 },
-        CAD: { symbol: 'C$',  decimals: 2 },
-        AUD: { symbol: 'A$',  decimals: 2 },
-        CNY: { symbol: 'CN\u00A5', decimals: 2 },  // CN¥
+        CAD: { symbol: 'C$', decimals: 2 },
+        AUD: { symbol: 'A$', decimals: 2 },
+        CNY: { symbol: 'CN\u00A5', decimals: 2 }, // CN¥
         NZD: { symbol: 'NZ$', decimals: 2 },
-        SGD: { symbol: 'S$',  decimals: 2 },
+        SGD: { symbol: 'S$', decimals: 2 },
     };
 
+    /**
+     * @param {number} price
+     * @param {string} currencyCode
+     */
     function formatCurrencyPrice(price, currencyCode) {
         const meta = CURRENCY_META[currencyCode] || { symbol: '', decimals: 2 };
-        return meta.symbol + price.toLocaleString(undefined, {
-            minimumFractionDigits: meta.decimals,
-            maximumFractionDigits: meta.decimals,
-        });
+        return (
+            meta.symbol +
+            price.toLocaleString(undefined, {
+                minimumFractionDigits: meta.decimals,
+                maximumFractionDigits: meta.decimals,
+            })
+        );
     }
 
+    /** @type {HTMLElement | null} */
     let currencyDropdownEl = null;
 
     const currCodeEl = document.getElementById('mo-btc-currency');
@@ -328,22 +399,23 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
             const rect = anchor.getBoundingClientRect();
             const ddWidth = 200; // approx dropdown width
             dd.style.left = Math.max(8, rect.left + rect.width / 2 - ddWidth / 2) + 'px';
-            dd.style.top = (rect.bottom + 6) + 'px';
+            dd.style.top = rect.bottom + 6 + 'px';
         }
 
-        dd.querySelectorAll('.curr-btn').forEach(btn => {
+        queryAll('.curr-btn', dd).forEach((btn) => {
             btn.addEventListener('click', () => {
-                priceController.setCurrency(btn.dataset.curr);
-                dd.querySelectorAll('.curr-btn').forEach(b => b.classList.remove('active'));
+                priceController.setCurrency(btn.dataset.curr || 'USD');
+                queryAll('.curr-btn', dd).forEach((b) => b.classList.remove('active'));
                 btn.classList.add('active');
             });
         });
 
-        const freqInput = document.getElementById('curr-freq-input');
+        /** @type {HTMLInputElement} */
+        const freqInput = required('#curr-freq-input');
         if (freqInput) {
             freqInput.addEventListener('change', () => {
                 const v = clamp(parseInt(freqInput.value) || 10, 5, 99);
-                freqInput.value = v;
+                freqInput.value = String(v);
                 // Restart info poll with new interval
                 CFG.infoPollInterval = v * 1000;
                 onAction({ type: 'intervals' });
@@ -356,9 +428,14 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
         }, 0);
     }
 
+    /** @param {MouseEvent} e */
     function closeCurrencyOnOutside(e) {
         const bar = btcPriceBarEl || currCodeEl;
-        if (currencyDropdownEl && !currencyDropdownEl.contains(e.target) && (!bar || !bar.contains(e.target))) {
+        if (
+            currencyDropdownEl &&
+            !currencyDropdownEl.contains(e.target instanceof Node ? e.target : null) &&
+            (!bar || !bar.contains(e.target instanceof Node ? e.target : null))
+        ) {
             closeCurrencyDropdown();
         }
     }
@@ -385,19 +462,33 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
         overlay.id = 'geodb-modal';
         overlay.innerHTML = `<div class="modal-box" style="max-width:480px"><div class="modal-header"><span class="modal-title">GeoIP DB</span><button class="modal-close" id="geodb-modal-close">&times;</button></div><div class="modal-body" id="geodb-modal-body"><div style="color:var(--text-muted);text-align:center;padding:16px">Loading...</div></div></div>`;
         document.body.appendChild(overlay);
-        document.getElementById('geodb-modal-close').addEventListener('click', () => overlay.remove());
-        overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+        required('#geodb-modal-close').addEventListener('click', () => overlay.remove());
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) overlay.remove();
+        });
 
-        const body = document.getElementById('geodb-modal-body');
+        const body = required('#geodb-modal-body');
 
         if (lastNodeInfo && lastNodeInfo.geo_db_stats) {
             const stats = lastNodeInfo.geo_db_stats;
             const statusText = stats.status || 'unknown';
-            const statusCls = statusText === 'ok' ? 'ok' : (statusText === 'disabled' ? 'disabled' : 'error');
+            const statusCls = statusText === 'ok' ? 'ok' : statusText === 'disabled' ? 'disabled' : 'error';
             let html = '';
             html += `<div class="modal-row"><span class="modal-label" title="Database health status">Status</span><span class="geodb-status-badge ${statusCls}" title="${escapeHtml(statusText.toUpperCase())}">${escapeHtml(statusText.toUpperCase())}</span></div>`;
-            if (stats.entries != null) html += mrow('Entries', stats.entries.toLocaleString(), 'Total number of IP geolocation records in the database', `${stats.entries.toLocaleString()} records`);
-            if (stats.size_bytes != null) html += mrow('Size', (stats.size_bytes / 1e6).toFixed(1) + ' MB', 'Database file size on disk', `${(stats.size_bytes / 1e6).toFixed(1)} MB`);
+            if (stats.entries != null)
+                html += mrow(
+                    'Entries',
+                    stats.entries.toLocaleString(),
+                    'Total number of IP geolocation records in the database',
+                    `${stats.entries.toLocaleString()} records`
+                );
+            if (stats.size_bytes != null)
+                html += mrow(
+                    'Size',
+                    (stats.size_bytes / 1e6).toFixed(1) + ' MB',
+                    'Database file size on disk',
+                    `${(stats.size_bytes / 1e6).toFixed(1)} MB`
+                );
             if (stats.newest_age_seconds != null) {
                 const secs = stats.newest_age_seconds;
                 let newestText;
@@ -416,12 +507,30 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
                 }
                 html += mrow('Newest Entry', newestText, 'Age of the newest geolocation record', newestText + ' old');
             } else if (stats.newest_age_days != null) {
-                html += mrow('Newest Entry', stats.newest_age_days + ' days', 'Age of the newest geolocation record', `${stats.newest_age_days} days old`);
+                html += mrow(
+                    'Newest Entry',
+                    stats.newest_age_days + ' days',
+                    'Age of the newest geolocation record',
+                    `${stats.newest_age_days} days old`
+                );
             }
-            if (stats.oldest_age_days != null) html += mrow('Oldest Entry', stats.oldest_age_days + ' days', 'Age of the oldest geolocation record', `${stats.oldest_age_days} days old`);
-            if (stats.path) html += `<div class="modal-row"><span class="modal-label" title="File system path to the database">Path</span><span class="modal-val" style="font-size:9px;max-width:260px" title="${escapeHtml(stats.path)}">${escapeHtml(stats.path)}</span></div>`;
+            if (stats.oldest_age_days != null)
+                html += mrow(
+                    'Oldest Entry',
+                    stats.oldest_age_days + ' days',
+                    'Age of the oldest geolocation record',
+                    `${stats.oldest_age_days} days old`
+                );
+            if (stats.path)
+                html += `<div class="modal-row"><span class="modal-label" title="File system path to the database">Path</span><span class="modal-val" style="font-size:9px;max-width:260px" title="${escapeHtml(stats.path)}">${escapeHtml(stats.path)}</span></div>`;
             const alVal = stats.auto_lookup ? 'On' : 'Off';
-            html += mrow('Auto-resolve', alVal, 'Master switch — enables the GeoIP system that resolves peer IPs to locations on the map', alVal, stats.auto_lookup ? 'modal-val-ok' : 'modal-val-warn');
+            html += mrow(
+                'Auto-resolve',
+                alVal,
+                'Master switch — enables the GeoIP system that resolves peer IPs to locations on the map',
+                alVal,
+                stats.auto_lookup ? 'modal-val-ok' : 'modal-val-warn'
+            );
             // Auto-update toggle switch (persists to settings.json)
             const auOn = !!stats.auto_update;
             html += `<div class="modal-row"><span class="modal-label" title="Automatically update the geolocation database (at startup and once per hour while the map is open)">Auto-update</span><span class="modal-val" style="display:flex;align-items:center;gap:6px"><label class="geodb-toggle" title="${auOn ? 'Click to disable auto-update' : 'Click to enable auto-update'}"><input type="checkbox" id="geodb-autoupdate-toggle" ${auOn ? 'checked' : ''}><span class="geodb-toggle-slider"></span></label></span></div>`;
@@ -434,7 +543,7 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
             body.innerHTML = html;
 
             // Auto-update toggle handler (persists to settings.json)
-            document.getElementById('geodb-autoupdate-toggle').addEventListener('change', async () => {
+            required('#geodb-autoupdate-toggle').addEventListener('change', async () => {
                 try {
                     const resp = await fetch('/api/geodb/toggle-auto-update', { method: 'POST' });
                     const data = await resp.json();
@@ -451,7 +560,7 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
             });
 
             // DB-only toggle handler
-            document.getElementById('geodb-dbonly-toggle').addEventListener('change', async () => {
+            required('#geodb-dbonly-toggle').addEventListener('change', async () => {
                 try {
                     const resp = await fetch('/api/geodb/toggle-db-only', { method: 'POST' });
                     const data = await resp.json();
@@ -464,8 +573,8 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
                 }
             });
 
-            document.getElementById('geodb-update-btn').addEventListener('click', async () => {
-                const resultEl = document.getElementById('geodb-result');
+            required('#geodb-update-btn').addEventListener('click', async () => {
+                const resultEl = required('#geodb-result');
                 resultEl.textContent = 'Updating...';
                 resultEl.style.color = 'var(--text-secondary)';
                 try {
@@ -474,7 +583,7 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
                     resultEl.textContent = data.message || (data.success ? 'Done' : 'Failed');
                     resultEl.style.color = data.success ? 'var(--ok)' : 'var(--err)';
                 } catch (err) {
-                    resultEl.textContent = 'Error: ' + err.message;
+                    resultEl.textContent = 'Error: ' + errorMessage(err);
                     resultEl.style.color = 'var(--err)';
                 }
             });
@@ -492,36 +601,47 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
         overlay.className = 'modal-overlay';
         overlay.id = 'connect-peer-modal';
         overlay.innerHTML = `<div class="modal-box" style="max-width:520px">
-            <div class="modal-header"><span class="modal-title">Connect Peer</span><button class="modal-close" id="connect-close">&times;</button></div>
-            <div class="modal-body">
-                <div class="connect-instructions">Enter a peer address to connect. Your node will attempt a one-time (onetry) connection.</div>
-                <div class="connect-example">IPv4: 1.2.3.4:8333</div>
-                <div class="connect-example">IPv6: [2001:db8::1]:8333</div>
-                <div class="connect-example">Tor: abc...xyz.onion:8333</div>
-                <div class="connect-example">I2P: abc...xyz.b32.i2p:0</div>
-                <div class="connect-example">CJDNS: [fc00::1]:8333</div>
-                <div class="connect-input-row">
-                    <input type="text" class="connect-input" id="connect-addr-input" placeholder="Enter peer address...">
-                    <button class="connect-btn" id="connect-go-btn">Connect</button>
-                </div>
-                <div class="connect-result" id="connect-result"></div>
-                <div class="connect-permanent-hint">For a permanent connection, add the peer to the Bitcoin node's <code>addnode</code> configuration.</div>
+        <div class="modal-header"><span class="modal-title">Connect Peer</span><button class="modal-close" id="connect-close">&times;</button></div>
+        <div class="modal-body">
+            <div class="connect-instructions">Enter a peer address to connect. Your node will attempt a one-time (onetry) connection.</div>
+            <div class="connect-example">IPv4: 1.2.3.4:8333</div>
+            <div class="connect-example">IPv6: [2001:db8::1]:8333</div>
+            <div class="connect-example">Tor: abc...xyz.onion:8333</div>
+            <div class="connect-example">I2P: abc...xyz.b32.i2p:0</div>
+            <div class="connect-example">CJDNS: [fc00::1]:8333</div>
+            <div class="connect-input-row">
+                <input type="text" class="connect-input" id="connect-addr-input" placeholder="Enter peer address...">
+                <button class="connect-btn" id="connect-go-btn">Connect</button>
             </div>
-        </div>`;
+            <div class="connect-result" id="connect-result"></div>
+            <div class="connect-permanent-hint">For a permanent connection, add the peer to the Bitcoin node's <code>addnode</code> configuration.</div>
+        </div>
+    </div>`;
         document.body.appendChild(overlay);
-        document.getElementById('connect-close').addEventListener('click', () => overlay.remove());
-        overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+        required('#connect-close').addEventListener('click', () => overlay.remove());
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) overlay.remove();
+        });
 
-        const input = document.getElementById('connect-addr-input');
-        const goBtn = document.getElementById('connect-go-btn');
-        const resultEl = document.getElementById('connect-result');
+        /** @type {HTMLInputElement} */
+        const input = required('#connect-addr-input');
+        const goBtn = required('#connect-go-btn');
+        const resultEl = required('#connect-result');
         goBtn.addEventListener('click', async () => {
             const addr = input.value.trim();
-            if (!addr) { resultEl.textContent = 'Please enter an address'; resultEl.className = 'connect-result err'; return; }
+            if (!addr) {
+                resultEl.textContent = 'Please enter an address';
+                resultEl.className = 'connect-result err';
+                return;
+            }
             resultEl.textContent = 'Connecting...';
             resultEl.className = 'connect-result';
             try {
-                const resp = await fetch('/api/peer/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ address: addr }) });
+                const resp = await fetch('/api/peer/connect', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ address: addr }),
+                });
                 const data = await resp.json();
                 if (data.success) {
                     resultEl.textContent = `Connection attempt sent to ${data.address}`;
@@ -532,49 +652,69 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
                     resultEl.className = 'connect-result err';
                 }
             } catch (err) {
-                resultEl.textContent = 'Error: ' + err.message;
+                resultEl.textContent = 'Error: ' + errorMessage(err);
                 resultEl.className = 'connect-result err';
             }
         });
 
-        input.addEventListener('keydown', (e) => { if (e.key === 'Enter') goBtn.click(); });
-
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') goBtn.click();
+        });
     }
 
     // Connect Peer button handler
     const connectPeerBtn = document.getElementById('btn-connect-peer');
     if (connectPeerBtn) {
-        connectPeerBtn.addEventListener('click', (e) => { e.stopPropagation(); openConnectPeerModal(); });
+        connectPeerBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openConnectPeerModal();
+        });
     }
 
     // Node Info button handler (old handle btn, kept for compatibility)
     const nodeInfoBtn = document.getElementById('btn-node-info');
     if (nodeInfoBtn) {
-        nodeInfoBtn.addEventListener('click', (e) => { e.stopPropagation(); openNodeInfoModal(); });
+        nodeInfoBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openNodeInfoModal();
+        });
     }
 
     // System Info button handler (old handle btn, kept for compatibility)
     const systemInfoBtn = document.getElementById('btn-system-info');
     if (systemInfoBtn) {
-        systemInfoBtn.addEventListener('click', (e) => { e.stopPropagation(); openSystemInfoModal(); });
+        systemInfoBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openSystemInfoModal();
+        });
     }
 
     // Right overlay: NODE INFO link → opens Node Info modal
     const roNodeInfoLink = document.getElementById('ro-node-info');
     if (roNodeInfoLink) {
-        roNodeInfoLink.addEventListener('click', (e) => { e.stopPropagation(); openNodeInfoModal(); });
+        roNodeInfoLink.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openNodeInfoModal();
+        });
     }
 
     // Right overlay: GEOIP DB link
     const roGeodbLink = document.getElementById('ro-geodb-link');
     if (roGeodbLink) {
-        roGeodbLink.addEventListener('click', (e) => { e.stopPropagation(); openGeoDBDropdown(); });
+        roGeodbLink.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openGeoDBDropdown();
+        });
     }
 
     // Left overlay: Peers/CPU/RAM/NET rows → click opens system info modal
-    ['mo-row-peers', 'mo-row-cpu', 'mo-row-ram', 'mo-row-netin', 'mo-row-netout'].forEach(id => {
+    ['mo-row-peers', 'mo-row-cpu', 'mo-row-ram', 'mo-row-netin', 'mo-row-netout'].forEach((id) => {
         const el = document.getElementById(id);
-        if (el) el.addEventListener('click', (e) => { e.stopPropagation(); openSystemInfoModal(); });
+        if (el)
+            el.addEventListener('click', (e) => {
+                e.stopPropagation();
+                openSystemInfoModal();
+            });
     });
 
     // BTC price bar: click toggles currency selector
@@ -591,9 +731,13 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
     }
 
     // Right overlay: click Update/Status rows → open settings popup
-    ['ro-row-countdown', 'ro-row-statusmsg'].forEach(id => {
+    ['ro-row-countdown', 'ro-row-statusmsg'].forEach((id) => {
         const el = document.getElementById(id);
-        if (el) el.addEventListener('click', (e) => { e.stopPropagation(); openDisplaySettingsPopup(el); });
+        if (el)
+            el.addEventListener('click', (e) => {
+                e.stopPropagation();
+                openDisplaySettingsPopup(el);
+            });
     });
 
     // Right overlay: DISPLAY SETTINGS link → open settings popup
@@ -607,7 +751,8 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
 
     // ═══════════════════════════════════════════════════════════
 
-    let lastNodeInfo = null;  // Full /api/info response for Node Info card
+    /** @type {import('../types').NodeInfo | null} */
+    let lastNodeInfo = null; // Full /api/info response for Node Info card
 
     // Track previous internet state for toast notifications
     let _prevInternetState = 'green';
@@ -615,10 +760,15 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
 
     // ── DB auto-update — once per hour while map is open ──
     const DB_AUTO_UPDATE_INTERVAL = 60 * 60 * 1000; // 1 hour
+    /** @type {number | null} */
     let dbAutoUpdateTimer = null;
     const dbStatusEl = document.getElementById('db-update-status');
 
-    /** Show a temporary message in the top bar DB status area. */
+    /** Show a temporary message in the top bar DB status area.
+     *
+     * @param {string} text
+     * @param {string} [cls]
+     */
     function showDbStatus(text, cls) {
         if (!dbStatusEl) return;
         dbStatusEl.textContent = text;
@@ -632,6 +782,9 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
         dbStatusEl.className = 'db-update-status';
     }
 
+    /**
+     * @param {import('../types').NodeTraffic | null} traffic
+     */
     function updateNodeTrafficTotals(traffic) {
         if (!traffic) return;
         const inEl = document.getElementById('mo-p2p-in');
@@ -639,12 +792,12 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
         const downloaded = Number(traffic.download_bytes || 0);
         const uploaded = Number(traffic.upload_bytes || 0);
         if (inEl) {
-            inEl.textContent = traffic.download_fmt || window.BPMFormat.fmtBytesShort(downloaded);
+            inEl.textContent = traffic.download_fmt || BPMFormat.fmtBytesShort(downloaded);
             inEl.title = `${downloaded.toLocaleString()} bytes downloaded since Bitcoin Peer Map started`;
             pulseOnChange('mo-p2p-in', downloaded, 'white');
         }
         if (outEl) {
-            outEl.textContent = traffic.upload_fmt || window.BPMFormat.fmtBytesShort(uploaded);
+            outEl.textContent = traffic.upload_fmt || BPMFormat.fmtBytesShort(uploaded);
             outEl.title = `${uploaded.toLocaleString()} bytes uploaded since Bitcoin Peer Map started`;
             pulseOnChange('mo-p2p-out', uploaded, 'white');
         }
@@ -655,7 +808,7 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
         // 3-second countdown
         for (let i = 3; i >= 1; i--) {
             showDbStatus(`Updating DB in ${i}...`);
-            await new Promise(r => setTimeout(r, 1000));
+            await new Promise((r) => setTimeout(r, 1000));
         }
         showDbStatus('Checking for DB update...');
         try {
@@ -695,6 +848,7 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
         try {
             const resp = await fetch('/api/info?include_price=false');
             if (!resp.ok) return;
+            /** @type {import('../types').NodeInfo} */
             const info = await resp.json();
 
             lastNodeInfo = info;
@@ -734,17 +888,16 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
             fdCachedNetworkDetails = info.network_details || {};
 
             updateHUD();
-
         } catch (err) {
             console.error('[Bitcoin Peer Map] Failed to fetch info:', err);
         }
     }
 
-    const nodeMonitor = window.BPMNodeMonitor.create({
+    const nodeMonitor = BPMNodeMonitor.create({
         getNodeInfo: () => lastNodeInfo,
         getCurrency: () => priceController.currency,
         currencyMeta: CURRENCY_META,
-        formatBytes: window.BPMFormat.fmtBytesShort,
+        formatBytes: BPMFormat.fmtBytesShort,
     });
 
     function openRecentBlocksModal() {
@@ -759,18 +912,21 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
         nodeMonitor.openChainTips();
     }
 
-    /** Update BTC Price in left map overlay + ₿ symbol coloring */
+    /** Update BTC Price in left map overlay + ₿ symbol coloring
+     *
+     * @param {import('../types').PriceInfo} info
+     */
     function updateBtcPricePanel(info) {
         const priceEl = document.getElementById('mo-btc-price');
         const arrowEl = document.getElementById('mo-btc-arrow');
         if (!priceEl) return;
 
         // Remove any existing asterisks
-        let existingAst = priceEl.parentElement && priceEl.parentElement.querySelector('.price-offline-ast');
+        let existingAst = priceEl.parentElement && query('.price-offline-ast', priceEl.parentElement);
         if (existingAst) existingAst.remove();
 
         if (info.btc_price) {
-            const price = parseFloat(info.btc_price);
+            const price = Number(info.btc_price);
             priceEl.textContent = formatCurrencyPrice(price, priceController.currency);
             priceEl.style.color = '';
             priceEl.title = '';
@@ -791,25 +947,31 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
             priceEl.textContent = formatCurrencyPrice(price, curr);
             priceEl.style.color = 'var(--text-muted)';
             priceEl.title = 'OFFLINE... Waiting for connection';
-            if (arrowEl) { arrowEl.textContent = ''; arrowEl.className = 'mo-btc-arrow'; }
+            if (arrowEl) {
+                arrowEl.textContent = '';
+                arrowEl.className = 'mo-btc-arrow';
+            }
             // Add red asterisks
             const ast = document.createElement('span');
             ast.className = 'price-offline-ast';
             ast.textContent = '**';
             ast.style.cssText = 'color:var(--err);font-weight:700;margin-left:3px;font-size:11px';
-            priceEl.parentElement.appendChild(ast);
+            priceEl.parentElement?.appendChild(ast);
         } else {
             // No price at all — show dashes
             priceEl.textContent = '- - -';
             priceEl.style.color = 'var(--text-muted)';
             priceEl.title = 'OFFLINE... Waiting for connection';
-            if (arrowEl) { arrowEl.textContent = ''; arrowEl.className = 'mo-btc-arrow'; }
+            if (arrowEl) {
+                arrowEl.textContent = '';
+                arrowEl.className = 'mo-btc-arrow';
+            }
             // Add red asterisks
             const ast = document.createElement('span');
             ast.className = 'price-offline-ast';
             ast.textContent = '**';
             ast.style.cssText = 'color:var(--err);font-weight:700;margin-left:3px;font-size:11px';
-            priceEl.parentElement.appendChild(ast);
+            priceEl.parentElement?.appendChild(ast);
         }
 
         // Currency code display
@@ -821,6 +983,9 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
     // CONNECTION STATUS (topbar dot + text)
     // ═══════════════════════════════════════════════════════════
 
+    /**
+     * @param {import('../types').PeerDataStatus} status
+     */
     function renderPeerDataStatus(status) {
         const labels = {
             live: 'Live',
@@ -842,13 +1007,20 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
         }
         if (ageEl) {
             const seconds = status.ageSeconds === null ? null : Math.floor(status.ageSeconds);
-            const age = seconds === null ? 'Never' : seconds < 60 ? seconds + 's ago'
-                : seconds < 3600 ? Math.floor(seconds / 60) + 'm ' + (seconds % 60) + 's ago'
-                : Math.floor(seconds / 3600) + 'h ' + Math.floor(seconds % 3600 / 60) + 'm ago';
+            const age =
+                seconds === null
+                    ? 'Never'
+                    : seconds < 60
+                      ? seconds + 's ago'
+                      : seconds < 3600
+                        ? Math.floor(seconds / 60) + 'm ' + (seconds % 60) + 's ago'
+                        : Math.floor(seconds / 3600) + 'h ' + Math.floor((seconds % 3600) / 60) + 'm ago';
             ageEl.textContent = age + (status.stale ? ' (cached)' : '');
             ageEl.dataset.stale = String(status.stale);
-            ageEl.title = status.lastSuccessAt === null ? 'No successful peer snapshot yet'
-                : 'Last successful peer snapshot: ' + new Date(status.lastSuccessAt * 1000).toLocaleString();
+            ageEl.title =
+                status.lastSuccessAt === null
+                    ? 'No successful peer snapshot yet'
+                    : 'Last successful peer snapshot: ' + new Date(status.lastSuccessAt * 1000).toLocaleString();
         }
         if (dot) {
             dot.classList.toggle('online', status.state === 'live');
@@ -863,6 +1035,9 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
     // INTERNET CONNECTIVITY INDICATOR
     // ═══════════════════════════════════════════════════════════
 
+    /**
+     * @param {string} state
+     */
     function updateInternetDot(state) {
         const dot = document.getElementById('internet-dot');
         const txt = document.getElementById('internet-text');
@@ -890,12 +1065,12 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
         el.id = 'conn-restored-toast';
         el.textContent = 'Connection restored';
         el.style.cssText = `
-            position:fixed;top:50px;left:50%;transform:translateX(-50%);z-index:400;
-            padding:8px 16px;border-radius:6px;font-size:11px;font-weight:600;
-            backdrop-filter:blur(12px);border:1px solid rgba(63,185,80,0.4);
-            color:var(--ok);background:rgba(10,14,20,0.92);
-            transition:opacity 1s;pointer-events:auto;cursor:pointer;
-        `;
+        position:fixed;top:50px;left:50%;transform:translateX(-50%);z-index:400;
+        padding:8px 16px;border-radius:6px;font-size:11px;font-weight:600;
+        backdrop-filter:blur(12px);border:1px solid rgba(63,185,80,0.4);
+        color:var(--ok);background:rgba(10,14,20,0.92);
+        transition:opacity 1s;pointer-events:auto;cursor:pointer;
+    `;
         document.body.appendChild(el);
 
         // Click anywhere to dismiss immediately
@@ -928,7 +1103,9 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
                 // Acknowledge we showed the prompt
                 fetch('/api/connectivity/api-prompt-ack', { method: 'POST' });
             }
-        } catch (e) { /* ignore */ }
+        } catch (e) {
+            /* ignore */
+        }
     }
 
     function showApiDownModal() {
@@ -939,24 +1116,24 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
         overlay.className = 'modal-overlay';
         overlay.id = 'api-down-modal';
         overlay.innerHTML = `
-            <div class="modal-box" style="max-width:440px">
-                <div class="modal-header">
-                    <span class="modal-title">Geolocation API Not Responding</span>
-                    <button class="modal-close" id="api-down-close">&times;</button>
+        <div class="modal-box" style="max-width:440px">
+            <div class="modal-header">
+                <span class="modal-title">Geolocation API Not Responding</span>
+                <button class="modal-close" id="api-down-close">&times;</button>
+            </div>
+            <div class="modal-body" style="padding:16px">
+                <p style="color:var(--text-secondary);margin:0 0 12px;font-size:12px">
+                    The geolocation API is not responding, but your internet connection appears to be working.
+                </p>
+                <p style="color:var(--text-muted);margin:0 0 16px;font-size:11px">
+                    You can switch to database-only mode (uses cached locations only) or keep trying the API.
+                </p>
+                <div style="display:flex;gap:8px;justify-content:center">
+                    <button class="geodb-update-btn" id="api-down-dbonly" style="background:rgba(210,153,34,0.15);color:var(--warn);border-color:rgba(210,153,34,0.3)">Database-Only Mode</button>
+                    <button class="geodb-update-btn" id="api-down-keep">Keep Trying</button>
                 </div>
-                <div class="modal-body" style="padding:16px">
-                    <p style="color:var(--text-secondary);margin:0 0 12px;font-size:12px">
-                        The geolocation API is not responding, but your internet connection appears to be working.
-                    </p>
-                    <p style="color:var(--text-muted);margin:0 0 16px;font-size:11px">
-                        You can switch to database-only mode (uses cached locations only) or keep trying the API.
-                    </p>
-                    <div style="display:flex;gap:8px;justify-content:center">
-                        <button class="geodb-update-btn" id="api-down-dbonly" style="background:rgba(210,153,34,0.15);color:var(--warn);border-color:rgba(210,153,34,0.3)">Database-Only Mode</button>
-                        <button class="geodb-update-btn" id="api-down-keep">Keep Trying</button>
-                    </div>
-                </div>
-            </div>`;
+            </div>
+        </div>`;
         document.body.appendChild(overlay);
 
         const close = () => {
@@ -964,17 +1141,21 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
             _apiDownModalVisible = false;
         };
 
-        document.getElementById('api-down-close').addEventListener('click', close);
-        overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+        required('#api-down-close').addEventListener('click', close);
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) close();
+        });
 
-        document.getElementById('api-down-dbonly').addEventListener('click', async () => {
+        required('#api-down-dbonly').addEventListener('click', async () => {
             try {
                 await fetch('/api/geodb/toggle-db-only', { method: 'POST' });
-            } catch (e) { /* ignore */ }
+            } catch (e) {
+                /* ignore */
+            }
             close();
         });
 
-        document.getElementById('api-down-keep').addEventListener('click', close);
+        required('#api-down-keep').addEventListener('click', close);
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -982,13 +1163,11 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
     // Handles high-DPI displays via devicePixelRatio scaling.
     // ═══════════════════════════════════════════════════════════
 
-
     function updateHUD() {
         // Count alive nodes by network type
         const netCounts = { ipv4: 0, ipv6: 0, onion: 0, i2p: 0, cjdns: 0 };
         let total = 0;
         for (const n of dashboard.peers) {
-
             total++;
             if (netCounts.hasOwnProperty(n.network)) netCounts[n.network]++;
         }
@@ -996,7 +1175,7 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
         // Map overlay — peer count
         const moPeers = document.getElementById('mo-peers');
         if (moPeers) {
-            moPeers.textContent = total;
+            moPeers.textContent = String(total);
             pulseOnChange('mo-peers', total, 'white');
         }
 
@@ -1057,39 +1236,62 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
         const bcTor = document.getElementById('bc-tor');
         const bcI2p = document.getElementById('bc-i2p');
         const bcCjdns = document.getElementById('bc-cjdns');
-        if (bcAll) { bcAll.textContent = total; pulseOnChange('bc-all', total, 'white'); }
-        if (bcIpv4) { bcIpv4.textContent = netCounts.ipv4; pulseOnChange('bc-ipv4', netCounts.ipv4); }
-        if (bcIpv6) { bcIpv6.textContent = netCounts.ipv6; pulseOnChange('bc-ipv6', netCounts.ipv6); }
-        if (bcTor) { bcTor.textContent = netCounts.onion; pulseOnChange('bc-tor', netCounts.onion); }
-        if (bcI2p) { bcI2p.textContent = netCounts.i2p; pulseOnChange('bc-i2p', netCounts.i2p); }
-        if (bcCjdns) { bcCjdns.textContent = netCounts.cjdns; pulseOnChange('bc-cjdns', netCounts.cjdns); }
+        if (bcAll) {
+            bcAll.textContent = String(total);
+            pulseOnChange('bc-all', total, 'white');
+        }
+        if (bcIpv4) {
+            bcIpv4.textContent = String(netCounts.ipv4);
+            pulseOnChange('bc-ipv4', netCounts.ipv4);
+        }
+        if (bcIpv6) {
+            bcIpv6.textContent = String(netCounts.ipv6);
+            pulseOnChange('bc-ipv6', netCounts.ipv6);
+        }
+        if (bcTor) {
+            bcTor.textContent = String(netCounts.onion);
+            pulseOnChange('bc-tor', netCounts.onion);
+        }
+        if (bcI2p) {
+            bcI2p.textContent = String(netCounts.i2p);
+            pulseOnChange('bc-i2p', netCounts.i2p);
+        }
+        if (bcCjdns) {
+            bcCjdns.textContent = String(netCounts.cjdns);
+            pulseOnChange('bc-cjdns', netCounts.cjdns);
+        }
     }
 
-
+    /** @param {string} net */
     function getNetworkStats(net) {
         const aliveNodes = dashboard.peers;
+        /** @type {Record<string, number>} */
         const counts = { ipv4: 0, ipv6: 0, onion: 0, i2p: 0, cjdns: 0 };
-        let inbound = 0, outbound = 0, totalPing = 0, pingCount = 0;
+        let inbound = 0,
+            outbound = 0,
+            totalPing = 0,
+            pingCount = 0;
 
         for (const n of aliveNodes) {
             if (counts.hasOwnProperty(n.network)) counts[n.network]++;
-            const match = (net === 'all') || (n.network === net);
+            const match = net === 'all' || n.network === net;
             if (match) {
                 if (n.direction === 'IN') inbound++;
                 else outbound++;
-                if (n.ping_ms > 0) { totalPing += n.ping_ms; pingCount++; }
+                if (n.ping_ms > 0) {
+                    totalPing += n.ping_ms;
+                    pingCount++;
+                }
             }
         }
 
-        const total = net === 'all'
-            ? aliveNodes.length
-            : (counts[net] || 0);
+        const total = net === 'all' ? aliveNodes.length : counts[net] || 0;
         const detailsForNet = net !== 'all' ? fdCachedNetworkDetails[net] : null;
 
         if (total === 0 && net !== 'all' && !detailsForNet) return null;
 
         const avgPing = pingCount > 0 ? Math.round(totalPing / pingCount) : '—';
-        const label = net === 'all' ? 'All Networks' : (NET_DISPLAY[net] || net.toUpperCase());
+        const label = net === 'all' ? 'All Networks' : NET_DISPLAY[net] || net.toUpperCase();
 
         let html = `<div class="pop-title">${label}</div>`;
         html += `<div class="pop-row"><span class="pop-label">Peers</span><span class="pop-val">${total}</span></div>`;
@@ -1146,19 +1348,24 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
         }
     }
 
-    const systemStatsPolling = window.BPMPolling.create({
+    const systemStatsPolling = BPMPolling.create({
         task: fetchSystemStats,
         intervalMs: effectivePollInterval(30000),
     });
 
-
+    /** @type {import('../types').SystemStats | null} */
     let lastSystemStats = null;
 
-    /** SSE stream reference (declared early so renderSystemInfoCard can check it) */
+    /** SSE stream reference (declared early so renderSystemInfoCard can check it)
+     * @type {EventSource | null} */
     let sysStreamSource = null;
     let sysStreamRetryDelay = 1000;
+    /** @type {number | null} */
     let sysStreamRetryTimer = null;
 
+    /**
+     * @param {import('../types').SystemStats} stats
+     */
     function renderSystemInfoCard(stats) {
         // Merge modal-only fields (uptime, load, disk) into lastSystemStats
         // CPU/RAM/NET are driven by the SSE stream — don't overwrite those here
@@ -1207,10 +1414,12 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
         overlay.id = 'system-info-modal';
         overlay.innerHTML = `<div class="modal-box" style="max-width:560px"><div class="modal-header"><span class="modal-title">System Info</span><button class="modal-close" id="system-info-close">&times;</button></div><div class="modal-body" id="system-info-body"><div style="color:var(--text-muted);text-align:center;padding:16px">Loading...</div></div></div>`;
         document.body.appendChild(overlay);
-        document.getElementById('system-info-close').addEventListener('click', () => overlay.remove());
-        overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+        required('#system-info-close').addEventListener('click', () => overlay.remove());
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) overlay.remove();
+        });
 
-        const body = document.getElementById('system-info-body');
+        const body = required('#system-info-body');
         const stats = lastSystemStats || {};
         const cpuPct = stats.cpu_pct != null ? Math.round(stats.cpu_pct) : null;
         const memPct = stats.mem_pct != null ? Math.round(stats.mem_pct) : null;
@@ -1231,7 +1440,7 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
         // RAM with bar
         html += '<div class="info-row"><span class="info-label">RAM</span>';
         if (memPct != null) {
-            const memStr = (memUsed && memTotal) ? `${memPct}% (${memUsed}/${memTotal} MB)` : `${memPct}%`;
+            const memStr = memUsed && memTotal ? `${memPct}% (${memUsed}/${memTotal} MB)` : `${memPct}%`;
             html += `<span class="info-val info-bar-wrap"><span class="info-bar" style="width:${memPct}%"></span><span class="info-bar-text">${memStr}</span></span>`;
         } else {
             html += '<span class="info-val">\u2014</span>';
@@ -1243,7 +1452,7 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
         }
         // Load average
         if (stats.load_1 != null) {
-            html += `<div class="info-row"><span class="info-label">Load Avg</span><span class="info-val">${stats.load_1.toFixed(2)} / ${stats.load_5.toFixed(2)} / ${stats.load_15.toFixed(2)}</span></div>`;
+            html += `<div class="info-row"><span class="info-label">Load Avg</span><span class="info-val">${stats.load_1.toFixed(2)} / ${(stats.load_5 ?? 0).toFixed(2)} / ${(stats.load_15 ?? 0).toFixed(2)}</span></div>`;
         }
         // Disk usage
         if (stats.disk_pct != null) {
@@ -1268,8 +1477,8 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
         }
         if (lastNodeInfo && lastNodeInfo.node_traffic) {
             const traffic = lastNodeInfo.node_traffic;
-            html += `<div class="info-row"><span class="info-label">P2P IN \u2193</span><span class="info-val">${escapeHtml(traffic.download_fmt || window.BPMFormat.fmtBytesShort(traffic.download_bytes || 0))}</span></div>`;
-            html += `<div class="info-row"><span class="info-label">P2P OUT \u2191</span><span class="info-val">${escapeHtml(traffic.upload_fmt || window.BPMFormat.fmtBytesShort(traffic.upload_bytes || 0))}</span></div>`;
+            html += `<div class="info-row"><span class="info-label">P2P IN \u2193</span><span class="info-val">${escapeHtml(traffic.download_fmt || BPMFormat.fmtBytesShort(traffic.download_bytes || 0))}</span></div>`;
+            html += `<div class="info-row"><span class="info-label">P2P OUT \u2191</span><span class="info-val">${escapeHtml(traffic.upload_fmt || BPMFormat.fmtBytesShort(traffic.upload_bytes || 0))}</span></div>`;
         }
 
         // ── Section 3: NET Bar Settings ──
@@ -1293,7 +1502,7 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
             { id: 'mo-row-netin', label: 'NET \u2193 (Download)' },
             { id: 'mo-row-netout', label: 'NET \u2191 (Upload)' },
         ];
-        dashItems.forEach(item => {
+        dashItems.forEach((item) => {
             const el = document.getElementById(item.id);
             const vis = el ? el.style.display !== 'none' : true;
             html += `<div class="info-row"><span class="info-label">${item.label}</span><label class="dsp-toggle"><input type="checkbox" class="si-dash-toggle" data-target="${item.id}" ${vis ? 'checked' : ''}><span class="dsp-toggle-slider"></span></label></div>`;
@@ -1302,9 +1511,10 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
         body.innerHTML = html;
 
         // ── Bind NET bar mode radios ──
-        const modeRadios = body.querySelectorAll('input[name="si-netbar-mode"]');
+        /** @type {HTMLInputElement[]} */
+        const modeRadios = queryAll('input[name="si-netbar-mode"]', body);
         const manualFields = document.getElementById('si-manual-fields');
-        modeRadios.forEach(radio => {
+        modeRadios.forEach((radio) => {
             radio.addEventListener('change', () => {
                 netBarMode = radio.value;
                 if (manualFields) manualFields.style.display = netBarMode === 'manual' ? 'block' : 'none';
@@ -1313,12 +1523,14 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
         });
 
         // ── Bind manual max inputs ──
-        const maxInInput = document.getElementById('si-max-in');
-        const maxOutInput = document.getElementById('si-max-out');
+        /** @type {HTMLInputElement} */
+        const maxInInput = required('#si-max-in');
+        /** @type {HTMLInputElement} */
+        const maxOutInput = required('#si-max-out');
         if (maxInInput) {
             maxInInput.addEventListener('change', () => {
                 const v = clamp(parseInt(maxInInput.value) || 100, 1, 999999);
-                maxInInput.value = v;
+                maxInInput.value = String(v);
                 netBarManualMaxIn = v * 1024;
                 if (netBarMode === 'manual') updateHandleTrafficBars();
             });
@@ -1326,16 +1538,16 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
         if (maxOutInput) {
             maxOutInput.addEventListener('change', () => {
                 const v = clamp(parseInt(maxOutInput.value) || 100, 1, 999999);
-                maxOutInput.value = v;
+                maxOutInput.value = String(v);
                 netBarManualMaxOut = v * 1024;
                 if (netBarMode === 'manual') updateHandleTrafficBars();
             });
         }
 
         // ── Bind dashboard display toggles ──
-        body.querySelectorAll('.si-dash-toggle').forEach(cb => {
+        /** @type {HTMLInputElement[]} */ (queryAll('.si-dash-toggle', body)).forEach((cb) => {
             cb.addEventListener('change', () => {
-                const target = document.getElementById(cb.dataset.target);
+                const target = document.getElementById(cb.dataset.target || '');
                 if (target) target.style.display = cb.checked ? '' : 'none';
             });
         });
@@ -1345,18 +1557,24 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
     // NETWORK TRAFFIC + SYSTEM STATS — SSE stream with dual-EMA
     // ═══════════════════════════════════════════════════════════
 
+    /** @type {{rx_bps: number; tx_bps: number} | null} */
     let lastNetTraffic = null;
 
     // NET bar scaling mode: 'auto' uses p90 adaptive, 'manual' uses fixed max values
     let netBarMode = 'auto';
-    let netBarManualMaxIn = 1024 * 1024;   // 1 MB/s default manual max for IN
-    let netBarManualMaxOut = 1024 * 1024;  // 1 MB/s default manual max for OUT
+    let netBarManualMaxIn = 1024 * 1024; // 1 MB/s default manual max for IN
+    let netBarManualMaxOut = 1024 * 1024; // 1 MB/s default manual max for OUT
 
     // History arrays for adaptive max (from original dashboard)
+    /** @type {number[]} */
     const netHistoryIn = [];
+    /** @type {number[]} */
     const netHistoryOut = [];
     const NET_HISTORY_SIZE = 30;
 
+    /**
+     * @param {number[]} history
+     */
     function getAdaptiveMax(history) {
         if (history.length < 3) return 50 * 1024;
         const sorted = [...history].sort((a, b) => a - b);
@@ -1394,7 +1612,10 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
         if (rateOut) rateOut.textContent = formatBps(tx);
     }
 
-    /** Format bytes/sec to human-readable string */
+    /** Format bytes/sec to human-readable string
+     *
+     * @param {number} bps
+     */
     function formatBps(bps) {
         if (bps < 1024) return `${Math.round(bps)} B/s`;
         if (bps < 1024 * 1024) return `${(bps / 1024).toFixed(1)} KB/s`;
@@ -1402,13 +1623,19 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
     }
 
     // ── Number tweening state for smooth CPU/RAM text ──
+    /** @type {import('../types').NumberTween} */
     let tweenCpu = { current: null, target: null, el: null };
+    /** @type {import('../types').NumberTween} */
     let tweenRam = { current: null, target: null, el: null };
+    /** @type {number | null} */
     let tweenRafId = null;
 
     function startTweenLoop() {
         if (tweenRafId !== null) return;
 
+        /**
+         * @param {import('../types').NumberTween} tween
+         */
         function advanceTween(tween) {
             if (tween.current === null || tween.target === null || !tween.el) return false;
 
@@ -1452,6 +1679,7 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
 
         source.addEventListener('system', (e) => {
             try {
+                /** @type {import('../types').SystemStats} */
                 const d = JSON.parse(e.data);
                 let tweenChanged = false;
 
@@ -1476,7 +1704,7 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
                         tweenCpu.current = d.cpu_pct;
                         tweenCpu.target = d.cpu_pct;
                         cpuEl.textContent = Math.round(d.cpu_pct) + '%';
-                    } else if (Math.abs(d.cpu_pct - tweenCpu.target) >= 1.0) {
+                    } else if (Math.abs(d.cpu_pct - (tweenCpu.target ?? tweenCpu.current)) >= 1.0) {
                         tweenCpu.target = d.cpu_pct;
                         tweenChanged = true;
                         pulseOnChange('ro-cpu', Math.round(d.cpu_pct), 'white');
@@ -1491,7 +1719,7 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
                         tweenRam.current = d.mem_pct;
                         tweenRam.target = d.mem_pct;
                         ramEl.textContent = Math.round(d.mem_pct) + '%';
-                    } else if (Math.abs(d.mem_pct - tweenRam.target) >= 0.5) {
+                    } else if (Math.abs(d.mem_pct - (tweenRam.target ?? tweenRam.current)) >= 0.5) {
                         tweenRam.target = d.mem_pct;
                         tweenChanged = true;
                         pulseOnChange('ro-ram', Math.round(d.mem_pct), 'white');
@@ -1528,8 +1756,22 @@ const openDisplaySettingsPopup = anchor => onAction({ type: 'settings', anchor }
         };
     }
 
-
-return Object.freeze({ updateFlightDeck, infoPolling, pricePolling, openGeoDBDropdown, syncDbAutoUpdateTimer, fetchInfo, openRecentBlocksModal, openNodeInfoModal, openChainTipsModal, renderPeerDataStatus, updateHUD, getNetworkStats, systemStatsPolling, disconnectSystemStream, connectSystemStream });
+    return Object.freeze({
+        updateFlightDeck,
+        infoPolling,
+        pricePolling,
+        openGeoDBDropdown,
+        syncDbAutoUpdateTimer,
+        fetchInfo,
+        openRecentBlocksModal,
+        openNodeInfoModal,
+        openChainTipsModal,
+        renderPeerDataStatus,
+        updateHUD,
+        getNetworkStats,
+        systemStatsPolling,
+        disconnectSystemStream,
+        connectSystemStream,
+    });
 }
-global.BPMNodeDashboard = Object.freeze({ create });
-})(window);
+export { create };
