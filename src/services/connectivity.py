@@ -20,7 +20,7 @@ class PriceEntry:
 
 
 class ConnectivityService:
-    def __init__(self, stop_event: threading.Event):
+    def __init__(self, stop_event: threading.Event, *, geoip_api_disabled: bool = False):
         self._stop_event = stop_event
         self._lock = threading.RLock()
         self._checker_lock = threading.Lock()
@@ -31,7 +31,7 @@ class ConnectivityService:
         self.api_consecutive_failures = 0
         self.api_prompt_count = 0
         self.api_prompt_at = 0.0
-        self.geoip_api_disabled = False
+        self.geoip_api_disabled = geoip_api_disabled
         self._prices: dict[str, PriceEntry] = {}
         self._price_currency = "USD"
 
@@ -158,11 +158,15 @@ class ConnectivityService:
 
     def toggle_geoip_api(self) -> bool:
         with self._lock:
-            self.geoip_api_disabled = not self.geoip_api_disabled
+            self.set_geoip_api_disabled(not self.geoip_api_disabled)
+            return self.geoip_api_disabled
+
+    def set_geoip_api_disabled(self, disabled: bool) -> None:
+        with self._lock:
+            self.geoip_api_disabled = disabled
             if self.geoip_api_disabled:
                 self.api_prompt_count = 0
                 self.api_prompt_at = 0
-            return self.geoip_api_disabled
 
     def acknowledge_prompt(self) -> None:
         with self._lock:

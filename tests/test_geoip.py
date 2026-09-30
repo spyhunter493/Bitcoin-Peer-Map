@@ -2,6 +2,8 @@ import sqlite3
 import threading
 from pathlib import Path
 
+import pytest
+
 from services.geoip import GEO_COLUMNS, GeoDatabase, is_valid_geo_data
 
 
@@ -83,6 +85,79 @@ def test_update_merges_rows(tmp_path: Path) -> None:
     )
 
     assert result == {"success": True, "message": "+1 new entries (1 total)"}
+
+
+@pytest.mark.parametrize(
+    ("local_timestamp", "remote_timestamp", "should_update"),
+    [
+        (100, 200, True),
+        (200, 100, False),
+        (200, 200, False),
+        (None, 200, True),
+        (200, None, False),
+        (None, None, False),
+    ],
+)
+def test_merge_replaces_only_newer_records(
+    tmp_path, local_timestamp, remote_timestamp, should_update
+):
+    geo_database = database(tmp_path)
+    with sqlite3.connect(geo_database.path) as connection:
+        connection.execute(
+            "INSERT INTO geo_cache (ip, city, last_updated) VALUES (?, ?, ?)",
+            ("198.51.100.1", "Local city", local_timestamp),
+        )
+    remote = tmp_path / "remote.db"
+    records = [
+        {"ip": "198.51.100.1", "city": "Remote city", "last_updated": remote_timestamp},
+        {"ip": "198.51.100.2", "city": "New city", "last_updated": 300},
+    ]
+    create_database(
+        remote, GEO_COLUMNS, [tuple(row.get(key) for key in GEO_COLUMNS) for row in records]
+    )
+    geo_database.stats()  # A merge must also invalidate cached statistics.
+    generation = geo_database.generation
+
+    result = geo_database.update(
+        http_get=lambda *_args, **_kwargs: StreamingResponse([remote.read_bytes()])
+    )
+
+    assert result == {
+        "success": True,
+        "message": "+1 new entries, 1 updated entries (2 total)"
+        if should_update
+        else "+1 new entries (2 total)",
+    }
+    existing = geo_database.get("198.51.100.1")
+    assert existing["city"] == ("Remote city" if should_update else "Local city")
+    assert existing["last_updated"] == (remote_timestamp if should_update else local_timestamp)
+    assert geo_database.get("198.51.100.2")["city"] == "New city"
+    assert geo_database.stats()["entries"] == 2
+    assert geo_database.generation > generation
+    assert list(geo_database.temp_dir.iterdir()) == []
+
+    repeated = geo_database.update(
+        http_get=lambda *_args, **_kwargs: StreamingResponse([remote.read_bytes()])
+    )
+    assert repeated == {"success": True, "message": "Already up to date (2 entries)"}
+
+
+def test_merge_reports_updates_without_new_ips(tmp_path):
+    geo_database = database(tmp_path)
+    with sqlite3.connect(geo_database.path) as connection:
+        connection.execute(
+            "INSERT INTO geo_cache (ip, city, last_updated) VALUES ('198.51.100.1', 'Old', 100)"
+        )
+    record = {"ip": "198.51.100.1", "city": "New", "last_updated": 200}
+    remote = tmp_path / "remote.db"
+    create_database(remote, GEO_COLUMNS, [tuple(record.get(key) for key in GEO_COLUMNS)])
+
+    result = geo_database.update(
+        http_get=lambda *_args, **_kwargs: StreamingResponse([remote.read_bytes()])
+    )
+
+    assert result == {"success": True, "message": "1 updated entries (1 total)"}
+    assert geo_database.get("198.51.100.1")["city"] == "New"
 
 
 def test_update_rejects_concurrent_request(tmp_path: Path) -> None:

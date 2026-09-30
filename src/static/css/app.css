@@ -253,22 +253,6 @@ body.map-camera-moving .peer-panel-body {
     border-color: rgba(88,166,255,0.3);
     background: rgba(88,166,255,0.06);
 }
-/* DB auto-update status (temporary messages in top bar) */
-.db-update-status {
-    font-size: 11px;
-    font-weight: 600;
-    font-family: var(--font-data);
-    color: var(--text-secondary);
-    white-space: nowrap;
-    transition: opacity 0.3s ease;
-}
-.db-update-status.error {
-    color: var(--err);
-}
-.db-update-status.success {
-    color: var(--ok);
-}
-
 .topbar-clock {
     font-size: 13px;
     color: var(--text-secondary);

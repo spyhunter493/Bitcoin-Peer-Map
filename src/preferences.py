@@ -13,6 +13,7 @@ from pathlib import Path
 @dataclass(slots=True)
 class Preferences:
     geoip_auto_update: bool = True
+    geoip_db_only: bool = False
 
 
 class PreferenceStore:
@@ -30,9 +31,13 @@ class PreferenceStore:
                 data = json.loads(self.path.read_text())
             except (OSError, ValueError, TypeError):
                 return Preferences()
+            if not isinstance(data, dict):
+                return Preferences()
             auto_update = data.get("geoip_auto_update", True)
+            db_only = data.get("geoip_db_only", False)
             return Preferences(
-                geoip_auto_update=auto_update if isinstance(auto_update, bool) else True
+                geoip_auto_update=auto_update if isinstance(auto_update, bool) else True,
+                geoip_db_only=db_only if isinstance(db_only, bool) else False,
             )
 
     def save(self, preferences: Preferences) -> None:

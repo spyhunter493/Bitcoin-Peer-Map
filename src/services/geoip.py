@@ -292,18 +292,33 @@ class GeoDatabase:
                 }
 
             placeholders = ",".join("?" for _ in GEO_COLUMNS)
+            updates = ",".join(
+                f"{column}=excluded.{column}" for column in GEO_COLUMNS if column != "ip"
+            )
             with sqlite3.connect(self.path, timeout=5) as connection:
+                # Take the write lock before counting so concurrent API lookups do
+                # not affect the inserted/updated counts for this transaction.
+                connection.execute("BEGIN IMMEDIATE")
                 before = connection.execute("SELECT COUNT(*) FROM geo_cache").fetchone()[0]
                 connection.executemany(
-                    f"INSERT OR IGNORE INTO geo_cache ({columns}) VALUES ({placeholders})",
+                    f"INSERT INTO geo_cache ({columns}) VALUES ({placeholders}) "
+                    f"ON CONFLICT(ip) DO UPDATE SET {updates} "
+                    "WHERE COALESCE(excluded.last_updated, 0) "
+                    "> COALESCE(geo_cache.last_updated, 0)",
                     rows,
                 )
                 total = connection.execute("SELECT COUNT(*) FROM geo_cache").fetchone()[0]
+                updated = connection.total_changes - (total - before)
             added = total - before
             self.dataset_changed()
+            changes = []
+            if added:
+                changes.append(f"+{added} new entries")
+            if updated:
+                changes.append(f"{updated} updated entries")
             message = (
-                f"+{added} new entries ({total} total)"
-                if added
+                f"{', '.join(changes)} ({total} total)"
+                if changes
                 else f"Already up to date ({total} entries)"
             )
             return {"success": True, "message": message}
