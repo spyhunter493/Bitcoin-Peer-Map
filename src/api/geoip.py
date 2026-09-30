@@ -22,7 +22,7 @@ def acknowledge_connectivity_prompt(runtime: AppRuntime = Depends(runtime_from))
 
 @router.post("/geodb/toggle-db-only")
 def toggle_geoip_api(runtime: AppRuntime = Depends(runtime_from)):
-    disabled = runtime.connectivity.toggle_geoip_api()
+    disabled = runtime.toggle_geoip_api()
     return {
         "success": True,
         "geo_db_only_mode": disabled,

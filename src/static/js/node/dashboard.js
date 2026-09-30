@@ -1,4 +1,4 @@
-import { errorMessage } from '../core/api.js';
+import { errorMessage, postJson } from '../core/api.js';
 import { query, queryAll, required } from '../core/dom.js';
 import { dashboard as BPMDashboard } from '../core/dashboard-state.js';
 import * as BPMModal from '../core/modal.js';
@@ -533,43 +533,62 @@ function create({ config: CFG, onAction }) {
             );
             // Auto-update toggle switch (persists to settings.json)
             const auOn = !!stats.auto_update;
-            html += `<div class="modal-row"><span class="modal-label" title="Automatically update the geolocation database (at startup and once per hour while the map is open)">Auto-update</span><span class="modal-val" style="display:flex;align-items:center;gap:6px"><label class="geodb-toggle" title="${auOn ? 'Click to disable auto-update' : 'Click to enable auto-update'}"><input type="checkbox" id="geodb-autoupdate-toggle" ${auOn ? 'checked' : ''}><span class="geodb-toggle-slider"></span></label></span></div>`;
+            html += `<div class="modal-row"><span class="modal-label" title="Automatically update the geolocation database at startup and hourly, even when the dashboard is closed">Auto-update</span><span class="modal-val" style="display:flex;align-items:center;gap:6px"><label class="geodb-toggle" title="${auOn ? 'Click to disable auto-update' : 'Click to enable auto-update'}"><input type="checkbox" id="geodb-autoupdate-toggle" ${auOn ? 'checked' : ''}><span class="geodb-toggle-slider"></span></label></span></div>`;
             // API Lookup toggle switch (no On/Off text — slider colour shows state)
             const dbOnly = stats.db_only_mode || false;
             const apiOn = !dbOnly;
             html += `<div class="modal-row"><span class="modal-label" title="When ON, unknown IPs are looked up via ip-api.com. When OFF, only cached database entries are used.">API Lookup</span><span class="modal-val" style="display:flex;align-items:center;gap:6px"><label class="geodb-toggle" title="${apiOn ? 'Click to disable API lookups' : 'Click to enable API lookups'}"><input type="checkbox" id="geodb-dbonly-toggle" ${apiOn ? 'checked' : ''}><span class="geodb-toggle-slider"></span></label></span></div>`;
+            html += '<p style="color:var(--text-secondary);font-size:11px;line-height:1.5">API Lookup sends public peer IPs missing from this database to ip-api.com over unencrypted HTTP. Turn it off to keep peer lookups local. This choice survives restarts.</p>';
             html += '<button class="geodb-update-btn" id="geodb-update-btn">Update Database</button>';
             html += '<div class="geodb-result" id="geodb-result"></div>';
             body.innerHTML = html;
 
             // Auto-update toggle handler (persists to settings.json)
-            required('#geodb-autoupdate-toggle').addEventListener('change', async () => {
+            /** @type {HTMLInputElement} */
+            const autoUpdateToggle = required('#geodb-autoupdate-toggle');
+            autoUpdateToggle.addEventListener('change', async () => {
+                autoUpdateToggle.disabled = true;
                 try {
-                    const resp = await fetch('/api/geodb/toggle-auto-update', { method: 'POST' });
-                    const data = await resp.json();
-                    if (data.success) {
-                        // Refresh info + modal, and start/stop the hourly timer
-                        fetchInfo().then(() => {
-                            syncDbAutoUpdateTimer();
-                            openGeoDBDropdown();
-                        });
+                    /** @type {{success: boolean; auto_update: boolean}} */
+                    const data = await postJson('/api/geodb/toggle-auto-update');
+                    if (!data.success) throw new Error('Could not save auto-update setting');
+                    await fetchInfo();
+                    if (lastNodeInfo?.geo_db_stats) {
+                        lastNodeInfo.geo_db_stats.auto_update = data.auto_update;
                     }
+                    if (overlay.isConnected) openGeoDBDropdown();
                 } catch (err) {
-                    console.error('Toggle auto-update failed:', err);
+                    autoUpdateToggle.checked = auOn;
+                    const resultEl = required('#geodb-result', body);
+                    resultEl.textContent = 'Setting was not saved: ' + errorMessage(err);
+                    resultEl.style.color = 'var(--err)';
+                } finally {
+                    autoUpdateToggle.disabled = false;
                 }
             });
 
-            // DB-only toggle handler
-            required('#geodb-dbonly-toggle').addEventListener('change', async () => {
+            // DB-only toggle handler (persists to settings.json)
+            /** @type {HTMLInputElement} */
+            const apiLookupToggle = required('#geodb-dbonly-toggle');
+            apiLookupToggle.addEventListener('change', async () => {
+                apiLookupToggle.disabled = true;
                 try {
-                    const resp = await fetch('/api/geodb/toggle-db-only', { method: 'POST' });
-                    const data = await resp.json();
-                    if (data.success) {
-                        // Refresh the modal
-                        fetchInfo().then(() => openGeoDBDropdown());
+                    /** @type {{success: boolean; geo_db_only_mode: boolean}} */
+                    const data = await postJson('/api/geodb/toggle-db-only');
+                    if (!data.success) throw new Error('Could not save API lookup setting');
+                    await fetchInfo();
+                    if (lastNodeInfo) {
+                        lastNodeInfo.geo_db_only_mode = data.geo_db_only_mode;
+                        if (lastNodeInfo.geo_db_stats) lastNodeInfo.geo_db_stats.db_only_mode = data.geo_db_only_mode;
                     }
+                    if (overlay.isConnected) openGeoDBDropdown();
                 } catch (err) {
-                    console.error('Toggle DB-only failed:', err);
+                    apiLookupToggle.checked = apiOn;
+                    const resultEl = required('#geodb-result', body);
+                    resultEl.textContent = 'Setting was not saved: ' + errorMessage(err);
+                    resultEl.style.color = 'var(--err)';
+                } finally {
+                    apiLookupToggle.disabled = false;
                 }
             });
 
@@ -758,30 +777,6 @@ function create({ config: CFG, onAction }) {
     let _prevInternetState = 'green';
     let _lastRestoredToastTime = 0;
 
-    // ── DB auto-update — once per hour while map is open ──
-    const DB_AUTO_UPDATE_INTERVAL = 60 * 60 * 1000; // 1 hour
-    /** @type {number | null} */
-    let dbAutoUpdateTimer = null;
-    const dbStatusEl = document.getElementById('db-update-status');
-
-    /** Show a temporary message in the top bar DB status area.
-     *
-     * @param {string} text
-     * @param {string} [cls]
-     */
-    function showDbStatus(text, cls) {
-        if (!dbStatusEl) return;
-        dbStatusEl.textContent = text;
-        dbStatusEl.className = 'db-update-status' + (cls ? ' ' + cls : '');
-        dbStatusEl.style.display = '';
-    }
-    function hideDbStatus() {
-        if (!dbStatusEl) return;
-        dbStatusEl.style.display = 'none';
-        dbStatusEl.textContent = '';
-        dbStatusEl.className = 'db-update-status';
-    }
-
     /**
      * @param {import('../types').NodeTraffic | null} traffic
      */
@@ -800,43 +795,6 @@ function create({ config: CFG, onAction }) {
             outEl.textContent = traffic.upload_fmt || BPMFormat.fmtBytesShort(uploaded);
             outEl.title = `${uploaded.toLocaleString()} bytes uploaded since the Bitcoin node started`;
             pulseOnChange('mo-p2p-out', uploaded, 'white');
-        }
-    }
-
-    /** Run the DB auto-update sequence: countdown → check → result. */
-    async function performDbAutoUpdate() {
-        // 3-second countdown
-        for (let i = 3; i >= 1; i--) {
-            showDbStatus(`Updating DB in ${i}...`);
-            await new Promise((r) => setTimeout(r, 1000));
-        }
-        showDbStatus('Checking for DB update...');
-        try {
-            const resp = await fetch('/api/geodb/update', { method: 'POST' });
-            const data = await resp.json();
-            if (data.success) {
-                const isUpToDate = data.message && data.message.toLowerCase().includes('up to date');
-                showDbStatus(isUpToDate ? 'DB already up to date' : 'DB successfully updated', 'success');
-            } else {
-                showDbStatus('DB update failed', 'error');
-            }
-        } catch (e) {
-            showDbStatus('DB update failed', 'error');
-        }
-        // Auto-dismiss after 3 seconds
-        setTimeout(hideDbStatus, 3000);
-    }
-
-    /** Start or stop the hourly DB auto-update timer based on current setting. */
-    function syncDbAutoUpdateTimer() {
-        const stats = lastNodeInfo && lastNodeInfo.geo_db_stats;
-        const autoOn = stats && stats.auto_lookup && stats.auto_update;
-        if (autoOn && !dbAutoUpdateTimer) {
-            dbAutoUpdateTimer = setInterval(performDbAutoUpdate, DB_AUTO_UPDATE_INTERVAL);
-        } else if (!autoOn && dbAutoUpdateTimer) {
-            clearInterval(dbAutoUpdateTimer);
-            dbAutoUpdateTimer = null;
-            hideDbStatus();
         }
     }
 
@@ -1132,6 +1090,7 @@ function create({ config: CFG, onAction }) {
                     <button class="geodb-update-btn" id="api-down-dbonly" style="background:rgba(210,153,34,0.15);color:var(--warn);border-color:rgba(210,153,34,0.3)">Database-Only Mode</button>
                     <button class="geodb-update-btn" id="api-down-keep">Keep Trying</button>
                 </div>
+                <div id="api-down-error" role="alert" style="color:var(--err);font-size:11px"></div>
             </div>
         </div>`;
         document.body.appendChild(overlay);
@@ -1146,13 +1105,21 @@ function create({ config: CFG, onAction }) {
             if (e.target === overlay) close();
         });
 
-        required('#api-down-dbonly').addEventListener('click', async () => {
+        /** @type {HTMLButtonElement} */
+        const databaseOnlyButton = required('#api-down-dbonly');
+        databaseOnlyButton.addEventListener('click', async () => {
+            databaseOnlyButton.disabled = true;
             try {
-                await fetch('/api/geodb/toggle-db-only', { method: 'POST' });
+                /** @type {{success: boolean}} */
+                const data = await postJson('/api/geodb/toggle-db-only');
+                if (!data.success) throw new Error('Could not save API lookup setting');
+                close();
+                fetchInfo();
             } catch (e) {
-                /* ignore */
+                required('#api-down-error', overlay).textContent = 'Setting was not saved: ' + errorMessage(e);
+            } finally {
+                databaseOnlyButton.disabled = false;
             }
-            close();
         });
 
         required('#api-down-keep').addEventListener('click', close);
@@ -1761,7 +1728,6 @@ function create({ config: CFG, onAction }) {
         infoPolling,
         pricePolling,
         openGeoDBDropdown,
-        syncDbAutoUpdateTimer,
         fetchInfo,
         openRecentBlocksModal,
         openNodeInfoModal,

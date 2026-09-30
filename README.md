@@ -28,6 +28,10 @@ BITCOIN_RPC_USER=bpm
 BITCOIN_RPC_PASSWORD=replace-with-a-long-random-password
 ```
 
+```bash
+./scripts/compose-local.sh up -d --build
+```
+
 Open `http://HOST_IP:58333`.
 
 To stop the application:
@@ -132,6 +136,27 @@ The named volume is mounted at `/var/lib/bitcoin-peer-map` and contains only mut
 - `tmp/`: staging area for GeoIP database updates
 
 RPC credentials are never written to the volume. Browser display preferences remain in browser local storage under `bpm.*` keys.
+
+### GeoIP Updates and Privacy
+
+With auto-update enabled, the backend downloads the GeoIP dataset at startup and
+hourly after each completed attempt, even when no dashboard is open. Enabling
+auto-update starts a check immediately; disabling it stops future checks. An update
+already in progress finishes normally. Manual updates remain available in **GEOIP-DB**.
+Dataset merges add new IPs and replace existing records only when the downloaded
+`last_updated` timestamp is newer, preserving newer local API results.
+
+**API Lookup** in **GEOIP-DB** controls external lookups for public peer IPs missing
+from the local database. It is enabled by default. Turn it off for database-only
+peer lookups; that choice is saved in `settings.json` and restored before peer
+workers start, including after container recreation with the same data volume.
+Both the auto-update preference and database-only preference survive restarts.
+
+External peer lookups send the queried IP to ip-api.com over unencrypted HTTP.
+The provider's [free endpoint does not support HTTPS](https://ip-api.com/docs/api:json).
+Database-only mode prevents these peer-IP lookups; GeoIP dataset downloads and BTC
+price requests are separate and still use the network. Disabling the persistent
+database with `BPM_GEOIP_ENABLED=false` does not itself disable external lookups.
 
 ## Build Revision
 
@@ -241,10 +266,9 @@ JavaScript heap use, and table mutations during an unchanged peer poll. The
 benchmark serves the checked-out frontend with local API fixtures; compare runs
 on the same machine and browser because absolute timings vary by environment.
 
-`types.d.ts` defines the shared peer API shape and controller interfaces. Type checking is
-incremental: `tsconfig.json` currently checks the poller, peer-refresh controller, table model,
-and private-network state in strict mode. The DOM adapters remain plain JavaScript and can
-be brought into that checked set separately. No production build step is required.
+`types.d.ts` defines the shared peer API shape and controller interfaces. `tsconfig.json`
+checks all production JavaScript modules, including DOM adapters, in strict mode using
+JSDoc annotations. No production build step is required.
 
 Peer-supplied strings stay raw in application state. Use `BPMModal.escapeHtml` at HTML text
 and attribute boundaries, or assign `textContent`. Helpers whose names include `HtmlRow`

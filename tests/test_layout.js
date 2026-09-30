@@ -11,6 +11,7 @@ import assertPriceDelivery from './test_price_delivery.js';
 import assertTableDom from './test_peer_table_dom.js';
 import assertModules from './test_modules.js';
 import assertMapGroups from './test_map_groups.js';
+import assertGeoIPSettings from './test_geoip_settings.js';
 
 const repoRoot = path.resolve(import.meta.dirname, '..');
 
@@ -868,6 +869,7 @@ async function assertDashboardLifecycle(browser, baseUrl) {
         await assertPriceDelivery(browser, baseUrl);
         await assertTableDom(browser, baseUrl);
         await assertDashboardLifecycle(browser, baseUrl);
+        await assertGeoIPSettings(browser, baseUrl);
         await assertModules(browser);
         await assertMapGroups(browser, baseUrl);
         console.log('Browser layout regression tests passed');

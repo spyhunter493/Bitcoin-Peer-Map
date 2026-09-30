@@ -375,7 +375,6 @@ function create() {
         infoPolling,
         pricePolling,
         openGeoDBDropdown,
-        syncDbAutoUpdateTimer,
         fetchInfo,
         openRecentBlocksModal,
         openNodeInfoModal,
@@ -3615,8 +3614,7 @@ function create() {
         startCountdownTimer();
 
         // Fetch node info (block height, BTC price, etc) immediately, then poll.
-        // Once the first fetch resolves, start the DB auto-update timer if enabled.
-        fetchInfo().then(() => syncDbAutoUpdateTimer());
+        fetchInfo();
         infoPolling.start();
         pricePolling.run();
         pricePolling.start();

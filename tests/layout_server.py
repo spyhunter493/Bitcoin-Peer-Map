@@ -421,6 +421,9 @@ class FakeRuntime:
     def toggle_geoip_auto_update(self) -> bool:
         return False
 
+    def toggle_geoip_api(self) -> bool:
+        return self.connectivity.toggle_geoip_api()
+
 
 def main() -> None:
     data_dir = Path(os.environ.get("BPM_LAYOUT_TEST_DATA_DIR", "/tmp/bpm-layout-test"))
