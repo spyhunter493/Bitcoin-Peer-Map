@@ -1,5 +1,9 @@
 # Lean dashboard refactor
 
+Historical record of the September 2026 frontend refactor. Backend language and
+test counts below describe that revision, before the Node.js migration. See the
+[README](../README.md#development-and-tests) for current architecture and checks.
+
 ## Objective and constraints
 
 Implement all five findings from the review of `9e4a456`, preserving features,

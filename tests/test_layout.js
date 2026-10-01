@@ -47,9 +47,8 @@ function requestStatus(url) {
 function startServer(port) {
     const env = Object.assign({}, process.env, {
         BPM_LAYOUT_TEST_PORT: String(port),
-        PYTHONPATH: path.join(repoRoot, 'src'),
     });
-    const child = spawn(process.env.PYTHON || 'python3', ['tests/layout_server.py'], {
+    const child = spawn(process.execPath, ['tests/layout_server.ts'], {
         cwd: repoRoot,
         env,
         stdio: ['ignore', 'pipe', 'pipe'],

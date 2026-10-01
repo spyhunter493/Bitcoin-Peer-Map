@@ -1,13 +1,8 @@
 .git
 .github
 
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.ruff_cache/
-*.egg-info/
-
 node_modules/
+.local-data/
 
 tests/
 docs/
