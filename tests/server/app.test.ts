@@ -100,6 +100,12 @@ test('all documented JSON endpoints are wired and removed endpoints stay absent'
 });
 test('HTTP validation rejects malformed inputs and unsupported methods', async t => {
     const { get } = await application(t);
+    const schema = await (await get('/openapi.json')).json();
+    const invalid = await get('/api/peer/connect', { method: 'POST', body: 'broken' });
+    assert.equal(invalid.status, 422);
+    const reference = schema.paths['/api/peer/connect'].post.responses['422'].content['application/json'].schema.$ref;
+    const errorSchema = schema.components.schemas[reference.split('/').at(-1)];
+    assert.equal(typeof (await invalid.json()).detail, errorSchema.properties.detail.type);
     for (const path of ['/api/blocks/recent?limit=0', '/api/blocks/recent?limit=101', '/api/blocks/recent?limit=1.5', '/api/peers?include_status=maybe', '/api/info?include_price=maybe']) assert.equal((await get(path)).status, 422, path);
     for (const body of ['broken', '[]', '{"address":1}']) assert.equal((await get('/api/peer/connect', { method: 'POST', body })).status, 422);
     assert.equal((await get('/api/peer/ban', { method: 'POST', body: '{"peer_id":1.5}' })).status, 422);
@@ -108,6 +114,8 @@ test('HTTP validation rejects malformed inputs and unsupported methods', async t
 });
 test('SSE emits metrics without blocking HTTP and closes with the application', async t => {
     const { app, runtime, get } = await application(t);
+    const schema = await (await get('/openapi.json')).json();
+    assert.ok(schema.paths['/api/stream/system'].get.responses['200'].content['text/event-stream']);
     const response = await get('/api/stream/system'); assert.match(response.headers.get('content-type')!, /text\/event-stream/);
     const reader = response.body!.getReader(), initial = new TextDecoder().decode((await reader.read()).value);
     assert.match(initial, /"type":"connected"/); assert.match(initial, /event: system/);

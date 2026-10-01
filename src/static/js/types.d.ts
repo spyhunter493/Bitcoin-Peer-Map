@@ -638,7 +638,7 @@ export interface NodeInfo {
     network_details: Record<string, NetworkDetails> | null;
 }
 export type NodeAction =
-    { type: 'refresh-peers' | 'intervals' } | { type: 'settings'; anchor: HTMLElement | null } | { type: 'network'; network: string };
+    { type: 'refresh-peers' | 'intervals' } | { type: 'network'; network: string };
 export interface SystemStats {
     cpu_pct?: number;
     mem_pct?: number;

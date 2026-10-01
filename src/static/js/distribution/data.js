@@ -88,7 +88,7 @@ function buildDistributionGroup(base, peers, denominator, nowSeconds) {
     const versions = countBy(
         peers,
         (peer) => peer.subver || 'Unknown',
-        (peer, key) => ({ subver: key, count: 0, peers: /** @type {import('../types').Peer[]} */ ([]) })
+        (_peer, key) => ({ subver: key, count: 0, peers: /** @type {import('../types').Peer[]} */ ([]) })
     );
     const countries = countBy(
         peers,
@@ -98,12 +98,12 @@ function buildDistributionGroup(base, peers, denominator, nowSeconds) {
     const servicesCombos = countBy(
         peers,
         (peer) => peer.services_abbrev || '\u2014',
-        (peer, key) => ({ abbrev: key, count: 0, peers: /** @type {import('../types').Peer[]} */ ([]) })
+        (_peer, key) => ({ abbrev: key, count: 0, peers: /** @type {import('../types').Peer[]} */ ([]) })
     );
     const connTypesList = countBy(
         peers,
         (peer) => peer.connection_type || 'unknown',
-        (peer, key) => ({ type: key, count: 0, peers: /** @type {import('../types').Peer[]} */ ([]) })
+        (_peer, key) => ({ type: key, count: 0, peers: /** @type {import('../types').Peer[]} */ ([]) })
     );
     const averagePing = average(pings);
     const averageDuration = average(durations);
@@ -346,7 +346,7 @@ function aggregateSummaryNetworks(peers, segments) {
     return aggregateSummaryByCategory(
         peers,
         (peer) => peer.network || 'ipv4',
-        (peer, key) => labels[key] || key,
+        (_peer, key) => labels[key] || key,
         segments,
         'network'
     );
@@ -372,7 +372,7 @@ function aggregateSummaryHosting(peers, segments) {
             if (peer.mobile) return 'mobile';
             return 'residential';
         },
-        (peer, key) => labels[key] || key,
+        (_peer, key) => labels[key] || key,
         segments,
         'hosting'
     );

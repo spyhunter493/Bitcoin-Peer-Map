@@ -4,8 +4,6 @@ import { dashboard as BPMDashboard } from '../core/dashboard-state.js';
 import * as BPMModal from '../core/modal.js';
 import * as BPMPreferences from '../settings/preferences.js';
 import * as BPMPolling from '../core/polling.js';
-import BPMServiceFlags from '../peers/service-flags.js';
-import * as BPMFormat from '../core/format.js';
 import * as BPMNodeDashboard from '../node/dashboard.js';
 import * as BPMDistribution from '../distribution/controller.js';
 import * as BPMPrivateNetwork from '../peers/private-network.js';
@@ -24,10 +22,7 @@ function create() {
         peerTableDisplay: 'bpm.peerTable.display',
         antarcticaDisclaimerSeen: 'bpm.antarcticaDisclaimerSeen',
     });
-    const repositoryUrl = document.body.dataset.repositoryUrl;
-    const repositoryDiscussionsUrl = `${repositoryUrl}/discussions`;
     const assetRevision = document.body.dataset.assetRevision || '';
-    const mrow = BPMModal.row;
     const escapeHtml = BPMModal.escapeHtml;
 
     /** @param {string} filename */
@@ -127,11 +122,7 @@ function create() {
         nodeHighlightColor,
         NET_COLORS,
         NET_COLOR_UNKNOWN,
-        readSavedDisplaySettings,
-        writeSavedDisplaySettings,
-        saveAdvSettings,
         openDisplaySettingsPopup,
-        closeDisplaySettingsPopup,
     } = preferences;
 
     const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -143,11 +134,7 @@ function create() {
     /** @type {number[][][][]} */
     let nonPolarPolygons = [];
 
-    /** Map brightness slider (0-100, centered at 50) to HSL lightness
-     * Rebuild advColors from current advSettings
-     * Toggle solid backgrounds on HUD overlays (map-overlay, flight-deck, btc-price-bar, right-overlay)
-     * Convert HSL to "r,g,b" string for use in rgba()
-     * Classify world polygons into polar vs non-polar for "Snow the Poles" */
+    /** Classify world polygons into polar vs non-polar for "Snow the Poles". */
     function classifyPolarPolygons() {
         polarPolygons = [];
         nonPolarPolygons = [];
@@ -174,13 +161,6 @@ function create() {
         i2p: 'I2P',
         cjdns: 'CJDNS',
     };
-
-    const SERVICE_FLAGS = BPMServiceFlags;
-
-    const serviceFlagDescription = BPMFormat.serviceFlagDescription;
-
-    /** Build unique short abbreviation string from services array
-     * Build full hover description from services array */
 
     // ═══════════════════════════════════════════════════════════
     // CANVAS & VIEW STATE
@@ -321,10 +301,6 @@ function create() {
     const antOverlay = required('#antarctica-modal-overlay');
 
     // ═══════════════════════════════════════════════════════════
-    // PULSE ON CHANGE — Number animation system
-    // Ported from legacy dashboard.js with all 4 modes
-    // ═══════════════════════════════════════════════════════════
-
     // MINIMIZE BUTTON — Toggle peer panel collapsed state
     // ═══════════════════════════════════════════════════════════
 
@@ -337,9 +313,6 @@ function create() {
                     break;
                 case 'refresh-peers':
                     return fetchPeers();
-                case 'settings':
-                    openDisplaySettingsPopup(action.anchor);
-                    break;
                 case 'network': {
                     const netKey = action.network;
                     if (PRIVATE_NETS.has(netKey)) {
@@ -793,10 +766,7 @@ function create() {
     const loadWorldGeometry = mapDataLoader.loadWorld;
     const loadLakeGeometry = mapDataLoader.loadLakes;
     const loadBorderGeometry = mapDataLoader.loadBorders;
-    const loadStateGeometry = mapDataLoader.loadStates;
-    const loadCityData = mapDataLoader.loadCities;
     const loadCountryLabels = mapDataLoader.loadCountryLabels;
-    const loadStateLabels = mapDataLoader.loadStateLabels;
     const ensureZoomDetailLoaded = mapDataLoader.ensureZoomDetailLoaded;
 
     // ═══════════════════════════════════════════════════════════
@@ -1668,9 +1638,8 @@ function create() {
  * and skips fading-out nodes to avoid visual clutter.
  * Uses wrap offsets so connections work across the date line.
 
- * @param {number} now
  * @param {number[]} wrapOffsets */
-    function drawConnectionLines(now, wrapOffsets) {
+    function drawConnectionLines(wrapOffsets) {
         ctx.lineWidth = 0.5;
         let aliveNodes = mapView.nodes.filter((n) => n.alive);
         // Respect network filter for connection lines too
@@ -2461,7 +2430,7 @@ function create() {
         const btn = closest('.peer-action-btn', e.target);
         if (btn) {
             e.stopPropagation();
-            handlePeerAction(btn.dataset.action || '', parseInt(btn.dataset.id || ''), btn.dataset.net || '');
+            showDisconnectDialog(parseInt(btn.dataset.id || ''), btn.dataset.net || 'ipv4');
             return;
         }
 
@@ -2559,16 +2528,6 @@ function create() {
      * @param {string} net */
     function showDisconnectDialog(peerId, net) {
         peerActions.showDisconnectDialog(peerId, net);
-    }
-
-    /** Handle disconnect action from table row button
-     * @param {number} peerId
-     * @param {string} net
-     *
-     * @param {string} action
-     */
-    function handlePeerAction(action, peerId, net) {
-        showDisconnectDialog(peerId, net || 'ipv4');
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -2743,7 +2702,7 @@ function create() {
 
         // 9. Connection mesh lines between nearby peers (skip in private net mode)
         if (!privateState.privateNetMode) {
-            drawConnectionLines(now, wrapOffsets);
+            drawConnectionLines(wrapOffsets);
         }
 
         // [DISTRIBUTION] 9b. Draw lines from map center to AS peers (hover/selection)

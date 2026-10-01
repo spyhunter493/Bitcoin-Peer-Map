@@ -24,7 +24,7 @@ jobs:
         run: npm ci
       - name: Install browser dependencies
         run: npx playwright install --with-deps chromium
-      - name: Check JavaScript
+      - name: Check JavaScript and TypeScript
         run: |
           npm run check:js
           npm run check:types

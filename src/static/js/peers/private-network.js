@@ -17,7 +17,6 @@ function create({ mapView, settings: advSettings, onAction }) {
     const ALL_NETS = new Set(['ipv4', 'ipv6', ...PRIVATE_NETS]);
     const SERVICE_FLAGS = BPMServiceFlags;
     const project = BPMWorldMap.project;
-    const { fmtBytes: pnFmtBytes, fmtDuration: pnFmtDuration } = BPMFormat;
 
     const privatePanel = BPMPrivateNetworkPanel.create({
         state: privateState,
@@ -60,8 +59,7 @@ function create({ mapView, settings: advSettings, onAction }) {
     const PN_DONUT_WIDTH_DIMMED = 14;
     const PN_INNER_RADIUS = PN_DONUT_RADIUS - PN_DONUT_WIDTH;
 
-    /** Enter private network mode: zoom to Antarctica, show circular donut
-     * Enter private network mode: zoom to Antarctica, show circular donut.
+    /** Enter private network mode: zoom to Antarctica, show circular donut.
      *  If targetNet is provided, skip overview and go directly to that net's panel.
      *
      * @param {number | null} [selectedPeerId]

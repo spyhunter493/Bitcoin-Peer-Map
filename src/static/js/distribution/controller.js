@@ -115,7 +115,6 @@ const CONN_TYPE_FULL = BPMFormat.connectionTypes;
 const distributionData = BPMDistributionData;
 const distributionDonut = BPMDistributionDonut;
 const parseAsNumber = distributionData.parseAsNumber;
-const parseAsOrg = distributionData.parseAsOrg;
 const buildDistributionGroup = distributionData.buildDistributionGroup;
 const getQuality = distributionDonut.getQuality;
 const buildScoreTooltip = distributionDonut.buildScoreTooltip;
@@ -2006,9 +2005,8 @@ function summaryAttachPanelBlankClickHandler(bodyEl) {
     });
 }
 
-/** @param {HTMLElement} bodyEl
- * @param {import('../types').DistributionSegment} seg */
-function summaryAttachInteractiveRowHandlers(bodyEl, seg) {
+/** @param {HTMLElement} bodyEl */
+function summaryAttachInteractiveRowHandlers(bodyEl) {
     var rows = queryAll('.as-interactive-row', bodyEl);
     for (var ri = 0; ri < rows.length; ri++) {
         (function (rowEl) {
@@ -3749,7 +3747,6 @@ function insightAttachSummaryLinkHandlers(bodyEl) {
     for (var i = 0; i < dataProvLinks.length; i++) {
         (function (el) {
             const field = el.dataset.field === 'bytesrecv' ? 'bytesrecv' : 'bytessent';
-            var isRecv = field === 'bytesrecv';
 
             el.addEventListener('mouseenter', function (e) {
                 // When something is selected (pinned) or peer detail is open, suppress hover previews
