@@ -49,7 +49,7 @@ export default async function assertPeerViews(browser, baseUrl) {
         assert.strictEqual(await page.locator('#peer-tbody tr').first().locator('td').nth(5).getAttribute('title'), hostile);
         const servicesCell = page.locator('#peer-tbody tr[data-id="1"] td').nth(6);
         assert.match(await servicesCell.textContent(), /\bBL\b/);
-        assert.match(await servicesCell.getAttribute('title'), /BL = BLAKE2b fork support \(NODE_BLAKE2B\)/);
+        assert.match(await servicesCell.getAttribute('title'), /BL = BLAKE2b \(NODE_BLAKE2B\)/);
         await safe();
 
         await page.click('#as-donut-center');

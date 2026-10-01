@@ -263,6 +263,7 @@
     "/api/info": {
       "get": {
         "summary": "Dashboard Info",
+        "description": "Includes services: the P2P service names advertised by this node, from getnetworkinfo.localservicesnames. An empty array means no services are advertised; null means service information is unavailable.",
         "operationId": "dashboard_info_api_info_get",
         "parameters": [
           {

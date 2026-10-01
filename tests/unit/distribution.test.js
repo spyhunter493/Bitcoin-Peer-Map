@@ -105,7 +105,7 @@ assert.ok(serviceList.includes('NODE_NETWORK'));
 assert.ok(serviceList.includes('Segregated Witness'));
 assert.ok(!serviceList.includes('<br>'));
 const forkServiceList = peerDetail.renderServiceFlagList('BL', serviceFlags);
-assert.ok(forkServiceList.includes('BLAKE2b fork support'));
+assert.ok(forkServiceList.includes('BLAKE2b'));
 assert.ok(forkServiceList.includes('NODE_BLAKE2B'));
 assert.ok(!forkServiceList.includes('Unknown service flag'));
 

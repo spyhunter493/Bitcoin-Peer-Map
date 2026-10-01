@@ -75,38 +75,35 @@
         <span class="mo-btc-currency" id="mo-btc-currency">USD</span>
     </div>
 
-    <!-- Map controls — centered below BTC price -->
-    <div id="map-controls" class="map-controls">
-        <button id="zoom-in" class="zoom-btn" title="Zoom in">+</button>
-        <button id="zoom-out" class="zoom-btn" title="Zoom out">&minus;</button>
-        <button id="zoom-reset" class="zoom-btn" title="Reset view">&#8634;</button>
-    </div>
-
-    <!-- Left map overlay — peers + system stats -->
-    <div id="map-overlay" class="map-overlay">
+    <!-- Left map HUD — controls follow the visible stats -->
+    <div class="map-hud">
+      <div id="map-overlay" class="map-overlay">
         <div class="mo-row mo-sys-row" id="mo-row-peers"><span class="mo-label">Peers</span> <span class="mo-value" id="mo-peers" title="Total connected peers">0</span></div>
         <div class="mo-row peer-data-row"><span class="mo-label">Peer data</span> <span id="peer-data-status" role="status">Connecting…</span></div>
-        <div class="mo-row peer-data-row"><span class="mo-label">Updated</span> <span id="peer-data-age">Never</span></div>
         <div class="mo-row mo-sys-row" id="mo-row-cpu" title="CPU utilization — click for system details"><span class="mo-label">CPU</span> <span class="mo-value" id="ro-cpu">&mdash;</span></div>
         <div class="mo-row mo-sys-row" id="mo-row-ram" title="Memory usage — click for system details"><span class="mo-label">RAM</span> <span class="mo-value" id="ro-ram">&mdash;</span></div>
-        <div class="mo-row mo-sys-row ro-traffic-row" id="mo-row-netin" title="Network download — click for system details">
+        <div class="mo-row mo-sys-row mo-traffic-row" id="mo-row-netin" title="System network download rate — click for system details">
             <span class="mo-label">NET &#8595;</span>
-            <span class="ro-bar-bg"><span class="ro-bar ro-bar-in" id="ro-bar-in"></span></span>
-            <span class="ro-rate" id="ro-rate-in">&mdash;</span>
+            <span class="mo-value mo-traffic-value" id="ro-rate-in">&mdash;</span>
         </div>
-        <div class="mo-row mo-sys-row ro-traffic-row" id="mo-row-netout" title="Network upload — click for system details">
+        <div class="mo-row mo-sys-row mo-traffic-row" id="mo-row-netout" title="System network upload rate — click for system details">
             <span class="mo-label">NET &#8593;</span>
-            <span class="ro-bar-bg"><span class="ro-bar ro-bar-out" id="ro-bar-out"></span></span>
-            <span class="ro-rate" id="ro-rate-out">&mdash;</span>
+            <span class="mo-value mo-traffic-value" id="ro-rate-out">&mdash;</span>
         </div>
-        <div class="mo-row mo-sys-row mo-p2p-row" id="mo-row-p2p-in" title="Bitcoin node P2P download since the Bitcoin node started">
+        <div class="mo-row mo-sys-row mo-traffic-row" id="mo-row-p2p-in" title="Bitcoin node P2P download total since the Bitcoin node started — click for system details">
             <span class="mo-label">P2P &#8595;</span>
-            <span class="mo-value mo-p2p-value" id="mo-p2p-in">&mdash;</span>
+            <span class="mo-value mo-traffic-value" id="mo-p2p-in">&mdash;</span>
         </div>
-        <div class="mo-row mo-sys-row mo-p2p-row" id="mo-row-p2p-out" title="Bitcoin node P2P upload since the Bitcoin node started">
+        <div class="mo-row mo-sys-row mo-traffic-row" id="mo-row-p2p-out" title="Bitcoin node P2P upload total since the Bitcoin node started — click for system details">
             <span class="mo-label">P2P &#8593;</span>
-            <span class="mo-value mo-p2p-value" id="mo-p2p-out">&mdash;</span>
+            <span class="mo-value mo-traffic-value" id="mo-p2p-out">&mdash;</span>
         </div>
+      </div>
+      <div id="map-controls" class="map-controls" role="group" aria-label="Map controls">
+        <button id="zoom-in" class="zoom-btn" title="Zoom in" aria-label="Zoom in">+</button>
+        <button id="zoom-out" class="zoom-btn" title="Zoom out" aria-label="Zoom out">&minus;</button>
+        <button id="zoom-reset" class="zoom-btn" title="Reset view" aria-label="Reset view">&#8634;</button>
+      </div>
     </div>
 
     <!-- [DISTRIBUTION] Donut — fixed upper-right corner of map, always visible -->

@@ -48,7 +48,7 @@ export class NodeService {
         return pending;
     }
     private async refreshDashboard(): Promise<Data> {
-        const result: Data = Object.fromEntries(['last_block', 'blockchain', 'network_scores', 'connected', 'mempool_size', 'subversion', 'network_details', 'node_traffic'].map(key => [key, null]));
+        const result: Data = Object.fromEntries(['last_block', 'blockchain', 'network_scores', 'connected', 'mempool_size', 'subversion', 'services', 'network_details', 'node_traffic'].map(key => [key, null]));
         let blockchain: Data | null = null;
         try {
             const value = await this.rpc.call('getblockchaininfo', [], 10);
@@ -67,6 +67,9 @@ export class NodeService {
             const network = await this.rpc.call('getnetworkinfo', [], 10);
             if (!object(network)) throw new Error('getnetworkinfo returned an unexpected response');
             result.subversion = network.subversion ?? ''; result.connected = network.connections ?? 0;
+            if (Array.isArray(network.localservicesnames) && network.localservicesnames.every((name: unknown) => typeof name === 'string' && name.trim().length > 0)) {
+                result.services = network.localservicesnames;
+            }
             result.network_details = networkSummary(network);
             const scores: Data = { ipv4: null, ipv6: null };
             for (const address of network.localaddresses || []) {

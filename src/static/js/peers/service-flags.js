@@ -1,6 +1,6 @@
 const blake2b = Object.freeze({
     abbr: 'BL',
-    label: 'BLAKE2b fork support',
+    label: 'BLAKE2b',
     rpc: 'NODE_BLAKE2B',
 });
 

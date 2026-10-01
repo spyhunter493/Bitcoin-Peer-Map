@@ -276,6 +276,16 @@ remain separate in `npm run test:layout`.
 Node data and currency-specific prices use independent five-second caches shared
 across browser clients. The dashboard polls `/api/info?include_price=false` and
 `/api/price` separately; `/api/info` still includes prices by default.
+The Node Info popup includes a Services block showing the node's advertised P2P
+services with readable descriptions. `/api/info.services` comes from
+[`getnetworkinfo.localservicesnames`](https://bitcoincore.org/en/doc/30.0.0/rpc/network/getnetworkinfo/);
+an empty list means no services are advertised, while `null` means unavailable.
+
+The map HUD and System Info show NET transfer rates and P2P byte totals as text.
+NET measures system network activity; P2P totals come from the Bitcoin node and
+reset when that node restarts. Click a system or traffic row to open System Info
+and toggle CPU, RAM, NET, or P2P rows independently. These display preferences are
+saved in your browser. Zoom and reset controls stay below the visible stats.
 
 Run `npm run benchmark:dashboard` to profile 14, 125, and 500 synthetic peers in
 Chromium. It reports main-thread task time over three idle seconds, DOM size,
@@ -297,7 +307,9 @@ accept locally constructed markup; ordinary row helpers escape text.
 
 The default `/api/peers` response remains a list. `/api/peers?include_status=true` includes
 connection status and snapshot timestamps. RPC failures retain the last successful snapshot;
-a successful empty response clears it. The dashboard shows cached data age during outages.
+a successful empty response clears it. The Peer data status identifies outages and
+shows the last successful snapshot time in its tooltip. The top-right countdown
+shows when the next refresh is due.
 
 ## Development and Tests
 

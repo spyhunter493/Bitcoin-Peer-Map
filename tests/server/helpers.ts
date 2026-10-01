@@ -27,7 +27,7 @@ export class FakeRpc implements Rpc {
         getblockchaininfo: { chain: 'main', blocks: 100, bestblockhash: 'block-100', size_on_disk: 1e9 },
         getindexinfo: { txindex: {} }, getbestblockhash: 'block-100',
         getblockheader: { height: 100, time: 1000 },
-        getnetworkinfo: { connections: 100, subversion: '/Satoshi:30/', networks: [], localaddresses: [] },
+        getnetworkinfo: { connections: 100, subversion: '/Satoshi:30/', localservicesnames: ['NETWORK', 'WITNESS', 'NETWORK_LIMITED', 'P2P_V2'], networks: [], localaddresses: [] },
         getnettotals: { totalbytesrecv: 2048, totalbytessent: 4096 },
         getmempoolinfo: { size: 5 }, getpeerinfo: [], getnodeaddresses: [], getchaintips: [],
     };

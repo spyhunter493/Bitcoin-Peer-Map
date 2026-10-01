@@ -688,8 +688,23 @@ function create({ config: CFG, onAction }) {
         });
     }
 
-    // Left overlay: Peers/CPU/RAM/NET rows → click opens system info modal
-    ['mo-row-peers', 'mo-row-cpu', 'mo-row-ram', 'mo-row-netin', 'mo-row-netout'].forEach((id) => {
+    const systemDisplayRows = [
+        { id: 'mo-row-cpu', label: 'CPU' },
+        { id: 'mo-row-ram', label: 'RAM' },
+        { id: 'mo-row-netin', label: 'NET \u2193 (Download rate)' },
+        { id: 'mo-row-netout', label: 'NET \u2191 (Upload rate)' },
+        { id: 'mo-row-p2p-in', label: 'P2P \u2193 (Downloaded total)' },
+        { id: 'mo-row-p2p-out', label: 'P2P \u2191 (Uploaded total)' },
+    ];
+    try {
+        const saved = JSON.parse(localStorage.getItem('bpm.system.display') || '{}');
+        for (const { id } of systemDisplayRows) {
+            if (saved?.[id] === false) required(`#${id}`).style.display = 'none';
+        }
+    } catch { /* Keep defaults if browser storage is unavailable or invalid. */ }
+
+    // Every system/traffic row opens the same details and display settings.
+    ['mo-row-peers', ...systemDisplayRows.map(item => item.id)].forEach((id) => {
         const el = document.getElementById(id);
         if (el)
             el.addEventListener('click', (e) => {
@@ -891,7 +906,6 @@ function create({ config: CFG, onAction }) {
         };
         const label = labels[status.state];
         const statusEl = document.getElementById('peer-data-status');
-        const ageEl = document.getElementById('peer-data-age');
         const dot = document.getElementById('status-dot');
         if (statusEl) {
             statusEl.dataset.state = status.state;
@@ -899,23 +913,9 @@ function create({ config: CFG, onAction }) {
             statusEl.title = status.stale
                 ? 'Showing the last successful peer snapshot. Refresh will retry automatically.'
                 : 'Connection status for peer data from your Bitcoin node';
-        }
-        if (ageEl) {
-            const seconds = status.ageSeconds === null ? null : Math.floor(status.ageSeconds);
-            const age =
-                seconds === null
-                    ? 'Never'
-                    : seconds < 60
-                      ? seconds + 's ago'
-                      : seconds < 3600
-                        ? Math.floor(seconds / 60) + 'm ' + (seconds % 60) + 's ago'
-                        : Math.floor(seconds / 3600) + 'h ' + Math.floor((seconds % 3600) / 60) + 'm ago';
-            ageEl.textContent = age + (status.stale ? ' (cached)' : '');
-            ageEl.dataset.stale = String(status.stale);
-            ageEl.title =
-                status.lastSuccessAt === null
-                    ? 'No successful peer snapshot yet'
-                    : 'Last successful peer snapshot: ' + new Date(status.lastSuccessAt * 1000).toLocaleString();
+            statusEl.title += '\n' + (status.lastSuccessAt === null
+                ? 'No successful peer snapshot yet'
+                : 'Last successful peer snapshot: ' + new Date(status.lastSuccessAt * 1000).toLocaleString());
         }
         if (dot) {
             dot.classList.toggle('online', status.state === 'live');
@@ -1300,7 +1300,7 @@ function create({ config: CFG, onAction }) {
         }
     }
 
-    /** Open System Info with system stats, network bar settings, and display toggles. */
+    /** Open System Info with system stats, traffic, and display toggles. */
     function openSystemInfoModal() {
         const existing = document.getElementById('system-info-modal');
         if (existing) existing.remove();
@@ -1361,90 +1361,36 @@ function create({ config: CFG, onAction }) {
         if (lastNetTraffic) {
             const rx = lastNetTraffic.rx_bps || 0;
             const tx = lastNetTraffic.tx_bps || 0;
-            const curMaxIn = netBarMode === 'manual' ? netBarManualMaxIn : getAdaptiveMax(netHistoryIn);
-            const curMaxOut = netBarMode === 'manual' ? netBarManualMaxOut : getAdaptiveMax(netHistoryOut);
-            const rxPct = Math.min(100, (rx / curMaxIn) * 100);
-            const txPct = Math.min(100, (tx / curMaxOut) * 100);
-            html += `<div class="info-row"><span class="info-label">IN \u2193</span><span class="info-val net-traffic-bar-wrap"><span class="net-traffic-bar-bg"><span class="net-traffic-bar traffic-in" style="width:${rxPct}%"></span></span><span class="net-traffic-rate">${formatBps(rx)}</span></span></div>`;
-            html += `<div class="info-row"><span class="info-label">OUT \u2191</span><span class="info-val net-traffic-bar-wrap"><span class="net-traffic-bar-bg"><span class="net-traffic-bar traffic-out" style="width:${txPct}%"></span></span><span class="net-traffic-rate">${formatBps(tx)}</span></span></div>`;
-            html += `<div class="info-row" style="margin-top:2px"><span class="info-label">Current Max</span><span class="info-val" style="font-size:10px">IN: ${formatBps(curMaxIn)} \u00b7 OUT: ${formatBps(curMaxOut)}</span></div>`;
+            html += `<div class="info-row" title="Current system network download rate"><span class="info-label">NET IN \u2193 (rate)</span><span class="info-val">${formatBps(rx)}</span></div>`;
+            html += `<div class="info-row" title="Current system network upload rate"><span class="info-label">NET OUT \u2191 (rate)</span><span class="info-val">${formatBps(tx)}</span></div>`;
         } else {
             html += '<div style="color:var(--text-muted);padding:4px 0">No traffic data yet</div>';
         }
         if (lastNodeInfo && lastNodeInfo.node_traffic) {
             const traffic = lastNodeInfo.node_traffic;
-            html += `<div class="info-row"><span class="info-label">P2P IN \u2193</span><span class="info-val">${escapeHtml(traffic.download_fmt || BPMFormat.fmtBytesShort(traffic.download_bytes || 0))}</span></div>`;
-            html += `<div class="info-row"><span class="info-label">P2P OUT \u2191</span><span class="info-val">${escapeHtml(traffic.upload_fmt || BPMFormat.fmtBytesShort(traffic.upload_bytes || 0))}</span></div>`;
+            html += `<div class="info-row" title="Downloaded by the Bitcoin node since it started"><span class="info-label">P2P IN \u2193 (total)</span><span class="info-val">${escapeHtml(traffic.download_fmt || BPMFormat.fmtBytesShort(traffic.download_bytes || 0))}</span></div>`;
+            html += `<div class="info-row" title="Uploaded by the Bitcoin node since it started"><span class="info-label">P2P OUT \u2191 (total)</span><span class="info-val">${escapeHtml(traffic.upload_fmt || BPMFormat.fmtBytesShort(traffic.upload_bytes || 0))}</span></div>`;
         }
 
-        // ── Section 3: NET Bar Settings ──
-        html += '<div class="modal-section-title">NET Bar Scaling</div>';
-        const manualMaxInKB = Math.round(netBarManualMaxIn / 1024);
-        const manualMaxOutKB = Math.round(netBarManualMaxOut / 1024);
-        html += '<div class="si-net-mode">';
-        html += `<label class="si-radio"><input type="radio" name="si-netbar-mode" value="auto" ${netBarMode === 'auto' ? 'checked' : ''}><span class="si-radio-dot"></span><span class="si-radio-text"><span class="si-radio-label">Auto-detect</span><span class="si-radio-desc">Adapts to p90 of recent traffic (recommended)</span></span></label>`;
-        html += `<label class="si-radio"><input type="radio" name="si-netbar-mode" value="manual" ${netBarMode === 'manual' ? 'checked' : ''}><span class="si-radio-dot"></span><span class="si-radio-text"><span class="si-radio-label">Manual</span><span class="si-radio-desc">Set fixed max values for bar scaling</span></span></label>`;
-        html += '</div>';
-        html += `<div class="si-manual-fields" id="si-manual-fields" style="display:${netBarMode === 'manual' ? 'block' : 'none'}">`;
-        html += `<div class="info-row"><span class="info-label">Max IN</span><div class="dsp-input-wrap"><input type="number" class="dsp-input" id="si-max-in" value="${manualMaxInKB}" min="1" max="999999"><span class="dsp-unit">KB/s</span></div></div>`;
-        html += `<div class="info-row"><span class="info-label">Max OUT</span><div class="dsp-input-wrap"><input type="number" class="dsp-input" id="si-max-out" value="${manualMaxOutKB}" min="1" max="999999"><span class="dsp-unit">KB/s</span></div></div>`;
-        html += '</div>';
-
-        // ── Section 4: Dashboard Display ──
+        // ── Section 3: Dashboard Display ──
         html += '<div class="modal-section-title">Dashboard Display</div>';
-        const dashItems = [
-            { id: 'mo-row-cpu', label: 'CPU' },
-            { id: 'mo-row-ram', label: 'RAM' },
-            { id: 'mo-row-netin', label: 'NET \u2193 (Download)' },
-            { id: 'mo-row-netout', label: 'NET \u2191 (Upload)' },
-        ];
-        dashItems.forEach((item) => {
+        systemDisplayRows.forEach((item) => {
             const el = document.getElementById(item.id);
             const vis = el ? el.style.display !== 'none' : true;
-            html += `<div class="info-row"><span class="info-label">${item.label}</span><label class="dsp-toggle"><input type="checkbox" class="si-dash-toggle" data-target="${item.id}" ${vis ? 'checked' : ''}><span class="dsp-toggle-slider"></span></label></div>`;
+            html += `<div class="info-row"><span class="info-label">${item.label}</span><label class="dsp-toggle"><input type="checkbox" class="si-dash-toggle" aria-label="${item.label}" data-target="${item.id}" ${vis ? 'checked' : ''}><span class="dsp-toggle-slider"></span></label></div>`;
         });
 
         body.innerHTML = html;
-
-        // ── Bind NET bar mode radios ──
-        /** @type {HTMLInputElement[]} */
-        const modeRadios = queryAll('input[name="si-netbar-mode"]', body);
-        const manualFields = document.getElementById('si-manual-fields');
-        modeRadios.forEach((radio) => {
-            radio.addEventListener('change', () => {
-                netBarMode = radio.value;
-                if (manualFields) manualFields.style.display = netBarMode === 'manual' ? 'block' : 'none';
-                updateHandleTrafficBars();
-            });
-        });
-
-        // ── Bind manual max inputs ──
-        /** @type {HTMLInputElement} */
-        const maxInInput = required('#si-max-in');
-        /** @type {HTMLInputElement} */
-        const maxOutInput = required('#si-max-out');
-        if (maxInInput) {
-            maxInInput.addEventListener('change', () => {
-                const v = clamp(parseInt(maxInInput.value) || 100, 1, 999999);
-                maxInInput.value = String(v);
-                netBarManualMaxIn = v * 1024;
-                if (netBarMode === 'manual') updateHandleTrafficBars();
-            });
-        }
-        if (maxOutInput) {
-            maxOutInput.addEventListener('change', () => {
-                const v = clamp(parseInt(maxOutInput.value) || 100, 1, 999999);
-                maxOutInput.value = String(v);
-                netBarManualMaxOut = v * 1024;
-                if (netBarMode === 'manual') updateHandleTrafficBars();
-            });
-        }
 
         // ── Bind dashboard display toggles ──
         /** @type {HTMLInputElement[]} */ (queryAll('.si-dash-toggle', body)).forEach((cb) => {
             cb.addEventListener('change', () => {
                 const target = document.getElementById(cb.dataset.target || '');
                 if (target) target.style.display = cb.checked ? '' : 'none';
+                try {
+                    const visibility = Object.fromEntries(systemDisplayRows.map(({ id }) => [id, required(`#${id}`).style.display !== 'none']));
+                    localStorage.setItem('bpm.system.display', JSON.stringify(visibility));
+                } catch { /* Toggles still work when browser storage is unavailable. */ }
             });
         });
     }
@@ -1456,56 +1402,17 @@ function create({ config: CFG, onAction }) {
     /** @type {{rx_bps: number; tx_bps: number} | null} */
     let lastNetTraffic = null;
 
-    // NET bar scaling mode: 'auto' uses p90 adaptive, 'manual' uses fixed max values
-    let netBarMode = 'auto';
-    let netBarManualMaxIn = 1024 * 1024; // 1 MB/s default manual max for IN
-    let netBarManualMaxOut = 1024 * 1024; // 1 MB/s default manual max for OUT
-
-    // History arrays for adaptive max (from original dashboard)
-    /** @type {number[]} */
-    const netHistoryIn = [];
-    /** @type {number[]} */
-    const netHistoryOut = [];
-    const NET_HISTORY_SIZE = 30;
-
-    /**
-     * @param {number[]} history
-     */
-    function getAdaptiveMax(history) {
-        if (history.length < 3) return 50 * 1024;
-        const sorted = [...history].sort((a, b) => a - b);
-        const p90Index = Math.floor(sorted.length * 0.9);
-        const p90 = sorted[p90Index] || sorted[sorted.length - 1];
-        return Math.max(p90 * 1.2, 10 * 1024);
-    }
-
-    /** Update the traffic bars in the right overlay */
-    function updateHandleTrafficBars() {
+    /** Update current traffic rates without writing unchanged text. */
+    function updateTrafficRates() {
         if (!lastNetTraffic) return;
         const rx = lastNetTraffic.rx_bps || 0;
         const tx = lastNetTraffic.tx_bps || 0;
 
-        // Push to history for adaptive scaling
-        netHistoryIn.push(rx);
-        netHistoryOut.push(tx);
-        if (netHistoryIn.length > NET_HISTORY_SIZE) netHistoryIn.shift();
-        if (netHistoryOut.length > NET_HISTORY_SIZE) netHistoryOut.shift();
-
-        const maxIn = netBarMode === 'manual' ? netBarManualMaxIn : getAdaptiveMax(netHistoryIn);
-        const maxOut = netBarMode === 'manual' ? netBarManualMaxOut : getAdaptiveMax(netHistoryOut);
-
-        const rxPct = Math.min(100, (rx / maxIn) * 100);
-        const txPct = Math.min(100, (tx / maxOut) * 100);
-
-        const barIn = document.getElementById('ro-bar-in');
-        const barOut = document.getElementById('ro-bar-out');
         const rateIn = document.getElementById('ro-rate-in');
         const rateOut = document.getElementById('ro-rate-out');
-
-        if (barIn) barIn.style.width = rxPct + '%';
-        if (barOut) barOut.style.width = txPct + '%';
-        if (rateIn) rateIn.textContent = formatBps(rx);
-        if (rateOut) rateOut.textContent = formatBps(tx);
+        const inText = formatBps(rx), outText = formatBps(tx);
+        if (rateIn && rateIn.textContent !== inText) rateIn.textContent = inText;
+        if (rateOut && rateOut.textContent !== outText) rateOut.textContent = outText;
     }
 
     /** Format bytes/sec to human-readable string
@@ -1579,18 +1486,8 @@ function create({ config: CFG, onAction }) {
                 const d = JSON.parse(e.data);
                 let tweenChanged = false;
 
-                // ── NET traffic (deadband: only update visuals for changes > 2 KB/s) ──
-                const newRx = d.rx_bps || 0;
-                const newTx = d.tx_bps || 0;
-                const prevRx = lastNetTraffic ? lastNetTraffic.rx_bps : 0;
-                const prevTx = lastNetTraffic ? lastNetTraffic.tx_bps : 0;
-                const firstSample = !lastNetTraffic;
-                // Always update cache so future comparisons use current values
-                lastNetTraffic = { rx_bps: newRx, tx_bps: newTx };
-                // Only trigger visual update when change exceeds deadband
-                if (Math.abs(newRx - prevRx) > 2048 || Math.abs(newTx - prevTx) > 2048 || firstSample) {
-                    updateHandleTrafficBars();
-                }
+                lastNetTraffic = { rx_bps: d.rx_bps || 0, tx_bps: d.tx_bps || 0 };
+                updateTrafficRates();
 
                 // ── CPU with tweening (deadband: ignore changes < 1%) ──
                 const cpuEl = document.getElementById('ro-cpu');
