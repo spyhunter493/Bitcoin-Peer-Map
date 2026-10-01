@@ -232,6 +232,7 @@ bitcoin-peer-map/
 │   ├── server/              # TypeScript backend, executed directly by Node.js
 │   │   ├── services/        # Peers, node, GeoIP, connectivity, and metrics
 │   │   ├── app.ts           # HTTP routes, static assets, and metric streaming
+│   │   ├── http.ts          # Request validation, response encoding, and HTTP errors
 │   │   ├── runtime.ts       # Service composition and worker lifecycle
 │   │   ├── settings.ts      # Validated environment configuration
 │   │   ├── rpc.ts           # Direct Bitcoin JSON-RPC client
@@ -266,8 +267,9 @@ controller that owns popup interactions and cleanup.
 
 The entire module graph is served under `/static/v/<asset_revision>/`, so a new
 revision invalidates every relative dependency. Existing static URLs remain
-available. `npm run check:js` discovers JavaScript and TypeScript files recursively,
-`npm run check:types` strictly checks all production modules, and `npm run test:js`
+available. `npm run check:js` checks JavaScript and TypeScript syntax recursively.
+`npm run check:types` checks all production modules in strict mode and flags unused
+locals and parameters. `npm run test:js`
 uses Node's built-in test discovery under `tests/unit/`. Browser regression tests
 remain separate in `npm run test:layout`.
 
@@ -284,6 +286,10 @@ on the same machine and browser because absolute timings vary by environment.
 `types.d.ts` defines the shared peer API shape and controller interfaces. `tsconfig.json`
 checks all production JavaScript modules, including DOM adapters, in strict mode using
 JSDoc annotations. No production build step is required.
+
+Completed refactor plans and benchmark measurements are kept in
+[`docs/archive/`](docs/archive/refactor-plan.md); use this README for current setup
+and architecture.
 
 Peer-supplied strings stay raw in application state. Use `BPMModal.escapeHtml` at HTML text
 and attribute boundaries, or assign `textContent`. Helpers whose names include `HtmlRow`

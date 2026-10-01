@@ -597,7 +597,7 @@ function create(options) {
 
                 const html = buildPnPeerListHtml(peerIds, allNetPeers, category, label);
                 showPnSubTooltip(html, e);
-                pinPnSubTooltip(html, rowEl);
+                pinPnSubTooltip(rowEl);
                 // Lock preview lines to this row's peers
                 privateState.pnPreviewPeerIds = peerIds;
                 // Show category info in PN donut center (stays while pinned)
@@ -951,9 +951,8 @@ function create(options) {
         options.onAction({ type: 'table' });
     }
 
-    /** @param {string} html
-     * @param {HTMLElement} srcEl */
-    function pinPnSubTooltip(html, srcEl) {
+    /** @param {HTMLElement} srcEl */
+    function pinPnSubTooltip(srcEl) {
         privateState.pnSubTooltipPinned = true;
         privateState.pnPinnedSubSrc = srcEl || null;
         if (srcEl)

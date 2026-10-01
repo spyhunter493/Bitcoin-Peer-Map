@@ -2,7 +2,7 @@
 
 Historical measurements from before the Node.js backend migration. Language line
 counts below describe those revisions; current setup and tests are documented in
-the [README](../README.md#development-and-tests).
+the [README](../../README.md#development-and-tests).
 
 The benchmark serves local deterministic peer fixtures and measures main-thread
 work during three idle seconds after arrival animations settle. It also counts

@@ -13,33 +13,20 @@ import assert from 'assert';
 test('frontend modules', async () => {
     const requests = [];
     mock.method(globalThis, 'fetch', async (url, options) => {
-                requests.push({ url, options });
-                if (url === '/failure') {
-                    return {
-                        ok: false,
-                        status: 503,
-                        json: async () => ({ detail: 'temporarily unavailable' }),
-                    };
-                }
-                return {
-                    ok: true,
-                    status: 200,
-                    json: async () => ({ success: true }),
-                };
-            });
-
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
+        requests.push({ url, options });
+        if (url === '/failure') {
+            return {
+                ok: false,
+                status: 503,
+                json: async () => ({ detail: 'temporarily unavailable' }),
+            };
+        }
+        return {
+            ok: true,
+            status: 200,
+            json: async () => ({ success: true }),
+        };
+    });
 
     assert.strictEqual(typeof BPMDisplaySettings.create, 'function');
 

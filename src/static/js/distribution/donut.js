@@ -166,7 +166,7 @@ function buildDonutSvg(options) {
         });
         if (targetIndex >= 0) order.push(targetIndex);
     } else {
-        segments.forEach((segment, index) => order.push(index));
+        segments.forEach((_segment, index) => order.push(index));
     }
 
     let angle = -Math.PI / 2;

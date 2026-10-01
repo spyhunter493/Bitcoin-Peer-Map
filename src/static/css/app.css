@@ -321,8 +321,6 @@ body.map-camera-moving .peer-panel-body {
     align-items: center;
     user-select: none;
 }
-/* Legacy class kept for JS compatibility */
-.flight-deck { display: none; }
 .fd-content {
     display: flex;
     align-items: center;

@@ -4,12 +4,11 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, resolve, join, sep, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
-import { gzip } from 'node:zlib';
-import { promisify } from 'node:util';
 import { once } from 'node:events';
 import { AppRuntime } from './runtime.ts';
 import type { Settings } from './settings.ts';
-import { type Data, object, errorMessage } from './types.ts';
+import { type Data, errorMessage } from './types.ts';
+import { HttpError, readJsonBody, parseAddress, parsePeerId, parseQueryBoolean, sendResponse } from './http.ts';
 
 export interface ApplicationRuntime {
     settings: Settings;
@@ -25,7 +24,6 @@ export interface ApplicationRuntime {
     rpc: Pick<AppRuntime['rpc'], 'connectionInfo'>;
 }
 const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const compress = promisify(gzip);
 const mime: Record<string, string> = { '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.html': 'text/html' };
 export function assetRevision(staticDir: string, revision: string) {
     if (revision !== 'unknown') return revision;
@@ -37,50 +35,6 @@ export function assetRevision(staticDir: string, revision: string) {
 export function escapeHtml(value: string) {
     return value.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]!);
 }
-class HttpError extends Error {
-    readonly status: number;
-    constructor(status: number, message: string) { super(message); this.status = status; }
-}
-async function body(req: IncomingMessage): Promise<Data> {
-    if (Number(req.headers['content-length']) > 64 * 1024) throw new HttpError(413, 'Request body is too large');
-    const chunks: Buffer[] = []; let size = 0;
-    for await (const chunk of req) {
-        size += chunk.length;
-        if (size > 64 * 1024) throw new HttpError(413, 'Request body is too large');
-        chunks.push(chunk);
-    }
-    let value: unknown;
-    try { value = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { throw new HttpError(422, 'Invalid JSON body'); }
-    if (!object(value)) throw new HttpError(422, 'Expected a JSON object');
-    return value;
-}
-function address(payload: Data) {
-    const value = payload.address ?? '';
-    if (typeof value !== 'string') throw new HttpError(422, 'address must be a string');
-    return value;
-}
-function peerId(payload: Data): number | null {
-    if (payload.peer_id == null) return null;
-    const value = payload.peer_id;
-    if (!['number', 'string'].includes(typeof value) || String(value).trim() === '' || !Number.isSafeInteger(Number(value))) throw new HttpError(422, 'peer_id must be an integer');
-    return Number(value);
-}
-function queryBoolean(query: URLSearchParams, name: string, fallback: boolean) {
-    if (!query.has(name)) return fallback;
-    const value = query.get(name)!.toLowerCase();
-    if (['true', '1', 'yes', 'on'].includes(value)) return true;
-    if (['false', '0', 'no', 'off'].includes(value)) return false;
-    throw new HttpError(422, `${name} must be a boolean`);
-}
-function acceptsGzip(header: string) {
-    return header.split(',').some(entry => {
-        const [encoding, ...parameters] = entry.trim().toLowerCase().split(';');
-        if (encoding.trim() !== 'gzip') return false;
-        const quality = parameters.find(parameter => parameter.trim().startsWith('q='));
-        return quality === undefined || Number(quality.trim().slice(2)) > 0;
-    });
-}
-
 export function createApplication(settings: Settings, runtime: ApplicationRuntime = new AppRuntime(settings)) {
     const staticDir = join(packageDir, 'static');
     const revision = settings.build_revision;
@@ -95,22 +49,10 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
     const streams = new Set<ServerResponse>();
     let closeTask: Promise<void> | null = null;
 
-    async function send(req: IncomingMessage, res: ServerResponse, value: unknown, status = 200, type = 'application/json') {
-        if (res.destroyed) return;
-        let bytes = Buffer.isBuffer(value) ? value : Buffer.from(type === 'application/json' ? JSON.stringify(value) : String(value));
-        res.statusCode = status;
-        res.setHeader('Content-Type', type.startsWith('text/') || type === 'application/json' ? `${type}; charset=utf-8` : type);
-        res.setHeader('Vary', 'Accept-Encoding');
-        if (bytes.length >= 500 && acceptsGzip(req.headers['accept-encoding'] || '')) {
-            bytes = await compress(bytes, { level: 6 }); res.setHeader('Content-Encoding', 'gzip');
-        }
-        res.setHeader('Content-Length', bytes.length);
-        res.end(req.method === 'HEAD' ? undefined : bytes);
-    }
     const routes: Record<string, (query: URLSearchParams, req: IncomingMessage, res: ServerResponse) => unknown> = {
         'GET /healthz': () => ({ status: 'ok' }),
-        'GET /api/peers': (query, _req, res) => { res.setHeader('Cache-Control', 'no-store'); return queryBoolean(query, 'include_status', false) ? runtime.peers.snapshot() : runtime.peers.listPeers(); },
-        'GET /api/info': query => runtime.node.dashboardInfo(query.get('currency') ?? 'USD', queryBoolean(query, 'include_price', true)),
+        'GET /api/peers': (query, _req, res) => { res.setHeader('Cache-Control', 'no-store'); return parseQueryBoolean(query, 'include_status', false) ? runtime.peers.snapshot() : runtime.peers.listPeers(); },
+        'GET /api/info': query => runtime.node.dashboardInfo(query.get('currency') ?? 'USD', parseQueryBoolean(query, 'include_price', true)),
         'GET /api/price': query => runtime.node.price(query.get('currency') ?? 'USD'),
         'GET /api/mempool': query => runtime.node.mempool(query.get('currency') ?? 'USD'),
         'GET /api/blockchain': () => runtime.node.blockchain(),
@@ -121,10 +63,10 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
         },
         'GET /api/chain-tips': () => runtime.node.chainTips(),
         'GET /api/bans': () => runtime.node.bans(),
-        'POST /api/peer/connect': async (_query, req) => runtime.node.connect(address(await body(req))),
-        'POST /api/peer/disconnect': async (_query, req) => runtime.node.disconnect(peerId(await body(req))),
-        'POST /api/peer/ban': async (_query, req) => runtime.node.ban(peerId(await body(req))),
-        'POST /api/peer/unban': async (_query, req) => runtime.node.unban(address(await body(req))),
+        'POST /api/peer/connect': async (_query, req) => runtime.node.connect(parseAddress(await readJsonBody(req))),
+        'POST /api/peer/disconnect': async (_query, req) => runtime.node.disconnect(parsePeerId(await readJsonBody(req))),
+        'POST /api/peer/ban': async (_query, req) => runtime.node.ban(parsePeerId(await readJsonBody(req))),
+        'POST /api/peer/unban': async (_query, req) => runtime.node.unban(parseAddress(await readJsonBody(req))),
         'POST /api/bans/clear': () => runtime.node.clearBans(),
         'GET /api/connectivity': () => runtime.connectivity.snapshot(),
         'POST /api/connectivity/api-prompt-ack': () => { runtime.connectivity.acknowledgePrompt(); return { success: true }; },
@@ -146,10 +88,10 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
         try {
             const url = new URL(req.url || '/', 'http://localhost');
             const method = req.method === 'HEAD' ? 'GET' : req.method;
-            if (method === 'GET' && url.pathname === '/') { res.setHeader('Cache-Control', 'no-cache'); await send(req, res, html, 200, 'text/html'); return; }
+            if (method === 'GET' && url.pathname === '/') { res.setHeader('Cache-Control', 'no-cache'); await sendResponse(req, res, html, 200, 'text/html'); return; }
             if (method === 'GET' && ['/docs', '/redoc'].includes(url.pathname)) {
                 const docs = '<!doctype html><html><head><title>Bitcoin Peer Map API</title><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css"></head><body><div id="swagger-ui"></div><script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script><script>SwaggerUIBundle({url:"/openapi.json",dom_id:"#swagger-ui"})</script></body></html>';
-                await send(req, res, docs, 200, 'text/html'); return;
+                await sendResponse(req, res, docs, 200, 'text/html'); return;
             }
             if (method === 'GET' && url.pathname.startsWith('/static/')) {
                 let raw: string;
@@ -171,7 +113,7 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
                 res.setHeader('Cache-Control', versioned || (versions.length === 1 && versions[0] === assets) ? 'public, max-age=31536000, immutable' : 'public, max-age=0, must-revalidate');
                 res.setHeader('ETag', etag);
                 if (req.headers['if-none-match'] === etag) { res.writeHead(304); res.end(); return; }
-                await send(req, res, bytes, 200, mime[extname(path)] || 'application/octet-stream'); return;
+                await sendResponse(req, res, bytes, 200, mime[extname(path)] || 'application/octet-stream'); return;
             }
             if (method === 'GET' && url.pathname === '/api/stream/system') {
                 res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
@@ -189,11 +131,11 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
                 if (allowed.length) { res.setHeader('Allow', allowed.join(', ')); throw new HttpError(405, 'Method not allowed'); }
                 throw new HttpError(404, 'Not found');
             }
-            await send(req, res, await route(url.searchParams, req, res));
+            await sendResponse(req, res, await route(url.searchParams, req, res));
         } catch (error) {
             if (res.headersSent) { res.destroy(); return; }
             if (!(error instanceof HttpError)) console.error(`Request failed: ${errorMessage(error)}`);
-            await send(req, res, { detail: error instanceof HttpError ? error.message : 'Internal server error' }, error instanceof HttpError ? error.status : 500);
+            await sendResponse(req, res, { detail: error instanceof HttpError ? error.message : 'Internal server error' }, error instanceof HttpError ? error.status : 500);
         }
     });
     return {

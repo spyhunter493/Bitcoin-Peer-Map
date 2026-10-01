@@ -21,8 +21,6 @@ function create({ config: CFG, onAction }) {
     /** @type {Record<string,string>} */
     const NET_DISPLAY = { ipv4: 'IPv4', ipv6: 'IPv6', onion: 'Tor', i2p: 'I2P', cjdns: 'CJDNS' };
     const fetchPeers = () => onAction({ type: 'refresh-peers' });
-    /** @param {HTMLElement | null} anchor */
-    const openDisplaySettingsPopup = (anchor) => onAction({ type: 'settings', anchor });
     /** @type {Record<string, number | null>} */
     const prevValues = {}; // elementId -> previous numeric value
 
@@ -690,42 +688,6 @@ function create({ config: CFG, onAction }) {
         });
     }
 
-    // Node Info button handler (old handle btn, kept for compatibility)
-    const nodeInfoBtn = document.getElementById('btn-node-info');
-    if (nodeInfoBtn) {
-        nodeInfoBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            openNodeInfoModal();
-        });
-    }
-
-    // System Info button handler (old handle btn, kept for compatibility)
-    const systemInfoBtn = document.getElementById('btn-system-info');
-    if (systemInfoBtn) {
-        systemInfoBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            openSystemInfoModal();
-        });
-    }
-
-    // Right overlay: NODE INFO link → opens Node Info modal
-    const roNodeInfoLink = document.getElementById('ro-node-info');
-    if (roNodeInfoLink) {
-        roNodeInfoLink.addEventListener('click', (e) => {
-            e.stopPropagation();
-            openNodeInfoModal();
-        });
-    }
-
-    // Right overlay: GEOIP DB link
-    const roGeodbLink = document.getElementById('ro-geodb-link');
-    if (roGeodbLink) {
-        roGeodbLink.addEventListener('click', (e) => {
-            e.stopPropagation();
-            openGeoDBDropdown();
-        });
-    }
-
     // Left overlay: Peers/CPU/RAM/NET rows → click opens system info modal
     ['mo-row-peers', 'mo-row-cpu', 'mo-row-ram', 'mo-row-netin', 'mo-row-netout'].forEach((id) => {
         const el = document.getElementById(id);
@@ -746,25 +708,6 @@ function create({ config: CFG, onAction }) {
             } else {
                 openCurrencyDropdown();
             }
-        });
-    }
-
-    // Right overlay: click Update/Status rows → open settings popup
-    ['ro-row-countdown', 'ro-row-statusmsg'].forEach((id) => {
-        const el = document.getElementById(id);
-        if (el)
-            el.addEventListener('click', (e) => {
-                e.stopPropagation();
-                openDisplaySettingsPopup(el);
-            });
-    });
-
-    // Right overlay: DISPLAY SETTINGS link → open settings popup
-    const roDisplaySettingsLink = document.getElementById('ro-display-settings-link');
-    if (roDisplaySettingsLink) {
-        roDisplaySettingsLink.addEventListener('click', (e) => {
-            e.stopPropagation();
-            openDisplaySettingsPopup(roDisplaySettingsLink);
         });
     }
 
@@ -831,12 +774,6 @@ function create({ config: CFG, onAction }) {
             }
 
             updateNodeTrafficTotals(info.node_traffic);
-
-            // Update right overlay GeoIP DB count
-            if (info.geo_db_stats && info.geo_db_stats.entries != null) {
-                const geodbCountEl = document.getElementById('ro-geodb-count');
-                if (geodbCountEl) geodbCountEl.textContent = info.geo_db_stats.entries.toLocaleString();
-            }
 
             // Store flight deck scores for tooltip display
             if (info.network_scores) {
@@ -998,7 +935,6 @@ function create({ config: CFG, onAction }) {
      */
     function updateInternetDot(state) {
         const dot = document.getElementById('internet-dot');
-        const txt = document.getElementById('internet-text');
         if (!dot) return;
         dot.classList.remove('green', 'yellow', 'red');
         dot.classList.add(state);
@@ -1011,7 +947,6 @@ function create({ config: CFG, onAction }) {
             tip = 'No internet connection detected';
         }
         dot.title = tip;
-        if (txt) txt.title = tip;
     }
 
     function showConnectionRestoredToast() {
@@ -1363,15 +1298,9 @@ function create({ config: CFG, onAction }) {
                 pulseOnChange('ro-ram', memPct, 'white');
             }
         }
-
-        // Update right overlay GeoIP DB entry count
-        const geodbCountEl = document.getElementById('ro-geodb-count');
-        if (geodbCountEl && lastNodeInfo && lastNodeInfo.geo_db_stats && lastNodeInfo.geo_db_stats.entries != null) {
-            geodbCountEl.textContent = lastNodeInfo.geo_db_stats.entries.toLocaleString();
-        }
     }
 
-    /** Open combined System Info modal — system stats + NET bar settings + display toggles + recent changes */
+    /** Open System Info with system stats, network bar settings, and display toggles. */
     function openSystemInfoModal() {
         const existing = document.getElementById('system-info-modal');
         if (existing) existing.remove();
