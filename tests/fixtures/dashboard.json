@@ -619,6 +619,13 @@
     "connected": 14,
     "mempool_size": 1200,
     "subversion": "/Satoshi:29.1.0/",
+    "services": ["NETWORK", "WITNESS", "NETWORK_LIMITED", "P2P_V2"],
+    "node_traffic": {
+      "download_bytes": 8589934592,
+      "upload_bytes": 343597383680,
+      "download_fmt": "8.00GB",
+      "upload_fmt": "320.00GB"
+    },
     "last_known_price": "77203.48",
     "last_price_currency": "USD",
     "last_price_error": null,

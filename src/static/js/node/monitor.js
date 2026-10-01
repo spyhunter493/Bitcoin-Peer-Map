@@ -1,6 +1,7 @@
 import { query } from '../core/dom.js';
 import * as BPMModal from '../core/modal.js';
 import * as BPMApi from '../core/api.js';
+import serviceFlags from '../peers/service-flags.js';
 const modal = BPMModal;
 const api = BPMApi;
 
@@ -284,6 +285,19 @@ function create(options) {
         } else {
             html += '<div style="color:var(--text-muted);padding:4px 0">No node data yet</div>';
         }
+        html += '<div class="modal-section-title" title="Services advertised by this node to the Bitcoin network">Services</div>';
+        html += '<div id="ni-services-section">';
+        if (info?.services == null) {
+            html += '<div style="color:var(--text-muted);padding:4px 0">Service information unavailable</div>';
+        } else if (info.services.length === 0) {
+            html += '<div style="color:var(--text-muted);padding:4px 0">No services advertised</div>';
+        } else {
+            for (const name of info.services) {
+                const flag = Object.hasOwn(serviceFlags, name) ? serviceFlags[name] : undefined;
+                html += modal.row(flag?.label || 'Advertised service', name, flag?.rpc, name, 'modal-val-ok');
+            }
+        }
+        html += '</div>';
         html += '<div class="modal-section-title">Mempool</div>';
         html += '<div id="ni-mempool-section" style="color:var(--text-muted);padding:4px 0">Loading mempool data...</div>';
         html += '<div class="modal-section-title">Blockchain</div>';

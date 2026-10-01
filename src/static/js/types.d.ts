@@ -626,6 +626,7 @@ export interface NodeTraffic {
 export interface NodeInfo {
     connected: number | null;
     subversion: string | null;
+    services: string[] | null;
     blockchain: { size_gb: number; pruned: boolean; indexed: boolean; ibd: boolean } | null;
     last_block: { height: number; time: number } | null;
     mempool_size: number | null;

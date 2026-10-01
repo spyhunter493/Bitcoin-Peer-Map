@@ -40,9 +40,29 @@ test('failed dashboard fields clear after expiry and blockchain failure still pe
     time = 5000; rpc.failed.add('getnetworkinfo'); rpc.failed.add('getblockchaininfo');
     const info = await node.dashboardInfo('USD', false);
     assert.equal(info.connected, null); assert.equal(info.network_details, null); assert.equal(info.blockchain, null);
+    assert.equal(info.services, null);
     assert.deepEqual(info.last_block, { height: 100, time: 1000 });
     assert.equal(info.node_traffic.download_bytes, 2048);
     assert.equal(rpc.count('getbestblockhash'), 1);
+});
+test('dashboard services preserve advertised names and distinguish empty lists from unavailable data', async t => {
+    let time = 0; t.mock.method(performance, 'now', () => time);
+    const { rpc, node } = services(t);
+    const names = ['NETWORK', 'WITNESS', 'BLAKE2B?', 'FUTURE_SERVICE'];
+    rpc.values.getnetworkinfo.localservicesnames = names;
+    const info = await node.dashboardInfo('USD', false);
+    assert.deepEqual(info.services, names);
+    info.services.push('CLIENT_MUTATION');
+    assert.deepEqual((await node.dashboardInfo('USD', false)).services, names);
+    assert.equal(rpc.count('getnetworkinfo'), 1);
+
+    for (const value of [[], undefined, null, 'NETWORK', ['NETWORK', 1], [' ']]) {
+        time += 5000;
+        rpc.values.getnetworkinfo.localservicesnames = value;
+        const refreshed = await node.dashboardInfo('USD', false);
+        assert.deepEqual(refreshed.services, Array.isArray(value) && value.length === 0 ? [] : null);
+        assert.equal(refreshed.connected, 100);
+    }
 });
 test('a slow currency does not block other currencies or node-only requests', async t => {
     const usd = deferred<Response>(), calls: string[] = [];

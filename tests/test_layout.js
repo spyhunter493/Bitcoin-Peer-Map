@@ -12,6 +12,8 @@ import assertTableDom from './test_peer_table_dom.js';
 import assertModules from './test_modules.js';
 import assertMapGroups from './test_map_groups.js';
 import assertGeoIPSettings from './test_geoip_settings.js';
+import assertNodeServices from './test_node_services.js';
+import assertSystemHud from './test_system_hud.js';
 
 const repoRoot = path.resolve(import.meta.dirname, '..');
 
@@ -688,18 +690,17 @@ async function assertPeerRefreshReliability(browser, baseUrl) {
         phase = 'node-down';
         await page.waitForSelector('#peer-data-status[data-state="node-unavailable"]');
         assert.strictEqual(await page.locator('#peer-tbody tr').count(), peerCount);
-        assert.match(await page.locator('#peer-data-age').textContent(), /2m .*\(cached\)/);
+        assert.match(await page.locator('#peer-data-status').getAttribute('title'), /Showing the last successful peer snapshot/);
         await page.locator('#peer-tbody tr').first().evaluate(row => { row.dataset.preserved = 'yes'; });
         phase = 'dashboard-down';
         await page.waitForSelector('#peer-data-status[data-state="dashboard-unavailable"]');
         assert.strictEqual(await page.locator('#peer-tbody tr').first().getAttribute('data-preserved'), 'yes');
-        const age = await page.locator('#peer-data-age').textContent();
-        await page.waitForFunction(previous => document.getElementById('peer-data-age').textContent !== previous, age);
+        assert.match(await page.locator('#peer-data-status').getAttribute('title'), /Last successful peer snapshot:/);
         phase = 'empty';
         await page.waitForSelector('#peer-data-status[data-state="live"]');
         await page.waitForFunction(() => document.querySelectorAll('#peer-tbody tr').length === 0);
         assert.strictEqual(await page.locator('#status-dot').evaluate(dot => dot.classList.contains('online')), true);
-        assert.strictEqual(await page.locator('#peer-data-age').getAttribute('data-stale'), 'false');
+        assert.match(await page.locator('#peer-data-status').getAttribute('title'), /^Connection status/);
         assert.deepStrictEqual(errors, []);
     } finally {
         await context.close();
@@ -869,6 +870,8 @@ async function assertDashboardLifecycle(browser, baseUrl) {
         await assertTableDom(browser, baseUrl);
         await assertDashboardLifecycle(browser, baseUrl);
         await assertGeoIPSettings(browser, baseUrl);
+        await assertNodeServices(browser, baseUrl);
+        await assertSystemHud(browser, baseUrl);
         await assertModules(browser);
         await assertMapGroups(browser, baseUrl);
         console.log('Browser layout regression tests passed');

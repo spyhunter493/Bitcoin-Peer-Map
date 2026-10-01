@@ -306,12 +306,11 @@ body.map-camera-moving .peer-panel-body {
     font-size: 10px;
     color: var(--text-secondary);
 }
-#peer-data-status { color: var(--ok); }
+#peer-data-status { color: var(--ok); pointer-events: auto; cursor: help; }
 #peer-data-status[data-state="connecting"],
 #peer-data-status[data-state="delayed"] { color: var(--warn); }
 #peer-data-status[data-state="node-unavailable"],
 #peer-data-status[data-state="dashboard-unavailable"] { color: var(--err); }
-#peer-data-age[data-stale="true"] { color: var(--warn); }
 
 /* ==========================================================
    4. FLIGHT DECK — Network stats inline in topbar center
@@ -485,10 +484,19 @@ body.map-camera-moving .peer-panel-body {
 /* ==========================================================
    6. MAP OVERLAY — left side: peers + system stats
    ========================================================== */
-.map-overlay {
-    position: fixed;
+.map-hud {
+    position: absolute;
     top: 88px;
     left: 18px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    pointer-events: none;
+    transition: top 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.map-overlay {
+    position: relative;
     z-index: 50;
     display: flex;
     flex-direction: column;
@@ -597,46 +605,18 @@ body.map-camera-moving .peer-panel-body {
     border-color: var(--accent);
 }
 
-.ro-traffic-row {
-    gap: 6px;
-}
-.ro-bar-bg {
-    display: inline-block;
-    width: 80px;
-    height: 7px;
-    background: rgba(88, 166, 255, 0.08);
-    border-radius: 4px;
-    overflow: hidden;
-    box-shadow: 0 0 4px rgba(0,0,0,0.5);
-    vertical-align: middle;
-}
-.ro-bar {
-    display: block;
-    height: 100%;
-    border-radius: 4px;
-    transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
-    min-width: 0;
-    width: 0%;
-}
-.ro-bar-in  { background: var(--ok); box-shadow: 0 0 6px rgba(63,185,80,0.4); }
-.ro-bar-out { background: var(--accent); box-shadow: 0 0 6px rgba(88,166,255,0.4); }
-.ro-rate {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--text-secondary);
-    font-family: var(--font-data);
-    text-shadow: 0 1px 6px rgba(0,0,0,0.9);
-    min-width: 60px;
-    text-align: right;
-}
-.mo-p2p-row {
+.mo-traffic-row {
+    display: grid;
+    grid-template-columns: 46px minmax(84px, auto);
     gap: 8px;
 }
-.mo-p2p-value {
-    min-width: 72px;
+.mo-traffic-value {
     font-size: 12px;
+    font-weight: 600;
     color: var(--text-secondary);
     text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
 }
 /* HUD solid backgrounds — toggled via body.hud-solid class */
 body.hud-solid .map-overlay {
@@ -668,25 +648,17 @@ body.theme-light .fd-net-name,
 body.theme-light .fd-net-counts,
 body.theme-light .mo-btc-symbol,
 body.theme-light .mo-btc-price,
-body.theme-light .mo-btc-arrow,
-body.theme-light .ro-rate {
+body.theme-light .mo-btc-arrow {
     text-shadow: none;
 }
 
 /* Map controls — below system stats on the left */
 .map-controls {
-    position: fixed;
-    top: 250px;
-    left: 18px;
-    transform: none;
+    position: relative;
     z-index: 290;
     display: flex;
     gap: 4px;
     pointer-events: auto;
-    transition: top 0.45s cubic-bezier(0.4, 0, 0.2, 1),
-                left 0.45s cubic-bezier(0.4, 0, 0.2, 1),
-                right 0.45s cubic-bezier(0.4, 0, 0.2, 1),
-                transform 0.45s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* ==========================================================
@@ -703,13 +675,8 @@ body.donut-focused .btc-price-bar {
 }
 
 /* System stats: slightly shift down for scaled BTC in focused mode */
-body.donut-focused .map-overlay {
+body.donut-focused .map-hud {
     top: 84px;
-}
-
-/* Map controls: adjust for focused mode stats shift */
-body.donut-focused .map-controls {
-    top: 246px;
 }
 
 /* ==========================================================
@@ -1533,39 +1500,6 @@ body.donut-focused .map-controls {
     white-space: nowrap;
 }
 
-/* Network traffic bars (inside modals) */
-.net-traffic-bar-wrap {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    min-width: 90px;
-}
-.net-traffic-bar-bg {
-    flex: 1;
-    height: 8px;
-    background: rgba(88, 166, 255, 0.06);
-    border-radius: 4px;
-    overflow: hidden;
-}
-.net-traffic-bar {
-    height: 100%;
-    border-radius: 4px;
-    transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
-    min-width: 0;
-}
-.net-traffic-bar.traffic-in  { background: var(--ok); }
-.net-traffic-bar.traffic-out { background: var(--accent); }
-.net-traffic-rate {
-    font-size: 10px;
-    font-weight: 600;
-    color: var(--text-secondary);
-    white-space: nowrap;
-    min-width: 55px;
-    text-align: right;
-}
-/* Inside modals, traffic rates should be white */
-.modal-body .net-traffic-rate { color: var(--text-primary); }
-
 /* ==========================================================
    14b. DISPLAY SETTINGS POPUP
    ========================================================== */
@@ -2083,71 +2017,6 @@ body.donut-focused .map-controls {
     color: var(--text-muted);
     padding: 1px 0 2px;
     line-height: 1.3;
-}
-
-/* ==========================================================
-   14c. SYSTEM INFO MODAL — Radio & Manual NET fields
-   ========================================================== */
-.si-net-mode {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    padding: 2px 0;
-}
-.si-radio {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    cursor: pointer;
-    padding: 4px 0;
-}
-.si-radio input { opacity: 0; width: 0; height: 0; position: absolute; }
-.si-radio-dot {
-    display: inline-block;
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    border: 2px solid rgba(88, 166, 255, 0.3);
-    flex-shrink: 0;
-    margin-top: 1px;
-    transition: border-color 0.2s;
-    position: relative;
-}
-.si-radio-dot::after {
-    content: '';
-    position: absolute;
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%) scale(0);
-    background: var(--accent);
-    transition: transform 0.2s;
-}
-.si-radio input:checked ~ .si-radio-dot {
-    border-color: var(--accent);
-}
-.si-radio input:checked ~ .si-radio-dot::after {
-    transform: translate(-50%, -50%) scale(1);
-}
-.si-radio-text {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-}
-.si-radio-label {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--text-primary);
-    line-height: 1;
-}
-.si-radio-desc {
-    font-size: 9px;
-    color: var(--text-muted);
-}
-.si-manual-fields {
-    padding: 4px 0 2px 22px;
 }
 
 /* ==========================================================
