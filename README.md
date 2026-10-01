@@ -10,7 +10,7 @@ Bitcoin Peer Map is a Docker-first dashboard for monitoring and managing peers c
 - A reachable Bitcoin Node JSON-RPC endpoint
 - Dedicated RPC credentials for the dashboard
 
-The Bitcoin node can run on another machine, in another Compose project, or elsewhere on the network. Bitcoin Peer Map does not need the node datadir, blockchain files, `bitcoin-cli`, Python, or a virtualenv on the Docker host.
+The Bitcoin node can run on another machine, in another Compose project, or elsewhere on the network. Bitcoin Peer Map does not need the node datadir, blockchain files, or `bitcoin-cli`. The application and tests run on Node.js; Python is not required on the host, in the container, or for development.
 
 ## Quick Start
 
@@ -137,6 +137,11 @@ The named volume is mounted at `/var/lib/bitcoin-peer-map` and contains only mut
 
 RPC credentials are never written to the volume. Browser display preferences remain in browser local storage under `bpm.*` keys.
 
+The Node.js backend uses the same SQLite schema and preference format as earlier
+releases. Keep the existing data volume when upgrading; no database conversion or
+preference reset is needed. The environment variables and dashboard API paths are
+unchanged.
+
 ### GeoIP Updates and Privacy
 
 With auto-update enabled, the backend downloads the GeoIP dataset at startup and
@@ -224,23 +229,33 @@ docker compose logs -f --tail=100 bpm
 ```text
 bitcoin-peer-map/
 ├── src/
-│   ├── api/                 # FastAPI routers grouped by domain
-│   ├── services/            # Peer, node, GeoIP, connectivity, and metric services
+│   ├── server/              # TypeScript backend, executed directly by Node.js
+│   │   ├── services/        # Peers, node, GeoIP, connectivity, and metrics
+│   │   ├── app.ts           # HTTP routes, static assets, and metric streaming
+│   │   ├── runtime.ts       # Service composition and worker lifecycle
+│   │   ├── settings.ts      # Validated environment configuration
+│   │   ├── rpc.ts           # Direct Bitcoin JSON-RPC client
+│   │   ├── openapi.json     # API specification served at /openapi.json
+│   │   └── main.ts          # Container process entrypoint
 │   ├── static/              # Browser JavaScript, CSS, and map assets
-│   ├── templates/           # Jinja templates
-│   ├── app.py               # FastAPI application factory and lifespan
-│   ├── runtime.py           # Service composition and worker lifecycle
-│   ├── settings.py          # Typed environment configuration
-│   ├── rpc.py               # Direct Bitcoin JSON-RPC client
-│   └── main.py              # Container process entrypoint
-├── tests/                   # Python and JavaScript tests
+│   └── templates/           # Dashboard HTML
+├── tests/
+│   ├── server/              # Backend tests using node:test
+│   ├── unit/                # Frontend unit tests using node:test
+│   └── layout_server.ts     # Local API fixtures for browser regressions
 ├── Dockerfile
 ├── compose.yaml
-├── requirements.txt
-└── pyproject.toml
+├── package.json
+└── tsconfig.server.json
 ```
 
-The application uses FastAPI lifespan hooks to start and stop peer polling, GeoIP enrichment, connectivity monitoring, and container metric workers. API routers obtain services through the application runtime rather than module-level global state.
+Node.js 24 executes the TypeScript backend directly, using built-in HTTP, SQLite,
+fetch, and worker-thread APIs. There are no production npm dependencies, compiled
+addons, or application build step. The application runtime owns peer polling,
+GeoIP enrichment, connectivity monitoring, and metric sampling and stops them on
+SIGTERM or SIGINT. Dataset validation and SQLite merges run in a worker thread so
+large imports do not block HTTP requests. Interactive API documentation is served
+at `/docs`; update `src/server/openapi.json` alongside changes to API contracts.
 
 Browser code uses native ES modules with one small `static/js/app.js` entrypoint and
 no bundler or production build step. Features live in `map/`, `peers/`,
@@ -251,7 +266,7 @@ controller that owns popup interactions and cleanup.
 
 The entire module graph is served under `/static/v/<asset_revision>/`, so a new
 revision invalidates every relative dependency. Existing static URLs remain
-available. `npm run check:js` discovers JavaScript files recursively,
+available. `npm run check:js` discovers JavaScript and TypeScript files recursively,
 `npm run check:types` strictly checks all production modules, and `npm run test:js`
 uses Node's built-in test discovery under `tests/unit/`. Browser regression tests
 remain separate in `npm run test:layout`.
@@ -280,26 +295,37 @@ a successful empty response clears it. The dashboard shows cached data age durin
 
 ## Development and Tests
 
-The production image installs dependencies directly into the container's Python installation and runs `src/main.py`. A virtualenv inside the image would duplicate isolation already provided by the container and is intentionally not used.
+Use **Node.js 24.18 or later in the 24.x release line** and npm for development.
+The production image uses `node:24-alpine` and starts `src/server/main.ts` directly.
+Only development tools (TypeScript, Node type definitions, and Playwright) require
+`npm ci`; the server and backend tests use Node's built-in libraries.
 
-Run the same Python checks used by CI without installing Python dependencies or generated
-package metadata on the host:
-
-```bash
-docker run --rm -v "$PWD:/source:ro" python:3.12-slim \
-  sh -c 'cp -a /source /app && cd /app && pip install -r requirements-test.txt && \
-  ruff format --check src tests && ruff check src tests && pytest -q'
-```
-
-Run the JavaScript checks:
+Run the checks and tests used by CI:
 
 ```bash
 npm ci
 npm run check:js
 npm run check:types
-npm run test:js
-npm run test:layout:docker
+npm test
+npx playwright install --with-deps chromium
+npm run test:layout
 ```
+
+`npm test` runs backend and frontend unit tests. `npm run test:layout` starts the
+Node fixture server automatically. To run that server in a container instead,
+use `npm run test:layout:docker` (Docker, curl, and the same local browser tools
+are required). Tests use local fixtures and mock RPC servers, without a live
+Bitcoin node or external GeoIP/price services.
+
+To run the real server locally, create `.env` as in Quick Start and start it with:
+
+```bash
+BPM_DATA_DIR="$PWD/.local-data" node --env-file=.env src/server/main.ts
+```
+
+Alternatively, export the documented environment variables and run `npm start`.
+CPU, memory, network, and disk metrics target Linux, including the Docker image;
+unavailable platform metrics are omitted or returned as null.
 
 Validate the deployment definition and image:
 
@@ -308,7 +334,13 @@ BITCOIN_RPC_USER=test BITCOIN_RPC_PASSWORD=test \
   docker compose config --quiet
 docker build --build-arg BPM_BUILD_REVISION="$(git rev-parse HEAD)" \
   -t bitcoin-peer-map:test .
+npm run test:container
 ```
+
+The container smoke test uses Linux host networking and a local mock RPC server.
+It checks the production entrypoint, health check, unprivileged read-only
+operation, persisted SQLite data and preferences, and clean shutdown. It creates
+and removes its own test container and volume.
 
 ## License
 

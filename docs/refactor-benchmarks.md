@@ -1,5 +1,9 @@
 # Lean dashboard refactor validation
 
+Historical measurements from before the Node.js backend migration. Language line
+counts below describe those revisions; current setup and tests are documented in
+the [README](../README.md#development-and-tests).
+
 The benchmark serves local deterministic peer fixtures and measures main-thread
 work during three idle seconds after arrival animations settle. It also counts
 DOM nodes and table mutations during an unchanged poll. Each result below is one

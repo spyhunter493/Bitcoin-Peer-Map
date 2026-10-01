@@ -9,10 +9,18 @@
     "benchmark:dashboard": "node scripts/benchmark-dashboard.js",
     "test:layout": "node tests/test_layout.js",
     "test:layout:docker": "scripts/test-layout-docker.sh",
-    "check:types": "tsc --noEmit"
+    "check:types": "tsc --noEmit && tsc -p tsconfig.server.json",
+    "start": "node src/server/main.ts",
+    "test:server": "node --test tests/server/*.test.ts",
+    "test:container": "node tests/test_container.js",
+    "test": "npm run test:server && npm run test:js"
   },
   "devDependencies": {
+    "@types/node": "24.19.0",
     "playwright": "1.62.1",
     "typescript": "7.0.2"
+  },
+  "engines": {
+    "node": ">=24.18.0 <25"
   }
 }

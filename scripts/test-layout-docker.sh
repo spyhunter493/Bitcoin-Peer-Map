@@ -15,8 +15,10 @@ docker run --rm \
     -p "127.0.0.1:${port}:${port}" \
     -v "${PWD}:/app:ro" \
     -w /app \
-    python:3.12-slim \
-    sh -c "pip install -q -r requirements-test.txt && PYTHONPATH=src BPM_LAYOUT_TEST_HOST=0.0.0.0 BPM_LAYOUT_TEST_PORT=${port} python tests/layout_server.py" &
+    -e BPM_LAYOUT_TEST_HOST=0.0.0.0 \
+    -e BPM_LAYOUT_TEST_PORT="${port}" \
+    node:24-alpine \
+    node tests/layout_server.ts &
 server_pid="$!"
 
 i=0
