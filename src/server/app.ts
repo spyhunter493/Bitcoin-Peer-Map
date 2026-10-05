@@ -19,6 +19,7 @@ export interface ApplicationRuntime {
     peers: Pick<AppRuntime['peers'], 'snapshot' | 'listPeers'>;
     node: Pick<AppRuntime['node'], 'dashboardInfo' | 'price' | 'mempool' | 'blockchain' | 'recentBlocks' | 'chainTips' | 'connect' | 'disconnect' | 'ban' | 'unban' | 'bans' | 'clearBans'>;
     metrics: Pick<AppRuntime['metrics'], 'latest' | 'summary'>;
+    updates: Pick<AppRuntime['updates'], 'snapshot'>;
     connectivity: Pick<AppRuntime['connectivity'], 'snapshot' | 'acknowledgePrompt'>;
     geoDatabase: Pick<AppRuntime['geoDatabase'], 'update'>;
     rpc: Pick<AppRuntime['rpc'], 'connectionInfo'>;
@@ -52,7 +53,7 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
     const routes: Record<string, (query: URLSearchParams, req: IncomingMessage, res: ServerResponse) => unknown> = {
         'GET /healthz': () => ({ status: 'ok' }),
         'GET /api/peers': (query, _req, res) => { res.setHeader('Cache-Control', 'no-store'); return parseQueryBoolean(query, 'include_status', false) ? runtime.peers.snapshot() : runtime.peers.listPeers(); },
-        'GET /api/info': query => runtime.node.dashboardInfo(query.get('currency') ?? 'USD', parseQueryBoolean(query, 'include_price', true)),
+        'GET /api/info': async query => ({ ...await runtime.node.dashboardInfo(query.get('currency') ?? 'USD', parseQueryBoolean(query, 'include_price', true)), updates: runtime.updates.snapshot() }),
         'GET /api/price': query => runtime.node.price(query.get('currency') ?? 'USD'),
         'GET /api/mempool': query => runtime.node.mempool(query.get('currency') ?? 'USD'),
         'GET /api/blockchain': () => runtime.node.blockchain(),
@@ -79,7 +80,7 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
             bitcoin_rpc: { scheme: settings.rpc_scheme, host: settings.rpc_host, port: settings.rpc_port, network: settings.bitcoin_network, verify_tls: settings.rpc_verify_tls, timeout: settings.rpc_timeout, startup_timeout: settings.rpc_startup_timeout, username_configured: Boolean(settings.rpc_user), password_configured: Boolean(settings.rpc_password), password_file_configured: settings.rpc_password_file_configured, endpoint: settings.rpc_url },
             server: { listen_address: settings.listen_address, listen_port: settings.listen_port },
             geoip: { enabled: settings.geoip_enabled, auto_update_override: settings.geoip_auto_update_override },
-            build: { revision, revision_known: revision !== 'unknown', asset_revision: assets, revision_url: revisionUrl },
+            build: { revision, revision_known: revision !== 'unknown', asset_revision: assets, revision_url: revisionUrl, updates: runtime.updates.snapshot() },
             repository: { github: settings.github_repository, url: repositoryUrl }, data: { data_dir: settings.data_dir },
         }),
         'GET /openapi.json': () => schema,

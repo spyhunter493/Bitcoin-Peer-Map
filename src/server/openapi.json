@@ -263,7 +263,7 @@
     "/api/info": {
       "get": {
         "summary": "Dashboard Info",
-        "description": "Includes services: the P2P service names advertised by this node, from getnetworkinfo.localservicesnames. An empty array means no services are advertised; null means service information is unavailable.",
+        "description": "Includes services: the P2P service names advertised by this node, from getnetworkinfo.localservicesnames. An empty array means no services are advertised; null means service information is unavailable. Includes updates: the cached application update status. Dashboard reads do not trigger GitHub requests; the server checks once every 24 hours.",
         "operationId": "dashboard_info_api_info_get",
         "parameters": [
           {
@@ -292,7 +292,14 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "updates": {
+                      "$ref": "#/components/schemas/UpdateStatus"
+                    }
+                  }
+                }
               }
             }
           },
@@ -562,7 +569,8 @@
               }
             }
           }
-        }
+        },
+        "description": "Runtime configuration without credentials. build.updates contains the cached application update status."
       }
     },
     "/api/stream/system": {
@@ -641,6 +649,45 @@
           "detail": {
             "type": "string",
             "description": "Description of the request error."
+          }
+        }
+      },
+      "UpdateStatus": {
+        "type": "object",
+        "required": [
+          "update_available",
+          "commits_behind",
+          "changes_url",
+          "checked_at",
+          "check_failed"
+        ],
+        "properties": {
+          "update_available": {
+            "type": "boolean"
+          },
+          "commits_behind": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "changes_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "checked_at": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Unix timestamp in seconds of the last completed check, including failures."
+          },
+          "check_failed": {
+            "type": "boolean",
+            "description": "Whether the last check failed. A previously known update is retained."
           }
         }
       }

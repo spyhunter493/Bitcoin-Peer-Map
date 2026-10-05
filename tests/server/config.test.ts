@@ -30,15 +30,11 @@ test('password files preserve spaces and never accept conflicting sources', t =>
     assert.throws(() => settings(env), /single line/);
     assert.throws(() => settings({ ...env, BITCOIN_RPC_PASSWORD_FILE: `${path}-missing` }), /not readable/);
 });
-test('build revision file fallback, normalization, validation, and precedence', t => {
-    const path = join(temporaryDirectory(t), 'revision');
-    const env = { BPM_BUILD_REVISION_FILE: path };
-    assert.equal(settings(env).build_revision, 'unknown');
-    writeFileSync(path, 'ABCDEF012345\n');
-    assert.equal(settings(env).build_revision, 'abcdef012345');
-    assert.equal(settings({ ...env, BPM_BUILD_REVISION: '7654321' }).build_revision, '7654321');
-    writeFileSync(path, 'invalid');
-    assert.throws(() => settings(env), /BPM_BUILD_REVISION_FILE/);
+test('build revision defaults, normalization, and validation', () => {
+    assert.equal(settings().build_revision, 'unknown');
+    assert.equal(settings({ BPM_BUILD_REVISION: ' ABCDEF012345\n' }).build_revision, 'abcdef012345');
+    assert.equal(settings({ BPM_BUILD_REVISION: ' ' }).build_revision, 'unknown');
+    assert.throws(() => settings({ BPM_BUILD_REVISION: 'invalid' }), /BPM_BUILD_REVISION/);
 });
 test('preferences survive atomic replacement with restricted permissions', t => {
     const dir = temporaryDirectory(t), path = join(dir, 'settings.json');

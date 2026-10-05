@@ -623,7 +623,15 @@ export interface NodeTraffic {
     download_fmt: string;
     upload_fmt: string;
 }
+export interface UpdateStatus {
+    update_available: boolean;
+    commits_behind: number | null;
+    changes_url: string | null;
+    checked_at: number | null;
+    check_failed: boolean;
+}
 export interface NodeInfo {
+    updates?: UpdateStatus;
     connected: number | null;
     subversion: string | null;
     services: string[] | null;
