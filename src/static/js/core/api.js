@@ -1,10 +1,11 @@
 class HttpError extends Error {
-    /** @param {string} message @param {number} status @param {unknown} data */
-    constructor(message, status, data) {
+    /** @param {string} message @param {number} status @param {unknown} data @param {number | null} [retryAfterSeconds] */
+    constructor(message, status, data, retryAfterSeconds = null) {
         super(message);
         this.name = 'HttpError';
         this.status = status;
         this.data = data;
+        this.retryAfterSeconds = retryAfterSeconds;
     }
 }
 
@@ -35,7 +36,13 @@ async function requestJson(url, options) {
 
     if (!response.ok) {
         const detail = data && (data.detail || data.error || data.message);
-        throw new HttpError(detail || `Request failed (${response.status})`, response.status, data);
+        const retryAfter = response.headers.get('Retry-After');
+        const seconds = retryAfter && /^\d+$/.test(retryAfter) ? Number(retryAfter)
+            : retryAfter ? Math.ceil((Date.parse(retryAfter) - Date.now()) / 1000) : NaN;
+        const retryAfterSeconds = Number.isFinite(seconds) ? Math.max(0, seconds) : null;
+        const cooldown = response.status === 429 && data?.code === 'admin_rate_limited';
+        const message = detail || `Request failed (${response.status})`;
+        throw new HttpError(cooldown ? `${message} Try again in ${retryAfterSeconds ?? 60} seconds.` : message, response.status, data, retryAfterSeconds);
     }
     return /** @type {T} */ (data);
 }
@@ -73,8 +80,7 @@ async function postJson(url, body, options) {
         return await requestJson(url, requestOptions);
     } catch (error) {
         if (!(error instanceof HttpError) || !authentication) throw error;
-        const rateLimited = error.status === 429 && error.data && typeof error.data === 'object' && 'code' in error.data && error.data.code === 'admin_rate_limited';
-        if (error.status !== 401 && !rateLimited) throw error;
+        if (error.status !== 401) throw error;
         if (authentication.getToken() === previousToken) authentication.clearToken();
         const token = await authentication.requestToken(options?.signal || undefined);
         options?.signal?.throwIfAborted();

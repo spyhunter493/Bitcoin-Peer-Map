@@ -5,7 +5,7 @@ export default async function assertAdminAuthentication(browser, baseUrl) {
     const context = await browser.newContext({ viewport: { width: 1638, height: 900 } });
     const page = await context.newPage();
     const errors = [], completed = [];
-    let rotated = false;
+    let rotated = false, actionCooldown = false, verificationCooldown = false, verificationRequests = 0;
     let verificationGate = Promise.resolve();
     const replacement = 'replacement-browser-token-'.padEnd(64, 'y');
     page.on('pageerror', error => errors.push(error.message));
@@ -13,6 +13,10 @@ export default async function assertAdminAuthentication(browser, baseUrl) {
     await page.route('**/api/peer/**', async route => {
         const request = route.request();
         const authorization = request.headers().authorization;
+        if (actionCooldown) {
+            await route.fulfill({ status: 429, headers: { 'Retry-After': '60' }, json: { detail: 'Authentication cooldown active.', code: 'admin_rate_limited' } });
+            return;
+        }
         if (rotated) {
             const valid = authorization === `Bearer ${replacement}`;
             if (valid) completed.push({ path: new URL(request.url()).pathname, body: request.postDataJSON(), authorization });
@@ -24,7 +28,12 @@ export default async function assertAdminAuthentication(browser, baseUrl) {
         }
     });
     await page.route('**/api/admin/verify', async route => {
+        verificationRequests++;
         await verificationGate;
+        if (verificationCooldown) {
+            await route.fulfill({ status: 429, headers: { 'Retry-After': '3' }, json: { detail: 'Authentication cooldown active.', code: 'admin_rate_limited' } });
+            return;
+        }
         if (!rotated) { await route.continue(); return; }
         const valid = route.request().headers().authorization === `Bearer ${replacement}`;
         await route.fulfill({ status: valid ? 200 : 401, json: valid ? { success: true } : { detail: 'Enter the admin token', code: 'admin_required' } });
@@ -48,13 +57,6 @@ export default async function assertAdminAuthentication(browser, baseUrl) {
         await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
         await page.waitForFunction(() => document.getElementById('mo-status')?.textContent === 'Synced');
         assert.equal(await page.locator('#admin-lock').isVisible(), false);
-        const limited = await page.evaluate(async token => {
-            await fetch('/api/admin/verify', { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
-            let status;
-            for (let i = 0; i < 11; i++) status = (await fetch('/api/admin/verify', { method: 'POST' })).status;
-            return status;
-        }, FIXTURE_ADMIN_TOKEN);
-        assert.equal(limited, 429);
         await requestConnection();
         await waitForPrompt();
         assert.equal(await page.locator('#admin-token-modal [role="dialog"]').getAttribute('aria-modal'), 'true');
@@ -63,7 +65,6 @@ export default async function assertAdminAuthentication(browser, baseUrl) {
         await page.waitForFunction(() => !document.getElementById('connect-go-btn').disabled);
         assert.equal(completed.length, 0, 'cancelling authentication must not execute the requested operation');
         assert.equal(await page.evaluate(() => document.activeElement.id), 'connect-go-btn');
-        await page.evaluate(token => fetch('/api/admin/verify', { method: 'POST', headers: { Authorization: `Bearer ${token}` } }), FIXTURE_ADMIN_TOKEN);
 
         await requestConnection();
         await waitForPrompt();
@@ -82,6 +83,14 @@ export default async function assertAdminAuthentication(browser, baseUrl) {
         assert.equal(await page.locator('#admin-lock').isVisible(), true, 'Lock remains accessible on narrow screens');
         await page.setViewportSize({ width: 1638, height: 900 });
         assert.equal(await page.evaluate(token => [...Object.values(localStorage), ...Object.values(sessionStorage)].some(value => value.includes(token)), FIXTURE_ADMIN_TOKEN), false);
+        actionCooldown = true;
+        const completedBeforeCooldown = completed.length;
+        await requestConnection();
+        await page.waitForFunction(() => document.getElementById('connect-result')?.textContent.includes('60 seconds'));
+        assert.equal(await page.locator('#admin-token-modal').count(), 0);
+        assert.equal(await page.locator('#admin-lock').isVisible(), true, 'cooldown preserves the stored token');
+        assert.equal(completed.length, completedBeforeCooldown);
+        actionCooldown = false;
         await page.locator('#connect-close').click();
 
         // Other entry points reuse the token rather than opening another prompt.
@@ -139,6 +148,45 @@ export default async function assertAdminAuthentication(browser, baseUrl) {
         await page.waitForFunction(() => !document.getElementById('connect-go-btn').disabled);
         assert.equal(completed.length, 4);
         assert.equal(await page.locator('#admin-lock').isVisible(), false);
+
+        // A verification cooldown disables submission, permits cancellation, and needs a manual retry.
+        await page.clock.install();
+        await page.evaluate(() => {
+            window.cooldownIntervals = new Set();
+            const schedule = window.setInterval.bind(window), clear = window.clearInterval.bind(window);
+            window.setInterval = (handler, ...args) => {
+                const id = schedule(handler, ...args);
+                if (handler.name === 'updateCooldown') window.cooldownIntervals.add(id);
+                return id;
+            };
+            window.clearInterval = id => { window.cooldownIntervals.delete(id); clear(id); };
+        });
+        verificationCooldown = true;
+        await requestConnection();
+        await waitForPrompt();
+        await submitToken(replacement);
+        await page.waitForFunction(() => document.getElementById('admin-token-error')?.textContent.includes('3 seconds'));
+        assert.equal(await page.locator('#admin-token-submit').isDisabled(), true);
+        assert.equal(await page.evaluate(() => window.cooldownIntervals.size), 1);
+        const attempts = verificationRequests;
+        await page.clock.fastForward(3000);
+        assert.equal(await page.locator('#admin-token-submit').isDisabled(), false);
+        assert.equal(verificationRequests, attempts, 'expiry never automatically retries verification');
+        assert.equal(await page.evaluate(() => window.cooldownIntervals.size), 0, 'expiry releases the countdown');
+        await submitToken(replacement);
+        await page.waitForFunction(() => window.cooldownIntervals.size === 1 && document.getElementById('admin-token-submit')?.disabled);
+        assert.equal(await page.evaluate(() => window.cooldownIntervals.size), 1);
+        await page.locator('#admin-token-cancel').click();
+        await page.waitForSelector('#admin-token-modal', { state: 'detached' });
+        assert.equal(await page.evaluate(() => window.cooldownIntervals.size), 0, 'cancellation clears the countdown immediately');
+        await page.clock.fastForward(4000);
+        verificationCooldown = false;
+        await requestConnection();
+        await waitForPrompt();
+        assert.equal(await page.locator('#admin-token-submit').isDisabled(), false, 'cancelled countdown does not affect the next dialog');
+        assert.equal(await page.locator('#admin-token-error').textContent(), '');
+        await page.locator('#admin-token-cancel').click();
+        await page.waitForSelector('#admin-token-modal', { state: 'detached' });
 
         // Read-only responses explain the missing configuration without prompting.
         await page.route('**/api/peer/connect', route => route.fulfill({ status: 403, json: { detail: 'Management is read-only because BPM_ADMIN_TOKEN is not configured.', code: 'management_disabled' } }));

@@ -136,8 +136,16 @@ require authentication. Merely viewing a connectivity notice is handled locally.
 
 API clients send `Authorization: Bearer <token>` on each management request.
 Missing or incorrect tokens return HTTP 401 before any action executes. After ten
-failed attempts per minute from a connection address, further failures return
-HTTP 429 with `Retry-After`; correct tokens remain accepted. Limits use the socket
+failed attempts within 60 seconds of the first failure from a connection address,
+all subsequent management requests return HTTP 429 with `Retry-After`, including
+correct tokens, until that window expires. Blocked requests do not extend it;
+successful authentication before the threshold clears the failure history.
+The browser preserves its token on HTTP 429, shows the cooldown, and does not
+prompt or retry the action automatically. An open unlock dialog disables
+verification until the deadline while keeping cancellation available.
+At most 1,024 address windows are tracked; when full, new addresses receive HTTP
+429 until the earliest window expires. Active windows are never evicted.
+Limits use the socket
 address, so clients behind one reverse proxy share a limit. Forwarding headers do
 not change it.
 

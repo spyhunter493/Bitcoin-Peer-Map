@@ -936,7 +936,7 @@
         }
       },
       "AdminRateLimited": {
-        "description": "Too many failed authentication attempts from the connection address. Valid tokens remain accepted.",
+        "description": "Authentication cooldown for the socket connection address. All management requests, including valid tokens, are rejected until Retry-After expires. Untracked addresses are also rejected while all 1,024 active windows are occupied.",
         "headers": {
           "Retry-After": {
             "schema": {
