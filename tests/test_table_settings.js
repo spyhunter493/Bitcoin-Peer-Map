@@ -98,10 +98,22 @@ export default async function assertTableSettings(browser, baseUrl) {
         await page.keyboard.press('Escape');
         await page.waitForSelector('#table-settings-popup', { state: 'detached' });
         await page.setViewportSize({ width: 1080, height: 728 });
+        const immediateDismissal = await page.evaluate(() => {
+            document.getElementById('btn-table-settings').click();
+            const opened = Boolean(document.getElementById('table-settings-popup'));
+            document.getElementById('worldmap').dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 50, clientY: 50 }));
+            return { opened, closed: !document.getElementById('table-settings-popup') };
+        });
+        assert.deepEqual(immediateDismissal, { opened: true, closed: true }, 'outside clicks must dismiss immediately after opening');
         await page.locator('#btn-table-settings').click();
         await assertPopupFits(page);
         await page.locator('#worldmap').dispatchEvent('click', { clientX: 50, clientY: 50 });
         await page.waitForSelector('#table-settings-popup', { state: 'detached' });
+        await page.locator('#btn-table-settings').click();
+        await assertPopupFits(page);
+        await page.locator('#btn-autofit').click();
+        await page.waitForSelector('#table-settings-popup', { state: 'detached' });
+        assert.equal(await page.locator('#btn-table-settings').getAttribute('aria-expanded'), 'false', 'outside controls that stop propagation still dismiss settings');
         assert.deepEqual(errors, []);
     } finally { await context.close(); }
 }

@@ -597,8 +597,6 @@ function create(options) {
     let tableSettingsEl = null;
     /** @type {ResizeObserver | null} */
     let tableSettingsObserver = null;
-    /** @type {number | null} */
-    let tableSettingsDismissTimer = null;
     tableSettingsBtn.setAttribute('aria-haspopup', 'dialog');
     tableSettingsBtn.setAttribute('aria-expanded', 'false');
     tableSettingsBtn.setAttribute('aria-controls', 'table-settings-popup');
@@ -756,10 +754,8 @@ function create(options) {
             });
         }
 
-        tableSettingsDismissTimer = setTimeout(() => {
-            tableSettingsDismissTimer = null;
-            if (tableSettingsEl === popup) document.addEventListener('click', closeTableSettingsOnOutside);
-        }, 0);
+        // Capture outside clicks immediately, including controls that stop propagation.
+        document.addEventListener('click', closeTableSettingsOnOutside, true);
     }
 
     function positionTableSettings() {
@@ -790,14 +786,12 @@ function create(options) {
 
     /** @param {MouseEvent} e */
     function closeTableSettingsOnOutside(e) {
-        if (e.target instanceof Node && tableSettingsEl && !tableSettingsEl.contains(e.target) && e.target !== tableSettingsBtn) {
+        if (e.target instanceof Node && tableSettingsEl && !tableSettingsEl.contains(e.target) && !tableSettingsBtn.contains(e.target)) {
             closeTableSettings();
         }
     }
 
     function closeTableSettings() {
-        if (tableSettingsDismissTimer !== null) clearTimeout(tableSettingsDismissTimer);
-        tableSettingsDismissTimer = null;
         tableSettingsObserver?.disconnect();
         tableSettingsObserver = null;
         window.removeEventListener('resize', positionTableSettings);
@@ -807,7 +801,7 @@ function create(options) {
             tableSettingsEl.remove();
             tableSettingsEl = null;
         }
-        document.removeEventListener('click', closeTableSettingsOnOutside);
+        document.removeEventListener('click', closeTableSettingsOnOutside, true);
     }
 
     function applyMaxPeerRows() {
