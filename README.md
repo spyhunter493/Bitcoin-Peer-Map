@@ -2,7 +2,7 @@
 
 Bitcoin Peer Map is a Docker-first dashboard for monitoring and managing peers connected to a Bitcoin Core or Bitcoin Knots node. It provides a real-time world map, peer and network statistics, mempool and blockchain information, GeoIP enrichment, connection controls, and ban management.
 
-![Bitcoin Peer Map dashboard](docs/images/hero1.png)
+![Bitcoin Peer Map dashboard](docs/images/hero.png)
 
 ## Requirements
 
