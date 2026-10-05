@@ -6,13 +6,19 @@ export default async function assertNodeMetrics(browser, baseUrl) {
     const errors = [];
     const requests = [];
     let metrics = { rx_bps: 512, tx_bps: 256, uptime: '2d 3h 4m' };
-    let unavailable = false;
+    let unavailable = false, ibd = false, blockchainUnavailable = false, invalidJson = false, stalled = false, infoRequests = 0;
+    let releaseStall;
+    const stallGate = new Promise(resolve => { releaseStall = resolve; });
     page.on('pageerror', error => errors.push(error.message));
     page.on('request', request => requests.push(new URL(request.url()).pathname));
     await page.route('**/api/info', async route => {
+        infoRequests++;
+        if (stalled) { await stallGate; await route.abort().catch(() => {}); return; }
+        if (invalidJson) { await route.fulfill({ body: 'invalid JSON' }); return; }
         if (unavailable) { await route.fulfill({ status: 502, body: '{}' }); return; }
         const response = await route.fetch();
         const info = await response.json();
+        info.blockchain = blockchainUnavailable ? null : { ...info.blockchain, ibd };
         info.node_metrics = { ...info.node_metrics, ...metrics };
         await route.fulfill({ response, json: info });
     });
@@ -106,6 +112,7 @@ export default async function assertNodeMetrics(browser, baseUrl) {
         await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
         await page.waitForFunction(() => document.getElementById('mo-p2p-in').textContent === '—');
         assert.match(await body.textContent(), /P2P IN ↓ \(total\)—/);
+        assert.equal(await page.locator('#mo-status').textContent(), 'Stale');
         unavailable = false;
         metrics = { rx_bps: 512, tx_bps: 256, uptime: '0m' };
         await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
@@ -131,6 +138,54 @@ export default async function assertNodeMetrics(browser, baseUrl) {
         await controlsFit();
         assert.ok(!requests.includes('/api/stats') && !requests.includes('/api/stream/system'), 'node metrics use the existing info poll');
         assert.ok(!requests.includes('/api/price'), 'the dashboard does not request market prices');
+        // The same status rules apply to an open Node Info dialog and the header.
+        await page.locator('#btn-node-info-peer').click();
+        const nodeSection = page.locator('#ni-node-section');
+        for (const [value, label] of [[true, 'Syncing (IBD)'], [null, 'Unknown'], [false, 'Synced']]) {
+            ibd = value;
+            await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+            await page.waitForFunction(expected => document.getElementById('mo-status').textContent === expected, label);
+            assert.ok((await nodeSection.textContent()).includes(label));
+        }
+        unavailable = true;
+        await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+        await page.waitForFunction(() => document.getElementById('mo-status').textContent === 'Stale');
+        assert.match(await nodeSection.textContent(), /Cached node information.*Last successful refresh/);
+        assert.match(await nodeSection.textContent(), /Satoshi:29.1.0/);
+        assert.equal(await page.locator('#mo-p2p-in').textContent(), '—');
+        unavailable = false;
+        blockchainUnavailable = true;
+        await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+        await page.waitForFunction(() => document.getElementById('mo-status').textContent === 'Unknown');
+        assert.doesNotMatch(await nodeSection.textContent(), /Cached node information/);
+        assert.match(await nodeSection.textContent(), /Unknown/);
+        blockchainUnavailable = false;
+
+        invalidJson = true;
+        await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+        await page.waitForFunction(() => document.getElementById('mo-status').textContent === 'Stale');
+        invalidJson = false;
+        await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+        await page.waitForFunction(() => document.getElementById('mo-status').textContent === 'Synced');
+
+        await page.clock.install();
+        stalled = true;
+        const stallStarted = page.waitForRequest(request => request.url().endsWith('/api/info'));
+        await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+        await stallStarted;
+        const countAtStall = infoRequests;
+        await page.clock.fastForward(34_000);
+        assert.equal(await page.locator('#mo-status').textContent(), 'Synced');
+        assert.equal(infoRequests, countAtStall, 'pending info requests are not duplicated');
+        await page.clock.fastForward(1000);
+        await page.waitForFunction(() => document.getElementById('mo-status').textContent === 'Stale');
+        stalled = false;
+        releaseStall();
+        await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+        await page.waitForFunction(() => document.getElementById('mo-status').textContent === 'Synced');
+        assert.equal(infoRequests, countAtStall + 1, 'polling resumes after timeout');
+        assert.doesNotMatch(await nodeSection.textContent(), /Cached node information/);
+        await page.locator('#node-info-close').click();
         assert.deepEqual(errors, []);
     } finally {
         await context.close();

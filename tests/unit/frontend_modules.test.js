@@ -18,6 +18,7 @@ test('frontend modules', async () => {
             return {
                 ok: false,
                 status: 503,
+                headers: new Headers(),
                 json: async () => ({ detail: 'temporarily unavailable' }),
             };
         }

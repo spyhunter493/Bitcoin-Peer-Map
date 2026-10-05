@@ -328,3 +328,14 @@ test('null and malformed RPC objects produce explicit nulls without masking succ
     rpc.values.getblockchaininfo = null;
     assert.equal((await node.blockchain()).blockchain, null);
 });
+
+
+for (const [ibd, expected] of [[true, true], [false, false], [undefined, null], [null, null]] as const) {
+    test(`dashboard preserves explicit IBD ${ibd} as ${expected}`, async t => {
+        const { rpc, node } = services(t);
+        rpc.record('getblockchaininfo').initialblockdownload = ibd;
+        assert.equal((await node.dashboardInfo()).blockchain?.ibd, expected);
+        const raw = await node.blockchain();
+        assert.equal((raw.blockchain as Data).initialblockdownload, expected);
+    });
+}

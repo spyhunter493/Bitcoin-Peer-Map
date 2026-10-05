@@ -75,7 +75,7 @@ export class NodeService {
             blockchain = parseBlockchainInfo(await this.rpc.call('getblockchaininfo', [], 10));
             let indexed = false;
             try { const indexes = await this.rpc.call('getindexinfo', [], 10); indexed = object(indexes) && 'txindex' in indexes; } catch { /* Optional RPC. */ }
-            result.blockchain = { size_gb: round((blockchain.size_on_disk || 0) / 1e9, 1), pruned: blockchain.pruned ?? false, indexed, ibd: blockchain.initialblockdownload ?? false };
+            result.blockchain = { size_gb: round((blockchain.size_on_disk || 0) / 1e9, 1), pruned: blockchain.pruned ?? false, indexed, ibd: blockchain.initialblockdownload ?? null };
             this.blockchainFailures.recovered('Blockchain details recovered');
         } catch (error) { this.blockchainFailures.failure(`Could not load blockchain details: ${errorMessage(error)}`); }
         try {

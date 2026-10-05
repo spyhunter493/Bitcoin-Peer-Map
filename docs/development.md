@@ -169,7 +169,14 @@ alongside API contract changes.
 
 Node details and RPC metrics use five-second caches shared across clients.
 Independent dashboard RPC reads run concurrently. The dashboard uses one node-info
-poll for node details and metrics.
+poll for node details and metrics, with a 35-second abort deadline to accommodate
+three sequential ten-second blockchain reads. All completion paths release the
+pending request so polling can resume. Failed browser refreshes retain cached
+node details, mark the header and Node Info as **Stale**, and show the last
+successful refresh time. Traffic values are cleared. A successful refresh
+restores normal presentation: **Synced** requires explicit `blockchain.ibd:false`,
+**Syncing (IBD)** requires `true`, and unavailable blockchain or IBD data shows
+**Unknown**.
 The `services` field in `/api/info` comes from
 [`getnetworkinfo.localservicesnames`](https://bitcoincore.org/en/doc/30.0.0/rpc/network/getnetworkinfo/):
 an empty list means no services are advertised, while `null` means unavailable.

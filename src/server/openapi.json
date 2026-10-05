@@ -333,7 +333,7 @@
     "/api/info": {
       "get": {
         "summary": "Dashboard Info",
-        "description": "Includes node_metrics: Bitcoin Knots uptime, P2P totals, and average P2P rates between RPC samples. Unavailable metrics and rates without a valid baseline are null. Includes services: the P2P service names advertised by this node, from getnetworkinfo.localservicesnames. An empty array means no services are advertised; null means service information is unavailable. Includes updates: the cached application update status. Dashboard reads do not trigger GitHub requests; the server checks once every 24 hours. Updates compare stable release versions, never unreleased main commits. Development builds skip checks.",
+        "description": "Includes node_metrics: Bitcoin Knots uptime, P2P totals, and average P2P rates between RPC samples. Unavailable metrics and rates without a valid baseline are null. Includes services: the P2P service names advertised by this node, from getnetworkinfo.localservicesnames. An empty array means no services are advertised; null means service information is unavailable. Includes updates: the cached application update status. Dashboard reads do not trigger GitHub requests; the server checks once every 24 hours. Updates compare stable release versions, never unreleased main commits. Development builds skip checks. Blockchain ibd is true during initial block download, false only when explicitly complete, and null when unavailable.",
         "operationId": "dashboard_info_api_info_get",
         "responses": {
           "200": {
@@ -345,6 +345,30 @@
                   "properties": {
                     "updates": {
                       "$ref": "#/components/schemas/UpdateStatus"
+                    },
+                    "blockchain": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "size_gb": {
+                          "type": "number"
+                        },
+                        "pruned": {
+                          "type": "boolean"
+                        },
+                        "indexed": {
+                          "type": "boolean"
+                        },
+                        "ibd": {
+                          "type": [
+                            "boolean",
+                            "null"
+                          ],
+                          "description": "Initial block download; null when unavailable."
+                        }
+                      }
                     }
                   }
                 }

@@ -1,4 +1,4 @@
-import { errorMessage, postJson } from '../core/api.js';
+import { errorMessage, postJson, getJson } from '../core/api.js';
 import { query, queryAll, required } from '../core/dom.js';
 import { dashboard as BPMDashboard } from '../core/dashboard-state.js';
 import * as BPMModal from '../core/modal.js';
@@ -415,6 +415,8 @@ function create({ config: CFG, onAction }) {
 
     /** @type {import('../types').NodeInfo | null} */
     let lastNodeInfo = null; // Full /api/info response for Node Info card
+    /** @type {import('../types').NodeRefreshState} */
+    const nodeRefreshState = { stale: false, lastSuccessfulRefresh: null };
 
     // Track previous internet state for toast notifications
     let _prevInternetState = 'green';
@@ -446,12 +448,13 @@ function create({ config: CFG, onAction }) {
 
     async function refreshNodeInfo() {
         try {
-            const resp = await fetch('/api/info');
-            if (!resp.ok) throw new Error(`Node info request failed: HTTP ${resp.status}`);
             /** @type {import('../types').NodeInfo} */
-            const info = await resp.json();
+            const info = await getJson('/api/info', undefined, 35_000);
+            if (!info || typeof info !== 'object' || Array.isArray(info)) throw new Error('Invalid node info response');
 
             lastNodeInfo = info;
+            nodeRefreshState.lastSuccessfulRefresh = Date.now();
+            nodeRefreshState.stale = false;
             renderUpdateStatus(info.updates);
 
             // Update internet connectivity indicator
@@ -485,17 +488,22 @@ function create({ config: CFG, onAction }) {
             fdCachedNetworkDetails = info.network_details || {};
 
             updateHUD();
+            nodeMonitor.refreshNodeInfo();
         } catch (err) {
+            nodeRefreshState.stale = nodeRefreshState.lastSuccessfulRefresh !== null;
             if (lastNodeInfo) lastNodeInfo = { ...lastNodeInfo, node_traffic: null, node_metrics: undefined };
             updateNodeTrafficTotals(null);
             updateTrafficRates();
             renderNodeMetricsValues();
+            updateHUD();
+            nodeMonitor.refreshNodeInfo();
             console.error('[Bitcoin Peer Map] Failed to fetch info:', err);
         }
     }
 
     const nodeMonitor = BPMNodeMonitor.create({
         getNodeInfo: () => lastNodeInfo,
+        getRefreshState: () => nodeRefreshState,
         formatBytes: BPMFormat.fmtBytesShort,
     });
 
@@ -705,16 +713,11 @@ function create({ config: CFG, onAction }) {
 
         // Map overlay — status
         const moStatus = document.getElementById('mo-status');
-        if (moStatus && lastNodeInfo) {
-            if (lastNodeInfo.blockchain && lastNodeInfo.blockchain.ibd) {
-                moStatus.textContent = 'Syncing (IBD)';
-                moStatus.style.color = 'var(--warn)';
-                moStatus.title = 'Initial Block Download in progress — node is still catching up to the network';
-            } else {
-                moStatus.textContent = 'Synced';
-                moStatus.style.color = 'var(--ok)';
-                moStatus.title = 'IBD Completed — node is fully synced with the network';
-            }
+        if (moStatus) {
+            const status = BPMNodeMonitor.syncStatus(lastNodeInfo?.blockchain?.ibd, nodeRefreshState.stale);
+            moStatus.textContent = status.label;
+            moStatus.style.color = status.color;
+            moStatus.title = status.title;
         }
 
         // Map overlay — status message (like original: "Map Loaded!" / "Locating X peers...")

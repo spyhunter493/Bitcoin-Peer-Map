@@ -63,7 +63,8 @@ export const parseNodeAddresses = (value: unknown) => array(shape({ address: non
 
 const blockchain = shape({
     chain: optional(nonempty), blocks: optional(integer), bestblockhash: optional(nonempty),
-    size_on_disk: optional(integer), pruned: optional(boolean), initialblockdownload: optional(boolean),
+    size_on_disk: optional(integer), pruned: optional(boolean),
+    initialblockdownload: (value: unknown, path: string) => optional(boolean)(value, path) ?? null,
 });
 export type BlockchainInfo = ReturnType<typeof blockchain>;
 export const parseBlockchainInfo = (value: unknown): BlockchainInfo => blockchain(value, 'getblockchaininfo');

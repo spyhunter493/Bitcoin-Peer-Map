@@ -9,7 +9,7 @@ export type NetworkSummary = Record<NetworkFamily, {
 }>;
 export type NetworkScores = { ipv4: number | null; ipv6: number | null };
 export interface DashboardDetails extends Data {
-    blockchain: { size_gb: number; pruned: boolean; indexed: boolean; ibd: boolean } | null;
+    blockchain: { size_gb: number; pruned: boolean; indexed: boolean; ibd: boolean | null } | null;
     last_block: { height: number; time: number } | null;
     subversion: string | null; connected: number | null; services: string[] | null;
     network_details: NetworkSummary | null; network_scores: NetworkScores | null;

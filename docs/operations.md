@@ -126,6 +126,13 @@ To stop the dashboard while retaining its data volume:
 docker compose down
 ```
 
+The header and **Node Info** show **Synced** only when the node explicitly reports
+that initial block download is complete, **Syncing (IBD)** while it is active,
+and **Unknown** when that status is unavailable. Failed node-info refreshes show
+**Stale** and retain useful cached details; Node Info identifies the last
+successful refresh time. Traffic values clear until a successful refresh.
+Requests time out after 35 seconds, allowing later polls to recover.
+
 ## Saved data
 
 The named volume `bitcoin-peer-map-data` is mounted at
