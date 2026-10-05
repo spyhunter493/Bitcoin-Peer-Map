@@ -1,12 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { AppRuntime, GEOIP_UPDATE_INTERVAL_MS } from '../../src/server/runtime.ts';
 import { PreferenceStore } from '../../src/server/preferences.ts';
-import { waitForRpc } from '../../src/server/main.ts';
-import { RpcAuthenticationError } from '../../src/server/rpc.ts';
+import { main, waitForRpc } from '../../src/server/main.ts';
+import { BitcoinRpcClient, RpcAuthenticationError } from '../../src/server/rpc.ts';
 import { settings, temporaryDirectory, deferred, flush } from './helpers.ts';
 import type { TestContext } from 'node:test';
 
@@ -116,5 +117,23 @@ for (const stalledMethod of ['getnetworkinfo', 'getblockchaininfo']) {
         const started = performance.now();
         await assert.rejects(waitForRpc(app));
         assert.ok(performance.now() - started < 2000, 'startup must use its one-second budget, not the five-second RPC timeout');
+    });
+}
+
+
+for (const override of ['', 'true', 'false']) {
+    test(`invalid saved settings stop main before RPC, workers, or writes (override ${override || 'unset'})`, async t => {
+        const dir = temporaryDirectory(t), path = join(dir, 'settings.json');
+        const raw = '{"geoip_db_only":"true","geoip_auto_update":false}';
+        writeFileSync(path, raw);
+        const original = process.env;
+        process.env = { ...original, BITCOIN_RPC_HOST: '127.0.0.1', BITCOIN_RPC_USER: 'test', BITCOIN_RPC_PASSWORD: 'test', BITCOIN_RPC_PASSWORD_FILE: '', BPM_DATA_DIR: dir, BPM_GEOIP_AUTO_UPDATE: override };
+        t.after(() => { process.env = original; });
+        t.mock.method(BitcoinRpcClient.prototype, 'checkConnection', async () => assert.fail('RPC check started'));
+        t.mock.method(BitcoinRpcClient.prototype, 'call', async () => assert.fail('RPC activity started'));
+        t.mock.method(AppRuntime.prototype, 'start', async () => assert.fail('HTTP listening starts workers'));
+        t.mock.method(PreferenceStore.prototype, 'save', () => assert.fail('Preference write started'));
+        await assert.rejects(main(), /geoip_db_only must be a boolean/);
+        assert.equal(readFileSync(path, 'utf8'), raw);
     });
 }

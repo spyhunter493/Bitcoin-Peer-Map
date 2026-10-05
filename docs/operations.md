@@ -144,6 +144,32 @@ themes and visible statistics, are stored in your browser under `bpm.*` keys.
 Existing GeoIP databases and server preferences from earlier releases can be
 reused. Keep the volume when upgrading to preserve them.
 
+### Repair saved preferences
+
+A missing `settings.json` starts a first installation with defaults. An existing
+file that cannot be read, is malformed JSON, is not an object, or supplies a
+non-boolean preference stops startup before RPC checks, workers, HTTP listening,
+or preference writes. The error identifies its path without logging its contents;
+the file remains untouched. Environment overrides do not bypass validation.
+
+Stop the service, back up the file, and repair its JSON or ownership/read
+permissions in the data volume. Keep your previous privacy choices. For example,
+this valid file disables both external API lookups and automatic dataset downloads:
+
+```json
+{
+  "geoip_auto_update": false,
+  "geoip_db_only": true
+}
+```
+
+Use JSON `true`/`false`, without quotes. Legacy files may omit fields:
+`geoip_auto_update` defaults to `true` and `geoip_db_only` to `false` when absent.
+Deleting the file restores those first-install defaults; repair it instead when
+you want to retain privacy restrictions. Ensure the container user can read it,
+then restart the service. `BPM_GEOIP_AUTO_UPDATE` applies only after the saved
+file has passed validation.
+
 ## GeoIP updates and privacy
 
 Open **GEOIP-DB** in the dashboard to manage the local database:
