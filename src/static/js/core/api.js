@@ -8,6 +8,14 @@ class HttpError extends Error {
     }
 }
 
+/** @type {import('../types').AdminAuthentication | null} */
+let adminAuthentication = null;
+
+/** @param {import('../types').AdminAuthentication | null} authentication */
+export function configureAdminAuthentication(authentication) {
+    adminAuthentication = authentication;
+}
+
 /**
  * @template T
  * @param {string} url
@@ -49,13 +57,36 @@ function getJson(url, options) {
  * @param {RequestInit} [options]
  * @returns {Promise<T>}
  */
-function postJson(url, body, options) {
+async function postJson(url, body, options) {
     const requestOptions = Object.assign({}, options, { method: 'POST' });
+    const headers = new Headers(options && options.headers);
     if (body !== undefined) {
-        requestOptions.headers = Object.assign({}, options && options.headers, { 'Content-Type': 'application/json' });
+        headers.set('Content-Type', 'application/json');
         requestOptions.body = JSON.stringify(body);
     }
-    return requestJson(url, requestOptions);
+    requestOptions.headers = headers;
+    const target = new URL(url, globalThis.location?.href || 'http://localhost/');
+    const authentication = target.origin === (globalThis.location?.origin || 'http://localhost') && target.pathname.startsWith('/api/') ? adminAuthentication : null;
+    const previousToken = authentication?.getToken() || '';
+    if (previousToken) headers.set('Authorization', `Bearer ${previousToken}`);
+    try {
+        return await requestJson(url, requestOptions);
+    } catch (error) {
+        if (!(error instanceof HttpError) || !authentication) throw error;
+        const rateLimited = error.status === 429 && error.data && typeof error.data === 'object' && 'code' in error.data && error.data.code === 'admin_rate_limited';
+        if (error.status !== 401 && !rateLimited) throw error;
+        if (authentication.getToken() === previousToken) authentication.clearToken();
+        const token = await authentication.requestToken(options?.signal || undefined);
+        options?.signal?.throwIfAborted();
+        headers.set('Authorization', `Bearer ${token}`);
+        try {
+            // Authentication failures execute no action. Retry only that request, once.
+            return await requestJson(url, requestOptions);
+        } catch (retryError) {
+            if (retryError instanceof HttpError && retryError.status === 401 && authentication.getToken() === token) authentication.clearToken();
+            throw retryError;
+        }
+    }
 }
 
 export { HttpError };

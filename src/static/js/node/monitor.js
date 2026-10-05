@@ -53,13 +53,12 @@ function blockExplorerUrl(hash, chain) {
     /** @type {Record<string, string>} */
     const paths = {
         main: '',
-        test: '/testnet',
         testnet4: '/testnet4',
         signet: '/signet',
     };
     const chainPath = paths[chain || ''];
     if (chainPath == null) return null;
-    return `https://mempool.space${chainPath}/block/${encodeURIComponent(hash)}`;
+    return `https://mempool.guide${chainPath}/block/${encodeURIComponent(hash)}`;
 }
 
 /**

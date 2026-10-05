@@ -4,6 +4,9 @@ import { repeat, sleep } from '../tasks.ts';
 import { GeoDatabase, isValidGeoData } from './geoip.ts';
 import { ConnectivityService } from './connectivity.ts';
 import { parsePeerInfo, parseNodeAddresses, type PeerInfo } from '../rpc-types.ts';
+import { createFailureReporter, createLogger } from '../logging.ts';
+
+const log = createLogger('peers');
 
 export const REFRESH_INTERVAL_MS = 10_000;
 const GEO_API_FIELDS = 'status,message,continent,continentCode,country,countryCode,region,regionName,city,district,zip,lat,lon,timezone,offset,currency,isp,org,as,asname,mobile,proxy,hosting';
@@ -16,6 +19,8 @@ export class PeerService {
     readonly fetcher: typeof fetch;
     private controller = new AbortController();
     private tasks: Promise<void>[] = [];
+    private refreshFailures = createFailureReporter(log);
+    private geoFailures = createFailureReporter(log);
     peers: PeerInfo[] = [];
     lastSuccessAt: number | null = null;
     lastAttemptAt: number | null = null;
@@ -36,7 +41,7 @@ export class PeerService {
         this.tasks = [repeat(async () => {
             await this.refreshOnce();
             if (++refreshes >= 6) { refreshes = 0; await this.refreshKnownAddresses(); }
-        }, REFRESH_INTERVAL_MS, this.signal), this.geoLoop()];
+        }, REFRESH_INTERVAL_MS, this.signal, log), this.geoLoop()];
     }
     async stop() { this.controller.abort(); await Promise.allSettled(this.tasks); }
     async refreshOnce() {
@@ -45,10 +50,11 @@ export class PeerService {
             peers = parsePeerInfo(await this.rpc.call('getpeerinfo'));
         } catch (error) {
             this.lastAttemptAt = nowSeconds(); this.lastError = 'Could not refresh peers from the Bitcoin node';
-            if (!this.signal.aborted) console.warn(`Peer refresh failed: ${errorMessage(error)}`);
+            if (!this.signal.aborted) this.refreshFailures.failure(`Peer refresh failed: ${errorMessage(error)}`);
             return false;
         }
         this.peers = peers;
+        if (!this.signal.aborted) this.refreshFailures.recovered('Peer refresh recovered');
         this.lastSuccessAt = nowSeconds(); this.lastAttemptAt = this.lastSuccessAt; this.lastError = null;
         this.activeHosts = new Set(this.peers.map(peer => splitPeerAddress(peer.addr || '')[0]));
         for (const host of this.geoCache.keys()) if (!this.activeHosts.has(host)) this.geoCache.delete(host);
@@ -122,8 +128,10 @@ export class PeerService {
         while (!this.signal.aborted) {
             const item = this.geoQueue.shift();
             if (!item) { await sleep(500, this.signal); continue; }
-            try { if (await this.resolveGeo(...item)) await sleep(1500, this.signal); }
-            catch (error) { console.error(errorMessage(error)); }
+            try {
+                if (await this.resolveGeo(...item)) await sleep(1500, this.signal);
+                if (!this.signal.aborted) this.geoFailures.recovered('Peer geolocation processing recovered');
+            } catch (error) { if (!this.signal.aborted) this.geoFailures.failure(`Peer geolocation processing failed: ${errorMessage(error)}`, 'error'); }
         }
     }
     listPeers() { return this.snapshot().peers; }

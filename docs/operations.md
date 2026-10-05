@@ -36,11 +36,11 @@ accepted. Use the normal pull and recreate commands after changing the reference
 
 ### Version and update notices
 
-The header shows the installed release version and the seven-character commit
-linking to its exact source. An arrow appears when the latest published stable
-GitHub Release has a higher semantic version; clicking it opens that release's
-notes. Unreleased commits on `main` never cause a notice. The version comes from
-`BPM_BUILD_VERSION`; `BPM_BUILD_REVISION` remains the source commit.
+The header shows the installed release version. An arrow appears when the latest
+published stable GitHub Release has a higher semantic version; clicking it opens
+that release's notes. Unreleased commits on `main` never cause a notice. The
+version comes from `BPM_BUILD_VERSION`; `BPM_BUILD_REVISION` remains internal
+source metadata.
 
 The server checks at startup if no recent result exists, then once every
 **24 hours**, even without an open dashboard. The cache survives restarts and is
@@ -74,6 +74,32 @@ Follow the application logs:
 ```bash
 docker compose logs -f --tail=100 bpm
 ```
+
+Application messages include a UTC timestamp, severity, and component:
+
+```text
+2026-10-05T20:48:20.123Z INFO [startup] Bitcoin RPC is available
+2026-10-05T20:48:25.456Z WARN [peers] Peer refresh failed: connection refused
+```
+
+`BPM_LOG_LEVEL=info` is the default and includes info, warnings, and errors.
+Set it to `debug` in `.env` and recreate the service with `docker compose up -d bpm`
+for RPC method names, response timings, and retry details. `warn` includes warnings
+and errors; `error` includes only errors. Values are case-insensitive. Restore
+`info` after troubleshooting to keep routine polling quiet.
+
+Recurring background failures are reported immediately, then at most once per
+minute per operation. A successful retry produces one info message announcing
+recovery. Debug mode also shows the intervening failed attempts. This throttling
+does not change polling or retry schedules. Startup failures are reported on each
+container restart, and unexpected HTTP errors are reported for each failed request.
+Credentials and authorization headers are redacted from application messages.
+RPC diagnostics include method names and timings; full RPC responses, RPC
+parameters, and HTTP request bodies are omitted.
+
+Logs remain on standard output/error. Compose retains its existing rotation of
+three files of up to `10m` each. `/api/config` reports the configured log level
+under `server.log_level`.
 
 For RPC endpoints and effective settings, see
 [configuration inspection](configuration.md#inspect-the-effective-configuration).
@@ -156,6 +182,11 @@ shows when the next refresh is due.
 your node. An empty list means no services are advertised; unavailable service
 information is shown separately.
 
+**Blocks** and **Chain Tips** link recognized public-network block hashes to
+[mempool.guide](https://mempool.guide/). Testnet3 and local regtest hashes remain
+plain text: mempool.guide does not support Testnet3, and regtest data belongs to
+your local chain.
+
 **Node Metrics** shows Bitcoin Knots uptime and P2P traffic reported by node RPC.
 Open it by clicking the peer count or a traffic row on the map. P2P rates are
 averaged between RPC samples; totals count bytes since the node started. Rates
@@ -165,6 +196,11 @@ node restart. CPU, RAM, load, host uptime, and filesystem capacity are not colle
 The four P2P rate and total rows can be shown or hidden. These display choices are
 saved in your browser, and existing traffic-row preferences remain supported.
 Zoom controls stay below the visible statistics.
+
+**Table Settings** (the peer-list gear) controls columns, transparency, and visible
+rows. **Show in Antarctica** switches map placeholders for private networks and
+peers without a location on or off; those peers remain in the table and network
+totals. The choice is saved in your browser, and **Defaults** restores the markers.
 
 ## Container defaults
 

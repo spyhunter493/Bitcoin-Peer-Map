@@ -1,5 +1,8 @@
 import { sleep } from '../tasks.ts';
 import { type Data, errorMessage, nowSeconds } from '../types.ts';
+import { createFailureReporter, createLogger } from '../logging.ts';
+
+const log = createLogger('connectivity');
 
 export type Provider = 'geoip';
 export interface ProviderHealth {
@@ -38,6 +41,7 @@ export class ConnectivityService {
     consecutiveSuccesses = 0;
     failureStartedAt: number | null = null;
     private providers: Record<Provider, ProviderHealth> = { geoip: health() };
+    private providerFailures = createFailureReporter(createLogger('geoip'));
     get apiConsecutiveFailures() { return this.providers.geoip.consecutive_failures; }
     apiPromptCount = 0;
     apiPromptAt = 0;
@@ -51,7 +55,7 @@ export class ConnectivityService {
         this.signal = AbortSignal.any([this.controller.signal, ...(signal ? [signal] : [])]);
     }
     private setState(state: ConnectivityStatus['internet_state']) {
-        if (state !== this.internetState) console.info(`Internet state changed from ${this.internetState} to ${state}`);
+        if (state !== this.internetState) log[state === 'green' ? 'info' : 'warn'](`Internet state changed from ${this.internetState} to ${state}`);
         this.internetState = state;
     }
     providerReady(provider: Provider) {
@@ -66,6 +70,7 @@ export class ConnectivityService {
         current.last_error = errorMessage(error); current.last_failure_at = nowSeconds();
         const delay = response ? retryDelay(response) : null;
         if (delay !== null) current.retry_at = Math.max(current.retry_at ?? 0, nowSeconds() + delay);
+        this.providerFailures.failure(`GeoIP provider ${current.state}: ${current.last_error}`);
     }
     providerSuccess(provider: Provider, response?: Response) {
         if (this.signal.aborted) return;
@@ -76,6 +81,8 @@ export class ConnectivityService {
         current.state = current.retry_at === null ? 'healthy' : 'rate_limited';
         const delay = response ? retryDelay(response) : null;
         if (delay !== null && delay > 0) { current.retry_at = Math.max(current.retry_at ?? 0, nowSeconds() + delay); current.state = 'rate_limited'; }
+        if (current.state === 'healthy') this.providerFailures.recovered('GeoIP provider recovered');
+        else this.providerFailures.failure('GeoIP provider rate limited; waiting until retry deadline');
         this.apiPromptCount = 0; this.apiPromptAt = 0;
     }
     // Only the independent reachability probe changes internet status.

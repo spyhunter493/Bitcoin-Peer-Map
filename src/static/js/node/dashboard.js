@@ -322,12 +322,10 @@ function create({ config: CFG, onAction }) {
     // ═══════════════════════════════════════════════════════════
 
     function openConnectPeerModal() {
-        const overlay = document.createElement('div');
-        overlay.className = 'modal-overlay';
-        overlay.id = 'connect-peer-modal';
-        overlay.innerHTML = `<div class="modal-box" style="max-width:520px">
-        <div class="modal-header"><span class="modal-title">Connect Peer</span><button class="modal-close" id="connect-close">&times;</button></div>
-        <div class="modal-body">
+        const dialog = BPMModal.open({
+            id: 'connect-peer-modal', title: 'Connect Peer', closeId: 'connect-close', maxWidth: 520,
+            initialFocusSelector: '#connect-addr-input',
+            initialHtml: `
             <div class="connect-instructions">Enter a peer address to connect. Your node will attempt a one-time (onetry) connection.</div>
             <div class="connect-example">IPv4: 1.2.3.4:8333</div>
             <div class="connect-example">IPv6: [2001:db8::1]:8333</div>
@@ -339,20 +337,16 @@ function create({ config: CFG, onAction }) {
                 <button class="connect-btn" id="connect-go-btn">Connect</button>
             </div>
             <div class="connect-result" id="connect-result"></div>
-            <div class="connect-permanent-hint">For a permanent connection, add the peer to the Bitcoin node's <code>addnode</code> configuration.</div>
-        </div>
-    </div>`;
-        document.body.appendChild(overlay);
-        required('#connect-close').addEventListener('click', () => overlay.remove());
-        overlay.addEventListener('click', (e) => {
-            if (e.target === overlay) overlay.remove();
+            <div class="connect-permanent-hint">For a permanent connection, add the peer to the Bitcoin node's <code>addnode</code> configuration.</div>`,
         });
 
         /** @type {HTMLInputElement} */
         const input = required('#connect-addr-input');
+        /** @type {HTMLButtonElement} */
         const goBtn = required('#connect-go-btn');
         const resultEl = required('#connect-result');
         goBtn.addEventListener('click', async () => {
+            if (goBtn.disabled) return;
             const addr = input.value.trim();
             if (!addr) {
                 resultEl.textContent = 'Please enter an address';
@@ -361,13 +355,10 @@ function create({ config: CFG, onAction }) {
             }
             resultEl.textContent = 'Connecting...';
             resultEl.className = 'connect-result';
+            goBtn.disabled = true;
             try {
-                const resp = await fetch('/api/peer/connect', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ address: addr }),
-                });
-                const data = await resp.json();
+                /** @type {import('../types').ActionResponse & {address: string}} */
+                const data = await postJson('/api/peer/connect', { address: addr }, { signal: dialog.signal });
                 if (data.success) {
                     resultEl.textContent = `Connection attempt sent to ${data.address}`;
                     resultEl.className = 'connect-result ok';
@@ -379,6 +370,9 @@ function create({ config: CFG, onAction }) {
             } catch (err) {
                 resultEl.textContent = 'Error: ' + errorMessage(err);
                 resultEl.className = 'connect-result err';
+            } finally {
+                goBtn.disabled = false;
+                if (dialog.isOpen() && document.activeElement === document.body) goBtn.focus({ preventScroll: true });
             }
         });
 
@@ -609,16 +603,17 @@ function create({ config: CFG, onAction }) {
 
     // API-down modal: shown when internet is up but geo API is failing
     let _apiDownModalVisible = false;
+    let _apiDownPromptAcknowledged = false;
 
     async function checkApiDownPrompt() {
-        if (_apiDownModalVisible) return;
+        if (_apiDownModalVisible || _apiDownPromptAcknowledged) return;
         try {
             const resp = await fetch('/api/connectivity');
             const data = await resp.json();
             if (data.api_down_prompt && !data.geo_db_only_mode) {
                 showApiDownModal();
-                // Acknowledge we showed the prompt
-                fetch('/api/connectivity/api-prompt-ack', { method: 'POST' });
+                // Viewing the notice must not require a privileged server write.
+                _apiDownPromptAcknowledged = true;
             }
         } catch (e) {
             /* ignore */
@@ -628,6 +623,7 @@ function create({ config: CFG, onAction }) {
     function showApiDownModal() {
         if (_apiDownModalVisible) return;
         _apiDownModalVisible = true;
+        const controller = new AbortController();
 
         const overlay = document.createElement('div');
         overlay.className = 'modal-overlay';
@@ -655,6 +651,7 @@ function create({ config: CFG, onAction }) {
         document.body.appendChild(overlay);
 
         const close = () => {
+            controller.abort();
             overlay.remove();
             _apiDownModalVisible = false;
         };
@@ -670,14 +667,15 @@ function create({ config: CFG, onAction }) {
             databaseOnlyButton.disabled = true;
             try {
                 /** @type {{success: boolean}} */
-                const data = await postJson('/api/geodb/toggle-db-only');
+                const data = await postJson('/api/geodb/toggle-db-only', undefined, { signal: controller.signal });
                 if (!data.success) throw new Error('Could not save API lookup setting');
                 close();
                 fetchInfo();
             } catch (e) {
-                required('#api-down-error', overlay).textContent = 'Setting was not saved: ' + errorMessage(e);
+                if (overlay.isConnected) required('#api-down-error', overlay).textContent = 'Setting was not saved: ' + errorMessage(e);
             } finally {
                 databaseOnlyButton.disabled = false;
+                if (overlay.isConnected && document.activeElement === document.body) databaseOnlyButton.focus({ preventScroll: true });
             }
         });
 

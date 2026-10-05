@@ -3,6 +3,9 @@ import https from 'node:https';
 import type { Settings } from './settings.ts';
 import { object, errorMessage } from './types.ts';
 import { parseNetworkInfo } from './rpc-types.ts';
+import { createLogger } from './logging.ts';
+
+const log = createLogger('rpc');
 
 export class RpcError extends Error {}
 export class RpcTransportError extends RpcError {}
@@ -17,6 +20,8 @@ export class BitcoinRpcClient {
         return { scheme: this.settings.rpc_scheme, host: this.settings.rpc_host, port: this.settings.rpc_port, network: this.settings.bitcoin_network };
     }
     async call(method: string, params: unknown[] = [], timeoutSeconds = this.settings.rpc_timeout): Promise<unknown> {
+        const started = performance.now();
+        log.debug(`Calling ${method} (timeout ${timeoutSeconds}s)`);
         const payload = JSON.stringify({ jsonrpc: '1.0', id: ++this.id, method, params });
         const transport = this.settings.rpc_scheme === 'https' ? https : http;
         const signal = AbortSignal.any([AbortSignal.timeout(Math.ceil(timeoutSeconds * 1000)), ...(this.signal ? [this.signal] : [])]);
@@ -38,7 +43,11 @@ export class BitcoinRpcClient {
             });
             req.on('error', reject);
             req.end(payload);
-        }).catch(error => { throw new RpcTransportError(`Bitcoin RPC request failed: ${errorMessage(error)}`); });
+        }).catch(error => {
+            log.debug(`${method} transport failed after ${Math.round(performance.now() - started)}ms: ${errorMessage(error)}`);
+            throw new RpcTransportError(`Bitcoin RPC request failed: ${errorMessage(error)}`);
+        });
+        log.debug(`${method} returned HTTP ${response.status} in ${Math.round(performance.now() - started)}ms`);
         if ([401, 403].includes(response.status)) throw new RpcAuthenticationError('Bitcoin RPC authentication failed');
         let body: unknown;
         try { body = JSON.parse(response.text); } catch { throw new RpcTransportError(`Bitcoin RPC returned HTTP ${response.status} without JSON`); }

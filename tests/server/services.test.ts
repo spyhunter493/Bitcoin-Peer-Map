@@ -58,6 +58,48 @@ test('failed dashboard fields clear after expiry and blockchain failure still pe
     assert.equal(info.node_traffic?.download_bytes, 2048);
     assert.equal(rpc.count('getbestblockhash'), 1);
 });
+test('peer refresh outages are logged once, reminded after a minute, and reset after recovery', async t => {
+    const { rpc, geo, connectivity } = services(t);
+    const peers = new PeerService(rpc, geo, connectivity);
+    t.after(() => peers.stop());
+    let now = 0; t.mock.method(performance, 'now', () => now);
+    const warnings: string[] = [], recoveries: string[] = [];
+    t.mock.method(console, 'warn', (message: string) => { warnings.push(message); });
+    t.mock.method(console, 'info', (message: string) => { recoveries.push(message); });
+    rpc.failed.add('getpeerinfo');
+    assert.equal(await peers.refreshOnce(), false);
+    assert.equal(await peers.refreshOnce(), false);
+    assert.equal(warnings.length, 1);
+    now = 60_000; await peers.refreshOnce();
+    assert.equal(warnings.length, 2);
+    assert.match(warnings[1], /WARN \[peers\].*3 consecutive failures/);
+    rpc.failed.delete('getpeerinfo');
+    assert.equal(await peers.refreshOnce(), true);
+    assert.equal(await peers.refreshOnce(), true);
+    assert.equal(recoveries.length, 1);
+    assert.match(recoveries[0], /INFO \[peers\] Peer refresh recovered/);
+    rpc.failed.add('getpeerinfo'); await peers.refreshOnce();
+    assert.equal(warnings.length, 3, 'a new outage is reported immediately');
+    await peers.stop(); await peers.refreshOnce();
+    assert.equal(warnings.length, 3, 'shutdown cancellation does not generate an outage');
+});
+test('dashboard RPC failure reminders and recovery retain unavailable field behavior', async t => {
+    const { rpc, node } = services(t);
+    let now = 0; t.mock.method(performance, 'now', () => now);
+    const warnings: string[] = [], recoveries: string[] = [];
+    t.mock.method(console, 'warn', (message: string) => { warnings.push(message); });
+    t.mock.method(console, 'info', (message: string) => { recoveries.push(message); });
+    rpc.failed.add('getnetworkinfo');
+    assert.equal((await node.dashboardInfo()).connected, null);
+    now = 5000; assert.equal((await node.dashboardInfo()).connected, null);
+    assert.equal(warnings.length, 1);
+    now = 60_000; await node.dashboardInfo(); assert.equal(warnings.length, 2);
+    rpc.failed.delete('getnetworkinfo');
+    now = 65_000; assert.equal((await node.dashboardInfo()).connected, 100);
+    now = 70_000; await node.dashboardInfo();
+    assert.equal(recoveries.length, 1);
+    assert.match(recoveries[0], /INFO \[node\] Network details recovered/);
+});
 test('dashboard starts independent RPC reads while blockchain details are still pending', async t => {
     const { rpc, node } = services(t);
     const blockchain = deferred<Data>();

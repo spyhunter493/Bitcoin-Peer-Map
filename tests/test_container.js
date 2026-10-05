@@ -30,14 +30,17 @@ const rpcPort = rpc.address().port;
 const probe = createServer(); probe.listen(0, '127.0.0.1'); await once(probe, 'listening');
 const port = probe.address().port; await new Promise(resolve => probe.close(resolve));
 const base = `http://127.0.0.1:${port}`;
+const adminToken = 'admin';
 const get = async (path, method = 'GET') => {
-    const response = await fetch(base + path, { method, signal: AbortSignal.timeout(5000) });
+    const response = await fetch(base + path, { method, ...(method === 'POST' ? { headers: { Authorization: `Bearer ${adminToken}` } } : {}), signal: AbortSignal.timeout(5000) });
     assert.equal(response.status, 200, path); return response.json();
 };
 async function start() {
     await docker('run', '-d', '--name', name, '--network', 'host', '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
         '--tmpfs', '/tmp:rw,noexec,nosuid,size=64m', '-v', `${volume}:/var/lib/bitcoin-peer-map`,
         '-e', 'BITCOIN_RPC_HOST=127.0.0.1', '-e', `BITCOIN_RPC_PORT=${rpcPort}`, '-e', 'BITCOIN_RPC_USER=test', '-e', 'BITCOIN_RPC_PASSWORD=test',
+        '-e', `BPM_ADMIN_TOKEN=${adminToken}`,
+        '-e', 'BPM_LOG_LEVEL=info',
         '-e', `BPM_LISTEN_PORT=${port}`, '-e', 'BPM_LISTEN_ADDRESS=127.0.0.1', '-e', 'BPM_BUILD_VERSION=dev', '-e', 'BPM_BUILD_REVISION=unknown', image);
     for (let attempt = 0; attempt < 100; attempt++) {
         try { if ((await get('/healthz')).status === 'ok') return; } catch { /* Wait for startup. */ }
@@ -49,6 +52,11 @@ async function stop() {
     await docker('stop', '--time', '10', name);
     const state = JSON.parse(await docker('inspect', '--format', '{{json .State}}', name));
     assert.equal(state.ExitCode, 0, 'SIGTERM should shut down cleanly');
+    const logs = await docker('logs', name);
+    assert.match(logs, /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z INFO \[startup\] Bitcoin RPC is available/);
+    assert.match(logs, /INFO \[startup\] Bitcoin Peer Map listening on/);
+    assert.match(logs, /INFO \[shutdown\] Bitcoin Peer Map stopped/);
+    assert.equal(logs.includes('DEBUG ['), false, 'default logging excludes routine RPC diagnostics');
     await docker('rm', name);
 }
 try {
@@ -70,7 +78,8 @@ try {
         db.close(); writeFileSync('/var/lib/bitcoin-peer-map/settings.json', JSON.stringify({geoip_auto_update:false, geoip_db_only:true}), {mode:0o600});
     `);
     await start();
-    const build = (await get('/api/config')).build;
+    const config = await get('/api/config'), build = config.build;
+    assert.equal(config.server.log_level, 'info');
     assert.equal(build.version, 'dev');
     assert.equal(build.revision, 'unknown');
     assert.equal(build.updates.update_available, false);
@@ -78,6 +87,8 @@ try {
     assert.equal(await docker('exec', name, 'id', '-u'), '10001');
     await docker('exec', name, 'sh', '-c', 'test -z "$(command -v python)" && test -z "$(command -v python3)" && test ! -d /app/node_modules');
     assert.equal((await get('/api/connectivity')).geo_db_only_mode, true);
+    assert.equal((await fetch(base + '/api/geodb/toggle-db-only', { method: 'POST' })).status, 401);
+    assert.equal((await get('/api/connectivity')).geo_db_only_mode, true, 'unauthenticated request cannot change saved settings');
     const info = await get('/api/info');
     assert.equal(info.connected, 1); assert.equal(info.geo_db_stats.entries, 1); assert.equal(info.geo_db_stats.auto_update, false);
     let peers;

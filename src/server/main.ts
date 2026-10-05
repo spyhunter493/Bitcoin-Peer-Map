@@ -6,12 +6,16 @@ import { createApplication } from './app.ts';
 import { sleep } from './tasks.ts';
 import { errorMessage } from './types.ts';
 import { parseBlockchainInfo } from './rpc-types.ts';
+import { configureLogging, createLogger } from './logging.ts';
+
+const startupLog = createLogger('startup');
+const shutdownLog = createLogger('shutdown');
 
 export async function waitForRpc(runtime: Pick<AppRuntime, 'settings' | 'rpc' | 'controller'>) {
     const settings = runtime.settings;
     const deadline = performance.now() + settings.rpc_startup_timeout * 1000;
     const remainingSeconds = () => Math.max(0, (deadline - performance.now()) / 1000);
-    console.info(`Bitcoin Peer Map: checking Bitcoin RPC at ${settings.rpc_host}:${settings.rpc_port} (${settings.bitcoin_network})`);
+    startupLog.info(`Checking Bitcoin RPC at ${settings.rpc_host}:${settings.rpc_port} (${settings.bitcoin_network})`);
     while (!runtime.controller.signal.aborted) {
         if (remainingSeconds() === 0) throw new Error('Bitcoin RPC startup timed out');
         try {
@@ -22,21 +26,30 @@ export async function waitForRpc(runtime: Pick<AppRuntime, 'settings' | 'rpc' | 
             if (blockchain?.chain !== settings.bitcoin_network) {
                 throw new ConfigurationError(`BITCOIN_NETWORK does not match the node: configured ${settings.bitcoin_network}, node reports ${blockchain?.chain}`);
             }
-            console.info('Bitcoin Peer Map: Bitcoin RPC is available');
+            startupLog.info('Bitcoin RPC is available');
             return;
         } catch (error) {
             if (error instanceof RpcAuthenticationError || error instanceof ConfigurationError || remainingSeconds() === 0) throw error;
+            startupLog.debug(`Bitcoin RPC is not ready; retrying: ${errorMessage(error)}`);
             await sleep(Math.min(2000, remainingSeconds() * 1000), runtime.controller.signal);
         }
     }
     throw new Error('Startup cancelled');
 }
 export async function main() {
-    const runtime = new AppRuntime(loadSettings());
+    // Configuration failures also receive formatted logs without exposing supplied credentials.
+    configureLogging({ level: 'info', secrets: [process.env.BPM_ADMIN_TOKEN, process.env.BITCOIN_RPC_PASSWORD] });
+    const settings = loadSettings();
+    configureLogging({ level: settings.log_level, secrets: [settings.admin_token, settings.rpc_password, Buffer.from(`${settings.rpc_user}:${settings.rpc_password}`).toString('base64')] });
+    const runtime = new AppRuntime(settings);
     const app = createApplication(runtime.settings, runtime);
+    let stopping = false;
     const stop = () => {
-        void app.close().catch(error => {
-            console.error(errorMessage(error));
+        if (stopping) return;
+        stopping = true;
+        shutdownLog.info('Stopping Bitcoin Peer Map');
+        void app.close().then(() => shutdownLog.info('Bitcoin Peer Map stopped')).catch(error => {
+            shutdownLog.error(`Shutdown failed: ${errorMessage(error)}`);
             process.exitCode = 1;
         });
     };
@@ -44,7 +57,8 @@ export async function main() {
     process.once('SIGINT', stop);
     try {
         await waitForRpc(runtime);
-        await app.listen();
+        const address = await app.listen();
+        if (address && typeof address !== 'string') startupLog.info(`Bitcoin Peer Map listening on ${address.address}:${address.port}`);
     } catch (error) {
         const cancelled = runtime.controller.signal.aborted;
         await app.close();
@@ -53,7 +67,7 @@ export async function main() {
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
     main().catch(error => {
-        console.error(`Bitcoin Peer Map: startup failed: ${errorMessage(error)}`);
+        startupLog.error(`Bitcoin Peer Map: startup failed: ${errorMessage(error)}`);
         process.exitCode = 1;
     });
 }

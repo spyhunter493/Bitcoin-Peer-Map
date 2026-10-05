@@ -15,6 +15,8 @@ import assertGeoIPSettings from './test_geoip_settings.js';
 import assertNodeServices from './test_node_services.js';
 import assertNodeMetrics from './test_node_metrics.js';
 import assertNavigation from './test_navigation.js';
+import assertAdminAuthentication from './test_admin_auth.js';
+import assertTableSettings from './test_table_settings.js';
 
 const repoRoot = path.resolve(import.meta.dirname, '..');
 
@@ -257,6 +259,9 @@ async function assertChainTipsModal(page) {
     assert.strictEqual(modal.labelledBy, modal.titleId);
     assert.strictEqual(modal.closeLabel, 'Close Chain Tips');
     assert.strictEqual(modal.focusedId, 'chain-tips-close');
+    const blockLinks = await page.locator('#chain-tips-body a.modal-link').evaluateAll(links => links.map(link => link.href));
+    assert.ok(blockLinks.length > 0);
+    assert.ok(blockLinks.every(url => url.startsWith('https://mempool.guide/block/')));
 
     await page.keyboard.press('Escape');
     await page.waitForSelector('#chain-tips-modal', { state: 'detached' });
@@ -867,6 +872,7 @@ if (!Number.isInteger(workers) || workers < 1 || workers > 8) {
 const suites = [
     ['dashboard interactions and layout', assertDashboardInteractions],
     ['responsive peer controls', assertPeerControlsResponsive],
+    ['table settings and Antarctic visibility', assertTableSettings],
     ['peer refresh reliability', assertPeerRefreshReliability],
     ['peer views and safe rendering', assertPeerViews],
     ['peer lifecycle', assertPeerLifecycle],
@@ -878,6 +884,7 @@ const suites = [
     ['revisioned modules', assertModules],
     ['map groups', assertMapGroups],
     ['tooltip refresh and navigation', assertNavigation],
+    ['admin authentication', assertAdminAuthentication],
 ];
 
 await test('browser layout regressions', { concurrency: workers }, async t => {

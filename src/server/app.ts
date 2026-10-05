@@ -11,6 +11,10 @@ import { type Data, errorMessage, object } from './types.ts';
 import { HttpError, readJsonBody, parseAddress, parsePeerId, parseQueryBoolean, requireDashboardOrigin, sendResponse } from './http.ts';
 import { GITHUB_REPOSITORY, REPOSITORY_URL } from './build.ts';
 import { NODE_METRICS_INTERVAL_MS } from './services/node-metrics.ts';
+import { createAdminAuthentication } from './admin-auth.ts';
+import { createLogger } from './logging.ts';
+
+const log = createLogger('http');
 
 export interface ApplicationRuntime {
     settings: Settings;
@@ -46,16 +50,18 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
     const repositoryUrl = REPOSITORY_URL;
     const revisionUrl = revision === 'unknown' ? repositoryUrl : `${repositoryUrl}/commit/${revision}`;
     const template = readFileSync(join(packageDir, 'templates/index.html'), 'utf8');
-    const values: Record<string, string> = { version, revision: revision === 'unknown' ? revision : revision.slice(0, 7), revision_url: revisionUrl, asset_revision: assets, repository_url: repositoryUrl, repository_discussions_url: `${repositoryUrl}/discussions` };
+    const values: Record<string, string> = { version, asset_revision: assets, repository_url: repositoryUrl, repository_discussions_url: `${repositoryUrl}/discussions` };
     const html = template.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key) => escapeHtml(values[key] ?? ''));
     const schema: Data = JSON.parse(readFileSync(new URL('./openapi.json', import.meta.url), 'utf8'));
     if (!object(schema.info)) throw new Error('OpenAPI schema is missing its info object');
     schema.info.version = version;
     const streams = new Set<ServerResponse>();
     let closeTask: Promise<void> | null = null;
+    const requireAdmin = createAdminAuthentication(settings.admin_token);
 
     const routes: Record<string, (query: URLSearchParams, req: IncomingMessage, res: ServerResponse) => unknown> = {
         'GET /healthz': () => ({ status: 'ok' }),
+        'POST /api/admin/verify': () => ({ success: true }),
         'GET /api/peers': (query, _req, res) => { res.setHeader('Cache-Control', 'no-store'); return parseQueryBoolean(query, 'include_status', false) ? runtime.peers.snapshot() : runtime.peers.listPeers(); },
         'GET /api/info': async () => ({ ...await runtime.node.dashboardInfo(), updates: runtime.updates.snapshot() }),
         'GET /api/mempool': () => runtime.node.mempool(),
@@ -81,7 +87,8 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
         'GET /api/rpc-info': () => ({ ...runtime.rpc.connectionInfo, endpoint: settings.rpc_url }),
         'GET /api/config': () => ({
             bitcoin_rpc: { scheme: settings.rpc_scheme, host: settings.rpc_host, port: settings.rpc_port, network: settings.bitcoin_network, verify_tls: settings.rpc_verify_tls, timeout: settings.rpc_timeout, startup_timeout: settings.rpc_startup_timeout, username_configured: Boolean(settings.rpc_user), password_configured: Boolean(settings.rpc_password), password_file_configured: settings.rpc_password_file_configured, endpoint: settings.rpc_url },
-            server: { listen_address: settings.listen_address, listen_port: settings.listen_port },
+            server: { listen_address: settings.listen_address, listen_port: settings.listen_port, log_level: settings.log_level },
+            management: { enabled: Boolean(settings.admin_token) },
             geoip: { enabled: settings.geoip_enabled, auto_update_override: settings.geoip_auto_update_override },
             build: { version, revision, revision_known: revision !== 'unknown', asset_revision: assets, revision_url: revisionUrl, updates: runtime.updates.snapshot() },
             repository: { github: GITHUB_REPOSITORY, url: repositoryUrl }, data: { data_dir: settings.data_dir },
@@ -145,11 +152,12 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
                 if (allowed.length) { res.setHeader('Allow', allowed.join(', ')); throw new HttpError(405, 'Method not allowed'); }
                 throw new HttpError(404, 'Not found');
             }
+            if (method === 'POST' && url.pathname.startsWith('/api/')) requireAdmin(req, res);
             await sendResponse(req, res, await route(url.searchParams, req, res));
         } catch (error) {
             if (res.headersSent) { res.destroy(); return; }
-            if (!(error instanceof HttpError)) console.error(`Request failed: ${errorMessage(error)}`);
-            await sendResponse(req, res, { detail: error instanceof HttpError ? error.message : 'Internal server error' }, error instanceof HttpError ? error.status : 500);
+            if (!(error instanceof HttpError)) log.error(`Request failed (${req.method} ${(req.url || '/').split('?')[0]}): ${errorMessage(error)}`);
+            await sendResponse(req, res, { detail: error instanceof HttpError ? error.message : 'Internal server error', ...(error instanceof HttpError && error.code ? { code: error.code } : {}) }, error instanceof HttpError ? error.status : 500);
         }
     });
     return {

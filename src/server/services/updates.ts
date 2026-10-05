@@ -3,6 +3,9 @@ import { join } from 'node:path';
 import type { Settings } from '../settings.ts';
 import { object, errorMessage, nowSeconds } from '../types.ts';
 import { GITHUB_REPOSITORY, REPOSITORY_URL, isNewerRelease, parseReleaseVersion } from '../build.ts';
+import { createFailureReporter, createLogger } from '../logging.ts';
+
+const log = createLogger('updates');
 
 export const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 export interface UpdateStatus {
@@ -23,6 +26,8 @@ export class UpdateService {
     private readonly cachePath: string;
     private readonly version: string;
     private readonly fetcher: typeof fetch;
+    private checkFailures = createFailureReporter(log);
+    private saveFailures = createFailureReporter(log);
 
     constructor(settings: Settings, signal?: AbortSignal, fetcher = fetch) {
         this.version = settings.build_version;
@@ -67,8 +72,9 @@ export class UpdateService {
         try {
             writeFileSync(temporary, JSON.stringify({ repository: GITHUB_REPOSITORY, version: this.version, ...this.status }) + '\n', { mode: 0o600 });
             renameSync(temporary, this.cachePath);
+            this.saveFailures.recovered('Update check cache writes recovered');
         } catch (error) {
-            console.warn(`Could not save update check: ${errorMessage(error)}`);
+            this.saveFailures.failure(`Could not save update check: ${errorMessage(error)}`);
         } finally {
             try { rmSync(temporary, { force: true }); } catch { /* The cache is optional on unwritable volumes. */ }
         }
@@ -100,10 +106,11 @@ export class UpdateService {
                 latest = release.tag_name;
             }
             this.status = { ...this.releaseStatus(latest), checked_at: nowSeconds(), check_failed: false };
+            this.checkFailures.recovered('Application update check recovered');
         } catch (error) {
             if (this.signal.aborted) return;
             this.status = { ...this.status, checked_at: nowSeconds(), check_failed: true };
-            console.warn(`Application update check failed: ${errorMessage(error)}`);
+            this.checkFailures.failure(`Application update check failed: ${errorMessage(error)}`);
         }
         if (!this.signal.aborted) this.saveCache();
     }

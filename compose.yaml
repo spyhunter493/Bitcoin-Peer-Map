@@ -23,6 +23,8 @@ services:
       BITCOIN_RPC_TIMEOUT: ${BITCOIN_RPC_TIMEOUT:-30}
       BITCOIN_NETWORK: ${BITCOIN_NETWORK:-main}
       BPM_RPC_STARTUP_TIMEOUT: ${BPM_RPC_STARTUP_TIMEOUT:-30}
+      BPM_ADMIN_TOKEN: ${BPM_ADMIN_TOKEN:-}
+      BPM_LOG_LEVEL: ${BPM_LOG_LEVEL:-info}
       # Host binding and port publishing are separate from the container listener.
       BPM_LISTEN_ADDRESS: 0.0.0.0
       BPM_LISTEN_PORT: ${BPM_LISTEN_PORT:-58333}

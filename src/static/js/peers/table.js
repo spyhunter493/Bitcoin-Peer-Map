@@ -595,6 +595,13 @@ function create(options) {
     const tableSettingsBtn = required('#btn-table-settings');
     /** @type {HTMLElement | null} */
     let tableSettingsEl = null;
+    /** @type {ResizeObserver | null} */
+    let tableSettingsObserver = null;
+    /** @type {number | null} */
+    let tableSettingsDismissTimer = null;
+    tableSettingsBtn.setAttribute('aria-haspopup', 'dialog');
+    tableSettingsBtn.setAttribute('aria-expanded', 'false');
+    tableSettingsBtn.setAttribute('aria-controls', 'table-settings-popup');
 
     if (tableSettingsBtn) {
         tableSettingsBtn.addEventListener('click', (e) => {
@@ -612,9 +619,12 @@ function create(options) {
         const popup = document.createElement('div');
         popup.className = 'table-settings-popup';
         popup.id = 'table-settings-popup';
+        popup.setAttribute('role', 'dialog');
+        popup.setAttribute('aria-labelledby', 'tsp-title');
+        popup.tabIndex = -1;
 
         let html =
-            '<div class="tsp-header"><span class="tsp-title">Table Settings</span><button class="tsp-defaults-btn" id="tsp-defaults">Defaults</button></div>';
+            '<div class="tsp-header"><span class="tsp-title" id="tsp-title">Table Settings</span><button class="tsp-defaults-btn" id="tsp-defaults">Defaults</button></div>';
 
         // ── Transparency slider ──
         html += '<div class="tsp-section">Transparency</div>';
@@ -635,18 +645,25 @@ function create(options) {
 
         // ── Antarctica setting ──
         html += '<div class="tsp-section">Private Networks</div>';
-        html += `<label class="tsp-col-item"><input type="checkbox" id="tsp-antarctica" ${showAntarcticaPeers ? 'checked' : ''}>Show in Antarctica</label>`;
+        html += `<label class="tsp-col-item" title="Show map placeholders for private and ungeolocated peers. Peers remain in the table."><input type="checkbox" id="tsp-antarctica" ${showAntarcticaPeers ? 'checked' : ''}>Show in Antarctica</label>`;
 
         popup.innerHTML = html;
         document.body.appendChild(popup);
         tableSettingsEl = popup;
-
-        // Position below the gear button
-        if (tableSettingsBtn) {
-            const rect = tableSettingsBtn.getBoundingClientRect();
-            popup.style.right = window.innerWidth - rect.right + 'px';
-            popup.style.bottom = window.innerHeight - rect.top + 6 + 'px';
-        }
+        tableSettingsBtn.setAttribute('aria-expanded', 'true');
+        positionTableSettings();
+        tableSettingsObserver = new ResizeObserver(positionTableSettings);
+        tableSettingsObserver.observe(panelEl);
+        tableSettingsObserver.observe(popup);
+        window.addEventListener('resize', positionTableSettings);
+        window.addEventListener('scroll', positionTableSettings, { capture: true, passive: true });
+        popup.addEventListener('keydown', (event) => {
+            if (event.key !== 'Escape') return;
+            event.stopPropagation();
+            closeTableSettings();
+            tableSettingsBtn.focus();
+        });
+        popup.focus({ preventScroll: true });
 
         // Bind opacity slider
         /** @type {HTMLInputElement} */
@@ -705,6 +722,7 @@ function create(options) {
             antToggle.addEventListener('change', () => {
                 showAntarcticaPeers = antToggle.checked;
                 saveTableDisplaySettings();
+                onAction({ type: 'antarctica', visible: showAntarcticaPeers });
             });
         }
 
@@ -719,6 +737,7 @@ function create(options) {
                 applyPanelOpacity();
                 // Reset Antarctica setting
                 showAntarcticaPeers = true;
+                onAction({ type: 'antarctica', visible: true });
                 // Reset visible rows to default
                 maxPeerRows = 10;
                 applyMaxPeerRows();
@@ -737,9 +756,28 @@ function create(options) {
             });
         }
 
-        setTimeout(() => {
-            document.addEventListener('click', closeTableSettingsOnOutside);
+        tableSettingsDismissTimer = setTimeout(() => {
+            tableSettingsDismissTimer = null;
+            if (tableSettingsEl === popup) document.addEventListener('click', closeTableSettingsOnOutside);
         }, 0);
+    }
+
+    function positionTableSettings() {
+        if (!tableSettingsEl) return;
+        const margin = 12, gap = 8;
+        const width = document.documentElement.clientWidth;
+        const height = document.documentElement.clientHeight;
+        const anchor = tableSettingsBtn.getBoundingClientRect();
+        const availableHeight = Math.max(0, height - margin * 2);
+        const above = clamp(anchor.top - gap - margin, 0, availableHeight);
+        const below = clamp(height - anchor.bottom - gap - margin, 0, availableHeight);
+        const naturalHeight = tableSettingsEl.scrollHeight + 2;
+        const useAbove = above >= naturalHeight || above >= below;
+        tableSettingsEl.style.maxHeight = (useAbove ? above : below) + 'px';
+        const popupHeight = tableSettingsEl.offsetHeight;
+        const top = useAbove ? anchor.top - gap - popupHeight : anchor.bottom + gap;
+        tableSettingsEl.style.top = clamp(top, margin, Math.max(margin, height - popupHeight - margin)) + 'px';
+        tableSettingsEl.style.left = clamp(anchor.right - tableSettingsEl.offsetWidth, margin, Math.max(margin, width - tableSettingsEl.offsetWidth - margin)) + 'px';
     }
 
     function applyPanelOpacity() {
@@ -758,6 +796,13 @@ function create(options) {
     }
 
     function closeTableSettings() {
+        if (tableSettingsDismissTimer !== null) clearTimeout(tableSettingsDismissTimer);
+        tableSettingsDismissTimer = null;
+        tableSettingsObserver?.disconnect();
+        tableSettingsObserver = null;
+        window.removeEventListener('resize', positionTableSettings);
+        window.removeEventListener('scroll', positionTableSettings, true);
+        tableSettingsBtn.setAttribute('aria-expanded', 'false');
         if (tableSettingsEl) {
             tableSettingsEl.remove();
             tableSettingsEl = null;

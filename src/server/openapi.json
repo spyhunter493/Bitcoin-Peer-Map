@@ -89,8 +89,19 @@
           },
           "403": {
             "$ref": "#/components/responses/CrossOriginRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminRequired"
+          },
+          "429": {
+            "$ref": "#/components/responses/AdminRateLimited"
           }
-        }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ]
       }
     },
     "/api/peer/disconnect": {
@@ -138,8 +149,19 @@
           },
           "403": {
             "$ref": "#/components/responses/CrossOriginRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminRequired"
+          },
+          "429": {
+            "$ref": "#/components/responses/AdminRateLimited"
           }
-        }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ]
       }
     },
     "/api/peer/ban": {
@@ -187,8 +209,19 @@
           },
           "403": {
             "$ref": "#/components/responses/CrossOriginRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminRequired"
+          },
+          "429": {
+            "$ref": "#/components/responses/AdminRateLimited"
           }
-        }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ]
       }
     },
     "/api/peer/unban": {
@@ -236,8 +269,19 @@
           },
           "403": {
             "$ref": "#/components/responses/CrossOriginRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminRequired"
+          },
+          "429": {
+            "$ref": "#/components/responses/AdminRateLimited"
           }
-        }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ]
       }
     },
     "/api/bans": {
@@ -271,8 +315,19 @@
           },
           "403": {
             "$ref": "#/components/responses/CrossOriginRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminRequired"
+          },
+          "429": {
+            "$ref": "#/components/responses/AdminRateLimited"
           }
-        }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ]
       }
     },
     "/api/info": {
@@ -446,8 +501,19 @@
           },
           "403": {
             "$ref": "#/components/responses/CrossOriginRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminRequired"
+          },
+          "429": {
+            "$ref": "#/components/responses/AdminRateLimited"
           }
-        }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ]
       }
     },
     "/api/geodb/toggle-db-only": {
@@ -465,8 +531,19 @@
           },
           "403": {
             "$ref": "#/components/responses/CrossOriginRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminRequired"
+          },
+          "429": {
+            "$ref": "#/components/responses/AdminRateLimited"
           }
-        }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ]
       }
     },
     "/api/geodb/toggle-auto-update": {
@@ -484,8 +561,19 @@
           },
           "403": {
             "$ref": "#/components/responses/CrossOriginRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminRequired"
+          },
+          "429": {
+            "$ref": "#/components/responses/AdminRateLimited"
           }
-        }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ]
       }
     },
     "/api/geodb/update": {
@@ -503,8 +591,19 @@
           },
           "403": {
             "$ref": "#/components/responses/CrossOriginRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminRequired"
+          },
+          "429": {
+            "$ref": "#/components/responses/AdminRateLimited"
           }
-        }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ]
       }
     },
     "/api/stats": {
@@ -576,6 +675,47 @@
           }
         }
       }
+    },
+    "/api/admin/verify": {
+      "post": {
+        "summary": "Verify Admin Token",
+        "description": "Verify the shared token without changing node or dashboard settings. Does not create a server session.",
+        "operationId": "verify_admin_token",
+        "responses": {
+          "200": {
+            "description": "Token accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminRequired"
+          },
+          "429": {
+            "$ref": "#/components/responses/AdminRateLimited"
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -617,6 +757,10 @@
           "detail": {
             "type": "string",
             "description": "Description of the request error."
+          },
+          "code": {
+            "type": "string",
+            "description": "Optional machine-readable error code, including admin_required, management_disabled, or admin_rate_limited."
           }
         }
       },
@@ -765,7 +909,7 @@
     },
     "responses": {
       "CrossOriginRequest": {
-        "description": "Browser requests whose Origin host does not match Host are rejected. Reverse proxies must preserve the external Host header.",
+        "description": "Browser requests whose Origin host does not match Host are rejected. Reverse proxies must preserve the external Host header. Management is also rejected when BPM_ADMIN_TOKEN is not configured (code: management_disabled).",
         "content": {
           "application/json": {
             "schema": {
@@ -773,6 +917,47 @@
             }
           }
         }
+      },
+      "AdminRequired": {
+        "description": "Missing or incorrect admin token. The action was not executed.",
+        "headers": {
+          "WWW-Authenticate": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "AdminRateLimited": {
+        "description": "Too many failed authentication attempts from the connection address. Valid tokens remain accepted.",
+        "headers": {
+          "Retry-After": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "AdminToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Shared admin token configured with BPM_ADMIN_TOKEN. Use HTTPS. When unset, management is read-only."
       }
     }
   }

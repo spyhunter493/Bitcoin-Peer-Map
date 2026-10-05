@@ -9,6 +9,8 @@ import { PeerService } from './services/peers.ts';
 import { NodeService } from './services/node.ts';
 import type { NodeMetrics } from './services/node-metrics.ts';
 import { UpdateService } from './services/updates.ts';
+import { createFailureReporter, createLogger } from './logging.ts';
+import { errorMessage } from './types.ts';
 
 export const GEOIP_UPDATE_INTERVAL_MS = 60 * 60 * 1000;
 export class AppRuntime {
@@ -26,6 +28,7 @@ export class AppRuntime {
     private updateTimer: ReturnType<typeof setTimeout> | null = null;
     private updateTask: Promise<void> | null = null;
     private started = false;
+    private updateFailures = createFailureReporter(createLogger('geoip'));
     constructor(settings: Settings) {
         this.settings = settings;
         this.preferencesStore = new PreferenceStore(join(settings.data_dir, 'settings.json'));
@@ -82,8 +85,10 @@ export class AppRuntime {
         this.updateTimer = setTimeout(() => {
             this.updateTimer = null;
             this.updateTask = this.geoDatabase.update().then(result => {
-                if (!result.success && !this.controller.signal.aborted) console.warn(`Automatic GeoIP update failed: ${result.message}`);
-            }).catch(error => { if (!this.controller.signal.aborted) console.error(error); }).finally(() => {
+                if (this.controller.signal.aborted) return;
+                if (result.success) this.updateFailures.recovered('Automatic GeoIP update recovered');
+                else this.updateFailures.failure(`Automatic GeoIP update failed: ${result.message}`);
+            }).catch(error => { if (!this.controller.signal.aborted) this.updateFailures.failure(`Automatic GeoIP update failed: ${errorMessage(error)}`, 'error'); }).finally(() => {
                 this.updateTask = null;
                 this.scheduleUpdate(GEOIP_UPDATE_INTERVAL_MS);
             });

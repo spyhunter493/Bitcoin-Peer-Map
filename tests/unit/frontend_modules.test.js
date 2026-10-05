@@ -157,9 +157,20 @@ test('frontend modules', async () => {
     assert.ok(chainTips.includes(escaped));
     assert.ok(!chainTips.includes('<img'));
 
+    // The new explorer serves specific networks; never send a hash to another chain.
+    for (const [chain, path] of [['main', ''], ['signet', '/signet'], ['testnet4', '/testnet4'], ['test', null], ['regtest', null]]) {
+        const hash = 'a'.repeat(64);
+        const rendered = BPMNodeMonitor.renderChainTips({
+            success: true, summary: { chain },
+            tips: [{ hash, status: 'active', height: 1, branch_length: 0 }],
+        });
+        if (path === null) assert.ok(!rendered.includes('href='), `${chain}: unsupported chain remains text`);
+        else assert.ok(rendered.includes(`href="https://mempool.guide${path}/block/${hash}"`), chain);
+    }
+
     await BPMApi.postJson('/success', { peer_id: 7 });
     assert.strictEqual(requests[0].options.method, 'POST');
-    assert.strictEqual(requests[0].options.headers['Content-Type'], 'application/json');
+    assert.strictEqual(requests[0].options.headers.get('Content-Type'), 'application/json');
     assert.strictEqual(requests[0].options.body, '{"peer_id":7}');
 
     await assert.rejects(

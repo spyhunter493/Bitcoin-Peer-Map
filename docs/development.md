@@ -23,6 +23,13 @@ Dashboard and legacy metrics endpoints share reads cached for five seconds. P2P
 rates are averaged between valid samples and reset after outages or node restarts;
 unavailable values are null. No dashboard host or container metrics are collected.
 
+Management is read-only unless `BPM_ADMIN_TOKEN` is configured. Every registered
+POST API route checks its bearer token before invoking the handler. The browser's
+shared API helper handles authentication challenges through the admin token dialog;
+all management callers should use `postJson`. See
+[admin authentication](configuration.md#admin-token-and-read-only-mode) for token
+generation, HTTPS deployment, revocation, and API responses. Viewing remains public.
+
 ## Build from source with Docker
 
 ```bash
@@ -38,7 +45,8 @@ Dirty worktrees, including untracked files, use `unknown` so changed static asse
 receive a fresh content hash for browser caching. Direct Docker builds can pass
 `BPM_BUILD_REVISION` explicitly; without it, the commit is `unknown`.
 Local builds use `BPM_BUILD_VERSION=dev` and skip release checks even when the
-revision is known. The version and commit appear separately in the header.
+revision is known. The header displays the version; the commit remains available
+in build metadata and the configuration API for source tracing and asset caching.
 The canonical source repository is an internal constant. Local `.env` variants,
 Compose overrides, and `secrets/` are excluded from the Docker build context.
 

@@ -13,8 +13,16 @@ test('settings preserve environment defaults and IPv6 RPC URLs', () => {
     assert.equal(value.listen_port, 58333);
     assert.equal(value.geoip_auto_update_override, null);
     assert.equal(value.geoip_enabled, true);
+    assert.equal(value.log_level, 'info');
     assert.equal(settings({ BPM_GEOIP_AUTO_UPDATE: 'FALSE' }).geoip_auto_update_override, false);
     assert.throws(() => loadSettings({}), ConfigurationError);
+});
+test('log levels accept supported values and normalize case and whitespace', () => {
+    for (const level of ['debug', 'info', 'warn', 'error'] as const) {
+        assert.equal(settings({ BPM_LOG_LEVEL: ` ${level.toUpperCase()} ` }).log_level, level);
+    }
+    assert.equal(settings({ BPM_LOG_LEVEL: ' ' }).log_level, 'info');
+    assert.throws(() => settings({ BPM_LOG_LEVEL: 'verbose' }), /BPM_LOG_LEVEL must be debug, info, warn, or error/);
 });
 for (const [key, value] of Object.entries({ BITCOIN_RPC_SCHEME: 'ftp', BITCOIN_NETWORK: 'wrong', BITCOIN_RPC_PORT: '0', BITCOIN_RPC_TIMEOUT: '1.5', BPM_RPC_STARTUP_TIMEOUT: '601', BPM_LISTEN_PORT: '80', BPM_LISTEN_ADDRESS: '\n', BITCOIN_RPC_VERIFY_TLS: 'yes', BPM_GEOIP_ENABLED: 'invalid', BPM_BUILD_REVISION: '<bad>', BPM_BUILD_VERSION: '<bad>', BITCOIN_RPC_USER: 'user\nname' })) {
     test(`rejects invalid ${key}`, () => assert.throws(() => settings({ [key]: value }), ConfigurationError));
@@ -35,6 +43,22 @@ test('build revision defaults, normalization, and validation', () => {
     assert.equal(settings({ BPM_BUILD_REVISION: ' ABCDEF012345\n' }).build_revision, 'abcdef012345');
     assert.equal(settings({ BPM_BUILD_REVISION: ' ' }).build_revision, 'unknown');
     assert.throws(() => settings({ BPM_BUILD_REVISION: 'invalid' }), /BPM_BUILD_REVISION/);
+});
+test('admin token accepts short values and rejects malformed configuration without disclosing it', () => {
+    assert.equal(settings().admin_token, null);
+    assert.equal(settings({ BPM_ADMIN_TOKEN: '' }).admin_token, null);
+    const token = 'a1'.repeat(32);
+    for (const value of ['a', 'admin', 'password', token, 'a'.repeat(256)]) {
+        assert.equal(settings({ BPM_ADMIN_TOKEN: value }).admin_token, value);
+    }
+    for (const value of [' ', token + '\n', ' ' + token, 'a'.repeat(257), token + ':', '<' + token + '>']) {
+        assert.throws(() => settings({ BPM_ADMIN_TOKEN: value }), error => {
+            assert.ok(error instanceof ConfigurationError);
+            assert.match(error.message, /BPM_ADMIN_TOKEN/);
+            if (value.length >= 8) assert.equal(error.message.includes(value), false);
+            return true;
+        });
+    }
 });
 test('build version defaults and stable release validation are independent of revision', () => {
     assert.equal(settings().build_version, 'dev');

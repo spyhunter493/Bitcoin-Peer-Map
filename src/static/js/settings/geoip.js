@@ -69,7 +69,7 @@ export function create({ getNodeInfo, refreshInfo }) {
                 result.textContent = '';
                 try {
                     /** @type {{success: boolean; auto_update?: boolean; geo_db_only_mode?: boolean}} */
-                    const data = await postJson(`/api/geodb/toggle-${setting}`);
+                    const data = await postJson(`/api/geodb/toggle-${setting}`, undefined, { signal: dialog.signal });
                     const value = setting === 'auto-update' ? data.auto_update : data.geo_db_only_mode;
                     if (!data.success || typeof value !== 'boolean') throw new Error('Could not save setting');
                     saved = setting === 'auto-update' ? value : !value;
@@ -88,6 +88,7 @@ export function create({ getNodeInfo, refreshInfo }) {
                     showResult(`Setting was not saved: ${errorMessage(error)}`, false);
                 } finally {
                     input.disabled = false;
+                    if (dialog.isOpen() && document.activeElement === document.body) input.focus({ preventScroll: true });
                 }
             });
         }
@@ -102,13 +103,14 @@ export function create({ getNodeInfo, refreshInfo }) {
             result.style.color = 'var(--text-secondary)';
             try {
                 /** @type {{success: boolean; message?: string}} */
-                const data = await postJson('/api/geodb/update');
+                const data = await postJson('/api/geodb/update', undefined, { signal: dialog.signal });
                 showResult(data.message || (data.success ? 'Done' : 'Failed'), data.success);
                 if (data.success) await refreshInfo();
             } catch (error) {
                 showResult(`Error: ${errorMessage(error)}`, false);
             } finally {
                 update.disabled = false;
+                if (dialog.isOpen() && document.activeElement === document.body) update.focus({ preventScroll: true });
             }
         });
     }
