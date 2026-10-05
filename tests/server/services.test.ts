@@ -339,3 +339,16 @@ for (const [ibd, expected] of [[true, true], [false, false], [undefined, null], 
         assert.equal((raw.blockchain as Data).initialblockdownload, expected);
     });
 }
+
+
+test('bans request disconnection through setban and retain genuine RPC errors', async t => {
+    const { rpc, node } = services(t);
+    rpc.values.getpeerinfo = [{ id: 1, addr: '8.8.8.8:8333', network: 'ipv4' }];
+    assert.deepEqual(await node.ban(1), { success: true, banned_ip: '8.8.8.8', network: 'ipv4' });
+    assert.equal(rpc.count('disconnectnode'), 0);
+    assert.deepEqual(rpc.calls.find(call => call.method === 'setban')?.params, ['8.8.8.8', 'add', 86400]);
+    rpc.failed.add('setban');
+    assert.deepEqual(await node.ban(1), { success: false, error: 'setban failed' });
+    rpc.failed.add('listbanned');
+    assert.deepEqual(await node.bans(), { success: false, bans: [], error: 'listbanned failed' });
+});

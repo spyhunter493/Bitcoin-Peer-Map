@@ -16,6 +16,7 @@ import assertNodeServices from './test_node_services.js';
 import assertNodeMetrics from './test_node_metrics.js';
 import assertNavigation from './test_navigation.js';
 import assertAdminAuthentication from './test_admin_auth.js';
+import assertManagementFeedback from './test_management_feedback.js';
 import assertTableSettings from './test_table_settings.js';
 
 const repoRoot = path.resolve(import.meta.dirname, '..');
@@ -325,7 +326,7 @@ async function assertPeerActionInteractions(page) {
     const bansRoute = '**/api/bans';
     await page.route(bansRoute, route => route.fulfill({
         contentType: 'application/json',
-        body: JSON.stringify({ bans: [] }),
+        body: JSON.stringify({ success: true, bans: [] }),
     }));
     await page.click('#btn-bans');
     await page.waitForSelector('#ban-modal .ban-list-empty');
@@ -885,6 +886,7 @@ const suites = [
     ['map groups', assertMapGroups],
     ['tooltip refresh and navigation', assertNavigation],
     ['admin authentication', assertAdminAuthentication],
+    ['management feedback', assertManagementFeedback],
 ];
 
 await test('browser layout regressions', { concurrency: workers }, async t => {

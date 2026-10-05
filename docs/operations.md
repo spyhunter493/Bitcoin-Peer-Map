@@ -177,6 +177,15 @@ you want to retain privacy restrictions. Ensure the container user can read it,
 then restart the service. `BPM_GEOIP_AUTO_UPDATE` applies only after the saved
 file has passed validation.
 
+### Peer management results
+
+**Disconnect + Ban 24h** sends the ban request. Bitcoin Knots requests the peer's
+disconnection as part of [`setban`](https://github.com/bitcoinknots/bitcoin/blob/29.x-knots/src/rpc/net.cpp#L794-L817),
+so the dashboard reports a successful ban and refreshes peers after one second.
+**Disconnect Only** remains a separate action. Failed or malformed ban-list
+responses display an error; **No banned IPs** appears only after a successful
+empty list.
+
 ## GeoIP updates and privacy
 
 Open **GEOIP-DB** in the dashboard to manage the local database:

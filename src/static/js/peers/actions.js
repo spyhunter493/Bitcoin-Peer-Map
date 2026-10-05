@@ -61,10 +61,11 @@ function create(options) {
     async function fetchBanList(dialog) {
         if (!dialog || !dialog.isOpen()) return;
         try {
-            /** @type {{bans: import('../types').BanEntry[]}} */
+            /** @type {{success: boolean; bans: import('../types').BanEntry[]; error?: string; detail?: string}} */
             const data = await api.getJson('/api/bans', { signal: dialog.signal });
+            if (!data || data.success !== true || !Array.isArray(data.bans)) throw new Error(data?.error || data?.detail || 'Invalid ban list response');
             if (dialog.isOpen() && dialog === banDialog) {
-                renderBanList(dialog, Array.isArray(data.bans) ? data.bans : []);
+                renderBanList(dialog, data.bans);
             }
         } catch (error) {
             if (error instanceof Error && error.name === 'AbortError') return;
@@ -186,13 +187,7 @@ function create(options) {
                         showResult(`Ban failed: ${banData.error}`, false);
                         return;
                     }
-                    /** @type {import('../types').ActionResponse} */
-                    const disconnectData = await api.postJson('/api/peer/disconnect', { peer_id: peerId });
-                    if (disconnectData.success) {
-                        showResult(`Banned ${banData.banned_ip} and disconnected peer ${peerId}`, true);
-                    } else {
-                        showResult(`Banned but disconnect failed: ${disconnectData.error}`, false);
-                    }
+                    showResult(`Banned ${banData.banned_ip} for 24 hours; disconnection requested`, true);
                 } else {
                     /** @type {import('../types').ActionResponse} */
                     const data = await api.postJson('/api/peer/disconnect', { peer_id: peerId });
