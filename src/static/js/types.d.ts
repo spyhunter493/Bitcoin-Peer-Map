@@ -664,6 +664,7 @@ export interface NodeRefreshState {
     lastSuccessfulRefresh: number | null;
 }
 export interface NodeInfo {
+    bitcoin_network?: { chain: 'main' | 'test' | 'testnet4' | 'signet' | 'regtest'; default_peer_port: number };
     updates?: UpdateStatus;
     connected: number | null;
     subversion: string | null;

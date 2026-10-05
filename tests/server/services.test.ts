@@ -382,3 +382,32 @@ for (const source of ['database', 'api']) {
         });
     }
 }
+
+
+for (const [chain, port] of [['main', 8333], ['test', 18333], ['testnet4', 48333], ['signet', 38333], ['regtest', 18444]] as const) {
+    test(`${chain} uses peer port ${port} for IPv4, IPv6, Tor and CJDNS while retaining explicit ports and I2P :0`, async t => {
+        const { rpc, connectivity, geo } = services(t);
+        const node = new NodeService(rpc, connectivity, geo, () => false, chain);
+        const expected = [
+            ['8.8.8.8', `8.8.8.8:${port}`],
+            ['8.8.8.8:12345', '8.8.8.8:12345'],
+            ['2001:4860::1', `[2001:4860::1]:${port}`],
+            ['[2001:4860::1]', `[2001:4860::1]:${port}`],
+            ['[2001:4860::1]:12345', '[2001:4860::1]:12345'],
+            ['example.onion', `example.onion:${port}`],
+            ['example.onion:12345', 'example.onion:12345'],
+            ['[fc00::1]', `[fc00::1]:${port}`],
+            ['fc00::1', `[fc00::1]:${port}`],
+            ['[fc00::1]:12345', '[fc00::1]:12345'],
+            ['example.b32.i2p:0', 'example.b32.i2p:0'],
+        ];
+        for (const [address, normalized] of expected) {
+            assert.deepEqual(await node.connect(address), { success: true, address: normalized });
+            assert.deepEqual(rpc.calls.at(-1)?.params, [normalized, 'onetry']);
+        }
+        for (const address of ['example.b32.i2p', 'example.b32.i2p:12345']) {
+            assert.deepEqual(await node.connect(address), { success: false, error: 'I2P addresses must end with :0' });
+        }
+        assert.deepEqual((await node.dashboardInfo()).bitcoin_network, { chain, default_peer_port: port });
+    });
+}

@@ -1,4 +1,4 @@
-import { formatBytes, normalizePeerAddress, splitPeerAddress, networkType } from '../network.ts';
+import { BITCOIN_NETWORKS, type BitcoinChain, formatBytes, normalizePeerAddress, splitPeerAddress, networkType } from '../network.ts';
 import { type Data, type Rpc, object, errorMessage, nowSeconds, round } from '../types.ts';
 import { CachedRequest, Lru } from '../tasks.ts';
 import type { ConnectivityService } from './connectivity.ts';
@@ -17,6 +17,7 @@ export class NodeService {
     readonly geoDatabase: Pick<GeoDatabase, 'stats' | 'enabled'>;
     readonly autoUpdateEnabled: () => boolean;
     readonly metrics: NodeMetrics;
+    readonly chain: BitcoinChain;
     private dashboardCache = new CachedRequest<DashboardDetails>(5000);
     private headers = new Lru<BlockHeader>(256);
     private blocks = new Lru<RecentBlock & { previous_hash: string }>(256);
@@ -26,9 +27,10 @@ export class NodeService {
     private blockFailures = createFailureReporter(log);
     private networkFailures = createFailureReporter(log);
     private mempoolFailures = createFailureReporter(log);
-    constructor(rpc: Rpc, connectivity: NodeService['connectivity'], geoDatabase: NodeService['geoDatabase'], autoUpdateEnabled: () => boolean) {
+    constructor(rpc: Rpc, connectivity: NodeService['connectivity'], geoDatabase: NodeService['geoDatabase'], autoUpdateEnabled: () => boolean, chain: BitcoinChain = 'main') {
         this.rpc = rpc; this.connectivity = connectivity; this.geoDatabase = geoDatabase; this.autoUpdateEnabled = autoUpdateEnabled;
         this.metrics = new NodeMetrics(rpc);
+        this.chain = chain;
     }
     async dashboardInfo(): Promise<DashboardInfo> {
         const cached = structuredClone(await this.dashboardCache.get(() => this.refreshDashboard()));
@@ -40,7 +42,7 @@ export class NodeService {
             stats.newest_age_days = typeof stats.last_updated === 'number' && stats.last_updated ? Math.trunc((now - stats.last_updated) / 86400) : null;
             stats.newest_age_seconds = typeof stats.last_updated === 'number' && stats.last_updated ? Math.trunc(now - stats.last_updated) : null;
         }
-        return { ...cached, internet_state: connectivity.internet_state, api_available: connectivity.api_available, geo_db_only_mode: connectivity.geo_db_only_mode,
+        return { ...cached, bitcoin_network: { chain: this.chain, ...BITCOIN_NETWORKS[this.chain] }, internet_state: connectivity.internet_state, api_available: connectivity.api_available, geo_db_only_mode: connectivity.geo_db_only_mode,
             geo_db_stats: { ...stats, auto_lookup: this.geoDatabase.enabled, auto_update: this.autoUpdateEnabled(), db_only_mode: connectivity.geo_db_only_mode } };
     }
     private async header(hash: string) {
@@ -198,7 +200,7 @@ export class NodeService {
         } catch (error) { return { success: false, summary: null, tips: [], error: errorMessage(error) }; }
     }
     async connect(address: string): Promise<Data> {
-        try { const normalized = normalizePeerAddress(address); await this.rpc.call('addnode', [normalized, 'onetry']); return { success: true, address: normalized }; }
+        try { const normalized = normalizePeerAddress(address, BITCOIN_NETWORKS[this.chain].default_peer_port); await this.rpc.call('addnode', [normalized, 'onetry']); return { success: true, address: normalized }; }
         catch (error) { return { success: false, error: errorMessage(error) }; }
     }
     async disconnect(id: number | null): Promise<Data> {

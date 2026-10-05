@@ -635,7 +635,11 @@
     },
     "internet_state": "green",
     "api_available": true,
-    "geo_db_only_mode": false
+    "geo_db_only_mode": false,
+    "bitcoin_network": {
+      "chain": "main",
+      "default_peer_port": 8333
+    }
   },
   "mempool": {
     "mempool": {

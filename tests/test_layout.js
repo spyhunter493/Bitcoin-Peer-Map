@@ -17,6 +17,7 @@ import assertNodeMetrics from './test_node_metrics.js';
 import assertNavigation from './test_navigation.js';
 import assertAdminAuthentication from './test_admin_auth.js';
 import assertManagementFeedback from './test_management_feedback.js';
+import assertNetworkExamples from './test_network_examples.js';
 import assertTableSettings from './test_table_settings.js';
 
 const repoRoot = path.resolve(import.meta.dirname, '..');
@@ -887,6 +888,7 @@ const suites = [
     ['tooltip refresh and navigation', assertNavigation],
     ['admin authentication', assertAdminAuthentication],
     ['management feedback', assertManagementFeedback],
+    ['network connection examples', assertNetworkExamples],
 ];
 
 await test('browser layout regressions', { concurrency: workers }, async t => {

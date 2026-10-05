@@ -7,6 +7,7 @@ import type { Data } from '../src/server/types.ts';
 import type { NodeMetricsSnapshot } from '../src/server/services/node-metrics.ts';
 import type { DashboardInfo, RecentBlocks, ChainTips } from '../src/server/api-types.ts';
 import type { ConnectivityStatus } from '../src/server/services/connectivity.ts';
+import { BITCOIN_NETWORKS } from '../src/server/network.ts';
 
 // Captured API fixtures keep browser regressions independent of external services.
 const fixtures: { peers: Data[]; metrics: NodeMetricsSnapshot; info: DashboardInfo; mempool: Data; blockchain: Data; blocks: RecentBlocks; tips: ChainTips } = JSON.parse(readFileSync(new URL('./fixtures/dashboard.json', import.meta.url), 'utf8'));
@@ -42,6 +43,7 @@ export class FixtureRuntime implements ApplicationRuntime {
     node = {
         dashboardInfo: async (): Promise<DashboardInfo> => {
             const info = structuredClone(fixtures.info);
+            info.bitcoin_network = { chain: this.settings.bitcoin_network, ...BITCOIN_NETWORKS[this.settings.bitcoin_network] };
             if (info.last_block) info.last_block.time = Math.floor(Date.now() / 1000) - 600;
             info.geo_db_stats.auto_update = this.autoUpdate;
             info.geo_db_stats.db_only_mode = this.dbOnly;

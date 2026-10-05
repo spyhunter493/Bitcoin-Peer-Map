@@ -58,7 +58,7 @@ Set the RPC host and credentials. Configure an admin token to enable management.
 | `BITCOIN_RPC_PORT` | `8332` | Node RPC port |
 | `BITCOIN_RPC_VERIFY_TLS` | `true` | Verify the certificate when using HTTPS |
 | `BITCOIN_RPC_TIMEOUT` | `30` | RPC request timeout, in seconds |
-| `BITCOIN_NETWORK` | `main` | Node network: `main`, `test`, `signet`, or `regtest` |
+| `BITCOIN_NETWORK` | `main` | Node network: `main`, `test`, `testnet4`, `signet`, or `regtest` |
 | `BPM_RPC_STARTUP_TIMEOUT` | `30` | Time to wait for RPC during startup, in seconds |
 | `BPM_ADMIN_TOKEN` | Unset (read-only) | Shared secret required for peer management and server settings changes |
 | `BPM_LOG_LEVEL` | `info` | Minimum server log level: `debug`, `info`, `warn`, or `error` |
@@ -81,6 +81,33 @@ data at `/var/lib/bitcoin-peer-map`. For a local Node.js process, see
 `BPM_IMAGE`, `BPM_HOST_BIND`, `BPM_HOST_PORT`, and `BPM_DATA_VOLUME` configure
 Compose itself. They are not application environment variables. RPC startup
 requests and retry delays share the `BPM_RPC_STARTUP_TIMEOUT` deadline.
+
+### Bitcoin networks and peer ports
+
+`BITCOIN_NETWORK` must match the node's RPC-reported chain at startup. The
+supported names are `main`, `test` (legacy testnet), `testnet4`, `signet`, and
+`regtest`; aliases such as `testnet` are not accepted. Peer connections without
+an explicit port use these [Bitcoin Knots defaults](https://github.com/bitcoinknots/bitcoin/blob/29.x-knots/src/kernel/chainparams.cpp):
+
+| Chain | Default peer port |
+| --- | ---: |
+| `main` | 8333 |
+| `test` | 18333 |
+| `testnet4` | 48333 |
+| `signet` | 38333 |
+| `regtest` | 18444 |
+
+For example, with `BITCOIN_NETWORK=testnet4`, connecting to `1.2.3.4` or
+`[2001:db8::1]` selects port `48333`. Explicit ports are retained. Tor and CJDNS
+use the same default; I2P addresses must explicitly end in `:0`.
+`/api/info` exposes `bitcoin_network.chain` and `bitcoin_network.default_peer_port`
+for the dashboard's connection examples. Without metadata, examples omit the
+port and explain that the server chooses it. Block explorer links are available
+for mainnet, signet, and testnet4; other networks display hashes without links.
+
+`BITCOIN_RPC_PORT` remains independently configured and defaults to `8332` on
+all networks. Set it to the node's actual RPC port for non-mainnet deployments.
+These network defaults apply to peer connections only.
 
 ### Host access and multiple instances
 

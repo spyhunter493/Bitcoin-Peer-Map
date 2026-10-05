@@ -141,3 +141,14 @@ test('display formatting stays compatible', () => {
     assert.equal(formatDuration(90061), '1d1h'); assert.equal(formatDuration(-2), '0s');
     assert.equal(abbreviateConnectionType('outbound-full-relay'), 'OFR');
 });
+
+
+test('all five configured networks retain the independent RPC default and reject aliases', () => {
+    for (const chain of ['main', 'test', 'testnet4', 'signet', 'regtest']) {
+        const value = settings({ BITCOIN_NETWORK: chain });
+        assert.equal(value.bitcoin_network, chain);
+        assert.equal(value.rpc_port, 8332);
+        assert.equal(settings({ BITCOIN_NETWORK: chain, BITCOIN_RPC_PORT: '12345' }).rpc_port, 12345);
+    }
+    for (const chain of ['testnet', 'testnet3', 'mainnet', 'toString', '__proto__']) assert.throws(() => settings({ BITCOIN_NETWORK: chain }), ConfigurationError);
+});

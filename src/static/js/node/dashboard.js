@@ -322,16 +322,19 @@ function create({ config: CFG, onAction }) {
     // ═══════════════════════════════════════════════════════════
 
     function openConnectPeerModal() {
+        const port = lastNodeInfo?.bitcoin_network?.default_peer_port;
+        const suffix = typeof port === 'number' && Number.isInteger(port) && port > 0 && port <= 65535 ? `:${port}` : '';
         const dialog = BPMModal.open({
             id: 'connect-peer-modal', title: 'Connect Peer', closeId: 'connect-close', maxWidth: 520,
             initialFocusSelector: '#connect-addr-input',
             initialHtml: `
             <div class="connect-instructions">Enter a peer address to connect. Your node will attempt a one-time (onetry) connection.</div>
-            <div class="connect-example">IPv4: 1.2.3.4:8333</div>
-            <div class="connect-example">IPv6: [2001:db8::1]:8333</div>
-            <div class="connect-example">Tor: abc...xyz.onion:8333</div>
+            <div class="connect-example">IPv4: 1.2.3.4${suffix}</div>
+            <div class="connect-example">IPv6: [2001:db8::1]${suffix}</div>
+            <div class="connect-example">Tor: abc...xyz.onion${suffix}</div>
             <div class="connect-example">I2P: abc...xyz.b32.i2p:0</div>
-            <div class="connect-example">CJDNS: [fc00::1]:8333</div>
+            <div class="connect-example">CJDNS: [fc00::1]${suffix}</div>
+            ${suffix ? '' : '<div class="connect-instructions">Network metadata is unavailable. For addresses without a port, the server selects its configured network default. I2P requires :0.</div>'}
             <div class="connect-input-row">
                 <input type="text" class="connect-input" id="connect-addr-input" placeholder="Enter peer address...">
                 <button class="connect-btn" id="connect-go-btn">Connect</button>

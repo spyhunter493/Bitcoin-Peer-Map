@@ -8,7 +8,7 @@ import { AppRuntime, GEOIP_UPDATE_INTERVAL_MS } from '../../src/server/runtime.t
 import { PreferenceStore } from '../../src/server/preferences.ts';
 import { main, waitForRpc } from '../../src/server/main.ts';
 import { BitcoinRpcClient, RpcAuthenticationError } from '../../src/server/rpc.ts';
-import { settings, temporaryDirectory, deferred, flush } from './helpers.ts';
+import { settings, temporaryDirectory, deferred, flush, FakeRpc } from './helpers.ts';
 import type { TestContext } from 'node:test';
 
 function runtime(t: TestContext, overrides: Record<string, string> = {}) {
@@ -135,5 +135,20 @@ for (const override of ['', 'true', 'false']) {
         t.mock.method(PreferenceStore.prototype, 'save', () => assert.fail('Preference write started'));
         await assert.rejects(main(), /geoip_db_only must be a boolean/);
         assert.equal(readFileSync(path, 'utf8'), raw);
+    });
+}
+
+
+for (const [chain, port] of [['main', 8333], ['test', 18333], ['testnet4', 48333], ['signet', 38333], ['regtest', 18444]] as const) {
+    test(`${chain} startup matches RPC chain and passes the configured peer default to NodeService`, async t => {
+        const app = runtime(t, { BITCOIN_NETWORK: chain }), rpc = new FakeRpc();
+        rpc.record('getblockchaininfo').chain = chain;
+        t.mock.method(app.rpc, 'checkConnection', async () => ({}));
+        t.mock.method(app.rpc, 'call', rpc.call.bind(rpc));
+        await waitForRpc(app);
+        assert.deepEqual(await app.node.connect('8.8.8.8'), { success: true, address: `8.8.8.8:${port}` });
+        assert.deepEqual((await app.node.dashboardInfo()).bitcoin_network, { chain, default_peer_port: port });
+        rpc.record('getblockchaininfo').chain = 'wrong-chain';
+        await assert.rejects(waitForRpc(app), /does not match/);
     });
 }

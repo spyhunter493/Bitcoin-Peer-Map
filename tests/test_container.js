@@ -90,6 +90,8 @@ try {
     assert.equal((await fetch(base + '/api/geodb/toggle-db-only', { method: 'POST' })).status, 401);
     assert.equal((await get('/api/connectivity')).geo_db_only_mode, true, 'unauthenticated request cannot change saved settings');
     const info = await get('/api/info');
+    assert.deepEqual(info.bitcoin_network, { chain: 'main', default_peer_port: 8333 });
+    assert.equal(info.blockchain.ibd, null, 'missing IBD never reports a synced node');
     assert.equal(info.connected, 1); assert.equal(info.geo_db_stats.entries, 1); assert.equal(info.geo_db_stats.auto_update, false);
     let peers;
     for (let i = 0; i < 20; i++) {

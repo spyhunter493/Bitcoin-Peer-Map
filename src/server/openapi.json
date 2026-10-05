@@ -333,7 +333,7 @@
     "/api/info": {
       "get": {
         "summary": "Dashboard Info",
-        "description": "Includes node_metrics: Bitcoin Knots uptime, P2P totals, and average P2P rates between RPC samples. Unavailable metrics and rates without a valid baseline are null. Includes services: the P2P service names advertised by this node, from getnetworkinfo.localservicesnames. An empty array means no services are advertised; null means service information is unavailable. Includes updates: the cached application update status. Dashboard reads do not trigger GitHub requests; the server checks once every 24 hours. Updates compare stable release versions, never unreleased main commits. Development builds skip checks. Blockchain ibd is true during initial block download, false only when explicitly complete, and null when unavailable.",
+        "description": "Includes node_metrics: Bitcoin Knots uptime, P2P totals, and average P2P rates between RPC samples. Unavailable metrics and rates without a valid baseline are null. Includes services: the P2P service names advertised by this node, from getnetworkinfo.localservicesnames. An empty array means no services are advertised; null means service information is unavailable. Includes updates: the cached application update status. Dashboard reads do not trigger GitHub requests; the server checks once every 24 hours. Updates compare stable release versions, never unreleased main commits. Development builds skip checks. Blockchain ibd is true during initial block download, false only when explicitly complete, and null when unavailable. Includes bitcoin_network: configured chain and default peer connection port. Explicit peer ports are preserved; I2P requires :0.",
         "operationId": "dashboard_info_api_info_get",
         "responses": {
           "200": {
@@ -369,6 +369,9 @@
                           "description": "Initial block download; null when unavailable."
                         }
                       }
+                    },
+                    "bitcoin_network": {
+                      "$ref": "#/components/schemas/BitcoinNetwork"
                     }
                   }
                 }
@@ -927,6 +930,31 @@
                 "$ref": "#/components/schemas/ProviderHealth"
               }
             }
+          }
+        }
+      },
+      "BitcoinNetwork": {
+        "type": "object",
+        "required": [
+          "chain",
+          "default_peer_port"
+        ],
+        "properties": {
+          "chain": {
+            "type": "string",
+            "enum": [
+              "main",
+              "test",
+              "testnet4",
+              "signet",
+              "regtest"
+            ]
+          },
+          "default_peer_port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535,
+            "description": "Default P2P connection port for the configured chain; independent of BITCOIN_RPC_PORT."
           }
         }
       }
