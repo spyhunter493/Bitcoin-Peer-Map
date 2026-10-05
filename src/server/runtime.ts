@@ -8,6 +8,7 @@ import { ConnectivityService } from './services/connectivity.ts';
 import { PeerService } from './services/peers.ts';
 import { NodeService } from './services/node.ts';
 import { SystemMetrics } from './services/system-metrics.ts';
+import { UpdateService } from './services/updates.ts';
 
 export const GEOIP_UPDATE_INTERVAL_MS = 60 * 60 * 1000;
 export class AppRuntime {
@@ -21,6 +22,7 @@ export class AppRuntime {
     readonly peers: PeerService;
     readonly node: NodeService;
     readonly metrics = new SystemMetrics();
+    readonly updates: UpdateService;
     private updateTimer: ReturnType<typeof setTimeout> | null = null;
     private updateTask: Promise<void> | null = null;
     private started = false;
@@ -34,6 +36,7 @@ export class AppRuntime {
         this.connectivity = new ConnectivityService(this.preferences.geoip_db_only, this.controller.signal);
         this.peers = new PeerService(this.rpc, this.geoDatabase, this.connectivity, this.controller.signal);
         this.node = new NodeService(this.rpc, this.connectivity, this.geoDatabase, () => this.preferences.geoip_auto_update);
+        this.updates = new UpdateService(settings, this.controller.signal);
     }
     async start() {
         this.controller.signal.throwIfAborted();
@@ -46,13 +49,14 @@ export class AppRuntime {
         await this.peers.start();
         this.controller.signal.throwIfAborted();
         this.scheduleUpdate(0);
+        this.updates.start();
     }
     async stop() {
         this.started = false;
         this.controller.abort();
         if (this.updateTimer) clearTimeout(this.updateTimer);
         this.updateTimer = null;
-        await Promise.allSettled([this.peers.stop(), this.metrics.stop(), this.connectivity.stop(), this.updateTask]);
+        await Promise.allSettled([this.peers.stop(), this.metrics.stop(), this.connectivity.stop(), this.updates.stop(), this.updateTask]);
         this.geoDatabase.close();
     }
     toggleGeoipAutoUpdate() {

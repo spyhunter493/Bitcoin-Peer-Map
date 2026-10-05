@@ -29,7 +29,7 @@ BITCOIN_RPC_PASSWORD=replace-with-a-long-random-password
 ```
 
 ```bash
-./scripts/compose-local.sh up -d --build
+docker compose up -d
 ```
 
 Open `http://HOST_IP:58333`.
@@ -134,6 +134,7 @@ The named volume is mounted at `/var/lib/bitcoin-peer-map` and contains only mut
 - `geo.db`: peer geolocation cache
 - `settings.json`: dashboard preferences that must survive restarts
 - `tmp/`: staging area for GeoIP database updates
+- `update-check.json`: cached application update status and last check time
 
 RPC credentials are never written to the volume. Browser display preferences remain in browser local storage under `bpm.*` keys.
 
@@ -163,33 +164,42 @@ Database-only mode prevents these peer-IP lookups; GeoIP dataset downloads and B
 price requests are separate and still use the network. Disabling the persistent
 database with `BPM_GEOIP_ENABLED=false` does not itself disable external lookups.
 
-## Build Revision
+## Version and Updates
 
-The header displays the first seven characters of the Git commit embedded in the image and links to that exact commit on GitHub. Local builds can pass the full commit SHA explicitly:
+The header displays the first seven characters of the Git commit embedded in the image and
+links to that exact commit on GitHub. A small arrow appears beside it when newer commits are
+available on `main`; click the arrow to see the changes since the installed commit.
+
+The server checks GitHub at startup when no recent result exists, then once every 24 hours,
+even without an open dashboard. The cache survives container restarts in the existing data
+volume and is invalidated when the installed commit or repository changes. Failed checks
+also wait 24 hours before retrying and retain any previously known update. Dashboard requests
+only read the cached result; they never trigger a GitHub request. Unknown builds skip checks,
+and builds ahead of or diverged from `main` do not show an update arrow.
+
+### Published Images
+
+The normal Compose file pulls `ghcr.io/spyhunter493/bitcoin-peer-map:latest`; no version-related
+build arguments or Git metadata are needed. The CI workflow publishes Linux AMD64 and ARM64
+images after all checks pass on `main`. It embeds the full commit automatically and publishes
+both `latest` and `sha-<full-commit>` tags, allowing a deployment to pin a particular build.
+
+For the initial rollout, wait for the first successful publish job and set the new GitHub
+Container Registry package's visibility to public so users can pull without signing in.
+Publishing uses the workflow's built-in `GITHUB_TOKEN`; no separate registry secret is needed.
+
+### Local Source Builds
+
+For development, the optional helper combines `compose.yaml` with `compose.build.yaml` and
+any local `compose.override.yaml` or `compose.override.yml`:
 
 ```bash
-./scripts/compose-local.sh build
+./scripts/compose-local.sh up -d --build
 ```
 
-The helper exports `BPM_BUILD_REVISION` from the current Git checkout before running Docker Compose.
-For dirty worktrees, it uses `unknown` so locally changed static assets get a fresh content-hash
-cache key. GitHub Actions passes `GITHUB_SHA` directly to the Docker build.
-
-Remote Git builds can derive the revision from the cloned build context instead. For production
-Compose files that use a GitHub URL as the build context, keep the Git metadata during the build:
-
-```yaml
-services:
-  bpm:
-    build:
-      context: https://github.com/spyhunter493/Bitcoin-Peer-Map.git#main
-      args:
-        BUILDKIT_CONTEXT_KEEP_GIT_DIR: "1"
-```
-
-The image writes the detected commit to `/app/build-revision`, and the application uses that file
-when `BPM_BUILD_REVISION` is not set. Images built without either `BPM_BUILD_REVISION` or preserved
-Git metadata display `unknown` rather than an inaccurate revision.
+It supplies the commit from a clean Git checkout automatically. Dirty worktrees use `unknown`
+so changed static assets get a fresh content-hash cache key. Direct Docker builds can pass
+`BPM_BUILD_REVISION` explicitly; without it, the header displays `unknown`.
 
 ## Container Security
 
@@ -204,11 +214,11 @@ The example deployment:
 
 ## Operations
 
-Rebuild and recreate after pulling changes:
+Pull the latest published image and recreate the service:
 
 ```bash
-git pull
-./scripts/compose-local.sh up -d --build
+docker compose pull bpm
+docker compose up -d bpm
 ```
 
 Inspect status and health:
@@ -230,7 +240,7 @@ docker compose logs -f --tail=100 bpm
 bitcoin-peer-map/
 ├── src/
 │   ├── server/              # TypeScript backend, executed directly by Node.js
-│   │   ├── services/        # Peers, node, GeoIP, connectivity, and metrics
+│   │   ├── services/        # Peers, node, GeoIP, connectivity, metrics, and updates
 │   │   ├── app.ts           # HTTP routes, static assets, and metric streaming
 │   │   ├── http.ts          # Request validation, response encoding, and HTTP errors
 │   │   ├── runtime.ts       # Service composition and worker lifecycle
@@ -253,7 +263,7 @@ bitcoin-peer-map/
 Node.js 24 executes the TypeScript backend directly, using built-in HTTP, SQLite,
 fetch, and worker-thread APIs. There are no production npm dependencies, compiled
 addons, or application build step. The application runtime owns peer polling,
-GeoIP enrichment, connectivity monitoring, and metric sampling and stops them on
+GeoIP enrichment, connectivity monitoring, metric sampling, and daily update checks and stops them on
 SIGTERM or SIGINT. Dataset validation and SQLite merges run in a worker thread so
 large imports do not block HTTP requests. Interactive API documentation is served
 at `/docs`; update `src/server/openapi.json` alongside changes to API contracts.
@@ -275,7 +285,8 @@ remain separate in `npm run test:layout`.
 
 Node data and currency-specific prices use independent five-second caches shared
 across browser clients. The dashboard polls `/api/info?include_price=false` and
-`/api/price` separately; `/api/info` still includes prices by default.
+`/api/price` separately; `/api/info` still includes prices by default. Its `updates` field
+contains the cached application update status, also available as `build.updates` in `/api/config`.
 The Node Info popup includes a Services block showing the node's advertised P2P
 services with readable descriptions. `/api/info.services` comes from
 [`getnetworkinfo.localservicesnames`](https://bitcoincore.org/en/doc/30.0.0/rpc/network/getnetworkinfo/);

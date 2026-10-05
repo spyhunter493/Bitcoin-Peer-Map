@@ -27,16 +27,9 @@ function boolean(env: Environment, name: string, fallback: boolean) {
     return raw === 'true';
 }
 function revision(env: Environment) {
-    let value = (env.BPM_BUILD_REVISION || 'unknown').trim().toLowerCase();
-    let source = 'BPM_BUILD_REVISION';
-    if ((!value || value === 'unknown') && env.BPM_BUILD_REVISION_FILE?.trim()) {
-        source = 'BPM_BUILD_REVISION_FILE';
-        try { value = readFileSync(env.BPM_BUILD_REVISION_FILE.trim(), 'utf8').trim().toLowerCase(); }
-        catch { value = 'unknown'; }
-    }
-    value ||= 'unknown';
+    const value = (env.BPM_BUILD_REVISION || 'unknown').trim().toLowerCase() || 'unknown';
     if (!/^(unknown|[0-9a-f]{7,40})$/.test(value)) {
-        throw new ConfigurationError(`${source} must be a 7-40 character Git commit SHA or unknown`);
+        throw new ConfigurationError('BPM_BUILD_REVISION must be a 7-40 character Git commit SHA or unknown');
     }
     return value;
 }

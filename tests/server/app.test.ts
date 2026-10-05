@@ -28,8 +28,19 @@ test('application serves health, configuration without credentials, and revision
     assert.equal(response.headers.get('cache-control'), 'no-cache');
     assert.match(html, /data-asset-revision="abcdef0123456789"/);
     assert.match(html, /<script type="module" src="\/static\/v\/abcdef0123456789\/js\/app.js"/);
+    assert.match(html, /class="revision"[^>]*>abcdef0<\/a>/);
+    assert.match(html, /id="revision-update"[^>]*hidden/);
     assert.equal(html.includes('{{'), false);
     assert.equal((html.match(/<script/g) || []).length, 1);
+});
+test('dashboard and configuration share cached update status', async t => {
+    const { runtime, get } = await application(t);
+    const status = { update_available: true, commits_behind: 3, changes_url: 'https://github.com/spyhunter493/bitcoin-peer-map/compare/abcdef0123456789...main', checked_at: 1700000000, check_failed: false };
+    t.mock.method(runtime.updates, 'snapshot', () => status);
+    const info = await (await get('/api/info?include_price=false')).json();
+    const config = await (await get('/api/config')).json();
+    assert.deepEqual(info.updates, status);
+    assert.deepEqual(config.build.updates, status);
 });
 test('peer list, optional status, and separate price delivery keep their API contracts', async t => {
     const { get } = await application(t);

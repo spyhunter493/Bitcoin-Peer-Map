@@ -14,4 +14,10 @@ if [ "${BPM_BUILD_REVISION:-}" = "" ]; then
     export BPM_BUILD_REVISION
 fi
 
-exec docker compose "$@"
+if [ -f compose.override.yaml ]; then
+    set -- -f compose.override.yaml "$@"
+elif [ -f compose.override.yml ]; then
+    set -- -f compose.override.yml "$@"
+fi
+
+exec docker compose -f compose.yaml -f compose.build.yaml "$@"

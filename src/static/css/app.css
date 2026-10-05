@@ -181,6 +181,16 @@ body.map-camera-moving .peer-panel-body {
     transition: color var(--transition), border-color var(--transition);
 }
 .revision:hover { color: var(--accent); border-color: rgba(88,166,255,0.2); }
+.update-indicator {
+    display: inline-flex;
+    align-items: center;
+    color: var(--warn);
+    border-color: var(--warn);
+    padding: 3px 5px;
+}
+.update-indicator[hidden] { display: none; }
+.update-indicator:hover,
+.update-indicator:focus-visible { color: var(--text-primary); border-color: var(--warn); }
 
 /* --- Top bar right section --- */
 .topbar-right {

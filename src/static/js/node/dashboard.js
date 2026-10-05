@@ -7,6 +7,7 @@ import * as BPMPolling from '../core/polling.js';
 import * as BPMPrice from './price.js';
 import * as BPMFormat from '../core/format.js';
 import * as BPMNodeMonitor from './monitor.js';
+import { renderUpdateStatus } from '../core/version.js';
 /**
  * @param {{config: import('../types').DashboardConfig; onAction: (action: import('../types').NodeAction) => void | Promise<void>}} options
  */
@@ -768,6 +769,7 @@ function create({ config: CFG, onAction }) {
             const info = await resp.json();
 
             lastNodeInfo = info;
+            renderUpdateStatus(info.updates);
 
             // Update internet connectivity indicator
             if (info.internet_state) {

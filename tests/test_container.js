@@ -38,7 +38,7 @@ async function start() {
     await docker('run', '-d', '--name', name, '--network', 'host', '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
         '--tmpfs', '/tmp:rw,noexec,nosuid,size=64m', '-v', `${volume}:/var/lib/bitcoin-peer-map`,
         '-e', 'BITCOIN_RPC_HOST=127.0.0.1', '-e', `BITCOIN_RPC_PORT=${rpcPort}`, '-e', 'BITCOIN_RPC_USER=test', '-e', 'BITCOIN_RPC_PASSWORD=test',
-        '-e', `BPM_LISTEN_PORT=${port}`, '-e', 'BPM_LISTEN_ADDRESS=127.0.0.1', image);
+        '-e', `BPM_LISTEN_PORT=${port}`, '-e', 'BPM_LISTEN_ADDRESS=127.0.0.1', '-e', 'BPM_BUILD_REVISION=unknown', image);
     for (let attempt = 0; attempt < 100; attempt++) {
         try { if ((await get('/healthz')).status === 'ok') return; } catch { /* Wait for startup. */ }
         await delay(100);
