@@ -189,6 +189,16 @@ Merging integrates changes into `main`; it neither repeats the full CI suite on
 the push nor publishes a production image. Pushing a tag alone also does not
 publish an image.
 
+### Dependency updates
+
+[Dependabot](../.github/dependabot.yml) checks npm development dependencies,
+Docker images, and GitHub Actions weekly on Monday at 09:00 in `Pacific/Auckland`.
+Minor and patch updates are grouped separately for npm and GitHub Actions;
+major upgrades and Docker updates get individual pull requests. Update PRs
+target the default branch and run the existing CI workflow. Review the changes
+and passing checks before merging, especially for major upgrades that may need
+related runtime, type, or documentation changes.
+
 ### Protect main
 
 At implementation time, GitHub reported `main` as unprotected and the repository
