@@ -207,7 +207,10 @@ preserving newer local API results.
 
 API Lookup sends the queried peer IP to ip-api.com over unencrypted HTTP; the
 provider's [free endpoint does not support HTTPS](https://ip-api.com/docs/api:json).
-Turn it off for database-only peer lookups. Dataset downloads, application update
+Turn it off for database-only peer lookups. Valid coordinates map to their real
+location even when no city is supplied. Labels use city and country, then region
+and country, then country alone; unresolved locations retain their pending or
+unavailable states. Dataset downloads, application update
 checks, and internet reachability probes operate separately and still use the
 network.
 `BPM_GEOIP_ENABLED=false` disables the persistent database, rather than disabling

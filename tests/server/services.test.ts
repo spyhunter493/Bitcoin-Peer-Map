@@ -352,3 +352,33 @@ test('bans request disconnection through setban and retain genuine RPC errors', 
     rpc.failed.add('listbanned');
     assert.deepEqual(await node.bans(), { success: false, bans: [], error: 'listbanned failed' });
 });
+
+for (const source of ['database', 'api']) {
+    for (const [fields, location] of [
+        [{ city: 'Auckland', regionName: 'Auckland Region', countryCode: 'NZ' }, 'Auckland, NZ'],
+        [{ city: '', regionName: 'Auckland Region', countryCode: 'NZ' }, 'Auckland Region, NZ'],
+        [{ city: '', regionName: '', region: 'AUK', countryCode: 'NZ' }, 'AUK, NZ'],
+        [{ city: '', regionName: '', countryCode: 'NZ' }, 'NZ'],
+        [{ city: '', regionName: 'Auckland Region', countryCode: '' }, 'Auckland Region, New Zealand'],
+        [{ city: '', regionName: '', countryCode: '' }, 'New Zealand'],
+    ] as const) {
+        test(`${source} geolocation maps ${location} without requiring a city and serializes numeric coordinates`, async t => {
+            const { rpc, geo, connectivity } = services(t);
+            const data = { ...fields, status: 'success', country: 'New Zealand', lat: '-36.85', lon: '174.76' };
+            if (source === 'database') { geo.save('8.8.8.8', data); connectivity.setGeoipApiDisabled(true); }
+            let requests = 0;
+            const peers = new PeerService(rpc, geo, connectivity, undefined, async () => { requests++; return Response.json(data); });
+            t.after(() => peers.stop());
+            rpc.values.getpeerinfo = [{ id: 1, addr: '8.8.8.8:8333', network: 'ipv4' }, { id: 2, addr: '10.0.0.1:8333', network: 'ipv4' }];
+            await peers.refreshOnce();
+            assert.equal(peers.listPeers()[0].location_status, 'pending');
+            await peers.resolveGeo('8.8.8.8', 'ipv4');
+            const [peer, privatePeer] = JSON.parse(JSON.stringify(peers.listPeers()));
+            assert.equal(peer.location_status, 'ok');
+            assert.equal(peer.location, location);
+            assert.equal(peer.lat, -36.85); assert.equal(peer.lon, 174.76);
+            assert.equal(privatePeer.location_status, 'private'); assert.equal(privatePeer.location, 'PRIVATE');
+            assert.equal(requests, source === 'api' ? 1 : 0);
+        });
+    }
+}
