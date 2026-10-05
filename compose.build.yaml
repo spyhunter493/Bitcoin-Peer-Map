@@ -1,0 +1,9 @@
+services:
+  bpm:
+    image: bitcoin-peer-map:local
+    pull_policy: build
+    build:
+      context: .
+      args:
+        BPM_BUILD_REVISION: ${BPM_BUILD_REVISION:-unknown}
+        BPM_BUILD_VERSION: ${BPM_BUILD_VERSION:-dev}

@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install JavaScript test dependencies
+        run: npm ci
+      - name: Check JavaScript and TypeScript
+        run: |
+          npm run check:js
+          npm run check:types
+      - name: Run backend tests
+        run: npm run test:server
+      - name: Run JavaScript unit tests
+        run: npm run test:js
+      - name: Install headless browser dependencies
+        run: npx playwright install --with-deps --only-shell chromium
+      - name: Run browser tests
+        run: npm run test:layout
+      - name: Validate container
+        env:
+          BITCOIN_RPC_USER: test
+          BITCOIN_RPC_PASSWORD: test
+        run: |
+          docker compose config --quiet
+          npm run test:compose
+          docker build --build-arg BPM_BUILD_REVISION="${GITHUB_SHA}" --tag bitcoin-peer-map:test .
+          npm run test:container

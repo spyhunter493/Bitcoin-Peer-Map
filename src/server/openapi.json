@@ -1,0 +1,779 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Bitcoin Peer Map",
+    "description": "Bitcoin peer monitoring and management dashboard",
+    "version": "dev"
+  },
+  "paths": {
+    "/api/peers": {
+      "get": {
+        "summary": "List Peers",
+        "operationId": "list_peers_api_peers_get",
+        "parameters": [
+          {
+            "name": "include_status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/peer/connect": {
+      "post": {
+        "summary": "Connect Peer",
+        "operationId": "connect_peer_api_peer_connect_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddressRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds 64 KiB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
+          }
+        }
+      }
+    },
+    "/api/peer/disconnect": {
+      "post": {
+        "summary": "Disconnect Peer",
+        "operationId": "disconnect_peer_api_peer_disconnect_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PeerIdRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds 64 KiB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
+          }
+        }
+      }
+    },
+    "/api/peer/ban": {
+      "post": {
+        "summary": "Ban Peer",
+        "operationId": "ban_peer_api_peer_ban_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PeerIdRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds 64 KiB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
+          }
+        }
+      }
+    },
+    "/api/peer/unban": {
+      "post": {
+        "summary": "Unban Peer",
+        "operationId": "unban_peer_api_peer_unban_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddressRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds 64 KiB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
+          }
+        }
+      }
+    },
+    "/api/bans": {
+      "get": {
+        "summary": "List Bans",
+        "operationId": "list_bans_api_bans_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bans/clear": {
+      "post": {
+        "summary": "Clear Bans",
+        "operationId": "clear_bans_api_bans_clear_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
+          }
+        }
+      }
+    },
+    "/api/info": {
+      "get": {
+        "summary": "Dashboard Info",
+        "description": "Includes node_metrics: Bitcoin Knots uptime, P2P totals, and average P2P rates between RPC samples. Unavailable metrics and rates without a valid baseline are null. Includes services: the P2P service names advertised by this node, from getnetworkinfo.localservicesnames. An empty array means no services are advertised; null means service information is unavailable. Includes updates: the cached application update status. Dashboard reads do not trigger GitHub requests; the server checks once every 24 hours. Updates compare stable release versions, never unreleased main commits. Development builds skip checks.",
+        "operationId": "dashboard_info_api_info_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "updates": {
+                      "$ref": "#/components/schemas/UpdateStatus"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mempool": {
+      "get": {
+        "summary": "Mempool",
+        "operationId": "mempool_api_mempool_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/blockchain": {
+      "get": {
+        "summary": "Blockchain",
+        "operationId": "blockchain_api_blockchain_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/blocks/recent": {
+      "get": {
+        "summary": "Recent Blocks",
+        "operationId": "recent_blocks_api_blocks_recent_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 25,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rpc-info": {
+      "get": {
+        "summary": "Rpc Info",
+        "operationId": "rpc_info_api_rpc_info_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/chain-tips": {
+      "get": {
+        "summary": "Chain Tips",
+        "operationId": "chain_tips_api_chain_tips_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connectivity": {
+      "get": {
+        "summary": "Connectivity",
+        "operationId": "connectivity_api_connectivity_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectivityStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connectivity/api-prompt-ack": {
+      "post": {
+        "summary": "Acknowledge Connectivity Prompt",
+        "operationId": "acknowledge_connectivity_prompt_api_connectivity_api_prompt_ack_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
+          }
+        }
+      }
+    },
+    "/api/geodb/toggle-db-only": {
+      "post": {
+        "summary": "Toggle Geoip Api",
+        "operationId": "toggle_geoip_api_api_geodb_toggle_db_only_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
+          }
+        }
+      }
+    },
+    "/api/geodb/toggle-auto-update": {
+      "post": {
+        "summary": "Toggle Auto Update",
+        "operationId": "toggle_auto_update_api_geodb_toggle_auto_update_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
+          }
+        }
+      }
+    },
+    "/api/geodb/update": {
+      "post": {
+        "summary": "Update Database",
+        "operationId": "update_database_api_geodb_update_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
+          }
+        }
+      }
+    },
+    "/api/stats": {
+      "get": {
+        "summary": "Node Metrics",
+        "description": "RPC-only node metrics from uptime and getnettotals, shared with /api/info.node_metrics. The legacy system_stats response key is retained; no dashboard host metrics are collected.",
+        "operationId": "stats_api_stats_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/config": {
+      "get": {
+        "summary": "Config",
+        "operationId": "config_api_config_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "description": "Runtime configuration without credentials. build.version is the release tag or dev; build.revision is the exact source commit. build.updates contains cached release update status."
+      }
+    },
+    "/api/stream/system": {
+      "get": {
+        "summary": "Node Metrics Stream",
+        "operationId": "system_stream_api_stream_system_get",
+        "responses": {
+          "200": {
+            "description": "Server-sent events: a connected message followed by RPC-only node metric samples, at most once every five seconds. The legacy path and system event name are retained.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/": {
+      "get": {
+        "summary": "Dashboard",
+        "operationId": "dashboard__get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AddressRequest": {
+        "properties": {
+          "address": {
+            "type": "string",
+            "title": "Address",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "AddressRequest"
+      },
+      "PeerIdRequest": {
+        "properties": {
+          "peer_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peer Id"
+          }
+        },
+        "type": "object",
+        "title": "PeerIdRequest"
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": [
+          "detail"
+        ],
+        "properties": {
+          "detail": {
+            "type": "string",
+            "description": "Description of the request error."
+          }
+        }
+      },
+      "UpdateStatus": {
+        "type": "object",
+        "required": [
+          "update_available",
+          "latest_version",
+          "changes_url",
+          "checked_at",
+          "check_failed"
+        ],
+        "properties": {
+          "update_available": {
+            "type": "boolean",
+            "description": "Whether the latest published stable release has a higher semantic version than the installed release."
+          },
+          "latest_version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Latest published stable release tag; null before a check or when no release exists."
+          },
+          "changes_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "GitHub Release notes URL for a newer stable release; null when no update is available."
+          },
+          "checked_at": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Unix timestamp in seconds of the last completed check, including failures."
+          },
+          "check_failed": {
+            "type": "boolean",
+            "description": "Whether the last check failed. A previously known update is retained."
+          }
+        }
+      },
+      "ProviderHealth": {
+        "type": "object",
+        "required": [
+          "state",
+          "consecutive_failures",
+          "last_error",
+          "last_success_at",
+          "last_failure_at",
+          "retry_at"
+        ],
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "healthy",
+              "unavailable",
+              "rate_limited"
+            ]
+          },
+          "consecutive_failures": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "last_error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_success_at": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Unix timestamp in seconds."
+          },
+          "last_failure_at": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Unix timestamp in seconds."
+          },
+          "retry_at": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Provider requests resume at or after this Unix timestamp. Null means no cooldown."
+          }
+        }
+      },
+      "ConnectivityStatus": {
+        "type": "object",
+        "required": [
+          "internet_state",
+          "api_available",
+          "api_consecutive_failures",
+          "geo_db_only_mode",
+          "api_down_prompt",
+          "providers"
+        ],
+        "properties": {
+          "internet_state": {
+            "type": "string",
+            "enum": [
+              "green",
+              "yellow",
+              "red"
+            ],
+            "description": "Independent internet reachability probe status."
+          },
+          "api_available": {
+            "type": "boolean",
+            "description": "GeoIP has fewer than five consecutive failures and is outside its rate-limit cooldown."
+          },
+          "api_consecutive_failures": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Consecutive GeoIP failures only."
+          },
+          "geo_db_only_mode": {
+            "type": "boolean"
+          },
+          "api_down_prompt": {
+            "type": "boolean"
+          },
+          "providers": {
+            "type": "object",
+            "required": [
+              "geoip"
+            ],
+            "properties": {
+              "geoip": {
+                "$ref": "#/components/schemas/ProviderHealth"
+              }
+            }
+          }
+        }
+      }
+    },
+    "responses": {
+      "CrossOriginRequest": {
+        "description": "Browser requests whose Origin host does not match Host are rejected. Reverse proxies must preserve the external Host header.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      }
+    }
+  }
+}

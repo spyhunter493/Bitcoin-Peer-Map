@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bitcoin Peer Map</title>
+    <link rel="icon" type="image/svg+xml" href="/static/assets/favicon.svg?v={{ asset_revision }}">
+    <link rel="stylesheet" href="/static/css/app.css?v={{ asset_revision }}">
+    <link rel="stylesheet" href="/static/css/distribution.css?v={{ asset_revision }}"><!-- [DISTRIBUTION] -->
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;900&display=swap" rel="stylesheet">
+</head>
+<body data-repository-url="{{ repository_url }}" data-asset-revision="{{ asset_revision }}">
+    <!-- Top bar -->
+    <header id="topbar">
+        <div class="topbar-left">
+            <a href="{{ repository_url }}" target="_blank" rel="noopener" class="logo" title="Peer map, service provider distribution analysis, and tools for your Bitcoin node - View on GitHub"><span class="brand-primary">Bitcoin</span> <span class="brand-accent">Peer</span> <span class="brand-primary">Map</span></a>
+            <span class="revision build-version" title="Installed application version">{{ version }}</span>
+            <a href="{{ revision_url }}" target="_blank" rel="noopener" class="revision" title="View commit {{ revision }} on GitHub">{{ revision }}</a>
+            <a id="revision-update" class="revision update-indicator" target="_blank" rel="noopener" aria-label="Update available — view release notes" title="Update available — view release notes" hidden>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6"/></svg>
+            </a>
+        </div>
+        <!-- [DISTRIBUTION] Flight deck moved to topbar center -->
+        <div class="topbar-center" id="topbar-center">
+            <div id="flight-deck" class="flight-deck-inline">
+                <div class="fd-content" id="fd-content">
+                    <div class="fd-net-chip" data-net="ipv4">
+                        <span class="fd-net-dot disabled" id="fd-ipv4-dot"></span>
+                        <span class="fd-net-name" style="color:var(--net-ipv4)">IPv4</span>
+                        <span class="fd-net-counts"><span class="fd-in" id="fd-ipv4-in">0</span>&#8595; <span class="fd-out" id="fd-ipv4-out">0</span>&#8593;</span>
+                    </div>
+                    <div class="fd-net-chip" data-net="ipv6">
+                        <span class="fd-net-dot disabled" id="fd-ipv6-dot"></span>
+                        <span class="fd-net-name" style="color:var(--net-ipv6)">IPv6</span>
+                        <span class="fd-net-counts"><span class="fd-in" id="fd-ipv6-in">0</span>&#8595; <span class="fd-out" id="fd-ipv6-out">0</span>&#8593;</span>
+                    </div>
+                    <div class="fd-net-chip" data-net="onion">
+                        <span class="fd-net-dot disabled" id="fd-tor-dot"></span>
+                        <span class="fd-net-name" style="color:var(--net-tor)">Tor</span>
+                        <span class="fd-net-counts"><span class="fd-in" id="fd-tor-in">0</span>&#8595; <span class="fd-out" id="fd-tor-out">0</span>&#8593;</span>
+                    </div>
+                    <div class="fd-net-chip" data-net="i2p">
+                        <span class="fd-net-dot disabled" id="fd-i2p-dot"></span>
+                        <span class="fd-net-name" style="color:var(--net-i2p)">I2P</span>
+                        <span class="fd-net-counts"><span class="fd-in" id="fd-i2p-in">0</span>&#8595; <span class="fd-out" id="fd-i2p-out">0</span>&#8593;</span>
+                    </div>
+                    <div class="fd-net-chip" data-net="cjdns">
+                        <span class="fd-net-dot disabled" id="fd-cjdns-dot"></span>
+                        <span class="fd-net-name" style="color:var(--net-cjdns)">CJDNS</span>
+                        <span class="fd-net-counts"><span class="fd-in" id="fd-cjdns-in">0</span>&#8595; <span class="fd-out" id="fd-cjdns-out">0</span>&#8593;</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="topbar-right">
+            <span class="topbar-status-group" id="topbar-countdown" title="Time until next peer data refresh">
+                <span class="tb-label">Update in</span>
+                <span class="tb-value" id="mo-countdown">&mdash;</span>
+            </span>
+            <span class="topbar-status-msg" id="mo-status-msg" title="Peer geolocation progress">Loading...</span>
+            <span class="topbar-dots" title="Internet &amp; service status">
+                <span class="internet-dot green" id="internet-dot" title="Internet connection status"></span>
+                <span class="status-dot" id="status-dot" role="status" aria-label="Peer data: Connecting…" title="Connection status for peer data from your Bitcoin node"></span>
+            </span>
+            <span class="topbar-sync-status" id="mo-status" title="Node sync status">&mdash;</span>
+            <span id="clock" class="topbar-clock" title="Current local time"></span>
+            <button class="topbar-gear" id="topbar-gear" title="Map Settings">&#9881;</button>
+        </div>
+    </header>
+
+    <!-- Flight deck hover tooltip -->
+    <div id="fd-tooltip" class="fd-tooltip hidden"></div>
+
+    <!-- Left map HUD — controls follow the visible stats -->
+    <div class="map-hud">
+      <div id="map-overlay" class="map-overlay">
+        <div class="mo-row mo-sys-row" id="mo-row-peers"><span class="mo-label">Peers</span> <span class="mo-value" id="mo-peers" title="Total connected peers">0</span></div>
+        <div class="mo-row mo-sys-row mo-traffic-row" id="mo-row-netin" title="Bitcoin node P2P download rate — click for node metrics">
+            <span class="mo-label">P2P &#8595;</span>
+            <span class="mo-value mo-traffic-value" id="ro-rate-in">&mdash;</span>
+        </div>
+        <div class="mo-row mo-sys-row mo-traffic-row" id="mo-row-netout" title="Bitcoin node P2P upload rate — click for node metrics">
+            <span class="mo-label">P2P &#8593;</span>
+            <span class="mo-value mo-traffic-value" id="ro-rate-out">&mdash;</span>
+        </div>
+        <div class="mo-row mo-sys-row mo-traffic-row" id="mo-row-p2p-in" title="Bitcoin node P2P download total since the Bitcoin node started — click for node metrics">
+            <span class="mo-label">P2P &#8595;</span>
+            <span class="mo-value mo-traffic-value" id="mo-p2p-in">&mdash;</span>
+        </div>
+        <div class="mo-row mo-sys-row mo-traffic-row" id="mo-row-p2p-out" title="Bitcoin node P2P upload total since the Bitcoin node started — click for node metrics">
+            <span class="mo-label">P2P &#8593;</span>
+            <span class="mo-value mo-traffic-value" id="mo-p2p-out">&mdash;</span>
+        </div>
+      </div>
+      <div id="map-controls" class="map-controls" role="group" aria-label="Map controls">
+        <button id="zoom-in" class="zoom-btn" title="Zoom in" aria-label="Zoom in">+</button>
+        <button id="zoom-out" class="zoom-btn" title="Zoom out" aria-label="Zoom out">&minus;</button>
+        <button id="zoom-reset" class="zoom-btn" title="Reset view" aria-label="Reset view">&#8634;</button>
+      </div>
+    </div>
+
+    <!-- [DISTRIBUTION] Donut — fixed upper-right corner of map, always visible -->
+    <div id="as-distribution-container" class="as-distribution-container">
+        <div class="as-lens-toggle" id="as-lens-toggle" role="tablist" aria-label="Distribution lens">
+            <button class="as-lens-btn active" type="button" data-lens="provider" role="tab" aria-selected="true">Providers</button>
+            <button class="as-lens-btn" type="button" data-lens="country" role="tab" aria-selected="false">Countries</button>
+        </div>
+        <div class="as-donut-title" id="as-donut-title" title="Autonomous System Peer Distribution Analysis"><span class="as-title-peer">Peer</span> <span class="as-title-provider">Service Providers</span><span class="as-title-subtitle" id="as-title-subtitle">(IPv4/IPv6)</span></div>
+        <button class="as-focused-close" id="as-focused-close" title="Back">&#x2192;</button>
+        <div class="as-donut-wrap" id="as-donut-wrap">
+            <svg id="as-donut" class="as-donut" viewBox="0 0 260 260"></svg>
+            <div id="as-donut-center" class="as-donut-center">
+                <div class="as-score-distribution" id="as-score-distribution">DISTRIBUTION</div>
+                <div class="as-score-heading" id="as-score-heading">SCORE:</div>
+                <div class="as-score-value" id="as-score-value" title="">&mdash;</div>
+                <div class="as-score-quality" id="as-score-quality"></div>
+                <div class="as-score-label" id="as-score-label"></div>
+            </div>
+            <div id="as-insight-rect" class="as-insight-rect"></div>
+            <div class="as-loading">Scanning providers&hellip;</div>
+        </div>
+        <div id="as-legend" class="as-legend"></div>
+        <!-- Mini private donut — shown when private peers exist, click to enter private mode -->
+        <div id="pn-mini-donut" class="pn-mini-donut hidden">
+            <div class="pn-mini-label">Private Networks<span class="pn-mini-subtitle">(TOR/I2P/CJDNS)</span></div>
+            <div class="pn-mini-donut-ring">
+                <svg id="pn-mini-svg" class="pn-mini-svg" viewBox="0 0 260 260"></svg>
+                <div class="pn-mini-center" id="pn-mini-center">
+                    <div class="pn-mini-center-label">Private</div>
+                    <div class="pn-mini-center-count" id="pn-mini-count">0</div>
+                    <div class="pn-mini-center-sub">Peers</div>
+                </div>
+            </div>
+            <div id="pn-mini-legend" class="pn-mini-legend"></div>
+        </div>
+    </div>
+
+    <!-- Net popover -->
+    <div id="net-popover" class="net-popover hidden"></div>
+
+    <!-- [PRIVATE-NET] Circular donut for private networks — hidden by default -->
+    <div id="pn-container" class="pn-container hidden">
+        <div class="pn-title">Private Networks<span class="pn-title-subtitle">(TOR/I2P/CJDNS)</span></div>
+        <div class="pn-donut-wrap" id="pn-donut-wrap">
+            <svg id="pn-donut-svg" class="pn-donut-svg" viewBox="0 0 260 260"></svg>
+            <div id="pn-donut-center" class="pn-donut-center">
+                <div class="pn-center-label" id="pn-center-label">PRIVATE</div>
+                <div class="pn-center-count" id="pn-center-count">0</div>
+                <div class="pn-center-sub" id="pn-center-sub">peers</div>
+            </div>
+            <div id="pn-insight-rect" class="pn-insight-rect"></div>
+            <button class="pn-exit-btn" id="pn-exit-btn" title="Return to public network view">&#x2192;</button>
+        </div>
+    </div>
+
+    <!-- [PRIVATE-NET] Detail panel — slides in from right, like AS detail panel -->
+    <div id="pn-detail-panel" class="pn-detail-panel hidden">
+        <div class="pn-detail-header" id="pn-detail-header">
+            <button class="pn-detail-back hidden" id="pn-detail-back" title="Back to overview">&#8592;</button>
+            <div class="pn-detail-header-info">
+                <div class="pn-detail-net-name" id="pn-detail-net-name"></div>
+                <div class="pn-detail-meta" id="pn-detail-meta"></div>
+            </div>
+            <button class="pn-detail-close" id="pn-detail-close" title="Close">&times;</button>
+        </div>
+        <div class="pn-detail-body" id="pn-detail-body"></div>
+    </div>
+
+    <!-- Antarctica disclaimer (shown once per browser profile) -->
+    <div id="antarctica-modal-overlay" class="ant-modal-overlay hidden">
+        <div id="antarctica-note" class="ant-modal">
+            <span class="ant-modal-icon">&#9432;</span>
+            <div class="ant-modal-body">
+                <div class="ant-modal-text">Public IPv4 and IPv6 peers are automatically geolocated and displayed with their corresponding service providers.</div>
+                <div class="ant-modal-text" style="margin-top:8px"><strong>Disclaimer:</strong> Peers connected via privacy overlays such as Tor, I2P, and CJDNS do not expose geographic information by design. To preserve visual consistency on the map, they are placed at Antarctic research stations as placeholders. Metrics for these peers are limited to data retrieved from getpeerinfo.</div>
+                <div class="ant-modal-community">Have ideas or found a bug? <a href="{{ repository_discussions_url }}" target="_blank" rel="noopener">Join the discussion</a> &mdash; click the logo anytime to visit the repo.</div>
+            </div>
+            <button id="ant-close" class="ant-modal-btn">Got it</button>
+        </div>
+    </div>
+
+    <!-- Cached basemap and interactive peer overlay -->
+    <canvas id="basemap" aria-hidden="true"></canvas>
+    <canvas id="worldmap"></canvas>
+
+    <!-- Tooltip for hovering over map nodes -->
+    <div id="node-tooltip" class="tooltip hidden"></div>
+
+    <!-- Bottom peer panel (OPEN by default) -->
+    <div id="peer-panel" class="peer-panel">
+        <div id="peer-panel-handle" class="peer-panel-handle">
+            <div class="handle-row1">
+                <span class="handle-title">PEER LIST</span>
+                <span class="handle-show-label">Show:</span>
+                <div class="handle-nets">
+                    <span class="net-badge net-all active" data-net="all" title="Click to show all peers">All <span class="badge-count" id="bc-all">0</span></span>
+                    <span class="net-badge net-ipv4" data-net="ipv4" title="Click to filter by IPv4">IPv4 <span class="badge-count" id="bc-ipv4">0</span></span>
+                    <span class="net-badge net-ipv6" data-net="ipv6" title="Click to filter by IPv6">IPv6 <span class="badge-count" id="bc-ipv6">0</span></span>
+                    <span class="net-badge net-tor" data-net="onion" title="Click to filter by Tor/Onion">Tor <span class="badge-count" id="bc-tor">0</span></span>
+                    <span class="net-badge net-i2p" data-net="i2p" title="Click to filter by I2P">I2P <span class="badge-count" id="bc-i2p">0</span></span>
+                    <span class="net-badge net-cjdns" data-net="cjdns" title="Click to filter by CJDNS">CJDNS <span class="badge-count" id="bc-cjdns">0</span></span>
+                </div>
+                <div class="handle-spacer"></div>
+                <button class="handle-btn handle-btn-green" id="btn-connect-peer" title="Connect to a peer">Connect Peer</button>
+                <button class="handle-btn handle-btn-warn" id="btn-bans" title="View and manage banned peers">Banned Peers</button>
+                <button class="handle-btn handle-btn-accent" id="btn-node-info-peer" title="View detailed node information">NODE-INFO</button>
+                <button class="handle-btn handle-btn-accent" id="btn-recent-blocks" title="View recently validated blocks">BLOCKS</button>
+                <button class="handle-btn handle-btn-accent" id="btn-geoip-db-peer" title="GeoIP database info and updates">GEOIP-DB</button>
+                <button class="handle-btn handle-btn-accent" id="btn-chain-tips" title="View chain tips and fork status">CHAIN-TIPS</button>
+                <button class="handle-btn handle-btn-dim" id="btn-autofit" title="Automatic column size to fit">FIT</button>
+                <button class="handle-btn handle-btn-dim" id="btn-minimize" title="Toggle peer list table">&#9660;</button>
+                <button class="handle-btn handle-btn-dim" id="btn-table-settings" title="Table settings: columns, transparency">&#9881;</button>
+            </div>
+        </div>
+        <div class="peer-panel-body">
+            <div class="peer-table-wrap">
+                <table class="peer-table" id="peer-table">
+                    <thead id="peer-thead"></thead>
+                    <tbody id="peer-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- [DISTRIBUTION] Detail panel — slides in from right, pushes content -->
+    <div id="as-detail-panel" class="as-detail-panel hidden">
+        <div class="as-detail-header">
+            <div class="as-detail-header-info">
+                <div class="as-detail-asn"></div>
+                <div class="as-detail-org"></div>
+                <div class="as-detail-meta"></div>
+                <div class="as-detail-bar-wrap">
+                    <div class="as-detail-bar-bg"><div class="as-detail-bar-fill"></div></div>
+                    <div class="as-detail-bar-label">
+                        <span class="as-detail-pct"></span>
+                        <span class="as-detail-risk"></span>
+                    </div>
+                </div>
+            </div>
+            <button class="as-detail-close" title="Close">&times;</button>
+        </div>
+        <div class="as-detail-body"></div>
+    </div>
+
+    <!-- Footer -->
+    <footer id="footer" class="footer">
+        <span class="footer-btc" id="footer-btc">Support (btc): <span class="footer-btc-addr">bc1qnngus06lk0e60e05yq902e9edx7kt4kcuuuy72</span></span>
+    </footer>
+
+    <script type="module" src="/static/v/{{ asset_revision }}/js/app.js"></script>
+</body>
+</html>

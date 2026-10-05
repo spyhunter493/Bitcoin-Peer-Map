@@ -1,0 +1,27 @@
+{
+  "name": "bitcoin-peer-map",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check:js": "node scripts/check-js.js",
+    "test:js": "cd tests/unit && node --test",
+    "benchmark:dashboard": "node scripts/benchmark-dashboard.js",
+    "test:layout": "node --test tests/test_layout.js",
+    "test:layout:docker": "scripts/test-layout-docker.sh",
+    "check:types": "tsc --noEmit && tsc -p tsconfig.server.json",
+    "start": "node src/server/main.ts",
+    "test:server": "node --test tests/server/*.test.ts",
+    "test:container": "node tests/test_container.js",
+    "test:compose": "node --test tests/deployment/*.test.js",
+    "test": "npm run test:server && npm run test:js"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.4",
+    "playwright": "1.63.0",
+    "typescript": "7.0.2"
+  },
+  "engines": {
+    "node": ">=24.18.0 <25"
+  }
+}

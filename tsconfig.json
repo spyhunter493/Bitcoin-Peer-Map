@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": [],
+    "lib": [
+      "ES2022",
+      "DOM"
+    ]
+  },
+  "include": [
+    "src/static/js/**/*.js",
+    "src/static/js/types.d.ts"
+  ]
+}

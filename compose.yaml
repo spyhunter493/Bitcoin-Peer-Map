@@ -1,0 +1,51 @@
+name: bitcoin-peer-map
+
+services:
+  bpm:
+    image: ${BPM_IMAGE:-ghcr.io/spyhunter493/bitcoin-peer-map:latest}
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      # Credentials may come from .env, the shell, or a local Compose override.
+      # Validate them in the app so password-file deployments remain supported.
+      BITCOIN_RPC_SCHEME: ${BITCOIN_RPC_SCHEME:-http}
+      BITCOIN_RPC_HOST: ${BITCOIN_RPC_HOST:-bitcoin}
+      BITCOIN_RPC_PORT: ${BITCOIN_RPC_PORT:-8332}
+      BITCOIN_RPC_USER: ${BITCOIN_RPC_USER:-}
+      BITCOIN_RPC_PASSWORD: ${BITCOIN_RPC_PASSWORD:-}
+      BITCOIN_RPC_PASSWORD_FILE: ${BITCOIN_RPC_PASSWORD_FILE:-}
+      BITCOIN_RPC_VERIFY_TLS: ${BITCOIN_RPC_VERIFY_TLS:-true}
+      BITCOIN_RPC_TIMEOUT: ${BITCOIN_RPC_TIMEOUT:-30}
+      BITCOIN_NETWORK: ${BITCOIN_NETWORK:-main}
+      BPM_RPC_STARTUP_TIMEOUT: ${BPM_RPC_STARTUP_TIMEOUT:-30}
+      # Host binding and port publishing are separate from the container listener.
+      BPM_LISTEN_ADDRESS: 0.0.0.0
+      BPM_LISTEN_PORT: ${BPM_LISTEN_PORT:-58333}
+      BPM_DATA_DIR: /var/lib/bitcoin-peer-map
+      BPM_GEOIP_ENABLED: ${BPM_GEOIP_ENABLED:-true}
+      BPM_GEOIP_AUTO_UPDATE: ${BPM_GEOIP_AUTO_UPDATE:-}
+    ports:
+      - target: ${BPM_LISTEN_PORT:-58333}
+        published: "${BPM_HOST_PORT:-58333}"
+        host_ip: ${BPM_HOST_BIND:-0.0.0.0}
+        protocol: tcp
+    volumes:
+      - bpm-data:/var/lib/bitcoin-peer-map
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,mode=1777
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    stop_grace_period: 15s
+
+volumes:
+  bpm-data:
+    # Keep the existing volume by default; change this for a second instance.
+    name: ${BPM_DATA_VOLUME:-bitcoin-peer-map-data}

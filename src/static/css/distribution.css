@@ -1,0 +1,2551 @@
+/* ============================================================
+   Distribution dashboard styles — provider and country lenses.
+   ============================================================ */
+
+/* ==========================================================
+   2. DISTRIBUTION CONTAINER — Upper-right corner of map
+   ========================================================== */
+.as-distribution-container {
+    --as-donut-fit-scale: 1;
+    position: fixed;
+    top: 52px;
+    right: 14px;
+    z-index: 85;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    pointer-events: none;
+    user-select: none;
+    opacity: 0.88;
+    transform: scale(var(--as-donut-fit-scale));
+    transform-origin: top right;
+    transition: top 0.45s cubic-bezier(0.4, 0, 0.2, 1),
+                right 0.45s cubic-bezier(0.4, 0, 0.2, 1),
+                left 0.45s cubic-bezier(0.4, 0, 0.2, 1),
+                transform 0.45s cubic-bezier(0.4, 0, 0.2, 1),
+                opacity 0.3s ease;
+}
+.as-distribution-container:hover {
+    opacity: 1;
+}
+
+/* ==========================================================
+   2a. DISTRIBUTION LENS TOGGLE
+   ========================================================== */
+.as-lens-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px;
+    margin-bottom: 4px;
+    border: 1px solid rgba(88, 166, 255, 0.2);
+    border-radius: 5px;
+    background: rgba(13, 17, 23, 0.7);
+    pointer-events: auto;
+}
+.as-lens-btn {
+    height: 22px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--text-muted);
+    font-family: var(--font-data);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0;
+    text-transform: uppercase;
+    cursor: pointer;
+}
+.as-lens-btn:hover {
+    color: var(--text-primary);
+    background: rgba(88, 166, 255, 0.1);
+}
+.as-lens-btn.active {
+    color: var(--text-primary);
+    background: rgba(88, 166, 255, 0.22);
+}
+
+/* ==========================================================
+   2b. DONUT TITLE — "PEER SERVICE PROVIDERS" above donut
+   ========================================================== */
+.as-donut-title {
+    font-family: var(--font-display);
+    font-size: 16px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    text-align: center;
+    pointer-events: auto;
+    cursor: default;
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+    margin-bottom: -6px;
+    line-height: 1.1;
+    transition: opacity 0.4s ease, max-height 0.4s ease, margin 0.4s ease;
+    overflow: hidden;
+    max-height: 52px;
+}
+.as-title-peer {
+    color: var(--logo-primary);
+}
+.as-title-provider {
+    color: var(--logo-primary);
+}
+.as-title-subtitle {
+    display: block;
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: var(--logo-accent, #7ec8e3);
+    font-weight: 600;
+    margin-top: 1px;
+}
+
+/* ==========================================================
+   2c. FOCUSED MODE CLOSE BUTTON — back arrow near donut
+   ========================================================== */
+.as-focused-close {
+    display: none;
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    z-index: 100;
+    background: rgba(22, 27, 34, 0.85);
+    border: 1px solid rgba(88, 166, 255, 0.3);
+    color: var(--accent, #58a6ff);
+    font-size: 18px;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    cursor: pointer;
+    pointer-events: auto;
+    transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+    line-height: 26px;
+    text-align: center;
+    padding: 0;
+}
+.as-focused-close:hover {
+    background: rgba(88, 166, 255, 0.15);
+    border-color: rgba(88, 166, 255, 0.6);
+    transform: translateX(2px) scale(1.1);
+}
+body.donut-focused .as-focused-close {
+    display: block;
+    top: 38px;
+    opacity: 0;
+    transition: opacity 0.2s ease, background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+body.donut-focused .as-distribution-container:has(:hover) .as-focused-close {
+    opacity: 1;
+}
+/* Hide blue back arrow when insight rect is showing (it has its own back arrow) */
+body.insight-rect-active .as-focused-close {
+    display: none !important;
+}
+
+/* ==========================================================
+   3. DONUT CHART — SVG ring + center label (260px, 3D look)
+   ========================================================== */
+.as-donut-wrap {
+    position: relative;
+    width: 260px;
+    height: 260px;
+    flex-shrink: 0;
+    pointer-events: auto;
+    /* 3D depth effect */
+    filter: drop-shadow(0 4px 12px rgba(0,0,0,0.5)) drop-shadow(0 1px 3px rgba(0,0,0,0.3));
+}
+.as-donut {
+    width: 260px;
+    height: 260px;
+}
+.as-donut-segment {
+    cursor: pointer;
+    transition: opacity 0.15s ease, filter 0.15s ease;
+}
+.as-donut-segment:hover {
+    filter: brightness(1.3) saturate(1.15);
+}
+.as-donut-segment.dimmed {
+    opacity: 0.2;
+    filter: saturate(0.4);
+}
+.as-donut-segment.selected {
+    filter: brightness(1.25) saturate(1.2);
+}
+
+/* Center overlay inside the donut hole */
+.as-donut-center {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    pointer-events: auto;
+    cursor: pointer;
+}
+/* "DISTRIBUTION" label inside donut, above SCORE */
+.as-score-distribution {
+    font-family: var(--font-display);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--logo-accent);
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+    margin-bottom: 1px;
+    line-height: 1.2;
+}
+/* "← Others" back link inside donut center for sub-providers */
+.as-others-back-link {
+    font-family: var(--font-data);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: none;
+    color: var(--accent, #58a6ff);
+    cursor: pointer;
+    opacity: 0.7;
+    transition: opacity 0.15s ease;
+    pointer-events: auto;
+}
+.as-others-back-link:hover {
+    opacity: 1;
+    text-decoration: underline;
+}
+
+/* "SCORE:" heading above the number */
+.as-score-heading {
+    font-family: var(--font-data);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+    margin-bottom: 0;
+    line-height: 1.2;
+}
+/* The big score number */
+.as-score-value {
+    font-family: var(--font-data);
+    font-size: 42px;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.05;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.85);
+}
+/* Quality word BELOW the score (Excellent / Good / etc.) */
+.as-score-quality {
+    font-family: var(--font-data);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    line-height: 1.2;
+    margin-top: 1px;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+    min-height: 14px;
+}
+.as-score-quality.q-excellent { color: var(--ok); }
+.as-score-quality.q-good      { color: var(--ok-bright); }
+.as-score-quality.q-moderate  { color: var(--warn); }
+.as-score-quality.q-poor      { color: var(--err); }
+.as-score-quality.q-critical  { color: var(--err-bright); }
+.as-score-quality.q-nodata    { color: var(--text-dim); }
+/* Peer count label / SUMMARY ANALYSIS link */
+.as-score-label {
+    font-family: var(--font-data);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 1.4px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+    margin-top: 1px;
+}
+/* Provider peer count label (light blue, slightly larger) */
+.as-score-label.as-provider-peers {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    color: var(--logo-accent, #7ec8e3);
+}
+
+/* SUMMARY ANALYSIS link styling (blue, hoverable, clickable) */
+.as-score-label.as-summary-link {
+    color: var(--accent, #58a6ff);
+    cursor: pointer;
+    pointer-events: auto;
+    transition: color 0.15s ease, text-shadow 0.15s ease;
+}
+.as-score-label.as-summary-link:hover {
+    color: #79c0ff;
+    text-shadow: 0 0 8px rgba(88, 166, 255, 0.5), 0 1px 4px rgba(0, 0, 0, 0.8);
+}
+
+/* Hover-all state: all donut segments highlighted simultaneously */
+.as-distribution-container.as-all-hovered .as-donut-segment {
+    filter: brightness(1.3) saturate(1.15);
+}
+/* Title hover + click feedback */
+.as-donut-title:hover {
+    cursor: pointer;
+}
+
+/* Selected AS state — show AS name/count inside donut */
+.as-score-value.as-selected-mode {
+    font-family: var(--font-display);
+    font-size: 19px;
+    font-weight: 700;
+    line-height: 1.2;
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Score color classes */
+.as-score-excellent { color: var(--ok); }
+.as-score-good      { color: var(--ok-bright); }
+.as-score-moderate  { color: var(--warn); }
+.as-score-poor      { color: var(--err); }
+.as-score-critical  { color: var(--err-bright); }
+
+/* No-data greyed state */
+.as-distribution-container.no-data .as-donut-wrap {
+    filter: drop-shadow(0 4px 12px rgba(0,0,0,0.3)) saturate(0.3);
+    opacity: 0.6;
+}
+.as-distribution-container.no-data .as-donut-title {
+    color: var(--text-dim);
+}
+
+/* Loading state */
+.as-loading {
+    position: absolute;
+    bottom: -4px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: var(--font-data);
+    font-size: 10px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    animation: as-pulse 1.5s ease-in-out infinite;
+}
+@keyframes as-pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
+}
+
+/* Update pulse ring animation */
+@keyframes as-ring-pulse {
+    0% { opacity: 0.6; r: inherit; }
+    100% { opacity: 0; r: calc(inherit + 8px); }
+}
+
+/* ==========================================================
+   3b. INSIGHT RECTANGLE — replaces donut for Score & Insights
+   ========================================================== */
+.as-insight-rect {
+    position: absolute;
+    top: 22px;
+    left: 50%;
+    transform: translateX(-50%) scale(0.9);
+    width: 320px;
+    height: 210px;
+    z-index: 10;
+    pointer-events: auto;
+    opacity: 0;
+    transition: opacity 0.35s ease, transform 0.35s ease;
+    display: none;
+}
+.as-insight-rect.visible {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+    display: block;
+}
+.as-insight-rect-inner {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    border: 3px solid #d4a017;
+    border-radius: 10px;
+    background: rgba(22, 27, 34, 0.94);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    overflow: visible;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    box-shadow: 0 0 8px rgba(212, 160, 23, 0.25), inset 0 0 12px rgba(212, 160, 23, 0.06);
+}
+/* "Score & Insights" badge at top — integrates into the rect top border */
+.as-insight-rect-badge {
+    position: absolute;
+    top: -13px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(22, 27, 34, 0.95);
+    border: 2px solid #d4a017;
+    border-radius: 12px;
+    padding: 3px 16px;
+    font-family: var(--font-display);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: #d4a017;
+    white-space: nowrap;
+    z-index: 6;
+}
+/* Star decoration next to badge */
+.as-insight-rect-badge::after {
+    content: '\2605';
+    margin-left: 4px;
+    font-size: 12px;
+    color: #d4a017;
+}
+/* Close/back button — positioned just outside the rectangle to the right */
+.as-insight-rect-close {
+    position: absolute;
+    top: -4px;
+    right: -28px;
+    z-index: 6;
+    background: rgba(22, 27, 34, 0.85);
+    border: 1px solid rgba(212, 160, 23, 0.4);
+    color: #d4a017;
+    font-size: 14px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    cursor: pointer;
+    pointer-events: auto;
+    transition: background 0.2s ease, border-color 0.2s ease;
+    line-height: 20px;
+    text-align: center;
+    padding: 0;
+}
+.as-insight-rect-close:hover {
+    background: rgba(212, 160, 23, 0.15);
+    border-color: rgba(212, 160, 23, 0.7);
+}
+/* Content area — scrollable for ranks, clips within rounded inner */
+.as-insight-rect-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    width: 100%;
+    flex: 1;
+    padding: 18px 14px 8px;
+    box-sizing: border-box;
+    text-align: center;
+    overflow-y: auto;
+    overflow-x: hidden;
+    min-height: 0;
+    border-radius: 0 0 7px 7px;
+}
+.as-insight-rect-content::-webkit-scrollbar { width: 4px; }
+.as-insight-rect-content::-webkit-scrollbar-track { background: transparent; }
+.as-insight-rect-content::-webkit-scrollbar-thumb { background: rgba(212, 160, 23, 0.3); border-radius: 2px; }
+.as-insight-rect-icon {
+    font-size: 22px;
+    margin-bottom: 2px;
+    margin-top: 6px;
+    line-height: 1;
+    z-index: 1;
+}
+.as-insight-rect-title {
+    font-family: var(--font-display);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--text-primary, #e6edf3);
+    margin-bottom: 2px;
+}
+.as-insight-rect-rank {
+    font-family: var(--font-data);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: #d4a017;
+    margin-bottom: 2px;
+}
+.as-insight-rect-provider {
+    font-family: var(--font-display);
+    font-size: 18px;
+    font-weight: 800;
+    line-height: 1.2;
+    margin-bottom: 4px;
+    max-width: 280px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: default;
+}
+.as-insight-rect-provider[title]:hover {
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-underline-offset: 2px;
+}
+.as-insight-rect-meta {
+    font-family: var(--font-data);
+    font-size: 14px;
+    color: var(--text-secondary, #8b949e);
+    line-height: 1.5;
+}
+.as-insight-rect-meta span {
+    display: inline-block;
+}
+.as-insight-rect-stat {
+    font-family: var(--font-data);
+    font-size: 15px;
+    font-weight: 700;
+    margin-top: 4px;
+    line-height: 1.3;
+}
+/* Gold circle surround at bottom of insight rect — line origin point */
+.as-insight-rect-origin {
+    position: absolute;
+    bottom: -12px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 3px solid #d4a017;
+    z-index: 5;
+    box-shadow: 0 0 8px rgba(212, 160, 23, 0.5), 0 0 16px rgba(212, 160, 23, 0.2);
+}
+
+/* ==========================================================
+   4. LEGEND — Compact AS labels below the donut
+   ========================================================== */
+.as-legend {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    width: 260px;
+    /* Collapsed by default — no vertical space taken */
+    max-height: 0;
+    overflow: hidden;
+    opacity: 0;
+    transform: translateY(-4px);
+    transition: opacity 0.25s ease, transform 0.25s ease,
+                max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    pointer-events: none;
+}
+/* Show legend when hovering the donut area (but NOT when only hovering the mini private donut) */
+.as-distribution-container:hover:not(:has(.pn-mini-donut:hover)) .as-legend,
+.as-distribution-container.as-legend-visible .as-legend {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+    max-height: 260px;
+    overflow-y: auto;
+}
+/* When "Display Top ISP/Net" toggle is OFF, suppress legend expansion even on hover */
+.as-distribution-container.legends-hidden .as-legend,
+.as-distribution-container.legends-hidden:hover:not(:has(.pn-mini-donut:hover)) .as-legend {
+    max-height: 0 !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    overflow: hidden !important;
+}
+/* Legend-hover provider name inside donut center (non-focused, legends hidden) */
+.as-score-value.as-legend-hover-provider {
+    font-family: var(--font-display);
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1.25;
+    white-space: pre-line;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+/* Prevent donut center from stealing hover during legend-hover preview */
+.as-donut-center.legend-hover-active {
+    pointer-events: none;
+}
+/* "TOP 8" header above the legend list */
+.as-legend-header {
+    font-family: var(--font-data);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.4px;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+    padding: 2px 6px 4px;
+    width: 100%;
+    box-sizing: border-box;
+    text-align: center;
+}
+.as-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    cursor: pointer;
+    padding: 3px 6px;
+    border-radius: 4px;
+    transition: background var(--transition);
+    white-space: nowrap;
+    width: 100%;
+    box-sizing: border-box;
+}
+.as-legend-item:hover {
+    background: rgba(88, 166, 255, 0.1);
+}
+.as-legend-item.dimmed {
+    opacity: 0.25;
+}
+.as-legend-item.highlighted {
+    background: rgba(88, 166, 255, 0.12);
+    transform: scale(1.04);
+    transform-origin: left center;
+}
+.as-legend-item.selected {
+    background: rgba(88, 166, 255, 0.14);
+    border-left: 2px solid var(--accent);
+    padding-left: 4px;
+}
+.as-legend-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    box-shadow: 0 0 4px rgba(0, 0, 0, 0.3);
+}
+.as-legend-name {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 130px;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+    flex: 1;
+}
+.as-legend-count {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-primary);
+    min-width: 16px;
+    text-align: right;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+}
+.as-legend-pct {
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--text-muted);
+    min-width: 26px;
+    text-align: right;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+}
+
+/* ==========================================================
+   6. DETAIL PANEL — Slide-in from right, PUSHES content
+   ========================================================== */
+.as-detail-panel {
+    position: fixed;
+    top: 46px;
+    right: 0;
+    bottom: 0;
+    width: 320px;
+    z-index: 260;
+    background: var(--bg-surface);
+    border-left: 1px solid rgba(88, 166, 255, 0.15);
+    box-shadow: -4px 0 24px rgba(0, 0, 0, 0.4);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transform: translateX(100%);
+    transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.as-detail-panel.visible {
+    transform: translateX(0);
+}
+.as-detail-panel.hidden {
+    display: none;
+}
+
+/* --- Z-index stacking: whichever panel was last clicked goes on top --- */
+body.panel-focus-peers .peer-panel { z-index: 270; }
+body.panel-focus-as .as-detail-panel { z-index: 270; }
+body.panel-focus-as .peer-panel { z-index: 80; }
+
+/* --- Push effect: when detail panel is open, shift the donut and map elements --- */
+body.as-panel-open .as-distribution-container {
+    right: 334px;
+}
+body.as-panel-open #worldmap {
+    right: 320px;
+}
+body.as-panel-open .peer-panel {
+    right: 320px;
+}
+body.as-panel-open .footer {
+    right: 320px;
+}
+
+/* Panel header */
+.as-detail-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid rgba(88, 166, 255, 0.1);
+    flex-shrink: 0;
+}
+.as-detail-header-info {
+    flex: 1;
+    min-width: 0;
+}
+.as-detail-asn {
+    font-family: var(--font-data);
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--accent);
+    margin-bottom: 2px;
+}
+.as-detail-asn.as-summary-title {
+    font-family: var(--font-display);
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    font-size: 15px;
+    letter-spacing: 0.5px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid rgba(88, 166, 255, 0.15);
+    margin-bottom: 6px;
+}
+.as-detail-org {
+    font-family: var(--font-data);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-bottom: 4px;
+}
+.as-detail-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.as-detail-type-badge {
+    font-family: var(--font-data);
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: rgba(88, 166, 255, 0.1);
+    color: var(--text-secondary);
+    border: 1px solid rgba(88, 166, 255, 0.15);
+}
+.as-detail-type-badge.hosting {
+    color: var(--warn);
+    background: rgba(210, 153, 34, 0.1);
+    border-color: rgba(210, 153, 34, 0.25);
+}
+.as-detail-type-badge.residential {
+    color: var(--ok);
+    background: rgba(63, 185, 80, 0.1);
+    border-color: rgba(63, 185, 80, 0.25);
+}
+/* Back button */
+.as-detail-back {
+    background: none;
+    border: none;
+    color: var(--accent, #58a6ff);
+    font-size: 18px;
+    cursor: pointer;
+    padding: 0 8px 0 4px;
+    line-height: 1;
+    transition: color var(--transition), transform 0.15s ease;
+    flex-shrink: 0;
+}
+.as-detail-back:hover {
+    color: #79c0ff;
+    transform: translateX(-2px);
+}
+.as-detail-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 18px;
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
+    transition: color var(--transition);
+    flex-shrink: 0;
+}
+.as-detail-close:hover { color: var(--text-primary); }
+
+/* Concentration bar in header */
+.as-detail-bar-wrap { margin-top: 8px; }
+.as-detail-bar-bg {
+    width: 100%;
+    height: 6px;
+    background: rgba(88, 166, 255, 0.08);
+    border-radius: 3px;
+    overflow: hidden;
+}
+.as-detail-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.4s ease;
+}
+.as-detail-bar-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 3px;
+}
+.as-detail-pct {
+    font-family: var(--font-data);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+.as-detail-risk {
+    font-family: var(--font-data);
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.as-detail-risk-low      { color: var(--ok); }
+.as-detail-risk-moderate { color: var(--warn); }
+.as-detail-risk-high     { color: var(--err); }
+.as-detail-risk-critical { color: var(--err-bright); }
+
+/* Scrollable body */
+.as-detail-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 16px 16px;
+}
+
+/* Section titles — reuse modal pattern */
+.as-detail-body .modal-section-title {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--section-color);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    margin-top: 12px;
+    margin-bottom: 4px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(88, 166, 255, 0.06);
+}
+.as-detail-body .modal-section-title:first-child {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+}
+
+/* Info rows — reuse modal pattern */
+.as-detail-body .modal-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 3px 0;
+    gap: 12px;
+    font-size: 12px;
+}
+.as-detail-body .modal-label {
+    color: var(--text-secondary);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    flex-shrink: 0;
+}
+.as-detail-body .modal-val {
+    color: var(--text-primary);
+    font-weight: 500;
+    text-align: right;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-data);
+    font-size: 11px;
+}
+
+/* Sub-items in detail panel */
+.as-detail-sub-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 2px 0 2px 8px;
+    gap: 8px;
+    font-size: 11px;
+}
+.as-detail-sub-label {
+    color: var(--text-secondary);
+    font-size: 10px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.as-detail-sub-val {
+    color: var(--text-muted);
+    font-size: 10px;
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
+/* ==========================================================
+   7. HUD SOLID BACKGROUND SUPPORT
+   ========================================================== */
+body.hud-solid .as-distribution-container {
+    background: rgba(var(--surface-overlay-rgb), 0.72);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-radius: 8px;
+    padding: 8px 10px;
+}
+
+/* ==========================================================
+   8. LIGHT THEME ADJUSTMENTS
+   ========================================================== */
+body.theme-light .as-detail-asn { text-shadow: none; }
+body.theme-light .as-legend-header,
+body.theme-light .as-legend-name,
+body.theme-light .as-legend-count,
+body.theme-light .as-legend-pct,
+body.theme-light .as-score-value,
+body.theme-light .as-score-label,
+body.theme-light .as-score-quality,
+body.theme-light .as-donut-title { text-shadow: none; }
+body.theme-light .as-detail-panel { border-left-color: rgba(88, 166, 255, 0.25); }
+body.theme-light .as-loading { color: var(--text-secondary); }
+
+/* ==========================================================
+   9. DETAIL PANEL SCROLLBAR
+   ========================================================== */
+.as-detail-body::-webkit-scrollbar { width: 6px; }
+.as-detail-body::-webkit-scrollbar-track { background: transparent; }
+.as-detail-body::-webkit-scrollbar-thumb {
+    background: rgba(88, 166, 255, 0.15);
+    border-radius: 3px;
+}
+.as-detail-body::-webkit-scrollbar-thumb:hover {
+    background: rgba(88, 166, 255, 0.3);
+}
+
+/* Legend scrollbar */
+.as-legend::-webkit-scrollbar { width: 4px; }
+.as-legend::-webkit-scrollbar-track { background: transparent; }
+.as-legend::-webkit-scrollbar-thumb {
+    background: rgba(88, 166, 255, 0.12);
+    border-radius: 2px;
+}
+
+/* ==========================================================
+   10. INTERACTIVE SUB-ROWS — Hover/click on detail panel items
+   ========================================================== */
+.as-interactive-row {
+    cursor: pointer;
+    border-radius: 3px;
+    transition: background 0.15s ease, border-left 0.15s ease;
+    border-left: 2px solid transparent;
+}
+.as-interactive-row:hover {
+    background: rgba(88, 166, 255, 0.1);
+    border-left-color: var(--accent);
+}
+.as-interactive-row:focus-visible {
+    outline: 2px solid var(--accent, #58a6ff);
+    outline-offset: 1px;
+    background: rgba(88, 166, 255, 0.1);
+}
+.as-interactive-row.sub-filter-active {
+    background: rgba(88, 166, 255, 0.16);
+    border-left-color: var(--accent);
+}
+.as-interactive-row.sub-filter-active .as-detail-sub-label,
+.as-interactive-row.sub-filter-active .as-detail-sub-val {
+    color: var(--text-primary);
+}
+
+/* ==========================================================
+   11. SUB-ROW HOVER TOOLTIP — Peer summary on detail panel items
+   ========================================================== */
+.as-sub-tooltip {
+    position: fixed;
+    z-index: 320;
+    background: var(--bg-surface);
+    border: 1px solid rgba(88, 166, 255, 0.2);
+    border-radius: 6px;
+    padding: 8px 10px;
+    pointer-events: none;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    max-width: 260px;
+    min-width: 160px;
+}
+.as-sub-tooltip.hidden { display: none; }
+
+.as-sub-tt-section {
+    margin-bottom: 6px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid rgba(88, 166, 255, 0.1);
+}
+.as-sub-tt-flag {
+    font-family: var(--font-data);
+    font-size: 9px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+.as-sub-tt-peer {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 1px 2px;
+    font-family: var(--font-data);
+    font-size: 10px;
+    border-radius: 3px;
+    cursor: default;
+    transition: background 0.1s;
+}
+.as-sub-tt-peer[data-peer-id]:hover {
+    background: rgba(88, 166, 255, 0.12);
+}
+.as-sub-tt-peer-selected {
+    background: rgba(88, 166, 255, 0.18) !important;
+    outline: 1px solid rgba(88, 166, 255, 0.3);
+    outline-offset: -1px;
+}
+.as-provider-row-selected {
+    background: rgba(88, 166, 255, 0.18) !important;
+    outline: 1px solid rgba(88, 166, 255, 0.3);
+    outline-offset: -1px;
+}
+.as-sub-tt-id {
+    color: var(--accent);
+    font-weight: 700;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.as-sub-tt-rank {
+    color: var(--text-muted);
+    font-weight: 600;
+    font-size: 9px;
+    min-width: 18px;
+    flex-shrink: 0;
+}
+.as-sub-tt-id-link {
+    cursor: pointer;
+    text-decoration: underline;
+    text-decoration-color: transparent;
+    transition: text-decoration-color 0.15s;
+}
+.as-sub-tt-id-link:hover {
+    text-decoration-color: var(--accent);
+}
+.as-sub-tt-type {
+    color: var(--text-primary);
+    font-weight: 600;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.as-sub-tt-loc {
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.as-sub-tt-scroll {
+    max-height: 200px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(88,166,255,0.3) transparent;
+}
+.as-sub-tt-scroll::-webkit-scrollbar {
+    width: 4px;
+}
+.as-sub-tt-scroll::-webkit-scrollbar-thumb {
+    background: rgba(88,166,255,0.3);
+    border-radius: 2px;
+}
+.as-sub-tt-scroll::-webkit-scrollbar-track {
+    background: transparent;
+}
+.as-sub-tt-scroll.as-sub-tt-expanded {
+    max-height: 240px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(88,166,255,0.3) transparent;
+}
+.as-sub-tt-scroll.as-sub-tt-expanded::-webkit-scrollbar {
+    width: 4px;
+}
+.as-sub-tt-scroll.as-sub-tt-expanded::-webkit-scrollbar-thumb {
+    background: rgba(88,166,255,0.3);
+    border-radius: 2px;
+}
+.as-sub-tt-scroll.as-sub-tt-expanded::-webkit-scrollbar-track {
+    background: transparent;
+}
+.as-sub-tt-more {
+    font-family: var(--font-data);
+    font-size: 9px;
+    color: var(--text-muted);
+    padding-top: 2px;
+}
+.as-sub-tt-toggle {
+    color: var(--accent);
+    cursor: pointer;
+}
+.as-sub-tt-toggle:hover {
+    text-decoration: underline;
+}
+.as-sub-tt-show-more,
+.as-sub-tt-show-less {
+    cursor: pointer;
+}
+.as-sub-tt-show-more:hover,
+.as-sub-tt-show-less:hover {
+    color: var(--text-secondary);
+}
+/* ==========================================================
+   12. SUMMARY ANALYSIS PANEL — Connection grid, insights, etc.
+   ========================================================== */
+
+/* Clickable link style in panels */
+.as-panel-link {
+    color: var(--accent, #58a6ff);
+    cursor: pointer;
+    transition: color 0.15s ease, text-decoration-color 0.15s ease;
+    text-decoration: underline;
+    text-decoration-color: transparent;
+    text-underline-offset: 2px;
+}
+.as-panel-link:hover {
+    color: #79c0ff;
+    text-decoration-color: rgba(88, 166, 255, 0.5);
+}
+
+/* SUMMARY ANALYSIS active state (clicked, panel open) */
+.as-score-label.as-summary-link.as-summary-active {
+    color: #79c0ff;
+    text-shadow: 0 0 12px rgba(88, 166, 255, 0.6), 0 1px 4px rgba(0, 0, 0, 0.8);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+/* Summary insight rows */
+.as-summary-insight {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 4px 2px;
+    font-family: var(--font-data);
+    font-size: 10px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+    border-radius: 3px;
+    border-left: 2px solid transparent;
+    transition: background 0.15s ease, border-left-color 0.15s ease;
+}
+/* Hover state for insight rows */
+.as-summary-insight:hover {
+    background: rgba(88, 166, 255, 0.06);
+}
+/* Selected/active state for insight rows */
+.as-summary-insight.sub-filter-active {
+    background: rgba(88, 166, 255, 0.16);
+    border-left-color: var(--accent);
+}
+.as-summary-insight.sub-filter-active .as-insight-text {
+    color: var(--text-primary);
+}
+.as-insight-icon {
+    flex-shrink: 0;
+    font-size: 12px;
+    line-height: 1.2;
+}
+.as-insight-text {
+    flex: 1;
+}
+
+.as-grid-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    box-shadow: 0 0 3px rgba(0, 0, 0, 0.3);
+}
+/* Connection provider rows (3-row layout per provider) */
+.as-conn-prov-row,
+.as-conn-others-row {
+    cursor: pointer;
+    border-radius: 3px;
+    transition: background 0.15s ease;
+    font-weight: 600;
+}
+.as-conn-prov-row:hover,
+.as-conn-others-row:hover {
+    background: rgba(88, 166, 255, 0.06);
+}
+.as-conn-dir-row,
+.as-conn-out-row {
+    cursor: pointer;
+    border-radius: 3px;
+    transition: background 0.15s ease;
+    font-size: 10px;
+    color: var(--text-muted);
+}
+.as-conn-dir-row:hover,
+.as-conn-out-row:hover {
+    background: rgba(88, 166, 255, 0.06);
+}
+.as-conn-prov-row.sub-filter-active,
+.as-conn-others-row.sub-filter-active {
+    background: rgba(88, 166, 255, 0.16);
+}
+.as-conn-dir-row.sub-filter-active,
+.as-conn-out-row.sub-filter-active {
+    background: rgba(88, 166, 255, 0.16);
+    color: var(--text-primary);
+}
+
+/* Summary interactive rows (sections 3-7) — clickable with provider drill-down */
+.as-summary-row {
+    cursor: pointer;
+}
+.as-summary-row .as-detail-sub-val {
+    font-size: 9px;
+    letter-spacing: 0.3px;
+}
+
+/* ==========================================================
+   13. SUB-SUB-TOOLTIP — Third-level drill-down (stacks left)
+   ========================================================== */
+.as-sub-sub-tooltip {
+    z-index: 330;
+}
+
+/* Provider row in sub-tooltip (summary drill-down) */
+.as-provider-row {
+    cursor: pointer;
+    border-radius: 3px;
+    padding: 1px 4px;
+    transition: background 0.15s ease;
+}
+.as-provider-row:hover {
+    background: rgba(88, 166, 255, 0.12);
+}
+
+/* Light theme */
+body.theme-light .as-sub-tooltip {
+    border-color: rgba(88, 166, 255, 0.25);
+}
+body.theme-light .as-sub-sub-tooltip {
+    border-color: rgba(88, 166, 255, 0.25);
+}
+
+/* ==========================================================
+   14. FOCUSED MODE — donut moves to top-center, layout rearranges
+   ========================================================== */
+
+/* --- Donut container: moves from upper-right to top-center --- */
+body.donut-focused .as-distribution-container {
+    top: 52px;
+    right: auto;
+    left: 50%;
+    transform: translateX(-50%) scale(calc(0.88 * var(--as-donut-fit-scale)));
+    transform-origin: top center;
+    z-index: 101;
+    opacity: 1;
+    transition: top 0.45s cubic-bezier(0.4, 0, 0.2, 1),
+                right 0.45s cubic-bezier(0.4, 0, 0.2, 1),
+                left 0.45s cubic-bezier(0.4, 0, 0.2, 1),
+                transform 0.45s cubic-bezier(0.4, 0, 0.2, 1),
+                opacity 0.3s ease;
+}
+
+/* When panel is also open in focused mode, center between system info and panel */
+body.donut-focused.as-panel-open .as-distribution-container {
+    left: calc((180px + (100vw - 320px)) / 2);
+    right: auto;
+}
+
+/* Override the default panel-open push for focused mode */
+body.donut-focused.as-panel-open #worldmap {
+    right: 0;
+}
+body.donut-focused.as-panel-open .peer-panel {
+    right: 320px;
+}
+
+/* --- Title: stays visible in focused mode (matches private donut title) --- */
+body.donut-focused .as-donut-title {
+    opacity: 1;
+    max-height: 52px;
+    margin-bottom: -6px;
+    pointer-events: auto;
+    font-size: 19px;
+    letter-spacing: 2px;
+}
+body.donut-focused .as-title-subtitle {
+    font-size: 11px;
+    letter-spacing: 2.5px;
+}
+
+/* --- Legend: ALWAYS hidden in focused mode (lines come from donut center) --- */
+body.donut-focused .as-legend {
+    opacity: 0 !important;
+    pointer-events: none !important;
+    max-height: 0 !important;
+    transition: opacity 0.3s ease, max-height 0.3s ease;
+}
+body.donut-focused .as-distribution-container.as-legend-visible .as-legend {
+    opacity: 0 !important;
+    pointer-events: none !important;
+    max-height: 0 !important;
+}
+
+/* --- Donut center: larger clickable area in focused mode, cursor changes --- */
+body.donut-focused .as-donut-center {
+    cursor: default;
+}
+
+/* --- Focused mode donut center text adjustments for provider display --- */
+body.donut-focused .as-score-value.as-focused-provider {
+    font-family: var(--font-display);
+    font-size: 17px;
+    font-weight: 700;
+    line-height: 1.25;
+    white-space: pre-line;
+    word-break: break-word;
+}
+
+/* --- Others popup: floating rectangle to the right of the donut --- */
+.as-others-popup {
+    position: absolute;
+    top: 50%;
+    left: calc(100% + 10px);
+    transform: translateY(-50%);
+    width: 190px;
+    max-height: 240px;
+    background: rgba(13, 17, 23, 0.95);
+    border: 1px solid rgba(88, 166, 255, 0.18);
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), 0 0 1px rgba(88, 166, 255, 0.2);
+    display: flex;
+    flex-direction: column;
+    z-index: 90;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    overflow: hidden;
+    animation: as-others-popup-in 0.2s ease-out;
+}
+@keyframes as-others-popup-in {
+    from { opacity: 0; transform: translateY(-50%) translateX(-8px); }
+    to   { opacity: 1; transform: translateY(-50%) translateX(0); }
+}
+.as-others-popup-header {
+    padding: 8px 10px 6px;
+    font-size: 11px;
+    font-weight: 600;
+    color: rgba(230, 237, 243, 0.7);
+    letter-spacing: 0.3px;
+    border-bottom: 1px solid rgba(88, 166, 255, 0.1);
+    flex-shrink: 0;
+}
+.as-others-popup-list {
+    overflow-y: auto;
+    flex: 1;
+    padding: 4px 0;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(88, 166, 255, 0.4) rgba(88, 166, 255, 0.06);
+}
+.as-others-popup-list::-webkit-scrollbar {
+    width: 6px;
+}
+.as-others-popup-list::-webkit-scrollbar-thumb {
+    background: rgba(88, 166, 255, 0.4);
+    border-radius: 3px;
+}
+.as-others-popup-list::-webkit-scrollbar-track {
+    background: rgba(88, 166, 255, 0.06);
+    border-radius: 3px;
+}
+.as-others-popup-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 10px;
+    font-size: 11px;
+    color: rgba(230, 237, 243, 0.85);
+    cursor: pointer;
+    transition: background 0.12s ease;
+}
+.as-others-popup-item:hover {
+    background: rgba(88, 166, 255, 0.12);
+    color: #e6edf3;
+}
+.as-others-popup-item.as-others-popup-selected {
+    background: rgba(88, 166, 255, 0.18);
+    color: #e6edf3;
+    border-left: 2px solid #58a6ff;
+    padding-left: 8px;
+}
+.as-others-popup-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-right: 8px;
+}
+.as-others-popup-count {
+    flex-shrink: 0;
+    font-size: 10px;
+    color: rgba(88, 166, 255, 0.7);
+    font-weight: 600;
+}
+
+/* ==========================================================
+   16. PEER DETAIL POPUP — Floating popup for individual peer info
+   ========================================================== */
+.peer-detail-popup {
+    position: fixed;
+    top: 180px;
+    left: 210px;
+    transform: scale(0.95);
+    transform-origin: top left;
+    width: 310px;
+    max-height: min(420px, calc(100vh - 220px));
+    z-index: 1200;
+    background: rgba(13, 17, 23, 0.97);
+    border: 2px solid var(--accent, #58a6ff);
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 12px rgba(88, 166, 255, 0.15);
+    display: flex;
+    flex-direction: column;
+    opacity: 0;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    pointer-events: auto;
+    font-family: var(--font-data, 'JetBrains Mono', monospace);
+    cursor: grab;
+}
+.peer-detail-popup.visible {
+    opacity: 1;
+    transform: scale(1);
+}
+.peer-detail-popup.dragging {
+    cursor: grabbing;
+    user-select: none;
+}
+.peer-detail-popup.resizing {
+    user-select: none;
+}
+
+/* Network badge at top — integrates into the popup top border */
+.peer-popup-badge {
+    position: absolute;
+    top: -11px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(13, 17, 23, 0.97);
+    border: 2px solid var(--accent, #58a6ff);
+    border-radius: 10px;
+    padding: 2px 14px;
+    font-family: var(--font-display);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    white-space: nowrap;
+    z-index: 1;
+}
+
+/* Resize handle — bottom-right corner grip */
+.peer-popup-resize-handle {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 18px;
+    height: 18px;
+    cursor: nwse-resize;
+    z-index: 2;
+    border-bottom-right-radius: 10px;
+}
+.peer-popup-resize-handle::after {
+    content: '';
+    position: absolute;
+    bottom: 4px;
+    right: 4px;
+    width: 8px;
+    height: 8px;
+    border-right: 2px solid rgba(88, 166, 255, 0.25);
+    border-bottom: 2px solid rgba(88, 166, 255, 0.25);
+}
+.peer-detail-popup:hover .peer-popup-resize-handle::after {
+    border-color: rgba(88, 166, 255, 0.45);
+}
+
+/* When AS panel is open, keep popup offset from left */
+body.as-panel-open .peer-detail-popup {
+    left: 210px;
+}
+.peer-detail-popup.peer-popup-previewing .peer-popup-name {
+    font-style: italic;
+    opacity: 0.85;
+}
+
+/* --- Header --- */
+.peer-popup-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px 8px;
+    border-bottom: 1px solid rgba(88, 166, 255, 0.1);
+    flex-shrink: 0;
+}
+.peer-popup-circle {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    box-shadow: 0 0 8px currentColor;
+}
+.peer-popup-title {
+    flex: 1;
+    min-width: 0;
+}
+.peer-popup-back {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--text-secondary, #8b949e);
+    padding: 2px;
+    cursor: pointer;
+    font: inherit;
+    font-size: 14px;
+    line-height: 1;
+}
+.peer-popup-back:hover {
+    color: var(--text-primary, #c9d1d9);
+}
+.peer-popup-back:focus-visible,
+.peer-popup-close:focus-visible,
+.peer-popup-disconnect:focus-visible {
+    outline: 2px solid var(--accent, #58a6ff);
+    outline-offset: 2px;
+}
+.peer-popup-name {
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+}
+.peer-popup-addr {
+    font-size: 10px;
+    color: var(--text-secondary, #8b949e);
+    word-break: break-all;
+    margin-top: 1px;
+}
+.peer-popup-meta {
+    font-size: 9px;
+    color: var(--text-muted, #6e7681);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 2px;
+}
+
+/* --- Scrollable body --- */
+.peer-popup-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 6px 14px 8px;
+    min-height: 0;
+}
+.peer-popup-scroll::-webkit-scrollbar {
+    width: 6px;
+}
+.peer-popup-scroll::-webkit-scrollbar-track {
+    background: rgba(88, 166, 255, 0.05);
+    border-radius: 3px;
+}
+.peer-popup-scroll::-webkit-scrollbar-thumb {
+    background: rgba(88, 166, 255, 0.35);
+    border-radius: 3px;
+}
+.peer-popup-scroll::-webkit-scrollbar-thumb:hover {
+    background: rgba(88, 166, 255, 0.55);
+}
+.peer-popup-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(88, 166, 255, 0.35) rgba(88, 166, 255, 0.05);
+}
+
+/* --- Sections --- */
+.peer-popup-section {
+    margin-bottom: 6px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid rgba(88, 166, 255, 0.06);
+}
+.peer-popup-section:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+}
+.peer-popup-section-title {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--accent, #58a6ff);
+    margin-bottom: 3px;
+    opacity: 0.7;
+}
+
+/* Reuse as-detail-sub-row for key/value pairs */
+.peer-popup-section .as-detail-sub-row {
+    padding: 1px 0;
+}
+.peer-popup-section .as-detail-sub-label {
+    font-size: 10px;
+}
+.peer-popup-section .as-detail-sub-val {
+    font-size: 10px;
+}
+.peer-popup-section .as-detail-sub-row:has(.service-flag-list) {
+    display: block;
+}
+.peer-popup-section .as-detail-sub-row:has(.service-flag-list) .as-detail-sub-label {
+    display: block;
+    margin-bottom: 4px;
+}
+.service-flag-list {
+    display: grid;
+    gap: 3px;
+    width: 100%;
+}
+.service-flag-row {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr) minmax(92px, auto);
+    align-items: center;
+    gap: 6px;
+    padding: 3px 6px;
+    border: 1px solid rgba(88, 166, 255, 0.10);
+    border-radius: 4px;
+    background: rgba(88, 166, 255, 0.04);
+}
+.service-flag-abbr {
+    color: var(--accent, #58a6ff);
+    font-family: var(--font-data);
+    font-weight: 800;
+    font-size: 10px;
+}
+.service-flag-label {
+    color: var(--text-primary, #c9d1d9);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.service-flag-rpc {
+    color: var(--text-muted, #8b949e);
+    font-family: var(--font-data);
+    font-size: 9px;
+    text-align: right;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* --- Fixed footer with buttons --- */
+.peer-popup-footer {
+    display: flex;
+    gap: 8px;
+    padding: 8px 14px 10px;
+    border-top: 1px solid rgba(88, 166, 255, 0.1);
+    flex-shrink: 0;
+}
+.peer-popup-disconnect {
+    flex: 1;
+    background: rgba(248, 81, 73, 0.15);
+    border: 1px solid rgba(248, 81, 73, 0.4);
+    color: #f85149;
+    padding: 6px 0;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-family: var(--font-data, 'JetBrains Mono', monospace);
+    transition: background 0.2s, border-color 0.2s;
+}
+.peer-popup-disconnect:hover {
+    background: rgba(248, 81, 73, 0.3);
+    border-color: rgba(248, 81, 73, 0.7);
+}
+.peer-popup-disconnect.disconnected {
+    color: var(--ok, #3fb950);
+    border-color: rgba(63, 185, 80, 0.4);
+    background: rgba(63, 185, 80, 0.15);
+    cursor: default;
+}
+.peer-popup-close {
+    flex: 1;
+    background: rgba(88, 166, 255, 0.08);
+    border: 1px solid rgba(88, 166, 255, 0.2);
+    color: var(--text-secondary, #8b949e);
+    padding: 6px 0;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-family: var(--font-data, 'JetBrains Mono', monospace);
+    transition: background 0.2s, border-color 0.2s, color 0.2s;
+}
+.peer-popup-close:hover {
+    background: rgba(88, 166, 255, 0.15);
+    border-color: rgba(88, 166, 255, 0.4);
+    color: var(--text-primary, #c9d1d9);
+}
+
+/* ============================================================
+   PRIVATE NETWORKS VIEW — Rectangular donut + stats panel
+   ============================================================ */
+
+/* ==========================================================
+   PN-MINI. Mini private donut beneath the public AS donut
+   ========================================================== */
+.pn-mini-donut {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    margin-top: 8px;
+    cursor: pointer;
+    pointer-events: auto;
+    opacity: 0;
+    transform: scale(0.9);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+.pn-mini-donut.visible {
+    opacity: 0.88;
+    transform: scale(1);
+}
+.pn-mini-donut.hidden {
+    display: none;
+}
+.pn-mini-donut:hover {
+    opacity: 1;
+}
+.pn-mini-label {
+    font-family: var(--font-display, 'Cinzel', serif);
+    font-size: 16px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--logo-primary, #f0883e);
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+    text-align: center;
+    line-height: 1.1;
+    margin-bottom: -6px;
+}
+.pn-mini-subtitle {
+    display: block;
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: var(--logo-accent, #7ec8e3);
+    font-weight: 600;
+    margin-top: 1px;
+}
+.pn-mini-donut-ring {
+    position: relative;
+    width: 260px;
+    height: 260px;
+}
+.pn-mini-svg {
+    width: 260px;
+    height: 260px;
+}
+.pn-mini-center {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    pointer-events: none;
+    line-height: 1.2;
+}
+.pn-mini-center-label {
+    font-family: var(--font-display, 'Cinzel', serif);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--logo-primary, #f0883e);
+}
+.pn-mini-center-count {
+    font-family: var(--font-data, 'JetBrains Mono', monospace);
+    font-size: 42px;
+    font-weight: 800;
+    color: var(--text-primary, #c9d1d9);
+    line-height: 1;
+    margin: 2px 0;
+}
+.pn-mini-center-sub {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--text-muted, #8b949e);
+}
+/* Mini legend — network breakdown list shown on hover */
+.pn-mini-legend {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    width: 260px;
+    opacity: 0;
+    transform: translateY(-4px);
+    transition: opacity 0.25s ease, transform 0.25s ease;
+    pointer-events: none;
+}
+.pn-mini-donut:hover .pn-mini-legend {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+.pn-mini-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 3px 6px;
+    border-radius: 4px;
+    width: 100%;
+    box-sizing: border-box;
+    font-family: var(--font-data, 'JetBrains Mono', monospace);
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+.pn-mini-legend-item:hover {
+    background: rgba(240, 136, 62, 0.1);
+}
+.pn-mini-legend-item.dimmed {
+    opacity: 0.25;
+    transition: opacity 0.15s ease;
+}
+.pn-mini-legend-item.highlighted {
+    opacity: 1;
+    background: rgba(240, 136, 62, 0.08);
+}
+.pn-mini-legend-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.pn-mini-legend-name {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-secondary, #8b949e);
+    flex: 1;
+}
+.pn-mini-legend-count {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-primary, #c9d1d9);
+}
+/* Hide mini donut when in focused mode or private mode */
+body.donut-focused .pn-mini-donut,
+body.private-net-mode .pn-mini-donut {
+    opacity: 0 !important;
+    pointer-events: none !important;
+    max-height: 0;
+    margin: 0;
+    overflow: hidden;
+}
+
+/* ==========================================================
+   PN1. Container — positioned like the AS distribution container
+   ========================================================== */
+.pn-container {
+    position: fixed;
+    top: 52px;
+    right: 14px;
+    left: auto;
+    z-index: 90;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    pointer-events: none;
+    user-select: none;
+    opacity: 0;
+    transform: scale(0.955);
+    transform-origin: top right;
+    transition: opacity 0.5s ease, top 0.45s cubic-bezier(0.4, 0, 0.2, 1),
+                right 0.45s cubic-bezier(0.4, 0, 0.2, 1),
+                left 0.45s cubic-bezier(0.4, 0, 0.2, 1),
+                transform 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.pn-container.visible {
+    opacity: 1;
+}
+.pn-container.hidden {
+    display: none;
+}
+/* Focused state: segment selected or peer selected → move donut to top-center */
+.pn-container.pn-focused {
+    top: 52px;
+    right: auto;
+    left: 50%;
+    transform: translateX(-50%) scale(0.78);
+    transform-origin: top center;
+    z-index: 101;
+}
+/* When detail panel is open, push donut away from right edge */
+body.pn-panel-open .pn-container:not(.pn-focused) {
+    right: 334px;
+}
+/* Focused mode with panel open: center between left edge and panel */
+body.pn-panel-open .pn-container.pn-focused {
+    left: calc((100vw - 320px) / 2);
+}
+
+/* --- PN focused-mode title bump (matches AS focused pattern) --- */
+.pn-container.pn-focused .pn-title {
+    font-size: 19px;
+    letter-spacing: 2px;
+}
+.pn-container.pn-focused .pn-title-subtitle {
+    font-size: 11px;
+    letter-spacing: 2.5px;
+}
+/* --- PN focused-mode: compensate donut text for smaller scale --- */
+.pn-container.pn-focused .pn-center-label {
+    font-size: 14px;
+}
+.pn-container.pn-focused .pn-center-count {
+    font-size: 41px;
+}
+.pn-container.pn-focused .pn-center-sub {
+    font-size: 12px;
+}
+
+/* ==========================================================
+   PN2. Title — "Private Networks" above the circular donut
+   ========================================================== */
+.pn-title {
+    font-family: var(--font-display, 'Cinzel', serif);
+    font-size: 16px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    text-align: center;
+    color: var(--logo-primary, #f0883e);
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+    margin-bottom: -6px;
+    pointer-events: auto;
+    line-height: 1.1;
+}
+.pn-title-subtitle {
+    display: block;
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: var(--logo-accent, #7ec8e3);
+    font-weight: 600;
+    margin-top: 1px;
+}
+
+/* ==========================================================
+   PN3. Circular Donut — SVG arc segments (like AS distribution)
+   ========================================================== */
+.pn-donut-wrap {
+    position: relative;
+    width: 260px;
+    height: 260px;
+    flex-shrink: 0;
+    pointer-events: auto;
+    background: radial-gradient(circle at center, rgba(13, 17, 23, 0.95) 35%, rgba(13, 17, 23, 0.7) 60%, transparent 75%);
+    border-radius: 50%;
+}
+.pn-donut-svg {
+    width: 260px;
+    height: 260px;
+}
+.pn-donut-segment {
+    transition: opacity 0.2s ease;
+    cursor: pointer;
+}
+.pn-donut-segment:hover {
+    filter: brightness(1.2);
+}
+.pn-donut-segment.dimmed {
+    opacity: 0.3;
+}
+
+/* Center label inside the circular donut */
+.pn-donut-center {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    pointer-events: none;
+    line-height: 1.2;
+}
+.pn-center-label {
+    font-family: var(--font-display, 'Cinzel', serif);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    color: var(--logo-primary, #f0883e);
+    transition: color 0.2s ease;
+}
+.pn-center-count {
+    font-family: var(--font-data, 'JetBrains Mono', monospace);
+    font-size: 38px;
+    font-weight: 800;
+    color: var(--text-primary, #c9d1d9);
+    line-height: 1;
+    margin: 4px 0;
+    transition: color 0.2s ease;
+}
+.pn-center-sub {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: var(--text-muted, #8b949e);
+    transition: color 0.2s ease;
+}
+
+/* Exit button on donut — arrow style matching AS focused-close */
+.pn-exit-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    z-index: 100;
+    background: rgba(22, 27, 34, 0.85);
+    border: 1px solid rgba(240, 136, 62, 0.4);
+    color: var(--logo-primary, #f0883e);
+    font-size: 18px;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    cursor: pointer;
+    pointer-events: auto;
+    opacity: 0;
+    transition: opacity 0.2s ease, background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+    line-height: 26px;
+    text-align: center;
+    padding: 0;
+}
+.pn-container:has(:hover) .pn-exit-btn {
+    opacity: 1;
+}
+.pn-exit-btn:hover {
+    background: rgba(240, 136, 62, 0.15);
+    border-color: rgba(240, 136, 62, 0.7);
+    transform: scale(1.1);
+}
+
+/* ==========================================================
+   PN5. Detail Panel — slides in from right (like AS detail panel)
+   ========================================================== */
+.pn-detail-panel {
+    position: fixed;
+    top: 46px;
+    right: 0;
+    bottom: 0;
+    width: 320px;
+    z-index: 260;
+    background: var(--bg-surface, rgba(22, 27, 34, 0.97));
+    border-left: 1px solid rgba(240, 136, 62, 0.2);
+    box-shadow: -4px 0 24px rgba(0, 0, 0, 0.4);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transform: translateX(100%);
+    transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+.pn-detail-panel.visible {
+    transform: translateX(0);
+}
+.pn-detail-panel.hidden {
+    pointer-events: none;
+}
+
+/* Detail panel header */
+.pn-detail-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    border-bottom: 1px solid rgba(240, 136, 62, 0.15);
+    flex-shrink: 0;
+}
+.pn-detail-header-info {
+    flex: 1;
+    min-width: 0;
+}
+.pn-detail-net-name {
+    font-family: var(--font-display, 'Cinzel', serif);
+    font-size: 14px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-primary, #c9d1d9);
+}
+.pn-detail-meta {
+    font-size: 11px;
+    color: var(--text-muted, #8b949e);
+    font-family: var(--font-data, 'JetBrains Mono', monospace);
+    margin-top: 2px;
+}
+.pn-detail-back {
+    background: none;
+    border: 1px solid rgba(240, 136, 62, 0.3);
+    color: var(--text-muted, #8b949e);
+    font-size: 16px;
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+    line-height: 26px;
+    text-align: center;
+    padding: 0;
+    flex-shrink: 0;
+}
+.pn-detail-back:hover {
+    background: rgba(240, 136, 62, 0.15);
+    color: var(--text-primary, #c9d1d9);
+}
+.pn-detail-back.hidden { display: none; }
+.pn-detail-close {
+    background: none;
+    border: 1px solid rgba(240, 136, 62, 0.3);
+    color: var(--text-muted, #8b949e);
+    font-size: 18px;
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+    line-height: 26px;
+    text-align: center;
+    padding: 0;
+    flex-shrink: 0;
+}
+.pn-detail-close:hover {
+    background: rgba(240, 136, 62, 0.15);
+    color: var(--text-primary, #c9d1d9);
+}
+
+/* Detail panel body — scrollable */
+.pn-detail-body {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 12px 16px;
+}
+
+/* Section titles inside detail panel — reuse modal-section-title
+   but override color to match orange theme */
+.pn-detail-body .modal-section-title {
+    color: var(--logo-primary, #f0883e);
+    text-decoration-color: rgba(240, 136, 62, 0.3);
+}
+
+/* Interactive rows in the detail panel */
+.pn-interactive-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 2px 0 2px 8px;
+    gap: 8px;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: background 0.15s ease, border-left 0.15s ease;
+    border-left: 2px solid transparent;
+}
+.pn-interactive-row:hover {
+    background: rgba(240, 136, 62, 0.1);
+    border-left-color: var(--logo-primary, #f0883e);
+}
+.pn-interactive-row.pn-sub-filter-active {
+    background: rgba(240, 136, 62, 0.16);
+    border-left-color: var(--logo-primary, #f0883e);
+}
+
+/* Empty state inside panel */
+.pn-panel-empty {
+    text-align: center;
+    padding: 32px 16px;
+    color: var(--text-muted, #8b949e);
+    font-size: 12px;
+    font-family: var(--font-data, 'JetBrains Mono', monospace);
+}
+
+/* Insight rows — clickable stat highlights */
+.pn-insight-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+    font-family: var(--font-data, 'JetBrains Mono', monospace);
+    font-size: 11px;
+}
+.pn-insight-row:hover {
+    background: rgba(240, 136, 62, 0.12);
+}
+.pn-insight-icon {
+    font-size: 14px;
+    flex-shrink: 0;
+    width: 20px;
+    text-align: center;
+}
+.pn-insight-label {
+    color: var(--logo-primary, #f0883e);
+    font-weight: 700;
+    white-space: nowrap;
+    min-width: 90px;
+}
+.pn-insight-val {
+    color: var(--text-secondary, #8b949e);
+    flex: 1;
+    text-align: right;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ==========================================================
+   PN Insight Rectangle — replaces donut for Score & Insights
+   (mirrors .as-insight-rect — same gold #d4a017 accent)
+   ========================================================== */
+.pn-insight-rect {
+    position: absolute;
+    top: 22px;
+    left: 50%;
+    transform: translateX(-50%) scale(0.9);
+    width: 320px;
+    height: 210px;
+    z-index: 10;
+    pointer-events: auto;
+    opacity: 0;
+    transition: opacity 0.35s ease, transform 0.35s ease;
+    display: none;
+}
+.pn-insight-rect.visible {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+    display: block;
+}
+.pn-insight-rect-inner {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    border: 3px solid #d4a017;
+    border-radius: 10px;
+    background: rgba(22, 27, 34, 0.94);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    overflow: visible;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    box-shadow: 0 0 8px rgba(212, 160, 23, 0.25), inset 0 0 12px rgba(212, 160, 23, 0.06);
+}
+/* "Scores & Insights" badge at top — integrates into the rect top border */
+.pn-insight-rect-badge {
+    position: absolute;
+    top: -13px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(22, 27, 34, 0.95);
+    border: 2px solid #d4a017;
+    border-radius: 12px;
+    padding: 3px 16px;
+    font-family: var(--font-display);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: #d4a017;
+    white-space: nowrap;
+    z-index: 6;
+}
+/* Star decoration next to badge */
+.pn-insight-rect-badge::after {
+    content: '\2605';
+    margin-left: 4px;
+    font-size: 12px;
+    color: #d4a017;
+}
+/* Close/back button */
+.pn-insight-rect-close {
+    position: absolute;
+    top: -4px;
+    right: -28px;
+    z-index: 6;
+    background: rgba(22, 27, 34, 0.85);
+    border: 1px solid rgba(212, 160, 23, 0.4);
+    color: #d4a017;
+    font-size: 14px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    cursor: pointer;
+    pointer-events: auto;
+    transition: background 0.2s ease, border-color 0.2s ease;
+    line-height: 20px;
+    text-align: center;
+    padding: 0;
+}
+.pn-insight-rect-close:hover {
+    background: rgba(212, 160, 23, 0.15);
+    border-color: rgba(212, 160, 23, 0.7);
+}
+/* Content area */
+.pn-insight-rect-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    width: 100%;
+    flex: 1;
+    padding: 18px 14px 8px;
+    box-sizing: border-box;
+    text-align: center;
+    overflow-y: auto;
+    overflow-x: hidden;
+    min-height: 0;
+    border-radius: 0 0 7px 7px;
+}
+.pn-insight-rect-content::-webkit-scrollbar { width: 4px; }
+.pn-insight-rect-content::-webkit-scrollbar-track { background: transparent; }
+.pn-insight-rect-content::-webkit-scrollbar-thumb { background: rgba(212, 160, 23, 0.3); border-radius: 2px; }
+.pn-insight-rect-icon {
+    font-size: 22px;
+    margin-bottom: 2px;
+    margin-top: 6px;
+    line-height: 1;
+    z-index: 1;
+}
+.pn-insight-rect-title {
+    font-family: var(--font-display);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--text-primary, #e6edf3);
+    margin-bottom: 2px;
+}
+.pn-insight-rect-rank {
+    font-family: var(--font-data);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    margin-bottom: 2px;
+}
+.pn-insight-rect-network {
+    font-family: var(--font-display);
+    font-size: 18px;
+    font-weight: 800;
+    line-height: 1.2;
+    margin-bottom: 4px;
+    max-width: 280px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: default;
+}
+.pn-insight-rect-meta {
+    font-family: var(--font-data);
+    font-size: 14px;
+    color: var(--text-secondary, #8b949e);
+    line-height: 1.5;
+}
+.pn-insight-rect-stat {
+    font-family: var(--font-data);
+    font-size: 15px;
+    font-weight: 700;
+    margin-top: 4px;
+    line-height: 1.3;
+}
+/* Origin circle at bottom of insight rect — line origin point (network-colored via inline style) */
+.pn-insight-rect-origin {
+    position: absolute;
+    bottom: -12px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 3px solid #d4a017;
+    z-index: 5;
+    box-shadow: 0 0 8px rgba(212, 160, 23, 0.5), 0 0 16px rgba(212, 160, 23, 0.2);
+}
+/* When PN insight rect active, hide exit button */
+body.pn-insight-rect-active .pn-exit-btn {
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+/* Active insight row highlight in panel */
+.pn-insight-row.pn-insight-active {
+    background: rgba(212, 160, 23, 0.16);
+    border-left: 2px solid #d4a017;
+    padding-left: 6px;
+}
+/* Hover preview highlight */
+.pn-insight-row.pn-insight-hover {
+    background: rgba(212, 160, 23, 0.08);
+}
+
+/* Search bar inside detail panel */
+.pn-search-wrap {
+    margin-bottom: 10px;
+}
+.pn-search-input {
+    width: 100%;
+    padding: 6px 10px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(240, 136, 62, 0.25);
+    border-radius: 6px;
+    color: var(--text-primary, #c9d1d9);
+    font-family: var(--font-data, 'JetBrains Mono', monospace);
+    font-size: 11px;
+    outline: none;
+    transition: border-color 0.2s ease;
+    box-sizing: border-box;
+}
+.pn-search-input:focus {
+    border-color: var(--logo-primary, #f0883e);
+}
+.pn-search-input::placeholder {
+    color: var(--text-muted, #8b949e);
+}
+
+/* ==========================================================
+   PN5b. Push effect — when PN detail panel is open, shift content
+   ========================================================== */
+body.pn-panel-open .peer-panel {
+    right: 320px;
+}
+body.pn-panel-open .footer {
+    right: 320px;
+}
+body.pn-panel-open #worldmap {
+    right: 320px;
+}
+body.private-net-mode .pn-detail-panel {
+    z-index: 260;
+}
+body.private-net-mode .peer-panel {
+    z-index: 80;
+}
+
+/* ==========================================================
+   PN5c. Sub-tooltip — private net variant (orange accent)
+   ========================================================== */
+.pn-sub-tooltip {
+    border-color: rgba(240, 136, 62, 0.25) !important;
+}
+.pn-sub-tooltip .pn-sub-tt-title {
+    font-family: var(--font-data, 'JetBrains Mono', monospace);
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--logo-primary, #f0883e);
+    margin-bottom: 6px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid rgba(240, 136, 62, 0.15);
+}
+.pn-sub-tooltip .as-sub-tt-peer {
+    cursor: pointer;
+}
+.pn-sub-tooltip .as-sub-tt-peer:hover {
+    background: rgba(240, 136, 62, 0.1);
+}
+.pn-sub-tooltip .pn-sub-tt-id-link {
+    color: var(--logo-primary, #f0883e);
+    cursor: pointer;
+}
+.pn-sub-tooltip .pn-sub-tt-id-link:hover {
+    text-decoration: underline;
+}
+.pn-sub-sub-tooltip {
+    z-index: 330 !important;
+}
+
+/* ==========================================================
+   PN6. Body class for private network mode
+   ========================================================== */
+body.private-net-mode .as-distribution-container {
+    opacity: 0 !important;
+    pointer-events: none !important;
+    transition: opacity 0.3s ease;
+}
+body.private-net-mode .as-detail-panel {
+    display: none !important;
+}
+body.private-net-mode .peer-popup {
+    display: none !important;
+}
+
+@media (max-width: 720px) {
+    .as-distribution-container {
+        right: 8px;
+        transform: scale(calc(0.65 * var(--as-donut-fit-scale)));
+        transform-origin: top right;
+    }
+}
+
+/* ==========================================================
+   PN6b. Private peer big popup — full detail in private net mode
+   ========================================================== */
+body.private-net-mode .pn-big-popup {
+    display: flex !important;
+    opacity: 0;
+    left: 260px;
+    top: 172px;
+}
+body.private-net-mode .pn-big-popup.visible {
+    opacity: 1;
+}
+
+/* ==========================================================
+   PN7. Light theme overrides
+   ========================================================== */
+body.theme-light .pn-container { }
+body.theme-light .pn-detail-panel {
+    border-left-color: rgba(240, 136, 62, 0.25);
+}
+body.theme-light .pn-exit-btn {
+    background: rgba(255, 255, 255, 0.9);
+}
+body.theme-light .pn-detail-close {
+    background: rgba(255, 255, 255, 0.5);
+}
