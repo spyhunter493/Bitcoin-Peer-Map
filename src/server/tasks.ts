@@ -1,8 +1,8 @@
-import { setTimeout as delay } from 'node:timers/promises';
+import timers from 'node:timers/promises';
 import { errorMessage } from './types.ts';
 
 export async function sleep(milliseconds: number, signal?: AbortSignal) {
-    try { await delay(milliseconds, undefined, { signal }); }
+    try { await timers.setTimeout(milliseconds, undefined, { signal }); }
     catch (error) { if (!signal?.aborted) throw error; }
 }
 export async function repeat(task: () => Promise<unknown>, milliseconds: number, signal: AbortSignal) {

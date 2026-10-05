@@ -4,6 +4,7 @@ import net from 'net';
 import path from 'path';
 import { once } from 'events';
 import { spawn } from 'child_process';
+import test from 'node:test';
 import { chromium } from 'playwright';
 import assertPeerViews from './test_peer_views.js';
 import assertPeerLifecycle from './test_peer_lifecycle.js';
@@ -74,13 +75,12 @@ async function waitForServer(baseUrl, child) {
 }
 
 async function stopServer(child) {
-    if (!child || child.exitCode !== null) return;
-    child.kill('SIGTERM');
+    if (!child || child.exitCode !== null || child.signalCode !== null) return;
     const exited = once(child, 'exit');
-    const timedOut = delay(3000).then(() => {
-        if (child.exitCode === null) child.kill('SIGKILL');
-    });
-    await Promise.race([exited, timedOut]);
+    const deadline = setTimeout(() => child.kill('SIGKILL'), 3000).unref();
+    child.kill('SIGTERM');
+    try { await exited; }
+    finally { clearTimeout(deadline); }
 }
 
 async function waitForDashboardReady(page) {
@@ -789,32 +789,23 @@ async function assertDashboardLifecycle(browser, baseUrl) {
     }
 }
 
-(async () => {
-    const externalBaseUrl = process.env.BPM_LAYOUT_TEST_BASE_URL;
-    const port = externalBaseUrl ? null : await freePort();
-    const baseUrl = externalBaseUrl || `http://127.0.0.1:${port}`;
-    const server = externalBaseUrl ? null : startServer(port);
-    let browser;
-
+async function assertDashboardInteractions(browser, baseUrl) {
+    const context = await browser.newContext({
+        viewport: { width: 1638, height: 728 },
+        deviceScaleFactor: 1.25,
+    });
+    await context.addInitScript(() => {
+        localStorage.setItem('bpm.antarcticaDisclaimerSeen', 'true');
+        const original = window.setInterval.bind(window);
+        window.setInterval = (handler, interval, ...args) => {
+            if (interval === 10000) {
+                window.testPeerPoll = handler;
+                return original(handler, 3600000, ...args);
+            }
+            return original(handler, interval, ...args);
+        };
+    });
     try {
-        await waitForServer(baseUrl, server);
-
-        browser = await chromium.launch();
-        const context = await browser.newContext({
-            viewport: { width: 1638, height: 728 },
-            deviceScaleFactor: 1.25,
-        });
-        await context.addInitScript(() => {
-            localStorage.setItem('bpm.antarcticaDisclaimerSeen', 'true');
-            const original = window.setInterval.bind(window);
-            window.setInterval = (handler, interval, ...args) => {
-                if (interval === 10000) {
-                    window.testPeerPoll = handler;
-                    return original(handler, 3600000, ...args);
-                }
-                return original(handler, interval, ...args);
-            };
-        });
         const page = await context.newPage();
         const pageErrors = [];
         page.on('pageerror', error => pageErrors.push(error.stack || error.message));
@@ -860,26 +851,45 @@ async function assertDashboardLifecycle(browser, baseUrl) {
         await waitForDashboardReady(page);
         await assertTablePreferencesRestored(page);
         assert.deepStrictEqual(pageErrors, []);
-
-        await context.close();
-        await assertPeerControlsResponsive(browser, baseUrl);
-        await assertPeerRefreshReliability(browser, baseUrl);
-        await assertPeerViews(browser, baseUrl);
-        await assertPeerLifecycle(browser, baseUrl);
-        await assertPriceDelivery(browser, baseUrl);
-        await assertTableDom(browser, baseUrl);
-        await assertDashboardLifecycle(browser, baseUrl);
-        await assertGeoIPSettings(browser, baseUrl);
-        await assertNodeServices(browser, baseUrl);
-        await assertSystemHud(browser, baseUrl);
-        await assertModules(browser);
-        await assertMapGroups(browser, baseUrl);
-        console.log('Browser layout regression tests passed');
     } finally {
-        if (browser) await browser.close();
-        await stopServer(server);
+        await context.close();
     }
-})().catch(error => {
-    console.error(error);
-    process.exit(1);
+}
+
+const workers = Number(process.env.BPM_LAYOUT_TEST_WORKERS ?? 2);
+if (!Number.isInteger(workers) || workers < 1 || workers > 8) {
+    throw new Error('BPM_LAYOUT_TEST_WORKERS must be an integer between 1 and 8');
+}
+
+const suites = [
+    ['dashboard interactions and layout', assertDashboardInteractions],
+    ['responsive peer controls', assertPeerControlsResponsive],
+    ['peer refresh reliability', assertPeerRefreshReliability],
+    ['peer views and safe rendering', assertPeerViews],
+    ['peer lifecycle', assertPeerLifecycle],
+    ['independent price delivery', assertPriceDelivery],
+    ['peer table DOM updates', assertTableDom],
+    ['dashboard polling and reduced motion', assertDashboardLifecycle],
+    ['GeoIP settings', assertGeoIPSettings],
+    ['node services', assertNodeServices],
+    ['system HUD', assertSystemHud],
+    ['revisioned modules', assertModules],
+    ['map groups', assertMapGroups],
+];
+
+await test('browser layout regressions', { concurrency: workers }, async t => {
+    const externalBaseUrl = process.env.BPM_LAYOUT_TEST_BASE_URL;
+    const port = externalBaseUrl ? null : await freePort();
+    const baseUrl = externalBaseUrl || `http://127.0.0.1:${port}`;
+    const server = externalBaseUrl ? null : startServer(port);
+    let browser;
+    t.after(async () => {
+        try { if (browser) await browser.close(); }
+        finally { await stopServer(server); }
+    });
+
+    await waitForServer(baseUrl, server);
+    browser = await chromium.launch();
+    // Each suite owns its browser context; interactions on a shared page remain serial.
+    await Promise.all(suites.map(([name, run]) => t.test(name, { timeout: 120000 }, () => run(browser, baseUrl))));
 });

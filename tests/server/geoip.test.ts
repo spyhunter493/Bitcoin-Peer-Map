@@ -22,7 +22,8 @@ function dataset(path: string, rows: Data[], columns: readonly string[] = GEO_CO
 }
 test('geolocation validation rejects missing, infinite, and out-of-range coordinates', () => {
     assert.equal(isValidGeoData({ lat: -36.85, lon: 174.76, country: 'NZ' }), true);
-    for (const value of [null, {}, { lat: 91, lon: 10, country: 'NZ' }, { lat: 0, lon: Infinity, country: 'NZ' }, { lat: 0, lon: 0, country: '' }]) assert.equal(isValidGeoData(value), false);
+    for (const value of [null, {}, { lat: 91, lon: 10, country: 'NZ' }, { lat: 0, lon: Infinity, country: 'NZ' }, { lat: 0, lon: 0, country: '' },
+        { lat: [], lon: 0, country: 'NZ' }, { lat: 0, lon: false, country: 'NZ' }, { lat: 0, lon: 0, country: {} }]) assert.equal(isValidGeoData(value), false);
 });
 for (const [local, remote, update] of [[100, 200, true], [200, 100, false], [200, 200, false], [null, 200, true], [200, null, false], [null, null, false]] as const) {
     test(`worker merges only newer records (${local} -> ${remote}) and invalidates statistics`, async t => {

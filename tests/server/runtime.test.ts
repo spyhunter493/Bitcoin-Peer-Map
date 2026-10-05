@@ -15,6 +15,7 @@ function runtime(t: TestContext, overrides: Record<string, string> = {}) {
     const app = new AppRuntime(settings({ BPM_DATA_DIR: temporaryDirectory(t), ...overrides }));
     t.mock.method(app.peers, 'start', async () => {});
     t.mock.method(app.metrics, 'start', () => {});
+    t.mock.method(app.connectivity, 'ensureChecker', () => {});
     t.after(() => app.stop()); return app;
 }
 test('scheduler retries hourly after completion, without a browser, including failed attempts', async t => {
@@ -51,6 +52,7 @@ for (const enabled of ['true', 'false']) {
         const restored = new AppRuntime(config); t.after(() => restored.stop());
         assert.equal(restored.connectivity.snapshot().geo_db_only_mode, true);
         t.mock.method(restored.metrics, 'start', () => {});
+        t.mock.method(restored.connectivity, 'ensureChecker', () => {});
         t.mock.method(restored.rpc, 'call', async () => [{ id: 1, addr: '8.8.8.8:8333', network: 'ipv4' }]);
         t.mock.method(restored.peers, 'fetchGeo', () => assert.fail('Privacy leak'));
         t.mock.method(restored.peers, 'start', async () => {
@@ -123,10 +125,13 @@ test('system metrics return finite samples and stop their worker', async () => {
     const metrics = new SystemMetrics();
     await metrics.sample(); await metrics.sample();
     const value = metrics.latest()!;
+    assert.ok(typeof value.rx_bps === 'number' && typeof value.tx_bps === 'number');
     assert.ok(Number.isFinite(value.ts)); assert.ok(value.rx_bps >= 0); assert.ok(value.tx_bps >= 0);
     if (process.platform === 'linux') {
+        assert.ok(typeof value.mem_pct === 'number');
         assert.ok(value.mem_pct >= 0 && value.mem_pct <= 100);
-        assert.ok((await metrics.summary()).disk_total_gb > 0);
+        const summary = await metrics.summary();
+        assert.ok(typeof summary.disk_total_gb === 'number' && summary.disk_total_gb > 0);
     }
     value.ts = -1; assert.notEqual(metrics.latest()!.ts, -1);
     metrics.start(); await metrics.stop();

@@ -2,6 +2,7 @@ import http from 'node:http';
 import https from 'node:https';
 import type { Settings } from './settings.ts';
 import { object, errorMessage } from './types.ts';
+import { parseNetworkInfo } from './rpc-types.ts';
 
 export class RpcError extends Error {}
 export class RpcTransportError extends RpcError {}
@@ -15,7 +16,7 @@ export class BitcoinRpcClient {
     get connectionInfo() {
         return { scheme: this.settings.rpc_scheme, host: this.settings.rpc_host, port: this.settings.rpc_port, network: this.settings.bitcoin_network };
     }
-    async call(method: string, params: unknown[] = [], timeoutSeconds = this.settings.rpc_timeout): Promise<any> {
+    async call(method: string, params: unknown[] = [], timeoutSeconds = this.settings.rpc_timeout): Promise<unknown> {
         const payload = JSON.stringify({ jsonrpc: '1.0', id: ++this.id, method, params });
         const transport = this.settings.rpc_scheme === 'https' ? https : http;
         const signal = AbortSignal.any([AbortSignal.timeout(Math.ceil(timeoutSeconds * 1000)), ...(this.signal ? [this.signal] : [])]);
@@ -48,7 +49,6 @@ export class BitcoinRpcClient {
     }
     async checkConnection(timeoutSeconds = this.settings.rpc_timeout) {
         const result = await this.call('getnetworkinfo', [], timeoutSeconds);
-        if (!object(result)) throw new RpcError('getnetworkinfo returned an unexpected response');
-        return result;
+        return parseNetworkInfo(result);
     }
 }

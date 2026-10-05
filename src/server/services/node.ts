@@ -1,8 +1,10 @@
-import { formatBytes, normalizePeerAddress, splitPeerAddress } from '../network.ts';
+import { formatBytes, normalizePeerAddress, splitPeerAddress, networkType } from '../network.ts';
 import { type Data, type Rpc, object, errorMessage, nowSeconds, round } from '../types.ts';
 import { CachedRequest, Lru } from '../tasks.ts';
 import type { ConnectivityService } from './connectivity.ts';
 import type { GeoDatabase } from './geoip.ts';
+import { parsePeerInfo, parseNetworkInfo, parseBlockchainInfo, parseBlockHeader, parseBlock, parseNetTotals, parseMempoolInfo, parseChainTips, type NetworkInfo, type BlockchainInfo, type BlockHeader } from '../rpc-types.ts';
+import type { DashboardDetails, DashboardInfo, RecentBlock, RecentBlocks, ChainTip, ChainTips, NetworkSummary, NetworkScores } from '../api-types.ts';
 
 export const CHAIN_TIP_HEADER_LIMIT = 100;
 export class NodeService {
@@ -10,29 +12,28 @@ export class NodeService {
     readonly connectivity: Pick<ConnectivityService, 'priceInfo' | 'fetchPrice' | 'snapshot'>;
     readonly geoDatabase: Pick<GeoDatabase, 'stats' | 'enabled'>;
     readonly autoUpdateEnabled: () => boolean;
-    private dashboardCache = new CachedRequest<Data>(5000);
-    private headers = new Lru<Data>(256);
-    private blocks = new Lru<Data>(256);
-    private pendingHeaders = new Map<string, Promise<Data>>();
-    private pendingBlocks = new Map<string, Promise<Data>>();
+    private dashboardCache = new CachedRequest<DashboardDetails>(5000);
+    private headers = new Lru<BlockHeader>(256);
+    private blocks = new Lru<RecentBlock & { previous_hash: string }>(256);
+    private pendingHeaders = new Map<string, Promise<BlockHeader>>();
+    private pendingBlocks = new Map<string, Promise<RecentBlock & { previous_hash: string }>>();
     constructor(rpc: Rpc, connectivity: NodeService['connectivity'], geoDatabase: NodeService['geoDatabase'], autoUpdateEnabled: () => boolean) {
         this.rpc = rpc; this.connectivity = connectivity; this.geoDatabase = geoDatabase; this.autoUpdateEnabled = autoUpdateEnabled;
     }
     price(currency = 'USD') { return this.connectivity.priceInfo(currency); }
-    async dashboardInfo(currency = 'USD', includePrice = true): Promise<Data> {
-        const result = structuredClone(await this.dashboardCache.get(() => this.refreshDashboard()));
-        if (includePrice) Object.assign(result, await this.price(currency));
+    async dashboardInfo(currency = 'USD', includePrice = true): Promise<DashboardInfo> {
+        const cached = structuredClone(await this.dashboardCache.get(() => this.refreshDashboard()));
+        const price = includePrice ? await this.price(currency) : {};
         const connectivity = this.connectivity.snapshot();
-        for (const key of ['internet_state', 'api_available', 'geo_db_only_mode']) result[key] = connectivity[key];
         const stats = this.geoDatabase.stats();
         if (stats.entries) {
             const now = nowSeconds();
-            stats.oldest_age_days = stats.oldest_updated ? Math.trunc((now - stats.oldest_updated) / 86400) : null;
-            stats.newest_age_days = stats.last_updated ? Math.trunc((now - stats.last_updated) / 86400) : null;
-            stats.newest_age_seconds = stats.last_updated ? Math.trunc(now - stats.last_updated) : null;
+            stats.oldest_age_days = typeof stats.oldest_updated === 'number' && stats.oldest_updated ? Math.trunc((now - stats.oldest_updated) / 86400) : null;
+            stats.newest_age_days = typeof stats.last_updated === 'number' && stats.last_updated ? Math.trunc((now - stats.last_updated) / 86400) : null;
+            stats.newest_age_seconds = typeof stats.last_updated === 'number' && stats.last_updated ? Math.trunc(now - stats.last_updated) : null;
         }
-        result.geo_db_stats = { ...stats, auto_lookup: this.geoDatabase.enabled, auto_update: this.autoUpdateEnabled(), db_only_mode: connectivity.geo_db_only_mode };
-        return result;
+        return { ...cached, ...price, internet_state: connectivity.internet_state, api_available: connectivity.api_available, geo_db_only_mode: connectivity.geo_db_only_mode,
+            geo_db_stats: { ...stats, auto_lookup: this.geoDatabase.enabled, auto_update: this.autoUpdateEnabled(), db_only_mode: connectivity.geo_db_only_mode } };
     }
     private async header(hash: string) {
         const cached = this.headers.get(hash);
@@ -40,14 +41,13 @@ export class NodeService {
         let pending = this.pendingHeaders.get(hash);
         if (!pending) {
             pending = this.rpc.call('getblockheader', [hash], 10).then(value => {
-                if (!object(value)) throw new Error('getblockheader returned an unexpected response');
-                return this.headers.set(hash, value);
+                return this.headers.set(hash, parseBlockHeader(value));
             }).finally(() => this.pendingHeaders.delete(hash));
             this.pendingHeaders.set(hash, pending);
         }
         return pending;
     }
-    private async refreshDashboard(): Promise<Data> {
+    private async refreshDashboard(): Promise<DashboardDetails> {
         const [blockchain, network, traffic, mempoolSize] = await Promise.all([
             this.blockchainDetails(),
             this.networkDetails(),
@@ -56,49 +56,45 @@ export class NodeService {
         ]);
         return { ...blockchain, ...network, node_traffic: traffic, mempool_size: mempoolSize };
     }
-    private async blockchainDetails(): Promise<Data> {
-        const result: Data = { blockchain: null, last_block: null };
-        let blockchain: Data | null = null;
+    private async blockchainDetails(): Promise<Pick<DashboardDetails, 'blockchain' | 'last_block'>> {
+        const result: Pick<DashboardDetails, 'blockchain' | 'last_block'> = { blockchain: null, last_block: null };
+        let blockchain: BlockchainInfo | null = null;
         try {
-            const value = await this.rpc.call('getblockchaininfo', [], 10);
-            if (!object(value)) throw new Error('getblockchaininfo returned an unexpected response');
-            blockchain = value;
+            blockchain = parseBlockchainInfo(await this.rpc.call('getblockchaininfo', [], 10));
             let indexed = false;
-            try { indexed = 'txindex' in await this.rpc.call('getindexinfo', [], 10); } catch { /* Optional RPC. */ }
+            try { const indexes = await this.rpc.call('getindexinfo', [], 10); indexed = object(indexes) && 'txindex' in indexes; } catch { /* Optional RPC. */ }
             result.blockchain = { size_gb: round((blockchain.size_on_disk || 0) / 1e9, 1), pruned: blockchain.pruned ?? false, indexed, ibd: blockchain.initialblockdownload ?? false };
         } catch (error) { console.warn(`Could not load blockchain details: ${errorMessage(error)}`); }
         try {
             const hash = blockchain?.bestblockhash || await this.rpc.call('getbestblockhash', [], 10);
+            if (typeof hash !== 'string' || !hash) throw new Error('getbestblockhash returned an unexpected response');
             const header = await this.header(hash);
             result.last_block = { height: blockchain?.blocks ?? header.height ?? 0, time: header.time ?? 0 };
         } catch (error) { console.warn(`Could not load last block: ${errorMessage(error)}`); }
         return result;
     }
-    private async networkDetails(): Promise<Data> {
-        const result: Data = { subversion: null, connected: null, services: null, network_details: null, network_scores: null };
+    private async networkDetails(): Promise<Pick<DashboardDetails, 'subversion' | 'connected' | 'services' | 'network_details' | 'network_scores'>> {
+        const result: Pick<DashboardDetails, 'subversion' | 'connected' | 'services' | 'network_details' | 'network_scores'> = { subversion: null, connected: null, services: null, network_details: null, network_scores: null };
         try {
-            const network = await this.rpc.call('getnetworkinfo', [], 10);
-            if (!object(network)) throw new Error('getnetworkinfo returned an unexpected response');
-            result.subversion = network.subversion ?? '';
-            result.connected = network.connections ?? 0;
-            if (Array.isArray(network.localservicesnames) && network.localservicesnames.every((name: unknown) => typeof name === 'string' && name.trim().length > 0)) {
-                result.services = network.localservicesnames;
-            }
+            const network = parseNetworkInfo(await this.rpc.call('getnetworkinfo', [], 10));
+            result.subversion = network.subversion;
+            result.connected = network.connections;
+            result.services = network.localservicesnames;
             result.network_details = networkSummary(network);
-            const scores: Data = { ipv4: null, ipv6: null };
-            for (const address of network.localaddresses || []) {
+            const scores: NetworkScores = { ipv4: null, ipv6: null };
+            for (const address of network.localaddresses ?? []) {
                 const host: string = address.address || '';
                 if (host.endsWith('.onion') || host.endsWith('.i2p') || /^f[cd]/.test(host)) continue;
                 const family = host.includes(':') ? 'ipv6' : 'ipv4', score = address.score ?? 0;
                 if (scores[family] === null || score > scores[family]) scores[family] = score;
             }
-            result.network_scores = scores;
+            result.network_scores = network.localaddresses === null ? null : scores;
         } catch (error) { console.warn(`Could not load network details: ${errorMessage(error)}`); }
         return result;
     }
-    private async nodeTrafficTotals(): Promise<Data | null> {
+    private async nodeTrafficTotals(): Promise<DashboardDetails['node_traffic']> {
         try {
-            const totals = await this.rpc.call('getnettotals', [], 10);
+            const totals = parseNetTotals(await this.rpc.call('getnettotals', [], 10));
             const downloaded = Math.max(0, Math.trunc(totals.totalbytesrecv || 0));
             const uploaded = Math.max(0, Math.trunc(totals.totalbytessent || 0));
             return {
@@ -114,7 +110,7 @@ export class NodeService {
     }
     private async mempoolSize(): Promise<number | null> {
         try {
-            return (await this.rpc.call('getmempoolinfo', [], 10)).size ?? 0;
+            return parseMempoolInfo(await this.rpc.call('getmempoolinfo', [], 10)).size ?? 0;
         } catch (error) {
             console.warn(`Could not load mempool details: ${errorMessage(error)}`);
             return null;
@@ -122,21 +118,21 @@ export class NodeService {
     }
     async mempool(currency = 'USD'): Promise<Data> {
         const result: Data = { mempool: null, btc_price: null, error: null };
-        try { result.mempool = await this.rpc.call('getmempoolinfo'); } catch (error) { result.error = errorMessage(error); }
+        try { result.mempool = parseMempoolInfo(await this.rpc.call('getmempoolinfo')); } catch (error) { result.error = errorMessage(error); }
         result.btc_price = await this.connectivity.fetchPrice(currency.toUpperCase());
         return result;
     }
     async blockchain(): Promise<Data> {
-        try { return { blockchain: await this.rpc.call('getblockchaininfo'), error: null }; }
+        try { return { blockchain: parseBlockchainInfo(await this.rpc.call('getblockchaininfo')), error: null }; }
         catch (error) { return { blockchain: null, error: errorMessage(error) }; }
     }
-    private async recentBlock(hash: string, expectedHeight: number): Promise<Data> {
+    private async recentBlock(hash: string, expectedHeight: number): Promise<RecentBlock & { previous_hash: string }> {
         const cached = this.blocks.get(hash);
         if (cached) return cached;
         let pending = this.pendingBlocks.get(hash);
         if (!pending) {
-            pending = this.rpc.call('getblock', [hash, 1], 10).then(block => {
-                if (!object(block)) throw new Error('getblock returned an unexpected response');
+            pending = this.rpc.call('getblock', [hash, 1], 10).then(value => {
+                const block = parseBlock(value);
                 const height = Number(block.height ?? expectedHeight);
                 if (height !== expectedHeight) throw new Error(`getblock returned height ${height} while traversing height ${expectedHeight}`);
                 const size = Number(block.size || 0);
@@ -146,15 +142,14 @@ export class NodeService {
         }
         return pending;
     }
-    async recentBlocks(limit = 25): Promise<Data> {
+    async recentBlocks(limit = 25): Promise<RecentBlocks> {
         limit = Number.isFinite(limit) ? Math.max(1, Math.min(Math.trunc(limit), 100)) : 25;
         try {
-            const blockchain = await this.rpc.call('getblockchaininfo', [], 10);
-            if (!object(blockchain)) throw new Error('getblockchaininfo returned an unexpected response');
+            const blockchain = parseBlockchainInfo(await this.rpc.call('getblockchaininfo', [], 10));
             const height = Number(blockchain.blocks || 0);
             let hash = blockchain.bestblockhash;
             if (typeof hash !== 'string' || !hash) throw new Error('getblockchaininfo did not return bestblockhash');
-            const cached: Data[] = [];
+            const cached: (RecentBlock & { previous_hash: string })[] = [];
             for (let offset = 0; offset < Math.min(limit, height + 1); offset++) {
                 const block = await this.recentBlock(hash, height - offset);
                 cached.push(block);
@@ -164,20 +159,19 @@ export class NodeService {
                 }
             }
             const generatedAt = Math.floor(nowSeconds());
-            const blocks: Data[] = cached.map(({ previous_hash, ...block }) => ({ ...block, age_seconds: block.time ? Math.max(0, generatedAt - block.time) : null }));
+            const blocks: RecentBlock[] = cached.map(({ previous_hash, ...block }) => ({ ...block, age_seconds: block.time ? Math.max(0, generatedAt - block.time) : null }));
             const count = blocks.length;
             const totalSize = blocks.reduce((sum, block) => sum + block.size, 0), transactions = blocks.reduce((sum, block) => sum + block.tx_count, 0);
             return { success: true, blocks, error: null, summary: { chain: blockchain.chain ?? null, tip_height: height, count, latest_time: blocks[0]?.time ?? null, total_size: totalSize, avg_size_mb: count ? round(totalSize / count / 1e6, 3) : 0, total_transactions: transactions, avg_transactions: count ? round(transactions / count, 1) : 0, generated_at: generatedAt } };
         } catch (error) { return { success: false, summary: null, blocks: [], error: errorMessage(error) }; }
     }
-    async chainTips(): Promise<Data> {
+    async chainTips(): Promise<ChainTips> {
         try {
-            const tips = await this.rpc.call('getchaintips', [], 10);
-            if (!Array.isArray(tips)) throw new Error('getchaintips returned an unexpected response');
-            let blockchain: Data = {};
-            try { const value = await this.rpc.call('getblockchaininfo', [], 10); if (object(value)) blockchain = value; } catch { /* Tip data remains usable. */ }
+            const tips = parseChainTips(await this.rpc.call('getchaintips', [], 10));
+            let blockchain: BlockchainInfo | null = null;
+            try { blockchain = parseBlockchainInfo(await this.rpc.call('getblockchaininfo', [], 10)); } catch { /* Tip data remains usable. */ }
             const counts: Record<string, number> = {};
-            const normalized: Data[] = tips.filter(object).map(tip => {
+            const normalized: ChainTip[] = tips.map(tip => {
                 const status = String(tip.status || 'unknown').toLowerCase(); counts[status] = (counts[status] || 0) + 1;
                 return { height: Number(tip.height || 0), hash: String(tip.hash || ''), branch_length: Number(tip.branchlen || 0), status, status_label: status.replaceAll('-', ' ').replace(/\b\w/g, value => value.toUpperCase()), time: null, age_seconds: null, is_active: status === 'active' };
             });
@@ -193,8 +187,8 @@ export class NodeService {
             const nonActive = normalized.filter(tip => !tip.is_active);
             const latest = [...nonActive].sort((a, b) => b.height - a.height)[0];
             return { success: true, tips: normalized, error: null, summary: {
-                chain: blockchain.chain ?? null, best_height: blockchain.blocks ?? active?.height ?? null,
-                best_hash: blockchain.bestblockhash || active?.hash || null, total: normalized.length,
+                chain: blockchain?.chain ?? null, best_height: blockchain?.blocks ?? active?.height ?? null,
+                best_hash: blockchain?.bestblockhash || active?.hash || null, total: normalized.length,
                 active_count: counts.active || 0, non_active_count: nonActive.length,
                 fork_count: counts['valid-fork'] || 0, headers_only_count: counts['headers-only'] || 0,
                 latest_non_active_height: latest?.height ?? null, latest_non_active_status: latest?.status ?? null,
@@ -215,10 +209,10 @@ export class NodeService {
     async ban(id: number | null): Promise<Data> {
         if (id === null) return { success: false, error: 'peer_id is required' };
         try {
-            const peers = await this.rpc.call('getpeerinfo');
-            const peer = peers.find((peer: Data) => peer.id === id);
+            const peers = parsePeerInfo(await this.rpc.call('getpeerinfo'));
+            const peer = peers.find(peer => peer.id === id);
             if (!peer) return { success: false, error: `Peer ID ${id} not found` };
-            const network = peer.network ?? 'ipv4';
+            const network = peer.network ?? networkType(peer.addr);
             if (!['ipv4', 'ipv6'].includes(network)) return { success: false, error: `Cannot ban ${network.toUpperCase()} peers; only IPv4 and IPv6 addresses can be banned` };
             const [host] = splitPeerAddress(peer.addr || '');
             await this.rpc.call('setban', [host, 'add', 86400]);
@@ -240,18 +234,20 @@ export class NodeService {
     }
 }
 
-export function networkSummary(network: Data): Data {
-    const details: Data = Object.fromEntries(['ipv4', 'ipv6', 'onion', 'i2p', 'cjdns'].map(key => [key, { reachable: false, limited: true, proxy: '', localaddresses: [] }]));
-    for (const item of network.networks || []) {
+export function networkSummary(network: Pick<NetworkInfo, 'networks' | 'localaddresses'>): NetworkSummary | null {
+    if (network.networks === null || network.localaddresses === null) return null;
+    const details: NetworkSummary = { ipv4: emptyNetwork(), ipv6: emptyNetwork(), onion: emptyNetwork(), i2p: emptyNetwork(), cjdns: emptyNetwork() };
+    for (const item of network.networks) {
         const key = String(item.name || '').toLowerCase();
-        if (details[key]) Object.assign(details[key], { reachable: Boolean(item.reachable), limited: item.limited ?? true, proxy: String(item.proxy || '') });
+        if (Object.hasOwn(details, key)) Object.assign(details[key as keyof NetworkSummary], { reachable: item.reachable ?? false, limited: item.limited ?? true, proxy: item.proxy ?? '' });
     }
-    for (const item of network.localaddresses || []) {
+    for (const item of network.localaddresses) {
         const address = String(item.address || '').trim(), lower = address.toLowerCase();
         if (!address) continue;
         const key = lower.endsWith('.onion') ? 'onion' : lower.endsWith('.i2p') ? 'i2p' : /^f[cd].*:/.test(lower) ? 'cjdns' : address.includes(':') ? 'ipv6' : 'ipv4';
         details[key].localaddresses.push({ address, port: item.port ?? null, score: item.score ?? 0 });
     }
-    for (const detail of Object.values(details)) detail.localaddresses.sort((a: Data, b: Data) => (b.score || 0) - (a.score || 0));
+    for (const detail of Object.values(details)) detail.localaddresses.sort((a, b) => b.score - a.score);
     return details;
 }
+const emptyNetwork = (): NetworkSummary['ipv4'] => ({ reachable: false, limited: true, proxy: '', localaddresses: [] });

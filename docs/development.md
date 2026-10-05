@@ -62,17 +62,24 @@ Choose checks that match the change:
 | `npm run test:container` | Production image smoke test |
 | `npm run test:compose` | Published/local Compose merges, secrets, host binding, volume names, and build helper behavior |
 
-Before running browser tests, install Chromium:
+Before running browser tests, install Chromium's headless shell:
 
 ```bash
-npx playwright install --with-deps chromium
+npx playwright install --with-deps --only-shell chromium
 ```
 
-CI runs syntax checks, type checks, backend tests, frontend unit tests, browser
-regressions, Compose checks, and container validation. Tests use local fixtures
-and mock RPC servers, without a live Bitcoin node or external GeoIP/price services.
-`test:layout` starts its fixture server automatically. The Docker variant also
-requires Docker and curl on the host.
+CI runs syntax checks, type checks, backend tests, and frontend unit tests before
+installing the browser. It then runs browser regressions, Compose checks, and
+container validation. The Ubuntu VM runner supports both Chromium and Docker.
+Tests use local fixtures and mock RPC servers, without a live Bitcoin node or
+external GeoIP/price services.
+
+`test:layout` starts its fixture server automatically and runs two independent
+browser suites at a time, each in its own browser context. Node's test runner
+reports suite names and timings, with a two-minute timeout per suite. Set
+`BPM_LAYOUT_TEST_WORKERS=1 npm run test:layout` for serial execution, or choose
+another worker count from 1 to 8. The Docker variant uses the same test runner and
+also requires Docker and curl on the host.
 
 ### Validate the production container
 
@@ -154,8 +161,13 @@ The `services` field in `/api/info` comes from
 an empty list means no services are advertised, while `null` means unavailable.
 
 RPC failures retain the last successful peer snapshot; a successful empty
-response clears it. Application update status is read from the server cache,
-rather than triggering a GitHub request.
+response clears it. RPC transport results are `unknown` until the parsers in
+[`rpc-types.ts`](../src/server/rpc-types.ts) validate their fields. Peer validation
+rejects malformed snapshots before they replace existing data. Network fields
+are validated independently: unavailable fields remain `null` while valid
+connection counts, services, and unrelated dashboard reads remain usable.
+Application update status is read from the server cache, rather than triggering
+a GitHub request.
 
 ### Rendering peer data
 

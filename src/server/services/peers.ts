@@ -3,9 +3,10 @@ import { type Data, type Rpc, object, nowSeconds, errorMessage } from '../types.
 import { repeat, sleep } from '../tasks.ts';
 import { GeoDatabase, isValidGeoData } from './geoip.ts';
 import { ConnectivityService } from './connectivity.ts';
+import { parsePeerInfo, parseNodeAddresses, type PeerInfo } from '../rpc-types.ts';
 
 export const REFRESH_INTERVAL_MS = 10_000;
-const GEO_API_FIELDS = 'status,continent,continentCode,country,countryCode,region,regionName,city,district,zip,lat,lon,timezone,offset,currency,isp,org,as,asname,mobile,proxy,hosting';
+const GEO_API_FIELDS = 'status,message,continent,continentCode,country,countryCode,region,regionName,city,district,zip,lat,lon,timezone,offset,currency,isp,org,as,asname,mobile,proxy,hosting';
 interface GeoEntry { data: Data; generation: number; retryAt: number | null }
 export class PeerService {
     readonly rpc: Rpc;
@@ -15,7 +16,7 @@ export class PeerService {
     readonly fetcher: typeof fetch;
     private controller = new AbortController();
     private tasks: Promise<void>[] = [];
-    peers: Data[] = [];
+    peers: PeerInfo[] = [];
     lastSuccessAt: number | null = null;
     lastAttemptAt: number | null = null;
     lastError: string | null = null;
@@ -39,16 +40,15 @@ export class PeerService {
     }
     async stop() { this.controller.abort(); await Promise.allSettled(this.tasks); }
     async refreshOnce() {
-        let peers: unknown;
+        let peers: PeerInfo[];
         try {
-            peers = await this.rpc.call('getpeerinfo');
-            if (!Array.isArray(peers) || !peers.every(object)) throw new Error('getpeerinfo returned an unexpected response');
+            peers = parsePeerInfo(await this.rpc.call('getpeerinfo'));
         } catch (error) {
             this.lastAttemptAt = nowSeconds(); this.lastError = 'Could not refresh peers from the Bitcoin node';
             if (!this.signal.aborted) console.warn(`Peer refresh failed: ${errorMessage(error)}`);
             return false;
         }
-        this.peers = peers as Data[];
+        this.peers = peers;
         this.lastSuccessAt = nowSeconds(); this.lastAttemptAt = this.lastSuccessAt; this.lastError = null;
         this.activeHosts = new Set(this.peers.map(peer => splitPeerAddress(peer.addr || '')[0]));
         for (const host of this.geoCache.keys()) if (!this.activeHosts.has(host)) this.geoCache.delete(host);
@@ -64,8 +64,8 @@ export class PeerService {
     }
     async refreshKnownAddresses() {
         try {
-            const addresses = await this.rpc.call('getnodeaddresses', [0]);
-            if (Array.isArray(addresses)) this.knownAddresses = new Set(addresses.filter(object).map(item => String(item.address || '')).filter(Boolean));
+            const addresses = parseNodeAddresses(await this.rpc.call('getnodeaddresses', [0]));
+            this.knownAddresses = new Set(addresses.map(item => item.address));
         } catch { /* Address-manager metadata is optional. */ }
     }
     cachedGeo(host: string): Data | null {
@@ -78,12 +78,19 @@ export class PeerService {
         this.pending.add(host); this.geoQueue.push([host, network]);
     }
     async fetchGeo(host: string): Promise<Data | null> {
+        if (!this.connectivity.providerReady('geoip')) return null;
+        let response: Response | undefined;
         try {
-            const response = await this.fetcher(`http://ip-api.com/json/${encodeURIComponent(host)}?fields=${GEO_API_FIELDS}`, { signal: AbortSignal.any([this.signal, AbortSignal.timeout(10_000)]) });
-            if (!response.ok) { await response.body?.cancel(); this.connectivity.networkFailure(true); return null; }
+            response = await this.fetcher(`http://ip-api.com/json/${encodeURIComponent(host)}?fields=${GEO_API_FIELDS}`, { signal: AbortSignal.any([this.signal, AbortSignal.timeout(10_000)]) });
+            if (!response.ok) { await response.body?.cancel(); throw new Error(`HTTP ${response.status}`); }
             const data: unknown = await response.json();
-            if (object(data) && data.status === 'success') { this.connectivity.networkSuccess(true); return data; }
-        } catch { this.connectivity.networkFailure(true); }
+            if (object(data) && data.status === 'fail' && (data.message === undefined || typeof data.message === 'string')) {
+                // A rejected address is a lookup miss, not a provider outage.
+                this.connectivity.providerSuccess('geoip', response); return null;
+            }
+            if (!object(data) || data.status !== 'success' || !isValidGeoData(data)) throw new Error('GeoIP response did not include valid geolocation data');
+            this.connectivity.providerSuccess('geoip', response); return data;
+        } catch (error) { if (!this.signal.aborted) this.connectivity.providerFailure('geoip', error, response); }
         return null;
     }
     async resolveGeo(host: string, network: string) {
@@ -94,7 +101,7 @@ export class PeerService {
             if (!isValidGeoData(data)) data = null;
             const fromDatabase = Boolean(data);
             const state = this.connectivity.snapshot();
-            const usedApi = !data && !state.geo_db_only_mode && !['yellow', 'red'].includes(state.internet_state) && isPublicAddress(network, host);
+            const usedApi = !data && !state.geo_db_only_mode && this.connectivity.providerReady('geoip') && !['yellow', 'red'].includes(state.internet_state) && isPublicAddress(network, host);
             if (usedApi) {
                 data = await this.fetchGeo(host);
                 if (isValidGeoData(data)) { if (generation === this.geoDatabase.generation) this.geoDatabase.save(host, data); }
@@ -128,7 +135,7 @@ export class PeerService {
             error: this.lastError, stale_after_seconds: 30,
         } };
     }
-    serializePeers(peers: Data[], observedAt: number): Data[] {
+    serializePeers(peers: PeerInfo[], observedAt: number): Data[] {
         const serviceNames: Record<string, string> = { NETWORK: 'N', WITNESS: 'W', NETWORK_LIMITED: 'NL', P2P_V2: 'P', COMPACT_FILTERS: 'CF', BLOOM: 'B', 'BLAKE2B?': 'BL', BLAKE2B: 'BL' };
         return peers.map(peer => {
             const address = peer.addr || '', network = peer.network ?? networkType(address);

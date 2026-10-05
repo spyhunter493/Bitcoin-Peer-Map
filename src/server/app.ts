@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import { once } from 'node:events';
 import { AppRuntime } from './runtime.ts';
 import type { Settings } from './settings.ts';
-import { type Data, errorMessage } from './types.ts';
+import { type Data, errorMessage, object } from './types.ts';
 import { HttpError, readJsonBody, parseAddress, parsePeerId, parseQueryBoolean, requireDashboardOrigin, sendResponse } from './http.ts';
 
 export interface ApplicationRuntime {
@@ -46,6 +46,7 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
     const values: Record<string, string> = { revision: revision === 'unknown' ? revision : revision.slice(0, 7), revision_url: revisionUrl, asset_revision: assets, repository_url: repositoryUrl, repository_discussions_url: `${repositoryUrl}/discussions` };
     const html = template.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key) => escapeHtml(values[key] ?? ''));
     const schema: Data = JSON.parse(readFileSync(new URL('./openapi.json', import.meta.url), 'utf8'));
+    if (!object(schema.info)) throw new Error('OpenAPI schema is missing its info object');
     schema.info.version = revision;
     const streams = new Set<ServerResponse>();
     let closeTask: Promise<void> | null = null;

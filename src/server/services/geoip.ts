@@ -11,7 +11,8 @@ export { GEO_COLUMNS } from './geoip-schema.ts';
 export const GEOIP_DATASET_URL = 'https://raw.githubusercontent.com/mbhillrn/Bitcoin-Node-GeoIP-Dataset/main/geo.db';
 export const MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024;
 export function isValidGeoData(data: unknown): data is Data {
-    if (!object(data) || data.lat == null || data.lon == null || !String(data.country || '').trim()) return false;
+    if (!object(data) || typeof data.country !== 'string' || !data.country.trim()) return false;
+    if (![data.lat, data.lon].every(value => typeof value === 'number' || (typeof value === 'string' && value.trim().length > 0))) return false;
     const lat = Number(data.lat), lon = Number(data.lon);
     return Number.isFinite(lat) && Number.isFinite(lon) && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180;
 }
@@ -59,7 +60,11 @@ export class GeoDatabase {
     save(ip: string, data: Data) {
         if (!this.enabled || !this.database || !isValidGeoData(data)) return;
         const record: Data = { ...data, ip, utc_offset: data.offset ?? 0, as_info: data.as ?? '', last_updated: Math.floor(nowSeconds()) };
-        const values: SQLInputValue[] = GEO_COLUMNS.map(key => ['mobile', 'proxy', 'hosting'].includes(key) ? Number(Boolean(record[key])) : record[key] ?? '');
+        const values: SQLInputValue[] = GEO_COLUMNS.map(key => {
+            if (['mobile', 'proxy', 'hosting'].includes(key)) return Number(Boolean(record[key]));
+            const value = record[key];
+            return typeof value === 'string' || (typeof value === 'number' && Number.isFinite(value)) ? value : '';
+        });
         try {
             this.database.prepare(`INSERT INTO geo_cache (${GEO_COLUMNS.join(',')}) VALUES (${GEO_COLUMNS.map(() => '?').join(',')}) ON CONFLICT(ip) DO UPDATE SET ${GEO_UPDATES}`).run(...values);
             this.cachedStats = null;

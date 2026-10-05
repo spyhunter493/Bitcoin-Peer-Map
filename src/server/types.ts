@@ -1,7 +1,7 @@
-// JSON-RPC methods return heterogeneous objects; validation stays at service boundaries.
-export type Data = Record<string, any>;
+// Untrusted objects require field validation before use.
+export type Data = Record<string, unknown>;
 export interface Rpc {
-    call(method: string, params?: unknown[], timeoutSeconds?: number): Promise<any>;
+    call(method: string, params?: unknown[], timeoutSeconds?: number): Promise<unknown>;
 }
 export function object(value: unknown): value is Data {
     return value !== null && typeof value === 'object' && !Array.isArray(value);

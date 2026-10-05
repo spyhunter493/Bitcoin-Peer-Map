@@ -5,6 +5,7 @@ import { AppRuntime } from './runtime.ts';
 import { createApplication } from './app.ts';
 import { sleep } from './tasks.ts';
 import { errorMessage } from './types.ts';
+import { parseBlockchainInfo } from './rpc-types.ts';
 
 export async function waitForRpc(runtime: Pick<AppRuntime, 'settings' | 'rpc' | 'controller'>) {
     const settings = runtime.settings;
@@ -17,7 +18,7 @@ export async function waitForRpc(runtime: Pick<AppRuntime, 'settings' | 'rpc' | 
             // Both startup calls share one deadline, including time spent retrying.
             await runtime.rpc.checkConnection(Math.min(settings.rpc_timeout, remainingSeconds()));
             if (remainingSeconds() === 0) throw new Error('Bitcoin RPC startup timed out');
-            const blockchain = await runtime.rpc.call('getblockchaininfo', [], Math.min(settings.rpc_timeout, remainingSeconds()));
+            const blockchain = parseBlockchainInfo(await runtime.rpc.call('getblockchaininfo', [], Math.min(settings.rpc_timeout, remainingSeconds())));
             if (blockchain?.chain !== settings.bitcoin_network) {
                 throw new ConfigurationError(`BITCOIN_NETWORK does not match the node: configured ${settings.bitcoin_network}, node reports ${blockchain?.chain}`);
             }

@@ -484,7 +484,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectivityStatus"
+                }
               }
             }
           }
@@ -715,6 +717,129 @@
           "check_failed": {
             "type": "boolean",
             "description": "Whether the last check failed. A previously known update is retained."
+          }
+        }
+      },
+      "ProviderHealth": {
+        "type": "object",
+        "required": [
+          "state",
+          "consecutive_failures",
+          "last_error",
+          "last_success_at",
+          "last_failure_at",
+          "retry_at"
+        ],
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "healthy",
+              "unavailable",
+              "rate_limited"
+            ]
+          },
+          "consecutive_failures": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "last_error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_success_at": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Unix timestamp in seconds."
+          },
+          "last_failure_at": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Unix timestamp in seconds."
+          },
+          "retry_at": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Provider requests resume at or after this Unix timestamp. Null means no cooldown."
+          }
+        }
+      },
+      "ConnectivityStatus": {
+        "type": "object",
+        "required": [
+          "internet_state",
+          "api_available",
+          "api_consecutive_failures",
+          "last_price_error",
+          "last_known_price",
+          "last_price_currency",
+          "geo_db_only_mode",
+          "api_down_prompt",
+          "providers"
+        ],
+        "properties": {
+          "internet_state": {
+            "type": "string",
+            "enum": [
+              "green",
+              "yellow",
+              "red"
+            ],
+            "description": "Independent internet reachability probe status."
+          },
+          "api_available": {
+            "type": "boolean",
+            "description": "GeoIP has fewer than five consecutive failures and is outside its rate-limit cooldown."
+          },
+          "api_consecutive_failures": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Consecutive GeoIP failures only."
+          },
+          "last_price_error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_known_price": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_price_currency": {
+            "type": "string"
+          },
+          "geo_db_only_mode": {
+            "type": "boolean"
+          },
+          "api_down_prompt": {
+            "type": "boolean"
+          },
+          "providers": {
+            "type": "object",
+            "required": [
+              "coinbase",
+              "geoip"
+            ],
+            "properties": {
+              "coinbase": {
+                "$ref": "#/components/schemas/ProviderHealth"
+              },
+              "geoip": {
+                "$ref": "#/components/schemas/ProviderHealth"
+              }
+            }
           }
         }
       }

@@ -46,6 +46,7 @@ export class AppRuntime {
         this.geoDatabase.initialize();
         this.started = true;
         this.metrics.start();
+        this.connectivity.ensureChecker();
         await this.peers.start();
         this.controller.signal.throwIfAborted();
         this.scheduleUpdate(0);

@@ -5,7 +5,11 @@ import { writeFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { createApplication, assetRevision } from '../../src/server/app.ts';
 import { FixtureRuntime, fixtureSettings } from '../layout_server.ts';
-import { temporaryDirectory, deferred, flush } from './helpers.ts';
+import { temporaryDirectory, deferred, flush, FakeRpc } from './helpers.ts';
+import { NodeService } from '../../src/server/services/node.ts';
+import { PeerService } from '../../src/server/services/peers.ts';
+import { ConnectivityService } from '../../src/server/services/connectivity.ts';
+import { GeoDatabase } from '../../src/server/services/geoip.ts';
 import type { TestContext } from 'node:test';
 
 async function application(t: TestContext) {
@@ -54,6 +58,32 @@ test('peer list, optional status, and separate price delivery keep their API con
     assert.equal(price.btc_currency, 'NZD');
     const withoutPrice = await (await get('/api/info?include_price=false')).json();
     assert.equal('btc_price' in withoutPrice, false);
+});
+test('HTTP responses preserve partial RPC failures and provider health without returning 500', async t => {
+    const { runtime, get } = await application(t);
+    const rpc = new FakeRpc(), geo = new GeoDatabase(temporaryDirectory(t), false);
+    const connectivity = new ConnectivityService(false, undefined, async () => new Response('', { status: 503 }));
+    const node = new NodeService(rpc, connectivity, geo, () => false);
+    const peers = new PeerService(rpc, geo, connectivity);
+    t.after(() => connectivity.stop());
+    t.mock.method(runtime.node, 'dashboardInfo', node.dashboardInfo.bind(node));
+    t.mock.method(runtime.peers, 'snapshot', peers.snapshot.bind(peers));
+    t.mock.method(runtime.connectivity, 'snapshot', connectivity.snapshot.bind(connectivity));
+    rpc.record('getnetworkinfo').localaddresses = [{ address: {}, score: 1 }];
+    const response = await get('/api/info?include_price=false');
+    assert.equal(response.status, 200);
+    const info = await response.json();
+    assert.equal(info.connected, 100); assert.equal(info.network_details, null); assert.equal(info.network_scores, null);
+    assert.equal(info.last_block.height, 100); assert.equal(info.node_traffic.download_bytes, 2048);
+    rpc.values.getpeerinfo = [{ id: 1, addr: '8.8.8.8:8333' }]; await peers.refreshOnce();
+    rpc.values.getpeerinfo = [{ id: 1, addr: [] }]; await peers.refreshOnce();
+    const snapshotResponse = await get('/api/peers?include_status=true'); assert.equal(snapshotResponse.status, 200);
+    const snapshot = await snapshotResponse.json();
+    assert.equal(snapshot.status.connected, false); assert.equal(snapshot.peers[0].addr, '8.8.8.8:8333');
+    await connectivity.priceInfo();
+    const health = await (await get('/api/connectivity')).json();
+    assert.equal(health.internet_state, 'green'); assert.equal(health.api_available, true);
+    assert.equal(health.providers.coinbase.state, 'unavailable'); assert.equal(health.providers.geoip.state, 'unknown');
 });
 test('static files support cache revalidation, immutable revisions, compression, and HEAD', async t => {
     const { get } = await application(t);

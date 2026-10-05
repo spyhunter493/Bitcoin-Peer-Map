@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { TestContext } from 'node:test';
 import { loadSettings } from '../../src/server/settings.ts';
-import type { Data, Rpc } from '../../src/server/types.ts';
+import { object, type Data, type Rpc } from '../../src/server/types.ts';
 
 export function temporaryDirectory(t: TestContext) {
     const path = mkdtempSync(join(tmpdir(), 'bpm-test-'));
@@ -31,11 +31,16 @@ export class FakeRpc implements Rpc {
         getnettotals: { totalbytesrecv: 2048, totalbytessent: 4096 },
         getmempoolinfo: { size: 5 }, getpeerinfo: [], getnodeaddresses: [], getchaintips: [],
     };
-    async call(method: string, params: unknown[] = []): Promise<any> {
+    async call(method: string, params: unknown[] = []): Promise<unknown> {
         this.calls.push({ method, params });
         if (this.failed.has(method)) throw new Error(`${method} failed`);
         const value = this.values[method];
         return typeof value === 'function' ? value(params) : structuredClone(value ?? null);
     }
     count(method: string) { return this.calls.filter(call => call.method === method).length; }
+    record(method: string): Data {
+        const value = this.values[method];
+        if (!object(value)) throw new Error(`${method} fixture is not an object`);
+        return value;
+    }
 }

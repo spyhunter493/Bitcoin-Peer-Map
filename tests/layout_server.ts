@@ -4,9 +4,11 @@ import { createApplication, type ApplicationRuntime } from '../src/server/app.ts
 import { loadSettings, type Settings } from '../src/server/settings.ts';
 import { BitcoinRpcClient } from '../src/server/rpc.ts';
 import type { Data } from '../src/server/types.ts';
+import type { DashboardInfo, RecentBlocks, ChainTips } from '../src/server/api-types.ts';
+import type { PriceInfo, ConnectivityStatus } from '../src/server/services/connectivity.ts';
 
 // Captured API fixtures keep browser regressions independent of external services.
-const fixtures: Data = JSON.parse(readFileSync(new URL('./fixtures/dashboard.json', import.meta.url), 'utf8'));
+const fixtures: { peers: Data[]; metrics: Data; latest_metrics: Data; info: DashboardInfo; price: PriceInfo; mempool: Data; blockchain: Data; blocks: RecentBlocks; tips: ChainTips } = JSON.parse(readFileSync(new URL('./fixtures/dashboard.json', import.meta.url), 'utf8'));
 export class FixtureRuntime implements ApplicationRuntime {
     readonly settings: Settings;
     readonly rpc: BitcoinRpcClient;
@@ -31,14 +33,15 @@ export class FixtureRuntime implements ApplicationRuntime {
         snapshot: () => ({ update_available: false, commits_behind: 0, changes_url: null, checked_at: Date.now() / 1000, check_failed: false }),
     };
     connectivity = {
-        snapshot: () => ({ internet_state: 'green', api_available: true, api_consecutive_failures: 0, last_price_error: null, last_known_price: '77203.48', last_price_currency: 'USD', geo_db_only_mode: this.dbOnly, api_down_prompt: false }),
+        snapshot: (): ConnectivityStatus => ({ internet_state: 'green', api_available: true, api_consecutive_failures: 0, last_price_error: null, last_known_price: '77203.48', last_price_currency: 'USD', geo_db_only_mode: this.dbOnly, api_down_prompt: false,
+            providers: Object.fromEntries(['coinbase', 'geoip'].map(provider => [provider, { state: 'healthy', consecutive_failures: 0, last_error: null, last_success_at: Date.now() / 1000, last_failure_at: null, retry_at: null }])) as ConnectivityStatus['providers'] }),
         acknowledgePrompt() {},
     };
     geoDatabase = { update: async () => ({ success: true, message: 'DB already up to date' }) };
     node = {
-        dashboardInfo: async (currency = 'USD', includePrice = true): Promise<Data> => {
+        dashboardInfo: async (currency = 'USD', includePrice = true): Promise<DashboardInfo> => {
             const info = structuredClone(fixtures.info);
-            info.last_block.time = Math.floor(Date.now() / 1000) - 600;
+            if (info.last_block) info.last_block.time = Math.floor(Date.now() / 1000) - 600;
             info.geo_db_stats.auto_update = this.autoUpdate;
             info.geo_db_stats.db_only_mode = this.dbOnly;
             info.geo_db_only_mode = this.dbOnly;

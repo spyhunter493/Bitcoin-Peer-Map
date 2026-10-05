@@ -7,6 +7,7 @@ import { PeerService } from '../../src/server/services/peers.ts';
 import { FakeRpc, deferred, flush, temporaryDirectory } from './helpers.ts';
 import type { TestContext } from 'node:test';
 import type { Data } from '../../src/server/types.ts';
+import { parseNetworkInfo } from '../../src/server/rpc-types.ts';
 
 function services(t: TestContext, fetcher: typeof fetch = async () => new Response('{"data":{"amount":"100"}}')) {
     const rpc = new FakeRpc(), geo = new GeoDatabase(temporaryDirectory(t), true);
@@ -27,6 +28,7 @@ test('concurrent dashboards share RPC work, keep independent responses, and expi
     gate.resolve({ blocks: 100, bestblockhash: 'block-100' });
     const results = await Promise.all([...pending, late]);
     assert.equal(rpc.count('getblockchaininfo'), 1);
+    assert.ok(results[0].last_block && results[1].last_block);
     results[0].last_block.height = -1;
     assert.equal(results[1].last_block.height, 100);
     await node.dashboardInfo('USD', false);
@@ -42,7 +44,7 @@ test('failed dashboard fields clear after expiry and blockchain failure still pe
     assert.equal(info.connected, null); assert.equal(info.network_details, null); assert.equal(info.blockchain, null);
     assert.equal(info.services, null);
     assert.deepEqual(info.last_block, { height: 100, time: 1000 });
-    assert.equal(info.node_traffic.download_bytes, 2048);
+    assert.equal(info.node_traffic?.download_bytes, 2048);
     assert.equal(rpc.count('getbestblockhash'), 1);
 });
 test('dashboard starts independent RPC reads while blockchain details are still pending', async t => {
@@ -57,13 +59,13 @@ test('dashboard starts independent RPC reads while blockchain details are still 
     assert.deepEqual(started, [1, 1, 1]);
     assert.equal(result.connected, 100);
     assert.equal(result.mempool_size, 5);
-    assert.equal(result.last_block.height, 100);
+    assert.equal(result.last_block?.height, 100);
 });
 test('dashboard services preserve advertised names and distinguish empty lists from unavailable data', async t => {
     let time = 0; t.mock.method(performance, 'now', () => time);
     const { rpc, node } = services(t);
     const names = ['NETWORK', 'WITNESS', 'BLAKE2B?', 'FUTURE_SERVICE'];
-    rpc.values.getnetworkinfo.localservicesnames = names;
+    rpc.record('getnetworkinfo').localservicesnames = names;
     const info = await node.dashboardInfo('USD', false);
     assert.deepEqual(info.services, names);
     info.services.push('CLIENT_MUTATION');
@@ -72,7 +74,7 @@ test('dashboard services preserve advertised names and distinguish empty lists f
 
     for (const value of [[], undefined, null, 'NETWORK', ['NETWORK', 1], [' ']]) {
         time += 5000;
-        rpc.values.getnetworkinfo.localservicesnames = value;
+        rpc.record('getnetworkinfo').localservicesnames = value;
         const refreshed = await node.dashboardInfo('USD', false);
         assert.deepEqual(refreshed.services, Array.isArray(value) && value.length === 0 ? [] : null);
         assert.equal(refreshed.connected, 100);
@@ -105,7 +107,7 @@ test('price failures retain only that currency, recover after expiry, and never 
     time = 4999; await connectivity.priceInfo('USD'); assert.equal(calls, 2);
     time = 5000; fail = true;
     const failed = await connectivity.priceInfo('USD');
-    assert.equal(failed.btc_price, 100); assert.match(failed.last_price_error, /USD unavailable/);
+    assert.equal(failed.btc_price, 100); assert.ok(failed.last_price_error); assert.match(failed.last_price_error, /USD unavailable/);
     assert.equal((await connectivity.priceInfo('EUR')).last_price_error, null);
     time = 10000; fail = false;
     assert.equal((await connectivity.priceInfo('USD')).last_price_error, null);
@@ -137,9 +139,10 @@ test('price cache evicts old currencies without losing responses still in flight
     assert.equal(requests.get('USD'), 2, 'old currency entries are evicted');
 });
 test('network summaries include all five families, proxies, sorted addresses, and safe defaults', () => {
-    const summary = networkSummary({ networks: [{ name: 'onion', reachable: true, limited: false, proxy: '127.0.0.1:9050' }], localaddresses: [
+    const summary = networkSummary(parseNetworkInfo({ networks: [{ name: 'onion', reachable: true, limited: false, proxy: '127.0.0.1:9050' }], localaddresses: [
         { address: '8.8.8.8', score: 1 }, { address: '1.1.1.1', score: 2 }, { address: '2001:4860::1' }, { address: 'example.onion' }, { address: 'example.i2p' }, { address: 'fc00::1' },
-    ] });
+    ] }));
+    assert.ok(summary);
     assert.deepEqual(Object.keys(summary), ['ipv4', 'ipv6', 'onion', 'i2p', 'cjdns']);
     assert.equal(summary.ipv4.localaddresses[0].address, '1.1.1.1');
     assert.equal(summary.onion.proxy, '127.0.0.1:9050'); assert.equal(summary.onion.reachable, true);
@@ -148,11 +151,11 @@ test('network summaries include all five families, proxies, sorted addresses, an
 test('node traffic follows node counters through dashboard restarts and node counter resets', async t => {
     let time = 0; t.mock.method(performance, 'now', () => time);
     const { node, rpc, geo, connectivity } = services(t);
-    assert.equal((await node.dashboardInfo('USD', false)).node_traffic.download_bytes, 2048);
+    assert.equal((await node.dashboardInfo('USD', false)).node_traffic?.download_bytes, 2048);
     const restarted = new NodeService(rpc, connectivity, geo, () => false);
-    assert.equal((await restarted.dashboardInfo('USD', false)).node_traffic.download_bytes, 2048);
-    rpc.values.getnettotals.totalbytesrecv = 10; time = 5000;
-    assert.equal((await restarted.dashboardInfo('USD', false)).node_traffic.download_bytes, 10);
+    assert.equal((await restarted.dashboardInfo('USD', false)).node_traffic?.download_bytes, 2048);
+    rpc.record('getnettotals').totalbytesrecv = 10; time = 5000;
+    assert.equal((await restarted.dashboardInfo('USD', false)).node_traffic?.download_bytes, 10);
 });
 test('recent blocks follow parent hashes across reorganizations and reuse immutable blocks', async t => {
     const { node, rpc } = services(t);
@@ -162,10 +165,11 @@ test('recent blocks follow parent hashes across reorganizations and reuse immuta
     };
     let result = await node.recentBlocks(3);
     assert.equal(result.success, true); assert.deepEqual(result.blocks.map((block: Data) => block.height), [100, 99, 98]);
+    assert.ok(result.summary);
     assert.equal(result.summary.total_transactions, 6); assert.equal(result.summary.avg_size_mb, 1);
     result.blocks[0].height = -1;
     assert.equal((await node.recentBlocks(3)).blocks[0].height, 100); assert.equal(rpc.count('getblock'), 3);
-    rpc.values.getblockchaininfo.bestblockhash = 'reorg-100';
+    rpc.record('getblockchaininfo').bestblockhash = 'reorg-100';
     result = await node.recentBlocks(3);
     assert.equal(result.blocks[0].hash, 'reorg-100'); assert.equal(rpc.count('getblock'), 4);
     rpc.failed.add('getblockchaininfo');
@@ -174,12 +178,14 @@ test('recent blocks follow parent hashes across reorganizations and reuse immuta
 test('recent blocks reject malformed traversal rather than mixing chain heights', async t => {
     const { node, rpc } = services(t);
     rpc.values.getblock = { height: 99 };
-    assert.match((await node.recentBlocks(1)).error, /height 99/);
+    const result = await node.recentBlocks(1); assert.ok(result.error);
+    assert.match(result.error, /height 99/);
 });
 test('chain tips sort, count, cache header ages, and cap header work at 100', async t => {
     const { node, rpc } = services(t);
     rpc.values.getchaintips = Array.from({ length: 105 }, (_, i) => ({ hash: `hash-${i}`, height: i, branchlen: 1, status: i === 0 ? 'active' : i === 1 ? 'valid-fork' : 'headers-only' }));
     let result = await node.chainTips();
+    assert.ok(result.summary);
     assert.equal(result.tips[0].status, 'active'); assert.equal(result.tips[1].status, 'valid-fork');
     assert.equal(result.summary.total, 105); assert.equal(result.summary.headers_only_count, 103);
     assert.equal(result.summary.age_lookup_limited, true); assert.equal(rpc.count('getblockheader'), 100);
@@ -196,7 +202,7 @@ test('peer actions send the expected RPC parameters and reject bans for private 
     rpc.values.getpeerinfo = [{ id: 9, addr: '[2001:4860::1]:8333', network: 'ipv6' }];
     assert.equal((await node.ban(9)).banned_ip, '2001:4860::1');
     assert.deepEqual(rpc.calls.at(-1)?.params, ['2001:4860::1', 'add', 86400]);
-    rpc.values.getpeerinfo[0].network = 'onion'; assert.equal((await node.ban(9)).success, false);
+    rpc.values.getpeerinfo = [{ id: 9, addr: 'example.onion:8333', network: 'onion' }]; assert.equal((await node.ban(9)).success, false);
     assert.equal((await node.ban(99)).success, false);
     await node.unban('8.8.8.8'); assert.deepEqual(rpc.calls.at(-1)?.params, ['8.8.8.8', 'remove']);
     rpc.failed.add('clearbanned'); assert.equal((await node.clearBans()).success, false);
@@ -241,4 +247,89 @@ test('private and departed peers do not trigger API requests and stale in-flight
     gate.resolve(new Response('{"status":"success","lat":1,"lon":2,"country":"NZ"}'));
     await lookup;
     assert.equal(calls, 1); assert.equal(peers.cachedGeo('8.8.8.8'), null); assert.equal(geo.get('8.8.8.8'), null);
+});
+test('malformed nested peer fields cannot replace a good snapshot or reach a ban RPC', async t => {
+    const { rpc, geo, connectivity, node } = services(t);
+    const peers = new PeerService(rpc, geo, connectivity);
+    rpc.values.getpeerinfo = [{ id: 1, addr: '8.8.8.8:8333', servicesnames: ['NETWORK', 'FUTURE_SERVICE'] }];
+    assert.equal(await peers.refreshOnce(), true);
+    const first = peers.snapshot();
+    t.mock.method(console, 'warn', () => {});
+    for (const fields of [
+        { id: null }, { id: 1.5 }, { addr: {} }, { addr: null }, { network: [] },
+        { subver: {} }, { servicesnames: 'NETWORK' }, { servicesnames: ['NETWORK', {}] },
+        { permissions: [null] }, { inbound: 'false' }, { bytessent: '10' }, { bytesrecv: -1 },
+        { pingtime: Infinity }, { connection_type: [] }, { minfeefilter: {} },
+    ]) {
+        rpc.values.getpeerinfo = [{ id: 1, addr: '8.8.8.8:8333', ...fields }];
+        assert.equal(await peers.refreshOnce(), false, JSON.stringify(fields));
+        assert.deepEqual(peers.snapshot().peers, first.peers);
+        assert.equal(peers.snapshot().status.connected, false);
+        assert.equal(peers.snapshot().status.last_success_at, first.status.last_success_at);
+        assert.equal((await node.ban(1)).success, false);
+    }
+    assert.equal(rpc.count('setban'), 0);
+    rpc.values.getpeerinfo = [{ id: 1, addr: '8.8.8.8:8333', servicesnames: null, permissions: null, minping: null, synced_blocks: -1 }];
+    assert.equal(await peers.refreshOnce(), true);
+    assert.deepEqual(peers.listPeers()[0].services, []); assert.equal(peers.listPeers()[0].minping, null);
+    assert.equal(peers.listPeers()[0].synced_blocks, -1);
+    rpc.values.getpeerinfo = []; assert.equal(await peers.refreshOnce(), true);
+    assert.deepEqual(peers.listPeers(), []);
+});
+test('address-manager validation retains prior metadata instead of coercing invalid addresses', async t => {
+    const { rpc, geo, connectivity } = services(t);
+    const peers = new PeerService(rpc, geo, connectivity);
+    rpc.values.getnodeaddresses = [{ address: '8.8.8.8' }]; await peers.refreshKnownAddresses();
+    for (const value of [null, {}, [null], [{ address: {} }], [{ address: '' }]]) {
+        rpc.values.getnodeaddresses = value; await peers.refreshKnownAddresses();
+        assert.deepEqual([...peers.knownAddresses], ['8.8.8.8']);
+    }
+    rpc.values.getnodeaddresses = []; await peers.refreshKnownAddresses();
+    assert.equal(peers.knownAddresses.size, 0);
+});
+test('network metadata validates nested arrays while keeping independent fields and recovery', async t => {
+    let time = 0; t.mock.method(performance, 'now', () => time);
+    const { rpc, node } = services(t);
+    const original = rpc.record('getnetworkinfo');
+    for (const fields of [
+        { networks: {} }, { networks: [null] }, { networks: [{ name: 'ipv4', proxy: {} }] },
+        { networks: [{ name: 'ipv4', reachable: 'false' }] },
+        { localaddresses: {} }, { localaddresses: [null] },
+        { localaddresses: [{ address: {} }] }, { localaddresses: [{ address: '8.8.8.8', score: '10' }] },
+        { localaddresses: [{ address: '8.8.8.8', port: [] }] },
+    ]) {
+        rpc.values.getnetworkinfo = { ...original, ...fields }; time += 5000;
+        const info = await node.dashboardInfo('USD', false);
+        assert.equal(info.connected, 100); assert.equal(info.subversion, '/Satoshi:30/');
+        assert.deepEqual(info.services, original.localservicesnames);
+        assert.equal(info.network_details, null);
+        assert.deepEqual(info.network_scores, 'localaddresses' in fields ? null : { ipv4: null, ipv6: null });
+        assert.equal(info.last_block?.height, 100); assert.equal(info.node_traffic?.download_bytes, 2048);
+    }
+    rpc.values.getnetworkinfo = { ...original, connections: '100', subversion: {} }; time += 5000;
+    const scalarFailure = await node.dashboardInfo('USD', false);
+    assert.equal(scalarFailure.connected, null); assert.equal(scalarFailure.subversion, null);
+    assert.deepEqual(scalarFailure.services, original.localservicesnames);
+    assert.ok(scalarFailure.network_details);
+    rpc.values.getnetworkinfo = original; time += 5000;
+    const recovered = await node.dashboardInfo('USD', false);
+    assert.equal(recovered.connected, 100); assert.ok(recovered.network_details);
+});
+test('null and malformed RPC objects produce explicit nulls without masking successful dashboard reads', async t => {
+    let time = 0; t.mock.method(performance, 'now', () => time);
+    const { rpc, node } = services(t);
+    t.mock.method(console, 'warn', () => {});
+    for (const value of [null, [], 'invalid']) {
+        rpc.values.getnetworkinfo = value; time += 5000;
+        const info = await node.dashboardInfo('USD', false);
+        for (const key of ['subversion', 'connected', 'services', 'network_details', 'network_scores']) assert.equal(info[key], null);
+        assert.equal(info.last_block?.height, 100); assert.equal(info.mempool_size, 5);
+    }
+    rpc.values.getnettotals = { totalbytesrecv: [] }; rpc.values.getmempoolinfo = { size: {} }; time += 5000;
+    const info = await node.dashboardInfo('USD', false);
+    assert.equal(info.node_traffic, null); assert.equal(info.mempool_size, null);
+    assert.equal(info.last_block?.height, 100);
+    assert.equal((await node.mempool()).mempool, null);
+    rpc.values.getblockchaininfo = null;
+    assert.equal((await node.blockchain()).blockchain, null);
 });

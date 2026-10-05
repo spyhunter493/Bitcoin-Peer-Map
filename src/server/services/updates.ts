@@ -52,8 +52,8 @@ export class UpdateService {
             const cache: unknown = JSON.parse(readFileSync(this.cachePath, 'utf8'));
             if (!object(cache) || cache.repository !== this.repository || cache.revision !== this.revision) return;
             if (typeof cache.checked_at !== 'number' || !Number.isFinite(cache.checked_at) || cache.checked_at <= 0 || cache.checked_at > nowSeconds()) return;
-            if (typeof cache.check_failed !== 'boolean' || !(cache.commits_behind === null || (Number.isSafeInteger(cache.commits_behind) && cache.commits_behind >= 0))) return;
-            const behind = cache.commits_behind as number | null;
+            if (typeof cache.check_failed !== 'boolean' || !(cache.commits_behind === null || (typeof cache.commits_behind === 'number' && Number.isSafeInteger(cache.commits_behind) && cache.commits_behind >= 0))) return;
+            const behind = cache.commits_behind;
             this.status = { checked_at: cache.checked_at, check_failed: cache.check_failed, commits_behind: behind,
                 update_available: behind !== null && behind > 0, changes_url: behind !== null && behind > 0 ? this.changesUrl() : null };
         } catch { /* A missing or invalid cache gets one fresh check. */ }
@@ -86,11 +86,11 @@ export class UpdateService {
             });
             if (!response.ok) { await response.body?.cancel(); throw new Error(`HTTP ${response.status}`); }
             const comparison: unknown = await response.json();
-            if (!object(comparison) || !['ahead', 'behind', 'identical', 'diverged'].includes(comparison.status) || !Number.isSafeInteger(comparison.ahead_by) || comparison.ahead_by < 0) {
+            if (!object(comparison) || typeof comparison.status !== 'string' || !['ahead', 'behind', 'identical', 'diverged'].includes(comparison.status) || typeof comparison.ahead_by !== 'number' || !Number.isSafeInteger(comparison.ahead_by) || comparison.ahead_by < 0) {
                 throw new Error('GitHub returned an invalid commit comparison');
             }
             // Only an upstream descendant is an update; local or diverged builds are not outdated.
-            const behind = comparison.status === 'ahead' ? comparison.ahead_by as number : 0;
+            const behind = comparison.status === 'ahead' ? comparison.ahead_by : 0;
             this.status = { update_available: behind > 0, commits_behind: behind, changes_url: behind > 0 ? this.changesUrl() : null, checked_at: nowSeconds(), check_failed: false };
         } catch (error) {
             if (this.signal.aborted) return;

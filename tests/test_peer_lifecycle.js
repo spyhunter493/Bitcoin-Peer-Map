@@ -44,13 +44,15 @@ export default async function assertPeerLifecycle(browser, baseUrl) {
                 Object.entries(window.testDocumentListeners).map(([key, value]) => [key, value.size])
             ));
             const before = await listenerCounts();
+            // Stress cleanup without repeating pointer actionability and exit animations.
+            // Real clicks, focus restoration and dragging are exercised below.
             for (let i = 0; i < 50; i++) {
-                await row.click();
-                await page.waitForSelector('.peer-detail-popup.visible');
-                await page.locator('.peer-popup-close').click();
-                await page.waitForSelector('.peer-detail-popup', { state: 'detached' });
+                await row.dispatchEvent('click');
+                await page.waitForFunction(() => !!document.querySelector('.peer-detail-popup.visible'));
+                await page.locator('.peer-detail-popup.visible .peer-popup-close').dispatchEvent('click');
+                assert.deepEqual(await listenerCounts(), before, 'closing popups must release document listeners');
             }
-            assert.deepEqual(await listenerCounts(), before, 'closing popups must release document listeners');
+            await page.waitForSelector('.peer-detail-popup', { state: 'detached' });
             // Restore a still-connected focus target when the popup closes.
             await page.locator('#zoom-in').focus();
             await row.dispatchEvent('click');

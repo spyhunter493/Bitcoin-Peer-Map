@@ -66,6 +66,23 @@ docker compose logs -f --tail=100 bpm
 For RPC endpoints and effective settings, see
 [configuration inspection](configuration.md#inspect-the-effective-configuration).
 
+`/api/connectivity` reports internet reachability and separate `providers.coinbase`
+and `providers.geoip` health. Each provider reports its state, consecutive failures,
+last error, success/failure timestamps, and retry deadline. The existing
+`api_available` and `api_consecutive_failures` fields refer to GeoIP; price errors
+remain specific to the requested currency, which retains its last known price.
+
+Provider failures do not change internet status or trigger reachability checks.
+A separate HEAD request to Google runs at startup and every 30 seconds while
+online, with two-second retries while offline. Any HTTP response proves
+reachability. Failed probes turn the status yellow, then red after ten seconds;
+four successful probes restore green.
+
+Rate limits pause only the affected provider. Both providers honor `Retry-After`
+seconds or HTTP dates. GeoIP also honors `X-Rl: 0` and `X-Ttl`, including on
+successful responses, as described by [ip-api](https://ip-api.com/docs/api:json#usage_limits).
+HTTP 429 defaults to a 60-second cooldown when no valid retry header is supplied.
+
 To stop the dashboard while retaining its data volume:
 
 ```bash
@@ -112,7 +129,8 @@ preserving newer local API results.
 API Lookup sends the queried peer IP to ip-api.com over unencrypted HTTP; the
 provider's [free endpoint does not support HTTPS](https://ip-api.com/docs/api:json).
 Turn it off for database-only peer lookups. Dataset downloads, BTC price requests,
-and application update checks operate separately and still use the network.
+application update checks, and internet reachability probes operate separately
+and still use the network.
 `BPM_GEOIP_ENABLED=false` disables the persistent database, rather than disabling
 external peer lookups.
 

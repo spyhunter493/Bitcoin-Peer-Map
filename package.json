@@ -7,7 +7,7 @@
     "check:js": "node scripts/check-js.js",
     "test:js": "cd tests/unit && node --test",
     "benchmark:dashboard": "node scripts/benchmark-dashboard.js",
-    "test:layout": "node tests/test_layout.js",
+    "test:layout": "node --test tests/test_layout.js",
     "test:layout:docker": "scripts/test-layout-docker.sh",
     "check:types": "tsc --noEmit && tsc -p tsconfig.server.json",
     "start": "node src/server/main.ts",
