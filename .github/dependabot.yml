@@ -7,7 +7,7 @@ updates:
       interval: "weekly"
       day: "monday"
       time: "09:00"
-      timezone: "Pacific/Auckland"
+      timezone: "UTC"
     groups:
       npm-minor-and-patch:
         patterns:
@@ -22,7 +22,7 @@ updates:
       interval: "weekly"
       day: "monday"
       time: "09:00"
-      timezone: "Pacific/Auckland"
+      timezone: "UTC"
 
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -30,7 +30,7 @@ updates:
       interval: "weekly"
       day: "monday"
       time: "09:00"
-      timezone: "Pacific/Auckland"
+      timezone: "UTC"
     groups:
       actions-minor-and-patch:
         patterns:

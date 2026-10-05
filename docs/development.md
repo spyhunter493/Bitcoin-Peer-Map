@@ -192,7 +192,7 @@ publish an image.
 ### Dependency updates
 
 [Dependabot](../.github/dependabot.yml) checks npm development dependencies,
-Docker images, and GitHub Actions weekly on Monday at 09:00 in `Pacific/Auckland`.
+Docker images, and GitHub Actions weekly on Monday at 09:00 in `UTC`.
 Minor and patch updates are grouped separately for npm and GitHub Actions;
 major upgrades and Docker updates get individual pull requests. Update PRs
 target the default branch and run the existing CI workflow. Review the changes
