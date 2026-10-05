@@ -18,7 +18,7 @@ export class BitcoinRpcClient {
     async call(method: string, params: unknown[] = [], timeoutSeconds = this.settings.rpc_timeout): Promise<any> {
         const payload = JSON.stringify({ jsonrpc: '1.0', id: ++this.id, method, params });
         const transport = this.settings.rpc_scheme === 'https' ? https : http;
-        const signal = AbortSignal.any([AbortSignal.timeout(timeoutSeconds * 1000), ...(this.signal ? [this.signal] : [])]);
+        const signal = AbortSignal.any([AbortSignal.timeout(Math.ceil(timeoutSeconds * 1000)), ...(this.signal ? [this.signal] : [])]);
         const response = await new Promise<{ status: number; text: string }>((resolve, reject) => {
             const req = transport.request(this.settings.rpc_url, {
                 method: 'POST', signal, rejectUnauthorized: this.settings.rpc_verify_tls,
@@ -46,8 +46,8 @@ export class BitcoinRpcClient {
         if (response.status >= 400) throw new RpcTransportError(`Bitcoin RPC returned HTTP ${response.status}`);
         return body.result ?? null;
     }
-    async checkConnection() {
-        const result = await this.call('getnetworkinfo');
+    async checkConnection(timeoutSeconds = this.settings.rpc_timeout) {
+        const result = await this.call('getnetworkinfo', [], timeoutSeconds);
         if (!object(result)) throw new RpcError('getnetworkinfo returned an unexpected response');
         return result;
     }

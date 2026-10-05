@@ -2935,21 +2935,7 @@ function summaryApplySubFilter(peerIds, category, label) {
     if (_dimMapPeers) _dimMapPeers(peerIds);
 
     // Draw lines for sub-filtered peers
-    var seg = distributionState.selectedProvider ? findActiveSegment(distributionState.selectedProvider) : null;
-    if (!seg && distributionState.selectedProvider) {
-        var grp = findActiveGroup(distributionState.selectedProvider);
-        if (grp) {
-            const othersSeg = getActiveSegments().find(function (s) {
-                return s.isOthers;
-            });
-            seg = {
-                ...grp,
-                asNumber: distributionState.selectedProvider,
-                peerIds: grp.peerIds,
-                color: othersSeg ? othersSeg.color : '#58a6ff',
-            };
-        }
-    }
+    const seg = distributionState.selectedProvider ? findActiveSegmentOrGroup(distributionState.selectedProvider) : null;
     if (seg && _drawLinesForAs && distributionState.selectedProvider) {
         _drawLinesForAs(distributionState.selectedProvider, peerIds, seg.color);
     }
@@ -2983,21 +2969,7 @@ function summaryClearSubFilter() {
     tooltipHideSubTooltip();
     // Restore to full AS filter
     if (distributionState.selectedProvider) {
-        var seg = findActiveSegment(distributionState.selectedProvider);
-        if (!seg) {
-            var grp = findActiveGroup(distributionState.selectedProvider);
-            if (grp) {
-                const othersSeg = getActiveSegments().find(function (s) {
-                    return s.isOthers;
-                });
-                seg = {
-                    ...grp,
-                    asNumber: distributionState.selectedProvider,
-                    peerIds: grp.peerIds,
-                    color: othersSeg ? othersSeg.color : '#58a6ff',
-                };
-            }
-        }
+        const seg = findActiveSegmentOrGroup(distributionState.selectedProvider);
         if (seg) {
             if (_filterPeerTable) _filterPeerTable(seg.peerIds);
             if (_dimMapPeers) _dimMapPeers(seg.peerIds);

@@ -7,7 +7,8 @@ node_modules/
 tests/
 docs/
 
-.env
+.env*
+secrets/
 compose.override.yaml
 compose.override.yml
 docker-compose.override.yaml

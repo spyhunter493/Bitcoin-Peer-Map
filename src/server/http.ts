@@ -16,6 +16,19 @@ export class HttpError extends Error {
     }
 }
 
+export function requireDashboardOrigin(req: IncomingMessage) {
+    // Browser POSTs must target their own dashboard host. Compare hosts so TLS
+    // termination works when a reverse proxy preserves the external Host header.
+    // CLI clients do not send Origin and keep their existing API behavior.
+    if (!req.headers.origin) return;
+    try {
+        const origin = new URL(req.headers.origin);
+        const target = new URL(`${origin.protocol}//${req.headers.host || ''}`);
+        if (['http:', 'https:'].includes(origin.protocol) && origin.host === target.host) return;
+    } catch { /* Invalid and opaque origins are rejected with the same error. */ }
+    throw new HttpError(403, 'Cross-origin requests are not allowed');
+}
+
 export async function readJsonBody(req: IncomingMessage): Promise<Data> {
     if (Number(req.headers['content-length']) > MAX_REQUEST_BYTES) {
         throw new HttpError(413, 'Request body is too large');

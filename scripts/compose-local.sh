@@ -1,9 +1,13 @@
 #!/usr/bin/env sh
 set -eu
 
+# Resolve the checkout before looking up its Git revision, .env, and overrides.
+project_dir="$(CDPATH= cd -P "$(dirname "$0")/.." && pwd)"
+cd "$project_dir"
+
 if [ "${BPM_BUILD_REVISION:-}" = "" ]; then
     if command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-        if git diff --quiet --ignore-submodules -- && git diff --cached --quiet --ignore-submodules --; then
+        if [ -z "$(git status --porcelain --untracked-files=normal --ignore-submodules)" ]; then
             BPM_BUILD_REVISION="$(git rev-parse HEAD)"
         else
             BPM_BUILD_REVISION="unknown"

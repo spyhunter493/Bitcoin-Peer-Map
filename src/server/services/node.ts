@@ -48,7 +48,16 @@ export class NodeService {
         return pending;
     }
     private async refreshDashboard(): Promise<Data> {
-        const result: Data = Object.fromEntries(['last_block', 'blockchain', 'network_scores', 'connected', 'mempool_size', 'subversion', 'services', 'network_details', 'node_traffic'].map(key => [key, null]));
+        const [blockchain, network, traffic, mempoolSize] = await Promise.all([
+            this.blockchainDetails(),
+            this.networkDetails(),
+            this.nodeTrafficTotals(),
+            this.mempoolSize(),
+        ]);
+        return { ...blockchain, ...network, node_traffic: traffic, mempool_size: mempoolSize };
+    }
+    private async blockchainDetails(): Promise<Data> {
+        const result: Data = { blockchain: null, last_block: null };
         let blockchain: Data | null = null;
         try {
             const value = await this.rpc.call('getblockchaininfo', [], 10);
@@ -63,10 +72,15 @@ export class NodeService {
             const header = await this.header(hash);
             result.last_block = { height: blockchain?.blocks ?? header.height ?? 0, time: header.time ?? 0 };
         } catch (error) { console.warn(`Could not load last block: ${errorMessage(error)}`); }
+        return result;
+    }
+    private async networkDetails(): Promise<Data> {
+        const result: Data = { subversion: null, connected: null, services: null, network_details: null, network_scores: null };
         try {
             const network = await this.rpc.call('getnetworkinfo', [], 10);
             if (!object(network)) throw new Error('getnetworkinfo returned an unexpected response');
-            result.subversion = network.subversion ?? ''; result.connected = network.connections ?? 0;
+            result.subversion = network.subversion ?? '';
+            result.connected = network.connections ?? 0;
             if (Array.isArray(network.localservicesnames) && network.localservicesnames.every((name: unknown) => typeof name === 'string' && name.trim().length > 0)) {
                 result.services = network.localservicesnames;
             }
@@ -80,14 +94,31 @@ export class NodeService {
             }
             result.network_scores = scores;
         } catch (error) { console.warn(`Could not load network details: ${errorMessage(error)}`); }
+        return result;
+    }
+    private async nodeTrafficTotals(): Promise<Data | null> {
         try {
             const totals = await this.rpc.call('getnettotals', [], 10);
-            const downloaded = Math.max(0, Math.trunc(totals.totalbytesrecv || 0)), uploaded = Math.max(0, Math.trunc(totals.totalbytessent || 0));
-            result.node_traffic = { download_bytes: downloaded, upload_bytes: uploaded, download_fmt: formatBytes(downloaded), upload_fmt: formatBytes(uploaded) };
-        } catch (error) { console.warn(`Could not load node traffic totals: ${errorMessage(error)}`); }
-        try { result.mempool_size = (await this.rpc.call('getmempoolinfo', [], 10)).size ?? 0; }
-        catch (error) { console.warn(`Could not load mempool details: ${errorMessage(error)}`); }
-        return result;
+            const downloaded = Math.max(0, Math.trunc(totals.totalbytesrecv || 0));
+            const uploaded = Math.max(0, Math.trunc(totals.totalbytessent || 0));
+            return {
+                download_bytes: downloaded,
+                upload_bytes: uploaded,
+                download_fmt: formatBytes(downloaded),
+                upload_fmt: formatBytes(uploaded),
+            };
+        } catch (error) {
+            console.warn(`Could not load node traffic totals: ${errorMessage(error)}`);
+            return null;
+        }
+    }
+    private async mempoolSize(): Promise<number | null> {
+        try {
+            return (await this.rpc.call('getmempoolinfo', [], 10)).size ?? 0;
+        } catch (error) {
+            console.warn(`Could not load mempool details: ${errorMessage(error)}`);
+            return null;
+        }
     }
     async mempool(currency = 'USD'): Promise<Data> {
         const result: Data = { mempool: null, btc_price: null, error: null };

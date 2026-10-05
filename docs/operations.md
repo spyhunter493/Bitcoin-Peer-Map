@@ -18,11 +18,14 @@ Linux AMD64 and ARM64. Keep the existing data volume when recreating the service
 ### Pin a build
 
 Each published build also has a `sha-<full-commit>` tag. To stay on a specific
-build, replace `latest` in `compose.yaml` with that tag, using the full Git commit:
+build, set `BPM_IMAGE` in `.env` using the full Git commit:
 
-```yaml
-image: ghcr.io/spyhunter493/bitcoin-peer-map:sha-<full-commit>
+```env
+BPM_IMAGE=ghcr.io/spyhunter493/bitcoin-peer-map:sha-<full-commit>
 ```
+
+An image digest (`ghcr.io/spyhunter493/bitcoin-peer-map@sha256:<digest>`) is also
+accepted. Use the normal pull and recreate commands after changing the reference.
 
 ### Version and update notices
 
@@ -137,4 +140,10 @@ The supplied Compose configuration:
 - Uses a read-only root filesystem.
 - Drops all Linux capabilities and enables `no-new-privileges`.
 - Limits writable paths to the data volume and a 64 MiB `/tmp` tmpfs.
+- Disables execution and set-user-ID behavior on `/tmp`.
+- Rotates JSON container logs at 10 MiB with up to three files.
 - Uses `/healthz` for the container health check.
+
+Source-built images allow 60 seconds for startup before health-check failures count.
+The health endpoint reports HTTP server availability; RPC outages are reported by
+`/api/peers?include_status=true` and the dashboard's Peer data indicator.

@@ -8,7 +8,7 @@ import { once } from 'node:events';
 import { AppRuntime } from './runtime.ts';
 import type { Settings } from './settings.ts';
 import { type Data, errorMessage } from './types.ts';
-import { HttpError, readJsonBody, parseAddress, parsePeerId, parseQueryBoolean, sendResponse } from './http.ts';
+import { HttpError, readJsonBody, parseAddress, parsePeerId, parseQueryBoolean, requireDashboardOrigin, sendResponse } from './http.ts';
 
 export interface ApplicationRuntime {
     settings: Settings;
@@ -89,6 +89,7 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
         try {
             const url = new URL(req.url || '/', 'http://localhost');
             const method = req.method === 'HEAD' ? 'GET' : req.method;
+            if (method === 'POST' && url.pathname.startsWith('/api/')) requireDashboardOrigin(req);
             if (method === 'GET' && url.pathname === '/') { res.setHeader('Cache-Control', 'no-cache'); await sendResponse(req, res, html, 200, 'text/html'); return; }
             if (method === 'GET' && ['/docs', '/redoc'].includes(url.pathname)) {
                 const docs = '<!doctype html><html><head><title>Bitcoin Peer Map API</title><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css"></head><body><div id="swagger-ui"></div><script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script><script>SwaggerUIBundle({url:"/openapi.json",dom_id:"#swagger-ui"})</script></body></html>';

@@ -71,9 +71,13 @@ test('peer address parsing and normalization preserve supported networks', () =>
     assert.equal(networkType('example.onion:8333'), 'onion');
 });
 test('private, reserved, and mapped IPs never reach geolocation providers', () => {
-    for (const ip of ['', 'localhost', '10.0.0.1', '127.0.0.1', '100.64.0.1', '192.168.1.2', '192.0.2.1', '198.51.100.1', '203.0.113.1', '::', '::1', 'fc00::1', 'fe80::1', '2001:db8::1', '::ffff:192.168.1.1']) assert.equal(isPrivateAddress(ip), true, ip);
+    for (const ip of ['', 'localhost', '10.0.0.1', '127.0.0.1', '100.64.0.1', '192.168.1.2', '192.0.2.1', '198.51.100.1', '203.0.113.1', '224.0.0.1', '239.1.2.3', '::', '::1', 'fc00::1', 'fe80::1', 'ff02::1', '2001:db8::1', '::ffff:192.168.1.1', '::ffff:224.0.0.1']) assert.equal(isPrivateAddress(ip), true, ip);
     for (const ip of ['8.8.8.8', '1.1.1.1', '192.0.0.9', '2001:4860:4860::8888', '::ffff:8.8.8.8']) assert.equal(isPrivateAddress(ip), false, ip);
     assert.equal(isPublicAddress('onion', 'example.onion'), false);
+    for (const host of ['example.com', 'not-an-ip', '999.1.2.3', '8.8.8.8:8333', '[2001:4860::1]']) {
+        assert.equal(isPublicAddress('ipv4', host), false, host);
+        assert.equal(isPublicAddress('ipv6', host), false, host);
+    }
 });
 test('display formatting stays compatible', () => {
     assert.equal(formatBytes(2048), '2.0KB'); assert.equal(formatBytes(1024 ** 3), '1.00GB');

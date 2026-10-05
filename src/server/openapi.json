@@ -86,6 +86,9 @@
                 }
               }
             }
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
           }
         }
       }
@@ -132,6 +135,9 @@
                 }
               }
             }
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
           }
         }
       }
@@ -178,6 +184,9 @@
                 }
               }
             }
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
           }
         }
       }
@@ -224,6 +233,9 @@
                 }
               }
             }
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
           }
         }
       }
@@ -256,6 +268,9 @@
                 "schema": {}
               }
             }
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
           }
         }
       }
@@ -488,6 +503,9 @@
                 "schema": {}
               }
             }
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
           }
         }
       }
@@ -504,6 +522,9 @@
                 "schema": {}
               }
             }
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
           }
         }
       }
@@ -520,6 +541,9 @@
                 "schema": {}
               }
             }
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
           }
         }
       }
@@ -536,6 +560,9 @@
                 "schema": {}
               }
             }
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
           }
         }
       }
@@ -688,6 +715,18 @@
           "check_failed": {
             "type": "boolean",
             "description": "Whether the last check failed. A previously known update is retained."
+          }
+        }
+      }
+    },
+    "responses": {
+      "CrossOriginRequest": {
+        "description": "Browser requests whose Origin host does not match Host are rejected. Reverse proxies must preserve the external Host header.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
           }
         }
       }

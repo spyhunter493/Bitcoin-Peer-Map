@@ -123,6 +123,27 @@ test('HTTP validation rejects malformed inputs and unsupported methods', async t
     assert.equal((await get('/api/peer/connect', { method: 'POST', body: 'a'.repeat(65537) })).status, 413);
     const wrong = await get('/api/peers', { method: 'POST' }); assert.equal(wrong.status, 405); assert.match(wrong.headers.get('allow')!, /GET/);
 });
+test('cross-origin browser requests cannot change settings or manage peers', async t => {
+    const { base, runtime, get } = await application(t);
+    t.mock.method(runtime.node, 'clearBans', () => assert.fail('Cross-origin action reached the node'));
+    for (const origin of ['https://example.com', 'null', `${base}.example.com`, 'not a URL']) {
+        const response = await get('/api/bans/clear', { method: 'POST', headers: { Origin: origin } });
+        assert.equal(response.status, 403, origin);
+    }
+    const sameOrigin = await get('/api/geodb/toggle-auto-update', { method: 'POST', headers: { Origin: base } });
+    assert.equal(sameOrigin.status, 200);
+    const proxied = await get('/api/geodb/toggle-auto-update', { method: 'POST', headers: { Origin: base.replace('http:', 'https:') } });
+    assert.equal(proxied.status, 200, 'TLS termination can preserve the external Host header');
+    const defaultPort = await new Promise<number | undefined>((resolve, reject) => {
+        const req = request(`${base}/api/geodb/toggle-auto-update`, {
+            method: 'POST', headers: { Host: 'bpm.example:443', Origin: 'https://bpm.example' },
+        }, res => { res.resume(); resolve(res.statusCode); });
+        req.on('error', reject);
+        req.end();
+    });
+    assert.equal(defaultPort, 200, 'default ports are normalized using the external protocol');
+    assert.equal((await get('/api/geodb/toggle-auto-update', { method: 'POST' })).status, 200, 'CLI clients need no Origin header');
+});
 test('SSE emits metrics without blocking HTTP and closes with the application', async t => {
     const { app, runtime, get } = await application(t);
     const schema = await (await get('/openapi.json')).json();

@@ -609,7 +609,7 @@ export interface GeoStats {
     status: string;
     entries?: number;
     size_bytes?: number;
-    path?: string;
+    db_path?: string;
     newest_age_seconds?: number | null;
     newest_age_days?: number | null;
     oldest_age_days?: number | null;

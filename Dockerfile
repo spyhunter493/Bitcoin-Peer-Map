@@ -30,7 +30,7 @@ USER bpm
 EXPOSE 58333
 VOLUME ["/var/lib/bitcoin-peer-map"]
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
     CMD node -e "fetch('http://127.0.0.1:' + (process.env.BPM_LISTEN_PORT || '58333') + '/healthz', {signal: AbortSignal.timeout(3000)}).then(r => {if (!r.ok) process.exitCode = 1}).catch(() => {process.exitCode = 1})"
 
 CMD ["node", "src/server/main.ts"]

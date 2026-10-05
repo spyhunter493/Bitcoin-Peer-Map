@@ -44,6 +44,7 @@ jobs:
           BITCOIN_RPC_PASSWORD: test
         run: |
           docker compose config --quiet
+          npm run test:compose
           docker build --build-arg BPM_BUILD_REVISION="${GITHUB_SHA}" --tag bitcoin-peer-map:test .
           npm run test:container
 

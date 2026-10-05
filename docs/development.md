@@ -29,11 +29,16 @@ platform metrics are omitted or returned as null.
 
 The helper combines `compose.yaml` with `compose.build.yaml` and any local
 `compose.override.yaml` or `compose.override.yml`. It supplies the commit from a
-clean Git checkout automatically.
+clean Git checkout automatically and can be invoked from another directory.
+The build override uses `pull_policy: build`, so `up` builds the local source image.
 
-Dirty worktrees use `unknown` so changed static assets receive a fresh content
-hash for browser caching. Direct Docker builds can pass `BPM_BUILD_REVISION`
-explicitly; without it, the header displays `unknown` and skips update checks.
+Dirty worktrees, including untracked files, use `unknown` so changed static assets
+receive a fresh content hash for browser caching. Direct Docker builds can pass
+`BPM_BUILD_REVISION` explicitly; without it, the header displays `unknown` and skips
+update checks.
+Set `BPM_GITHUB_REPOSITORY=owner/repository` for local builds of a fork. Local
+`.env` variants, Compose overrides, and `secrets/` are excluded from the Docker
+build context.
 
 ## Tests and checks
 
@@ -55,6 +60,7 @@ Choose checks that match the change:
 | `npm run test:layout` | Browser regressions using the local fixture server |
 | `npm run test:layout:docker` | Browser regressions with the fixture server in Docker |
 | `npm run test:container` | Production image smoke test |
+| `npm run test:compose` | Published/local Compose merges, secrets, host binding, volume names, and build helper behavior |
 
 Before running browser tests, install Chromium:
 
@@ -63,8 +69,8 @@ npx playwright install --with-deps chromium
 ```
 
 CI runs syntax checks, type checks, backend tests, frontend unit tests, browser
-regressions, and container validation. Tests use local fixtures and mock RPC
-servers, without a live Bitcoin node or external GeoIP/price services.
+regressions, Compose checks, and container validation. Tests use local fixtures
+and mock RPC servers, without a live Bitcoin node or external GeoIP/price services.
 `test:layout` starts its fixture server automatically. The Docker variant also
 requires Docker and curl on the host.
 
@@ -140,7 +146,9 @@ alongside API contract changes.
 | `/api/config` | Effective configuration without RPC credentials, including `build.updates` |
 
 Node details and currency-specific prices use independent five-second caches
-shared across clients. The dashboard requests node details and prices separately.
+shared across clients. Independent dashboard RPC reads run concurrently; the price
+cache retains up to 64 recently used currencies. The dashboard requests node details
+and prices separately.
 The `services` field in `/api/info` comes from
 [`getnetworkinfo.localservicesnames`](https://bitcoincore.org/en/doc/30.0.0/rpc/network/getnetworkinfo/):
 an empty list means no services are advertised, while `null` means unavailable.

@@ -1,4 +1,4 @@
-import { CachedRequest, sleep } from '../tasks.ts';
+import { CachedRequest, Lru, sleep } from '../tasks.ts';
 import { type Data, errorMessage, nowSeconds } from '../types.ts';
 
 interface PriceEntry { cache: CachedRequest<number | null>; lastKnown: string | null; error: string | null }
@@ -10,7 +10,7 @@ export class ConnectivityService {
     apiPromptCount = 0;
     apiPromptAt = 0;
     geoipApiDisabled: boolean;
-    private prices = new Map<string, PriceEntry>();
+    private prices = new Lru<PriceEntry>(64);
     private priceCurrency = 'USD';
     private checker: Promise<void> | null = null;
     private controller = new AbortController();
@@ -57,12 +57,15 @@ export class ConnectivityService {
         }
     }
     async stop() { this.controller.abort(); await this.checker; }
+    private priceEntry(currency: string): PriceEntry {
+        const cached = this.prices.get(currency);
+        if (cached) return cached;
+        return this.prices.set(currency, { cache: new CachedRequest<number | null>(5000), lastKnown: null, error: null });
+    }
     async fetchPrice(currency: string): Promise<number | null> {
         currency = currency.trim().toUpperCase();
         this.priceCurrency = currency;
-        let entry = this.prices.get(currency);
-        if (!entry) { entry = { cache: new CachedRequest(5000), lastKnown: null, error: null }; this.prices.set(currency, entry); }
-        const current = entry;
+        const current = this.priceEntry(currency);
         return current.cache.get(async () => {
             if (this.internetState !== 'red') {
                 try {
@@ -79,8 +82,10 @@ export class ConnectivityService {
     }
     async priceInfo(currency = 'USD'): Promise<Data> {
         currency = currency.trim().toUpperCase();
+        // Retain the entry while awaiting it: other currencies can evict it from
+        // the bounded cache without invalidating this client's response.
+        const entry = this.priceEntry(currency);
         const price = await this.fetchPrice(currency);
-        const entry = this.prices.get(currency)!;
         return { btc_price: price, btc_currency: currency, last_known_price: entry.lastKnown, last_price_currency: currency, last_price_error: entry.error };
     }
     setGeoipApiDisabled(disabled: boolean) {

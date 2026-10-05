@@ -4,6 +4,8 @@ node_modules/
 
 # Local configuration and secrets
 .env
+.env.*
+!.env.example
 compose.override.yaml
 compose.override.yml
 docker-compose.override.yaml

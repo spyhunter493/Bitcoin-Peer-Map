@@ -60,8 +60,11 @@ Most installations only need to change the RPC host and credentials.
 | `BITCOIN_RPC_TIMEOUT` | `30` | RPC request timeout, in seconds |
 | `BITCOIN_NETWORK` | `main` | Node network: `main`, `test`, `signet`, or `regtest` |
 | `BPM_RPC_STARTUP_TIMEOUT` | `30` | Time to wait for RPC during startup, in seconds |
+| `BPM_IMAGE` | `ghcr.io/spyhunter493/bitcoin-peer-map:latest` | Published image reference; use a tag or digest to pin a build |
+| `BPM_HOST_BIND` | `0.0.0.0` | Host interface to publish on; use `127.0.0.1` for access through a local reverse proxy |
 | `BPM_HOST_PORT` | `58333` | Dashboard port published on the Docker host |
 | `BPM_LISTEN_PORT` | `58333` | Dashboard port inside the container |
+| `BPM_DATA_VOLUME` | `bitcoin-peer-map-data` | Named data volume; use a different name for a separate instance |
 | `BPM_GEOIP_ENABLED` | `true` | Enable the persistent GeoIP database |
 | `BPM_GEOIP_AUTO_UPDATE` | Saved preference; enabled on new installs | Override automatic GeoIP dataset updates |
 
@@ -72,6 +75,28 @@ a password file.
 The standard Compose service listens on `0.0.0.0` inside the container and stores
 data at `/var/lib/bitcoin-peer-map`. For a local Node.js process, see
 [running the server](development.md#run-the-server-locally).
+
+`BPM_IMAGE`, `BPM_HOST_BIND`, `BPM_HOST_PORT`, and `BPM_DATA_VOLUME` configure
+Compose itself. They are not application environment variables. RPC startup
+requests and retry delays share the `BPM_RPC_STARTUP_TIMEOUT` deadline.
+
+### Host access and multiple instances
+
+The dashboard can manage peers and has no built-in login. Publish it on a trusted
+network, or use an authenticated reverse proxy. For a reverse proxy on the same
+host, set `BPM_HOST_BIND=127.0.0.1`; the application still listens on `0.0.0.0`
+inside its container. A proxy in another container can reach the service over a
+shared Docker network instead.
+
+Browser management requests are rejected with HTTP 403 when their `Origin` host
+does not match the request's `Host`. Reverse proxies should preserve the external
+`Host` header. HTTP and HTTPS origins on that host are accepted for TLS termination.
+Command-line clients without `Origin` remain supported. This check does not provide
+authentication.
+
+To run another instance, use a distinct Compose project name (`docker compose -p
+bpm-second ...`), `BPM_HOST_PORT`, and `BPM_DATA_VOLUME`. Changing the volume name
+selects different saved data, so keep its existing value during normal upgrades.
 
 ### Inspect the effective configuration
 

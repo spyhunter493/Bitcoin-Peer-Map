@@ -8,6 +8,7 @@ export default async function assertGeoIPSettings(browser, baseUrl) {
     let dbOnly = false;
     let rejectPrivacySave = true;
     let manualUpdates = 0;
+    let manualGate = Promise.resolve();
     page.on('pageerror', error => errors.push(error.message));
     await page.addInitScript(() => {
         localStorage.setItem('bpm.antarcticaDisclaimerSeen', 'true');
@@ -23,6 +24,7 @@ export default async function assertGeoIPSettings(browser, baseUrl) {
         const info = await response.json();
         info.geo_db_stats.auto_update = autoUpdate;
         info.geo_db_stats.db_only_mode = dbOnly;
+        info.geo_db_stats.db_path = '/var/lib/bitcoin-peer-map/geo.db';
         info.geo_db_only_mode = dbOnly;
         await route.fulfill({ json: info });
     });
@@ -40,6 +42,7 @@ export default async function assertGeoIPSettings(browser, baseUrl) {
     });
     await page.route('**/api/geodb/update', async route => {
         manualUpdates++;
+        await manualGate;
         await route.fulfill({ json: { success: true, message: '2 updated entries (128 total)' } });
     });
 
@@ -51,6 +54,13 @@ export default async function assertGeoIPSettings(browser, baseUrl) {
 
     try {
         await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+        await openSettings();
+        assert.equal(await page.locator('#geodb-modal [role="dialog"]').getAttribute('aria-modal'), 'true');
+        assert.equal(await page.evaluate(() => document.activeElement?.id), 'geodb-modal-close');
+        assert.match(await page.locator('#geodb-modal-body').textContent(), /\/var\/lib\/bitcoin-peer-map\/geo.db/);
+        await page.keyboard.press('Escape');
+        await page.waitForSelector('#geodb-modal', { state: 'detached' });
+        assert.equal(await page.evaluate(() => document.activeElement?.id), 'btn-geoip-db-peer');
         await openSettings();
         assert.match(await page.locator('#geodb-modal-body').textContent(), /unencrypted HTTP/);
         assert.match(await page.locator('#geodb-modal-body').textContent(), /survives restarts/);
@@ -68,6 +78,11 @@ export default async function assertGeoIPSettings(browser, baseUrl) {
             return input && !input.checked && !input.disabled;
         });
         assert.equal(dbOnly, true);
+        rejectPrivacySave = true;
+        await page.locator('#geodb-dbonly-toggle + .geodb-toggle-slider').click();
+        await page.waitForFunction(() => document.getElementById('geodb-result')?.textContent?.includes('not saved'));
+        assert.equal(await page.locator('#geodb-dbonly-toggle').isChecked(), false, 'later failures restore the most recently saved setting');
+        rejectPrivacySave = false;
 
         await page.locator('#geodb-autoupdate-toggle + .geodb-toggle-slider').click();
         await page.waitForFunction(() => {
@@ -84,9 +99,18 @@ export default async function assertGeoIPSettings(browser, baseUrl) {
         assert.equal(await page.evaluate(() => window.testIntervals.includes(3600000)), false);
         assert.equal(manualUpdates, 0, 'browser must not initiate scheduled updates');
 
+        let releaseUpdate;
+        manualGate = new Promise(resolve => { releaseUpdate = resolve; });
+        const updateResponse = page.waitForResponse(response => response.url().endsWith('/api/geodb/update'));
         await page.locator('#geodb-update-btn').click();
+        await page.waitForFunction(() => document.getElementById('geodb-update-btn')?.disabled);
+        await page.locator('#geodb-update-btn').evaluate(button => button.click());
+        assert.equal(manualUpdates, 1, 'pending manual imports cannot be submitted twice');
+        releaseUpdate();
+        await updateResponse;
         await page.waitForFunction(() => document.getElementById('geodb-result')?.textContent?.includes('2 updated entries'));
         assert.equal(manualUpdates, 1);
+        await page.waitForFunction(() => !document.getElementById('geodb-update-btn')?.disabled);
 
         await page.reload({ waitUntil: 'domcontentloaded' });
         await openSettings();

@@ -2,10 +2,10 @@ import { BlockList, isIP } from 'node:net';
 
 const nonGlobal = new BlockList();
 const exceptions = new BlockList();
-for (const cidr of ['0.0.0.0/8', '10.0.0.0/8', '100.64.0.0/10', '127.0.0.0/8', '169.254.0.0/16', '172.16.0.0/12', '192.0.0.0/24', '192.0.2.0/24', '192.168.0.0/16', '198.18.0.0/15', '198.51.100.0/24', '203.0.113.0/24', '240.0.0.0/4']) {
+for (const cidr of ['0.0.0.0/8', '10.0.0.0/8', '100.64.0.0/10', '127.0.0.0/8', '169.254.0.0/16', '172.16.0.0/12', '192.0.0.0/24', '192.0.2.0/24', '192.168.0.0/16', '198.18.0.0/15', '198.51.100.0/24', '203.0.113.0/24', '224.0.0.0/4', '240.0.0.0/4']) {
     const [host, prefix] = cidr.split('/'); nonGlobal.addSubnet(host, Number(prefix), 'ipv4');
 }
-for (const cidr of ['::/128', '::1/128', '64:ff9b:1::/48', '100::/64', '2001::/23', '2001:db8::/32', '2002::/16', '3fff::/20', 'fc00::/7', 'fe80::/10']) {
+for (const cidr of ['::/128', '::1/128', '64:ff9b:1::/48', '100::/64', '2001::/23', '2001:db8::/32', '2002::/16', '3fff::/20', 'fc00::/7', 'fe80::/10', 'ff00::/8']) {
     const [host, prefix] = cidr.split('/'); nonGlobal.addSubnet(host, Number(prefix), 'ipv6');
 }
 for (const cidr of ['192.0.0.9/32', '192.0.0.10/32', '2001:1::1/128', '2001:1::2/128', '2001:3::/32', '2001:4:112::/48', '2001:20::/28', '2001:30::/28']) {
@@ -17,7 +17,8 @@ export function splitPeerAddress(address: string): [string, string] {
         if (end < 0) return [address, ''];
         return [address.slice(1, end), address[end + 1] === ':' ? address.slice(end + 2) : ''];
     }
-    return address.split(':').length === 2 ? address.split(':') as [string, string] : [address, ''];
+    const parts = address.split(':');
+    return parts.length === 2 ? parts as [string, string] : [address, ''];
 }
 export function networkType(address: string) {
     const value = address.toLowerCase();
@@ -35,7 +36,7 @@ export function isPrivateAddress(host: string) {
     return nonGlobal.check(host, family) && !exceptions.check(host, family);
 }
 export function isPublicAddress(network: string, host: string) {
-    return ['ipv4', 'ipv6'].includes(network) && !isPrivateAddress(host);
+    return ['ipv4', 'ipv6'].includes(network) && isIP(host) !== 0 && !isPrivateAddress(host);
 }
 export function normalizePeerAddress(address: string, port = 8333) {
     const value = address.trim();

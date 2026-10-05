@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
+import { createServer } from 'node:http';
+import { once } from 'node:events';
 import { AppRuntime, GEOIP_UPDATE_INTERVAL_MS } from '../../src/server/runtime.ts';
 import { PreferenceStore } from '../../src/server/preferences.ts';
 import { waitForRpc } from '../../src/server/main.ts';
@@ -90,6 +92,33 @@ test('startup retries transport errors and respects cancellation', async t => {
     assert.equal(attempts, 2); app.controller.abort();
     await assert.rejects(waitForRpc(app), /cancelled/);
 });
+for (const stalledMethod of ['getnetworkinfo', 'getblockchaininfo']) {
+    test(`startup deadline bounds a stalled ${stalledMethod} request`, async t => {
+        const server = createServer(async (req, res) => {
+            const chunks = [];
+            for await (const chunk of req) chunks.push(chunk);
+            const body = JSON.parse(Buffer.concat(chunks).toString());
+            if (body.method === stalledMethod) return;
+            res.end(JSON.stringify({ id: body.id, result: {}, error: null }));
+        });
+        server.listen(0, '127.0.0.1');
+        await once(server, 'listening');
+        t.after(() => new Promise<void>(resolve => {
+            server.closeAllConnections();
+            server.close(() => resolve());
+        }));
+        const address = server.address();
+        assert.ok(address && typeof address !== 'string');
+        const app = runtime(t, {
+            BITCOIN_RPC_PORT: String(address.port),
+            BITCOIN_RPC_TIMEOUT: '5',
+            BPM_RPC_STARTUP_TIMEOUT: '1',
+        });
+        const started = performance.now();
+        await assert.rejects(waitForRpc(app));
+        assert.ok(performance.now() - started < 2000, 'startup must use its one-second budget, not the five-second RPC timeout');
+    });
+}
 test('system metrics return finite samples and stop their worker', async () => {
     const metrics = new SystemMetrics();
     await metrics.sample(); await metrics.sample();

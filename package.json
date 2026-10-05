@@ -13,6 +13,7 @@
     "start": "node src/server/main.ts",
     "test:server": "node --test tests/server/*.test.ts",
     "test:container": "node tests/test_container.js",
+    "test:compose": "node --test tests/deployment/*.test.js",
     "test": "npm run test:server && npm run test:js"
   },
   "devDependencies": {

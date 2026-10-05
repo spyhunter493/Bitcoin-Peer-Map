@@ -8,13 +8,13 @@ import * as BPMPrice from './price.js';
 import * as BPMFormat from '../core/format.js';
 import * as BPMNodeMonitor from './monitor.js';
 import { renderUpdateStatus } from '../core/version.js';
+import * as BPMGeoipSettings from '../settings/geoip.js';
 /**
  * @param {{config: import('../types').DashboardConfig; onAction: (action: import('../types').NodeAction) => void | Promise<void>}} options
  */
 function create({ config: CFG, onAction }) {
     const dashboard = BPMDashboard;
     const escapeHtml = BPMModal.escapeHtml;
-    const mrow = BPMModal.row;
     const clamp = BPMWorldMap.clamp;
     const effectivePollInterval = BPMPolling.effectiveInterval;
     const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -451,164 +451,11 @@ function create({ config: CFG, onAction }) {
     // GEODB MANAGEMENT DROPDOWN
     // ═══════════════════════════════════════════════════════════
 
-    /** Open GeoIP DB as a centered modal (like Node Info) */
-    function openGeoDBDropdown() {
-        const existing = document.getElementById('geodb-modal');
-        if (existing) existing.remove();
-
-        const overlay = document.createElement('div');
-        overlay.className = 'modal-overlay';
-        overlay.id = 'geodb-modal';
-        overlay.innerHTML = `<div class="modal-box" style="max-width:480px"><div class="modal-header"><span class="modal-title">GeoIP DB</span><button class="modal-close" id="geodb-modal-close">&times;</button></div><div class="modal-body" id="geodb-modal-body"><div style="color:var(--text-muted);text-align:center;padding:16px">Loading...</div></div></div>`;
-        document.body.appendChild(overlay);
-        required('#geodb-modal-close').addEventListener('click', () => overlay.remove());
-        overlay.addEventListener('click', (e) => {
-            if (e.target === overlay) overlay.remove();
-        });
-
-        const body = required('#geodb-modal-body');
-
-        if (lastNodeInfo && lastNodeInfo.geo_db_stats) {
-            const stats = lastNodeInfo.geo_db_stats;
-            const statusText = stats.status || 'unknown';
-            const statusCls = statusText === 'ok' ? 'ok' : statusText === 'disabled' ? 'disabled' : 'error';
-            let html = '';
-            html += `<div class="modal-row"><span class="modal-label" title="Database health status">Status</span><span class="geodb-status-badge ${statusCls}" title="${escapeHtml(statusText.toUpperCase())}">${escapeHtml(statusText.toUpperCase())}</span></div>`;
-            if (stats.entries != null)
-                html += mrow(
-                    'Entries',
-                    stats.entries.toLocaleString(),
-                    'Total number of IP geolocation records in the database',
-                    `${stats.entries.toLocaleString()} records`
-                );
-            if (stats.size_bytes != null)
-                html += mrow(
-                    'Size',
-                    (stats.size_bytes / 1e6).toFixed(1) + ' MB',
-                    'Database file size on disk',
-                    `${(stats.size_bytes / 1e6).toFixed(1)} MB`
-                );
-            if (stats.newest_age_seconds != null) {
-                const secs = stats.newest_age_seconds;
-                let newestText;
-                if (secs >= 86400) {
-                    newestText = Math.floor(secs / 86400) + ' days';
-                } else if (secs >= 3600) {
-                    const h = Math.floor(secs / 3600);
-                    const m = Math.floor((secs % 3600) / 60);
-                    newestText = h + 'h ' + m + 'm';
-                } else if (secs >= 60) {
-                    const m = Math.floor(secs / 60);
-                    const s = secs % 60;
-                    newestText = m + 'm ' + s + 's';
-                } else {
-                    newestText = secs + 's';
-                }
-                html += mrow('Newest Entry', newestText, 'Age of the newest geolocation record', newestText + ' old');
-            } else if (stats.newest_age_days != null) {
-                html += mrow(
-                    'Newest Entry',
-                    stats.newest_age_days + ' days',
-                    'Age of the newest geolocation record',
-                    `${stats.newest_age_days} days old`
-                );
-            }
-            if (stats.oldest_age_days != null)
-                html += mrow(
-                    'Oldest Entry',
-                    stats.oldest_age_days + ' days',
-                    'Age of the oldest geolocation record',
-                    `${stats.oldest_age_days} days old`
-                );
-            if (stats.path)
-                html += `<div class="modal-row"><span class="modal-label" title="File system path to the database">Path</span><span class="modal-val" style="font-size:9px;max-width:260px" title="${escapeHtml(stats.path)}">${escapeHtml(stats.path)}</span></div>`;
-            const alVal = stats.auto_lookup ? 'On' : 'Off';
-            html += mrow(
-                'Auto-resolve',
-                alVal,
-                'Master switch — enables the GeoIP system that resolves peer IPs to locations on the map',
-                alVal,
-                stats.auto_lookup ? 'modal-val-ok' : 'modal-val-warn'
-            );
-            // Auto-update toggle switch (persists to settings.json)
-            const auOn = !!stats.auto_update;
-            html += `<div class="modal-row"><span class="modal-label" title="Automatically update the geolocation database at startup and hourly, even when the dashboard is closed">Auto-update</span><span class="modal-val" style="display:flex;align-items:center;gap:6px"><label class="geodb-toggle" title="${auOn ? 'Click to disable auto-update' : 'Click to enable auto-update'}"><input type="checkbox" id="geodb-autoupdate-toggle" ${auOn ? 'checked' : ''}><span class="geodb-toggle-slider"></span></label></span></div>`;
-            // API Lookup toggle switch (no On/Off text — slider colour shows state)
-            const dbOnly = stats.db_only_mode || false;
-            const apiOn = !dbOnly;
-            html += `<div class="modal-row"><span class="modal-label" title="When ON, unknown IPs are looked up via ip-api.com. When OFF, only cached database entries are used.">API Lookup</span><span class="modal-val" style="display:flex;align-items:center;gap:6px"><label class="geodb-toggle" title="${apiOn ? 'Click to disable API lookups' : 'Click to enable API lookups'}"><input type="checkbox" id="geodb-dbonly-toggle" ${apiOn ? 'checked' : ''}><span class="geodb-toggle-slider"></span></label></span></div>`;
-            html += '<p style="color:var(--text-secondary);font-size:11px;line-height:1.5">API Lookup sends public peer IPs missing from this database to ip-api.com over unencrypted HTTP. Turn it off to keep peer lookups local. This choice survives restarts.</p>';
-            html += '<button class="geodb-update-btn" id="geodb-update-btn">Update Database</button>';
-            html += '<div class="geodb-result" id="geodb-result"></div>';
-            body.innerHTML = html;
-
-            // Auto-update toggle handler (persists to settings.json)
-            /** @type {HTMLInputElement} */
-            const autoUpdateToggle = required('#geodb-autoupdate-toggle');
-            autoUpdateToggle.addEventListener('change', async () => {
-                autoUpdateToggle.disabled = true;
-                try {
-                    /** @type {{success: boolean; auto_update: boolean}} */
-                    const data = await postJson('/api/geodb/toggle-auto-update');
-                    if (!data.success) throw new Error('Could not save auto-update setting');
-                    await fetchInfo();
-                    if (lastNodeInfo?.geo_db_stats) {
-                        lastNodeInfo.geo_db_stats.auto_update = data.auto_update;
-                    }
-                    if (overlay.isConnected) openGeoDBDropdown();
-                } catch (err) {
-                    autoUpdateToggle.checked = auOn;
-                    const resultEl = required('#geodb-result', body);
-                    resultEl.textContent = 'Setting was not saved: ' + errorMessage(err);
-                    resultEl.style.color = 'var(--err)';
-                } finally {
-                    autoUpdateToggle.disabled = false;
-                }
-            });
-
-            // DB-only toggle handler (persists to settings.json)
-            /** @type {HTMLInputElement} */
-            const apiLookupToggle = required('#geodb-dbonly-toggle');
-            apiLookupToggle.addEventListener('change', async () => {
-                apiLookupToggle.disabled = true;
-                try {
-                    /** @type {{success: boolean; geo_db_only_mode: boolean}} */
-                    const data = await postJson('/api/geodb/toggle-db-only');
-                    if (!data.success) throw new Error('Could not save API lookup setting');
-                    await fetchInfo();
-                    if (lastNodeInfo) {
-                        lastNodeInfo.geo_db_only_mode = data.geo_db_only_mode;
-                        if (lastNodeInfo.geo_db_stats) lastNodeInfo.geo_db_stats.db_only_mode = data.geo_db_only_mode;
-                    }
-                    if (overlay.isConnected) openGeoDBDropdown();
-                } catch (err) {
-                    apiLookupToggle.checked = apiOn;
-                    const resultEl = required('#geodb-result', body);
-                    resultEl.textContent = 'Setting was not saved: ' + errorMessage(err);
-                    resultEl.style.color = 'var(--err)';
-                } finally {
-                    apiLookupToggle.disabled = false;
-                }
-            });
-
-            required('#geodb-update-btn').addEventListener('click', async () => {
-                const resultEl = required('#geodb-result');
-                resultEl.textContent = 'Updating...';
-                resultEl.style.color = 'var(--text-secondary)';
-                try {
-                    const resp = await fetch('/api/geodb/update', { method: 'POST' });
-                    const data = await resp.json();
-                    resultEl.textContent = data.message || (data.success ? 'Done' : 'Failed');
-                    resultEl.style.color = data.success ? 'var(--ok)' : 'var(--err)';
-                } catch (err) {
-                    resultEl.textContent = 'Error: ' + errorMessage(err);
-                    resultEl.style.color = 'var(--err)';
-                }
-            });
-        } else {
-            body.innerHTML = '<div style="color:var(--text-muted);padding:8px 0;text-align:center">No GeoDB data available</div>';
-        }
-    }
+    const geoipSettings = BPMGeoipSettings.create({
+        getNodeInfo: () => lastNodeInfo,
+        refreshInfo: fetchInfo,
+    });
+    const openGeoDBDropdown = geoipSettings.open;
 
     // ═══════════════════════════════════════════════════════════
     // CONNECT PEER MODAL

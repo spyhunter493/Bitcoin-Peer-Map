@@ -45,6 +45,20 @@ test('failed dashboard fields clear after expiry and blockchain failure still pe
     assert.equal(info.node_traffic.download_bytes, 2048);
     assert.equal(rpc.count('getbestblockhash'), 1);
 });
+test('dashboard starts independent RPC reads while blockchain details are still pending', async t => {
+    const { rpc, node } = services(t);
+    const blockchain = deferred<Data>();
+    rpc.values.getblockchaininfo = () => blockchain.promise;
+    const pending = node.dashboardInfo('USD', false);
+    await flush();
+    const started = ['getnetworkinfo', 'getnettotals', 'getmempoolinfo'].map(method => rpc.count(method));
+    blockchain.resolve({ blocks: 100, bestblockhash: 'block-100' });
+    const result = await pending;
+    assert.deepEqual(started, [1, 1, 1]);
+    assert.equal(result.connected, 100);
+    assert.equal(result.mempool_size, 5);
+    assert.equal(result.last_block.height, 100);
+});
 test('dashboard services preserve advertised names and distinguish empty lists from unavailable data', async t => {
     let time = 0; t.mock.method(performance, 'now', () => time);
     const { rpc, node } = services(t);
@@ -97,6 +111,30 @@ test('price failures retain only that currency, recover after expiry, and never 
     assert.equal((await connectivity.priceInfo('USD')).last_price_error, null);
     connectivity.internetState = 'red';
     assert.deepEqual(await connectivity.priceInfo('NZD'), { btc_price: null, btc_currency: 'NZD', last_known_price: null, last_price_currency: 'NZD', last_price_error: null });
+});
+test('price cache evicts old currencies without losing responses still in flight', async t => {
+    const pendingUsd = deferred<Response>();
+    const requests = new Map<string, number>();
+    const { node } = services(t, async url => {
+        const currency = String(url).split('BTC-')[1].split('/')[0];
+        requests.set(currency, (requests.get(currency) || 0) + 1);
+        return currency === 'USD' && requests.get(currency) === 1
+            ? pendingUsd.promise
+            : new Response('{"data":{"amount":"90"}}');
+    });
+    const usd = node.price('USD');
+    await flush();
+    let newest = '';
+    for (let i = 0; i < 128; i++) {
+        newest = `${String.fromCharCode(65 + Math.floor(i / 26))}${String.fromCharCode(65 + i % 26)}X`;
+        await node.price(newest);
+    }
+    await node.price(newest);
+    assert.equal(requests.get(newest), 1, 'the most recently used currency remains cached');
+    pendingUsd.resolve(new Response('{"data":{"amount":"100"}}'));
+    assert.equal((await usd).btc_price, 100, 'eviction cannot lose an in-flight response');
+    assert.equal((await node.price('USD')).btc_price, 90);
+    assert.equal(requests.get('USD'), 2, 'old currency entries are evicted');
 });
 test('network summaries include all five families, proxies, sorted addresses, and safe defaults', () => {
     const summary = networkSummary({ networks: [{ name: 'onion', reachable: true, limited: false, proxy: '127.0.0.1:9050' }], localaddresses: [
