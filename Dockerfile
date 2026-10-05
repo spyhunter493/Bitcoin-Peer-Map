@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM node:24-alpine
+FROM node:26-alpine
 
 ARG BPM_BUILD_REVISION=unknown
 ARG BPM_BUILD_VERSION=dev
