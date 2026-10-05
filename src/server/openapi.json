@@ -3,7 +3,7 @@
   "info": {
     "title": "Bitcoin Peer Map",
     "description": "Bitcoin peer monitoring and management dashboard",
-    "version": "unknown"
+    "version": "dev"
   },
   "paths": {
     "/api/peers": {
@@ -278,7 +278,7 @@
     "/api/info": {
       "get": {
         "summary": "Dashboard Info",
-        "description": "Includes services: the P2P service names advertised by this node, from getnetworkinfo.localservicesnames. An empty array means no services are advertised; null means service information is unavailable. Includes updates: the cached application update status. Dashboard reads do not trigger GitHub requests; the server checks once every 24 hours.",
+        "description": "Includes services: the P2P service names advertised by this node, from getnetworkinfo.localservicesnames. An empty array means no services are advertised; null means service information is unavailable. Includes updates: the cached application update status. Dashboard reads do not trigger GitHub requests; the server checks once every 24 hours. Updates compare stable release versions, never unreleased main commits. Development builds skip checks.",
         "operationId": "dashboard_info_api_info_get",
         "parameters": [
           {
@@ -599,7 +599,7 @@
             }
           }
         },
-        "description": "Runtime configuration without credentials. build.updates contains the cached application update status."
+        "description": "Runtime configuration without credentials. build.version is the release tag or dev; build.revision is the exact source commit. build.updates contains cached release update status."
       }
     },
     "/api/stream/system": {
@@ -685,27 +685,29 @@
         "type": "object",
         "required": [
           "update_available",
-          "commits_behind",
+          "latest_version",
           "changes_url",
           "checked_at",
           "check_failed"
         ],
         "properties": {
           "update_available": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "Whether the latest published stable release has a higher semantic version than the installed release."
           },
-          "commits_behind": {
+          "latest_version": {
             "type": [
-              "integer",
+              "string",
               "null"
             ],
-            "minimum": 0
+            "description": "Latest published stable release tag; null before a check or when no release exists."
           },
           "changes_url": {
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "GitHub Release notes URL for a newer stable release; null when no update is available."
           },
           "checked_at": {
             "type": [

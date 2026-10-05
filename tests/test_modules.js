@@ -30,6 +30,19 @@ export default async function assertModules(browser) {
         const revised = await load('next-revision');
         assert.equal(revised.length, cold.length);
         assert.ok(revised.every(module => module.transferred > 0), 'every dependency loads under the new revision');
+        const notice = await page.evaluate(async () => {
+            const { renderUpdateStatus } = await import('/static/v/next-revision/js/core/version.js');
+            const link = document.querySelector('#revision-update');
+            renderUpdateStatus({ update_available: true, latest_version: 'v1.4.0', changes_url: 'https://github.com/spyhunter493/Bitcoin-Peer-Map/releases/tag/v1.4.0' });
+            const available = { hidden: link.hidden, href: link.href, title: link.title, label: link.getAttribute('aria-label') };
+            renderUpdateStatus({ update_available: false, latest_version: 'v1.3.0', changes_url: null });
+            return { available, hiddenAfter: link.hidden };
+        });
+        assert.equal(notice.available.hidden, false);
+        assert.equal(notice.available.href, 'https://github.com/spyhunter493/Bitcoin-Peer-Map/releases/tag/v1.4.0');
+        assert.match(notice.available.title, /v1\.4\.0.*release notes/);
+        assert.equal(notice.available.label, notice.available.title);
+        assert.equal(notice.hiddenAfter, true);
         assert.deepEqual(errors, []);
     } finally {
         await context.close();

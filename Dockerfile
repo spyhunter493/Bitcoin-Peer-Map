@@ -3,16 +3,17 @@
 FROM node:24-alpine
 
 ARG BPM_BUILD_REVISION=unknown
-ARG BPM_GITHUB_REPOSITORY=spyhunter493/bitcoin-peer-map
+ARG BPM_BUILD_VERSION=dev
 
 LABEL org.opencontainers.image.title="Bitcoin Peer Map" \
-      org.opencontainers.image.source="https://github.com/${BPM_GITHUB_REPOSITORY}" \
-      org.opencontainers.image.revision="${BPM_BUILD_REVISION}"
+      org.opencontainers.image.source="https://github.com/spyhunter493/Bitcoin-Peer-Map" \
+      org.opencontainers.image.revision="${BPM_BUILD_REVISION}" \
+      org.opencontainers.image.version="${BPM_BUILD_VERSION}"
 
 ENV NODE_ENV=production \
     BPM_DATA_DIR=/var/lib/bitcoin-peer-map \
     BPM_BUILD_REVISION=${BPM_BUILD_REVISION} \
-    BPM_GITHUB_REPOSITORY=${BPM_GITHUB_REPOSITORY}
+    BPM_BUILD_VERSION=${BPM_BUILD_VERSION}
 
 RUN addgroup -S -g 10001 bpm \
     && adduser -S -D -H -u 10001 -h /app -G bpm bpm

@@ -98,13 +98,13 @@ secrets:
   bitcoin_rpc_password:
     file: ./password
 `);
-    const deployment = config(dir, { BPM_BUILD_REVISION: 'abcdef012345', BPM_GITHUB_REPOSITORY: 'example/fork' }, [...composeFiles, 'compose.override.yaml']);
+    const deployment = config(dir, { BPM_BUILD_REVISION: 'abcdef012345', BPM_BUILD_VERSION: 'v1.3.0' }, [...composeFiles, 'compose.override.yaml']);
     const service = deployment.services.bpm;
     assert.equal(service.image, 'bitcoin-peer-map:local');
     assert.equal(service.pull_policy, 'build');
     assert.equal(service.build.context, dir);
     assert.equal(service.build.args.BPM_BUILD_REVISION, 'abcdef012345');
-    assert.equal(service.build.args.BPM_GITHUB_REPOSITORY, 'example/fork');
+    assert.equal(service.build.args.BPM_BUILD_VERSION, 'v1.3.0');
     assert.equal(service.environment.BITCOIN_RPC_HOST, 'knots');
     assert.equal(service.environment.BITCOIN_RPC_PASSWORD, '');
     assert.equal(service.environment.BITCOIN_RPC_PASSWORD_FILE, '/run/secrets/bitcoin_rpc_password');

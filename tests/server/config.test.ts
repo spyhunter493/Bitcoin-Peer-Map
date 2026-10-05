@@ -16,7 +16,7 @@ test('settings preserve environment defaults and IPv6 RPC URLs', () => {
     assert.equal(settings({ BPM_GEOIP_AUTO_UPDATE: 'FALSE' }).geoip_auto_update_override, false);
     assert.throws(() => loadSettings({}), ConfigurationError);
 });
-for (const [key, value] of Object.entries({ BITCOIN_RPC_SCHEME: 'ftp', BITCOIN_NETWORK: 'wrong', BITCOIN_RPC_PORT: '0', BITCOIN_RPC_TIMEOUT: '1.5', BPM_RPC_STARTUP_TIMEOUT: '601', BPM_LISTEN_PORT: '80', BPM_LISTEN_ADDRESS: '\n', BITCOIN_RPC_VERIFY_TLS: 'yes', BPM_GEOIP_ENABLED: 'invalid', BPM_BUILD_REVISION: '<bad>', BPM_GITHUB_REPOSITORY: 'no-slash', BITCOIN_RPC_USER: 'user\nname' })) {
+for (const [key, value] of Object.entries({ BITCOIN_RPC_SCHEME: 'ftp', BITCOIN_NETWORK: 'wrong', BITCOIN_RPC_PORT: '0', BITCOIN_RPC_TIMEOUT: '1.5', BPM_RPC_STARTUP_TIMEOUT: '601', BPM_LISTEN_PORT: '80', BPM_LISTEN_ADDRESS: '\n', BITCOIN_RPC_VERIFY_TLS: 'yes', BPM_GEOIP_ENABLED: 'invalid', BPM_BUILD_REVISION: '<bad>', BPM_BUILD_VERSION: '<bad>', BITCOIN_RPC_USER: 'user\nname' })) {
     test(`rejects invalid ${key}`, () => assert.throws(() => settings({ [key]: value }), ConfigurationError));
 }
 test('password files preserve spaces and never accept conflicting sources', t => {
@@ -35,6 +35,16 @@ test('build revision defaults, normalization, and validation', () => {
     assert.equal(settings({ BPM_BUILD_REVISION: ' ABCDEF012345\n' }).build_revision, 'abcdef012345');
     assert.equal(settings({ BPM_BUILD_REVISION: ' ' }).build_revision, 'unknown');
     assert.throws(() => settings({ BPM_BUILD_REVISION: 'invalid' }), /BPM_BUILD_REVISION/);
+});
+test('build version defaults and stable release validation are independent of revision', () => {
+    assert.equal(settings().build_version, 'dev');
+    assert.equal(settings({ BPM_BUILD_VERSION: ' ' }).build_version, 'dev');
+    const release = settings({ BPM_BUILD_VERSION: ' v1.3.0 ' });
+    assert.equal(release.build_version, 'v1.3.0');
+    assert.equal(release.build_revision, 'unknown');
+    for (const value of ['1.3.0', 'v01.3.0', 'v1.03.0', 'v1.3.00', 'v1.3', 'v1.3.0-rc.1', 'v1.3.0+build', 'V1.3.0', `v${'1'.repeat(125)}.0.0`]) {
+        assert.throws(() => settings({ BPM_BUILD_VERSION: value }), /BPM_BUILD_VERSION/);
+    }
 });
 test('preferences survive atomic replacement with restricted permissions', t => {
     const dir = temporaryDirectory(t), path = join(dir, 'settings.json');

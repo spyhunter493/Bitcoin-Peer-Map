@@ -30,7 +30,7 @@ export class FixtureRuntime implements ApplicationRuntime {
         latest: () => ({ ...fixtures.latest_metrics, ts: Date.now() / 1000 }),
     };
     updates = {
-        snapshot: () => ({ update_available: false, commits_behind: 0, changes_url: null, checked_at: Date.now() / 1000, check_failed: false }),
+        snapshot: () => ({ update_available: false, latest_version: null, changes_url: null, checked_at: Date.now() / 1000, check_failed: false }),
     };
     connectivity = {
         snapshot: (): ConnectivityStatus => ({ internet_state: 'green', api_available: true, api_consecutive_failures: 0, last_price_error: null, last_known_price: '77203.48', last_price_currency: 'USD', geo_db_only_mode: this.dbOnly, api_down_prompt: false,

@@ -12,6 +12,7 @@ const html = fs.readFileSync(path.join(root, 'src/templates/index.html'), 'utf8'
     .replaceAll('{{ repository_url }}', '#')
     .replaceAll('{{ revision_url }}', '#')
     .replaceAll('{{ revision }}', 'benchmark')
+    .replaceAll('{{ version }}', 'dev')
     .replaceAll('{{ repository_discussions_url }}', '#');
 const contentTypes = {
     '.css': 'text/css', '.js': 'text/javascript', '.json': 'application/json',

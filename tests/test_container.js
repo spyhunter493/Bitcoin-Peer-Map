@@ -38,7 +38,7 @@ async function start() {
     await docker('run', '-d', '--name', name, '--network', 'host', '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
         '--tmpfs', '/tmp:rw,noexec,nosuid,size=64m', '-v', `${volume}:/var/lib/bitcoin-peer-map`,
         '-e', 'BITCOIN_RPC_HOST=127.0.0.1', '-e', `BITCOIN_RPC_PORT=${rpcPort}`, '-e', 'BITCOIN_RPC_USER=test', '-e', 'BITCOIN_RPC_PASSWORD=test',
-        '-e', `BPM_LISTEN_PORT=${port}`, '-e', 'BPM_LISTEN_ADDRESS=127.0.0.1', '-e', 'BPM_BUILD_REVISION=unknown', image);
+        '-e', `BPM_LISTEN_PORT=${port}`, '-e', 'BPM_LISTEN_ADDRESS=127.0.0.1', '-e', 'BPM_BUILD_VERSION=dev', '-e', 'BPM_BUILD_REVISION=unknown', image);
     for (let attempt = 0; attempt < 100; attempt++) {
         try { if ((await get('/healthz')).status === 'ok') return; } catch { /* Wait for startup. */ }
         await delay(100);
@@ -52,6 +52,14 @@ async function stop() {
     await docker('rm', name);
 }
 try {
+    const imageConfig = JSON.parse(await docker('image', 'inspect', '--format', '{{json .Config}}', image));
+    const buildEnvironment = Object.fromEntries(imageConfig.Env.map(value => {
+        const split = value.indexOf('='); return [value.slice(0, split), value.slice(split + 1)];
+    }));
+    assert.equal(imageConfig.Labels['org.opencontainers.image.source'], 'https://github.com/spyhunter493/Bitcoin-Peer-Map');
+    assert.equal(imageConfig.Labels['org.opencontainers.image.version'], buildEnvironment.BPM_BUILD_VERSION);
+    assert.equal(imageConfig.Labels['org.opencontainers.image.revision'], buildEnvironment.BPM_BUILD_REVISION);
+    assert.match(buildEnvironment.BPM_BUILD_VERSION, /^(dev|v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))$/);
     // Prepare the existing on-disk formats with SQLite, without running the server.
     await docker('run', '--rm', '--network', 'none', '-v', `${volume}:/var/lib/bitcoin-peer-map`, image, 'node', '--input-type=module', '-e', `
         import { DatabaseSync } from 'node:sqlite';
@@ -62,6 +70,11 @@ try {
         db.close(); writeFileSync('/var/lib/bitcoin-peer-map/settings.json', JSON.stringify({geoip_auto_update:false, geoip_db_only:true}), {mode:0o600});
     `);
     await start();
+    const build = (await get('/api/config')).build;
+    assert.equal(build.version, 'dev');
+    assert.equal(build.revision, 'unknown');
+    assert.equal(build.updates.update_available, false);
+    assert.equal(build.updates.checked_at, null);
     assert.equal(await docker('exec', name, 'id', '-u'), '10001');
     await docker('exec', name, 'sh', '-c', 'test -z "$(command -v python)" && test -z "$(command -v python3)" && test ! -d /app/node_modules');
     assert.equal((await get('/api/connectivity')).geo_db_only_mode, true);

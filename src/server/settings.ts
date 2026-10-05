@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { homedir } from 'node:os';
+import { parseReleaseVersion } from './build.ts';
 
 export class ConfigurationError extends Error {}
 type Environment = Record<string, string | undefined>;
@@ -33,6 +34,13 @@ function revision(env: Environment) {
     }
     return value;
 }
+function version(env: Environment) {
+    const value = env.BPM_BUILD_VERSION?.trim() || 'dev';
+    if (value !== 'dev' && !parseReleaseVersion(value)) {
+        throw new ConfigurationError('BPM_BUILD_VERSION must be dev or a stable vMAJOR.MINOR.PATCH tag without leading zeros (maximum 128 characters)');
+    }
+    return value;
+}
 function password(env: Environment) {
     let direct = env.BITCOIN_RPC_PASSWORD || '';
     const file = env.BITCOIN_RPC_PASSWORD_FILE?.trim();
@@ -53,10 +61,6 @@ export function loadSettings(env: Environment = process.env) {
     if (!['main', 'test', 'signet', 'regtest'].includes(network)) throw new ConfigurationError('BITCOIN_NETWORK must be main, test, signet, or regtest');
     const listenAddress = (env.BPM_LISTEN_ADDRESS ?? '0.0.0.0').trim();
     if (!listenAddress || /[\r\n]/.test(listenAddress)) throw new ConfigurationError('BPM_LISTEN_ADDRESS must be a single-line address');
-    const repository = (env.BPM_GITHUB_REPOSITORY ?? 'spyhunter493/bitcoin-peer-map').trim().replace(/^\/+|\/+$/g, '');
-    if (repository.split('/').length !== 2 || !repository.split('/').every(Boolean)) {
-        throw new ConfigurationError('BPM_GITHUB_REPOSITORY must use owner/repository format');
-    }
     const host = required(env, 'BITCOIN_RPC_HOST');
     const port = integer(env, 'BITCOIN_RPC_PORT', 8332, 1, 65535);
     const dataDir = (env.BPM_DATA_DIR || '/var/lib/bitcoin-peer-map').replace(/^~(?=\/|$)/, homedir());
@@ -72,7 +76,7 @@ export function loadSettings(env: Environment = process.env) {
         listen_port: integer(env, 'BPM_LISTEN_PORT', 58333, 1024, 65535),
         data_dir: resolve(dataDir), geoip_enabled: boolean(env, 'BPM_GEOIP_ENABLED', true),
         geoip_auto_update_override: env.BPM_GEOIP_AUTO_UPDATE?.trim() ? boolean(env, 'BPM_GEOIP_AUTO_UPDATE', true) : null,
-        github_repository: repository, build_revision: revision(env),
+        build_version: version(env), build_revision: revision(env),
     });
 }
 export type Settings = ReturnType<typeof loadSettings>;

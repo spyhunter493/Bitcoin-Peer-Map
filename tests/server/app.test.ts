@@ -12,8 +12,8 @@ import { ConnectivityService } from '../../src/server/services/connectivity.ts';
 import { GeoDatabase } from '../../src/server/services/geoip.ts';
 import type { TestContext } from 'node:test';
 
-async function application(t: TestContext) {
-    const settings = fixtureSettings(temporaryDirectory(t)), runtime = new FixtureRuntime(settings);
+async function application(t: TestContext, version = 'dev') {
+    const settings = { ...fixtureSettings(temporaryDirectory(t)), build_version: version }, runtime = new FixtureRuntime(settings);
     const app = createApplication(settings, runtime);
     const address = await app.listen(0, '127.0.0.1'); assert.ok(address && typeof address !== 'string');
     t.after(() => app.close());
@@ -28,18 +28,31 @@ test('application serves health, configuration without credentials, and revision
     assert.equal(JSON.stringify(config).includes('secret'), false);
     assert.equal(config.bitcoin_rpc.endpoint, 'http://bitcoin:8332');
     assert.equal(config.build.revision, 'abcdef0123456789');
+    assert.equal(config.build.version, 'dev');
+    assert.equal(config.repository.github, 'spyhunter493/Bitcoin-Peer-Map');
     const response = await get('/'), html = await response.text();
     assert.equal(response.headers.get('cache-control'), 'no-cache');
     assert.match(html, /data-asset-revision="abcdef0123456789"/);
     assert.match(html, /<script type="module" src="\/static\/v\/abcdef0123456789\/js\/app.js"/);
     assert.match(html, /class="revision"[^>]*>abcdef0<\/a>/);
+    assert.match(html, /class="revision build-version"[^>]*>dev<\/span>/);
     assert.match(html, /id="revision-update"[^>]*hidden/);
     assert.equal(html.includes('{{'), false);
     assert.equal((html.match(/<script/g) || []).length, 1);
 });
+test('release version appears in the UI, configuration, and API docs while revision stays exact', async t => {
+    const { get } = await application(t, 'v1.3.0');
+    assert.match(await (await get('/')).text(), /class="revision build-version"[^>]*>v1\.3\.0<\/span>/);
+    const config = await (await get('/api/config')).json();
+    assert.equal(config.build.version, 'v1.3.0');
+    assert.equal(config.build.revision, 'abcdef0123456789');
+    assert.equal(config.build.asset_revision, 'abcdef0123456789');
+    assert.equal(config.build.revision_url, 'https://github.com/spyhunter493/Bitcoin-Peer-Map/commit/abcdef0123456789');
+    assert.equal((await (await get('/openapi.json')).json()).info.version, 'v1.3.0');
+});
 test('dashboard and configuration share cached update status', async t => {
     const { runtime, get } = await application(t);
-    const status = { update_available: true, commits_behind: 3, changes_url: 'https://github.com/spyhunter493/bitcoin-peer-map/compare/abcdef0123456789...main', checked_at: 1700000000, check_failed: false };
+    const status = { update_available: true, latest_version: 'v1.4.0', changes_url: 'https://github.com/spyhunter493/Bitcoin-Peer-Map/releases/tag/v1.4.0', checked_at: 1700000000, check_failed: false };
     t.mock.method(runtime.updates, 'snapshot', () => status);
     const info = await (await get('/api/info?include_price=false')).json();
     const config = await (await get('/api/config')).json();

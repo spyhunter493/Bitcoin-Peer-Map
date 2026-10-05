@@ -9,6 +9,7 @@ import { AppRuntime } from './runtime.ts';
 import type { Settings } from './settings.ts';
 import { type Data, errorMessage, object } from './types.ts';
 import { HttpError, readJsonBody, parseAddress, parsePeerId, parseQueryBoolean, requireDashboardOrigin, sendResponse } from './http.ts';
+import { GITHUB_REPOSITORY, REPOSITORY_URL } from './build.ts';
 
 export interface ApplicationRuntime {
     settings: Settings;
@@ -39,15 +40,16 @@ export function escapeHtml(value: string) {
 export function createApplication(settings: Settings, runtime: ApplicationRuntime = new AppRuntime(settings)) {
     const staticDir = join(packageDir, 'static');
     const revision = settings.build_revision;
+    const version = settings.build_version;
     const assets = assetRevision(staticDir, revision);
-    const repositoryUrl = `https://github.com/${settings.github_repository}`;
+    const repositoryUrl = REPOSITORY_URL;
     const revisionUrl = revision === 'unknown' ? repositoryUrl : `${repositoryUrl}/commit/${revision}`;
     const template = readFileSync(join(packageDir, 'templates/index.html'), 'utf8');
-    const values: Record<string, string> = { revision: revision === 'unknown' ? revision : revision.slice(0, 7), revision_url: revisionUrl, asset_revision: assets, repository_url: repositoryUrl, repository_discussions_url: `${repositoryUrl}/discussions` };
+    const values: Record<string, string> = { version, revision: revision === 'unknown' ? revision : revision.slice(0, 7), revision_url: revisionUrl, asset_revision: assets, repository_url: repositoryUrl, repository_discussions_url: `${repositoryUrl}/discussions` };
     const html = template.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key) => escapeHtml(values[key] ?? ''));
     const schema: Data = JSON.parse(readFileSync(new URL('./openapi.json', import.meta.url), 'utf8'));
     if (!object(schema.info)) throw new Error('OpenAPI schema is missing its info object');
-    schema.info.version = revision;
+    schema.info.version = version;
     const streams = new Set<ServerResponse>();
     let closeTask: Promise<void> | null = null;
 
@@ -81,8 +83,8 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
             bitcoin_rpc: { scheme: settings.rpc_scheme, host: settings.rpc_host, port: settings.rpc_port, network: settings.bitcoin_network, verify_tls: settings.rpc_verify_tls, timeout: settings.rpc_timeout, startup_timeout: settings.rpc_startup_timeout, username_configured: Boolean(settings.rpc_user), password_configured: Boolean(settings.rpc_password), password_file_configured: settings.rpc_password_file_configured, endpoint: settings.rpc_url },
             server: { listen_address: settings.listen_address, listen_port: settings.listen_port },
             geoip: { enabled: settings.geoip_enabled, auto_update_override: settings.geoip_auto_update_override },
-            build: { revision, revision_known: revision !== 'unknown', asset_revision: assets, revision_url: revisionUrl, updates: runtime.updates.snapshot() },
-            repository: { github: settings.github_repository, url: repositoryUrl }, data: { data_dir: settings.data_dir },
+            build: { version, revision, revision_known: revision !== 'unknown', asset_revision: assets, revision_url: revisionUrl, updates: runtime.updates.snapshot() },
+            repository: { github: GITHUB_REPOSITORY, url: repositoryUrl }, data: { data_dir: settings.data_dir },
         }),
         'GET /openapi.json': () => schema,
     };

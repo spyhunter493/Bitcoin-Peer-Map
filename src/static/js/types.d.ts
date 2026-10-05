@@ -625,7 +625,7 @@ export interface NodeTraffic {
 }
 export interface UpdateStatus {
     update_available: boolean;
-    commits_behind: number | null;
+    latest_version: string | null;
     changes_url: string | null;
     checked_at: number | null;
     check_failed: boolean;

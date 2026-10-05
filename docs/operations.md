@@ -12,13 +12,20 @@ docker compose pull bpm
 docker compose up -d bpm
 ```
 
-The `latest` image follows successful builds of `main`. Published images support
-Linux AMD64 and ARM64. Keep the existing data volume when recreating the service.
+The `latest` image follows intentional stable GitHub Releases. Merges into `main`
+do not publish images. Published images support Linux AMD64 and ARM64. Keep the
+existing data volume when recreating the service.
 
 ### Pin a build
 
-Each published build also has a `sha-<full-commit>` tag. To stay on a specific
-build, set `BPM_IMAGE` in `.env` using the full Git commit:
+Each release has a version tag and a `sha-<full-commit>` tag. To stay on a specific
+release, set `BPM_IMAGE` in `.env`:
+
+```env
+BPM_IMAGE=ghcr.io/spyhunter493/bitcoin-peer-map:v1.3.0
+```
+
+Alternatively, pin the release's exact source commit:
 
 ```env
 BPM_IMAGE=ghcr.io/spyhunter493/bitcoin-peer-map:sha-<full-commit>
@@ -29,18 +36,23 @@ accepted. Use the normal pull and recreate commands after changing the reference
 
 ### Version and update notices
 
-The seven-character commit beside the name links to the installed revision.
-An arrow appears beside it when newer commits are available on `main`; clicking
-the arrow opens the changes since the installed commit.
+The header shows the installed release version and the seven-character commit
+linking to its exact source. An arrow appears when the latest published stable
+GitHub Release has a higher semantic version; clicking it opens that release's
+notes. Unreleased commits on `main` never cause a notice. The version comes from
+`BPM_BUILD_VERSION`; `BPM_BUILD_REVISION` remains the source commit.
 
 The server checks at startup if no recent result exists, then once every
 **24 hours**, even without an open dashboard. The cache survives restarts and is
-refreshed when the installed commit or repository changes. Dashboard requests
-only read the cache.
+refreshed when the installed release version changes. Old commit-comparison
+caches are discarded. Dashboard requests only read the cache.
 
 A failed check waits 24 hours before retrying and retains any previously known
-update. Unknown builds skip checks. Builds ahead of or diverged from `main` do
-not show an update arrow.
+update. Development builds (`dev`) skip checks even when their revision is known.
+Equal/older releases and a repository with no published release do not show an
+update arrow. GitHub drafts and prereleases are excluded. Wait for the release
+workflow to succeed before pulling; publishing release notes precedes the image
+build.
 
 ## Status, health, and logs
 

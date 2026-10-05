@@ -70,9 +70,11 @@ docker compose down
 
 ## Updating
 
-The short commit beside the name identifies the installed build. An update arrow
-links to the changes when newer code is available; the server checks once every
-24 hours.
+The header shows the installed release version and a short commit linking to its
+exact source. An update arrow links to the release notes when a newer stable
+GitHub Release is available; the server checks once every 24 hours. Unreleased
+commits on `main` do not trigger notices. Development builds show `dev` and skip
+release checks.
 
 Pull the latest image and recreate the service:
 
@@ -84,6 +86,11 @@ docker compose up -d bpm
 Keep the existing `bitcoin-peer-map-data` volume when upgrading. It stores peer
 locations and server preferences. See [operations](docs/operations.md) for data
 storage, image pinning, and troubleshooting commands.
+
+Production images are published only by intentional GitHub Releases. Merging a
+PR into `main` integrates changes without publishing. Each release provides
+`:vMAJOR.MINOR.PATCH`, `:latest`, and `:sha-<full-commit>` image tags; see the
+[maintainer release process](docs/development.md#release-flow).
 
 ## Documentation
 

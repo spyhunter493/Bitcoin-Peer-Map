@@ -34,11 +34,11 @@ The build override uses `pull_policy: build`, so `up` builds the local source im
 
 Dirty worktrees, including untracked files, use `unknown` so changed static assets
 receive a fresh content hash for browser caching. Direct Docker builds can pass
-`BPM_BUILD_REVISION` explicitly; without it, the header displays `unknown` and skips
-update checks.
-Set `BPM_GITHUB_REPOSITORY=owner/repository` for local builds of a fork. Local
-`.env` variants, Compose overrides, and `secrets/` are excluded from the Docker
-build context.
+`BPM_BUILD_REVISION` explicitly; without it, the commit is `unknown`.
+Local builds use `BPM_BUILD_VERSION=dev` and skip release checks even when the
+revision is known. The version and commit appear separately in the header.
+The canonical source repository is an internal constant. Local `.env` variants,
+Compose overrides, and `secrets/` are excluded from the Docker build context.
 
 ## Tests and checks
 
@@ -176,14 +176,111 @@ Keep peer-supplied strings raw in application state. Assign `textContent` or use
 include `HtmlRow` accept locally constructed markup; ordinary row helpers escape
 their text.
 
-## Image publishing
+## Development flow
 
-The [CI workflow](../.github/workflows/ci.yml) publishes Linux AMD64 and ARM64
-images to GHCR after all checks pass on `main`. It embeds the full Git commit and
-repository during the Docker build, then publishes `latest` and
-`sha-<full-commit>` tags. It authenticates with the built-in `GITHUB_TOKEN`.
+```text
+feature branch → pull request → CI/tests → merge to main
+```
 
-For a new fork or registry package, make the package public after its first
-successful publication to allow pulls without signing in. The project's
-published package is already public. Normal deployment uses the image directly;
-the Compose build override is for local source builds.
+The [CI workflow](../.github/workflows/ci.yml) runs on pull requests and retains
+all syntax/type, backend, JavaScript, browser/layout, Compose, Docker build, and
+container checks. It has a read-only token and no registry login or publish job.
+Merging integrates changes into `main`; it neither repeats the full CI suite on
+the push nor publishes a production image. Pushing a tag alone also does not
+publish an image.
+
+### Protect main
+
+At implementation time, GitHub reported `main` as unprotected and the repository
+ruleset list was empty. The connected GitHub app cannot read the administration
+endpoint for detailed branch protection. Configure a rule for `main` under
+**Settings → Rules → Rulesets**, or use a classic branch protection rule:
+
+- Require a pull request before merging, including for maintainer changes.
+- Require the `test` status check from the `CI` workflow. Keep its job name stable.
+- Require the PR branch to be up to date before merging, so CI tests the current
+  integration result. Update the PR branch when `main` changes; this can rerun
+  PR checks, but does not add duplicate CI after merge.
+- Block force pushes and deletion, and limit bypasses/direct pushes where practical.
+
+A solo-maintainer project can leave mandatory review approvals at zero; extra
+reviewers and a merge queue are not required for this flow. PR-only CI relies on
+these required checks: an unprotected direct push would not be tested.
+
+## Release flow
+
+```text
+ready main → publish GitHub Release/tag → build → publish multi-arch GHCR image
+```
+
+The [release workflow](../.github/workflows/release.yml) uses
+[`release: published`](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#release).
+This supports publishing a reviewed draft in the GitHub UI. Only published stable
+releases in the canonical repository can publish; drafts and prereleases are
+excluded. There is no push, PR, tag-push, or manual-dispatch publish trigger.
+
+1. Ensure the intended changes are merged into `main` with passing required PR
+   checks. Merge this workflow implementation before using the release process.
+2. Choose a new, increasing version such as `v1.3.0`. Use **MAJOR.MINOR.PATCH**:
+   MAJOR for incompatible/breaking changes, MINOR for backward-compatible
+   functionality/features, and PATCH for backward-compatible bug fixes. Always
+   include the lowercase `v` prefix, without leading zeros, prerelease suffixes,
+   or build metadata.
+3. Open **Releases → Draft a new release → Choose a tag**. Create the new version
+   tag targeting the reviewed `main` commit, or select an existing tag at that
+   commit. If saving a draft for later, verify the final tag/commit again before
+   publication. Use the version as the release title.
+4. Choose **Generate release notes**, review/edit the notes and previous release,
+   and save a draft if further review is needed. Leave **Set as a pre-release**
+   unchecked and select **Set as the latest release**.
+5. Publish the release. The workflow validates the tag, checks out the release
+   event's exact commit, verifies the tag still resolves to that commit and the
+   commit is part of `main`, then builds Linux AMD64 and ARM64 images with QEMU
+   and Docker Buildx. It uses GitHub Actions build caching and authenticates to
+   GHCR with `GITHUB_TOKEN`; only the publish job has `packages: write`.
+6. Wait for **Release → Publish container image** to succeed before announcing
+   the image or deploying it. If a build fails, fix the cause and rerun the failed
+   workflow from Actions without moving the published tag.
+
+For `v1.3.0`, all three tags identify the same multi-architecture image:
+
+```text
+ghcr.io/spyhunter493/bitcoin-peer-map:v1.3.0
+ghcr.io/spyhunter493/bitcoin-peer-map:latest
+ghcr.io/spyhunter493/bitcoin-peer-map:sha-<full-release-commit>
+```
+
+Publish releases in increasing version order and wait for each publication to
+finish before starting another. Each successful publication updates `latest`;
+do not rerun an older successful release or publish older maintenance versions
+as the latest release. Never move/reuse published version tags or repurpose SHA
+tags. Pin a version or image digest for deployments that must not follow `latest`.
+The GitHub Release becomes visible before the image build completes, so a notice
+can briefly precede image availability.
+
+### Build metadata
+
+| Value | Release build | Local default | Purpose |
+| --- | --- | --- | --- |
+| `BPM_BUILD_VERSION` | Release tag, e.g. `v1.3.0` | `dev` | Human-facing version and release update comparison |
+| `BPM_BUILD_REVISION` | Full SHA of the release tag's commit | `unknown` | Provenance, source links, and static asset cache identity |
+
+These values are Docker build arguments baked into the image; deployment does
+not need to set them. The local Compose helper supplies a clean checkout's SHA,
+while `compose.build.yaml` accepts either build argument explicitly. The image
+contains OCI labels `org.opencontainers.image.source` (the canonical repository
+URL), `org.opencontainers.image.revision` (the exact SHA), and
+`org.opencontainers.image.version` (the release tag). Version selection comes
+from the release tag, so `package.json` does not need a separate version bump.
+
+The update checker calls the canonical repository's
+[`releases/latest` API](https://docs.github.com/en/rest/releases/releases#get-the-latest-release),
+compares stable versions numerically, and links to the newer GitHub Release.
+Equal or older versions do not produce notices; `dev` builds skip checks. A
+known SHA is independent of release comparison and continues to identify source.
+The API exposes the version at `/api/config` as `build.version`, and update
+status contains `latest_version` in place of the former `commits_behind` field.
+
+Normal deployment uses the public published image directly; the Compose build
+override is for local source builds. Forks can run PR CI and local builds, but
+the release publisher is deliberately restricted to the canonical repository.

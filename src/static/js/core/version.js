@@ -7,8 +7,7 @@ export function renderUpdateStatus(status) {
     link.hidden = !status?.update_available || !status.changes_url;
     if (link.hidden || !status?.changes_url) return;
     link.href = status.changes_url;
-    const count = status.commits_behind;
-    const label = `Update available${count ? ` — ${count} ${count === 1 ? 'commit' : 'commits'} behind` : ''}. View changes on GitHub`;
+    const label = `Update available${status.latest_version ? ` — ${status.latest_version}` : ''}. View release notes on GitHub`;
     link.title = label;
     link.setAttribute('aria-label', label);
 }

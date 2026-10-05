@@ -6,4 +6,4 @@ services:
       context: .
       args:
         BPM_BUILD_REVISION: ${BPM_BUILD_REVISION:-unknown}
-        BPM_GITHUB_REPOSITORY: ${BPM_GITHUB_REPOSITORY:-spyhunter493/bitcoin-peer-map}
+        BPM_BUILD_VERSION: ${BPM_BUILD_VERSION:-dev}
