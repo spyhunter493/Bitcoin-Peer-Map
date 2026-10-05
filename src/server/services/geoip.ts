@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { Worker } from 'node:worker_threads';
 import { GEO_COLUMNS, GEO_SCHEMA, GEO_UPDATES } from './geoip-schema.ts';
 import { type Data, errorMessage, nowSeconds, object } from '../types.ts';
+import { createFailureReporter, createLogger } from '../logging.ts';
 
 export { GEO_COLUMNS } from './geoip-schema.ts';
 export const GEOIP_DATASET_URL = 'https://raw.githubusercontent.com/mbhillrn/Bitcoin-Node-GeoIP-Dataset/main/geo.db';
@@ -25,6 +26,7 @@ export class GeoDatabase {
     private database: DatabaseSync | null = null;
     private cachedStats: Data | null = null;
     private updating = false;
+    private saveFailures = createFailureReporter(createLogger('geoip'));
     constructor(dataDir: string, enabled: boolean, signal?: AbortSignal) {
         this.enabled = enabled; this.path = join(dataDir, 'geo.db'); this.tempDir = join(dataDir, 'tmp'); this.signal = signal;
     }
@@ -68,7 +70,8 @@ export class GeoDatabase {
         try {
             this.database.prepare(`INSERT INTO geo_cache (${GEO_COLUMNS.join(',')}) VALUES (${GEO_COLUMNS.map(() => '?').join(',')}) ON CONFLICT(ip) DO UPDATE SET ${GEO_UPDATES}`).run(...values);
             this.cachedStats = null;
-        } catch (error) { console.error(`Could not save geolocation for ${ip}: ${errorMessage(error)}`); }
+            this.saveFailures.recovered('Geolocation database writes recovered');
+        } catch (error) { this.saveFailures.failure(`Could not save geolocation for ${ip}: ${errorMessage(error)}`, 'error'); }
     }
     async update(fetcher: typeof fetch = fetch, maxBytes = MAX_DOWNLOAD_BYTES): Promise<{ success: boolean; message: string }> {
         if (!this.enabled) return { success: false, message: 'Geo database is disabled' };

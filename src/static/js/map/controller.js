@@ -495,7 +495,7 @@ function create() {
 
     /** Render the mini private donut below the public AS donut (when private peers exist) */
     function drawPrivateNetworksText() {
-        if (!privateState.privateNetMode) return;
+        if (!privateState.privateNetMode || !peerTable.showAntarcticaPeers) return;
 
         const fontSize1 = Math.max(12, Math.min(48, 18 * view.zoom));
         const fontSize2 = Math.max(10, Math.min(40, 15 * view.zoom));
@@ -570,6 +570,7 @@ function create() {
      *  Returns {x, y} or null.
      * @param {number[]} wrapOffsets */
     function drawPrivateNetLines(wrapOffsets) {
+        if (!peerTable.showAntarcticaPeers) return;
         if (!privateState.privateNetMode && !privateState.pnMiniHover) return;
 
         const canvasRect = canvas.getBoundingClientRect();
@@ -825,12 +826,13 @@ function create() {
 
             // Determine map coordinates
             let lat, lon;
-            const isPrivate =
+            let isPrivate =
                 peer.location_status === 'private' ||
                 peer.location_status === 'unavailable' ||
                 peer.location_status === 'pending';
 
             if (isPrivate || peer.lat == null || peer.lon == null || (peer.lat === 0 && peer.lon === 0)) {
+                isPrivate = true;
                 // Place in Antarctica with stable position
                 const pos = getAntarcticaPosition(peer.addr || `peer-${peer.id}`);
                 lat = pos.lat;
@@ -1529,6 +1531,7 @@ function create() {
  * @param {number} now
  * @param {number[]} wrapOffsets */
     function drawNode(node, now, wrapOffsets) {
+        if (!isMapNodeVisible(node)) return;
         if (now < node.spawnTime) return;
         const reducedMotion = reducedMotionQuery.matches;
         if (reducedMotion && !node.alive) return;
@@ -1629,7 +1632,7 @@ function create() {
  * @param {number[]} wrapOffsets */
     function drawConnectionLines(wrapOffsets) {
         ctx.lineWidth = 0.5;
-        let aliveNodes = mapView.nodes.filter((n) => n.alive);
+        let aliveNodes = mapView.nodes.filter((n) => n.alive && isMapNodeVisible(n));
         // Respect network filter for connection lines too
         if (!isAllNetsEnabled()) {
             aliveNodes = aliveNodes.filter((n) => passesNetFilter(n.peer.network));
@@ -1684,6 +1687,7 @@ function create() {
         const MARGIN_NEAR = Math.max(mapView.width, mapView.height) * 0.25; // ~25% beyond edges
 
         for (const node of matchingNodes) {
+            if (!isMapNodeVisible(node)) continue;
             let bestS = null;
             let bestCenterDist = Infinity;
             let bestTier = 3; // lower = better (1=on-screen, 2=near, 3=any)
@@ -1975,6 +1979,7 @@ function create() {
         const seen = new Set();
         for (let i = mapView.nodes.length - 1; i >= 0; i--) {
             if (!mapView.nodes[i].alive) continue;
+            if (!isMapNodeVisible(mapView.nodes[i])) continue;
             if (seen.has(mapView.nodes[i].peerId)) continue;
             for (const off of offsets) {
                 const s = worldToScreen(mapView.nodes[i].lon + off, mapView.nodes[i].lat);
@@ -2013,10 +2018,29 @@ function create() {
         preferences,
         onAction(action) {
             if (action.type === 'layout') scheduleDonutStackFit();
-            else if (action.top !== undefined) fitDonutStackForPanelTop(action.top, action.immediate);
+            else if (action.type === 'antarctica') {
+                if (!action.visible) {
+                    if (dashboard.interaction.pinnedNode?.isPrivate || dashboard.interaction.groupedNodes?.some((node) => node.isPrivate)) {
+                        mapNavigation.closeGroup();
+                    } else if (dashboard.interaction.hoveredNode?.isPrivate) {
+                        dashboard.interaction.hoveredNode = null;
+                        if (!dashboard.interaction.pinnedNode && !dashboard.interaction.groupedNodes) {
+                            hideTooltip();
+                            peerTable.highlightTableRow(null);
+                        }
+                    }
+                    canvas.style.cursor = 'grab';
+                    antOverlay.classList.add('hidden');
+                }
+            } else if (action.top !== undefined) fitDonutStackForPanelTop(action.top, action.immediate);
             else fitDonutStackToViewport();
         },
     });
+
+    /** @param {import('../types').MapNode} node */
+    function isMapNodeVisible(node) {
+        return peerTable.showAntarcticaPeers || !node.isPrivate;
+    }
 
     // ── Ban list modal (overlay — peer table stays visible underneath) ──
     const bansBtn = document.getElementById('btn-bans');
@@ -2117,7 +2141,7 @@ function create() {
      * @param {number[]} wrapOffsets
      * @param {boolean} [forcePinned] */
     function drawHighlightRing(node, now, wrapOffsets, forcePinned) {
-        if (!node.alive) return;
+        if (!node.alive || !isMapNodeVisible(node)) return;
         const isPinned =
             forcePinned ||
             (dashboard.interaction.pinnedNode && dashboard.interaction.pinnedNode.peerId === node.peerId);

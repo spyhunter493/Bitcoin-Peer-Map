@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { parseReleaseVersion } from './build.ts';
+import { LOG_LEVELS, type LogLevel } from './logging.ts';
 
 export class ConfigurationError extends Error {}
 type Environment = Record<string, string | undefined>;
@@ -54,6 +55,21 @@ function password(env: Environment) {
     return direct;
 }
 
+function adminToken(env: Environment) {
+    const value = env.BPM_ADMIN_TOKEN || '';
+    if (!value) return null;
+    if (value.length > 256 || !/^[A-Za-z0-9._~+/-]+={0,2}$/.test(value)) {
+        throw new ConfigurationError('BPM_ADMIN_TOKEN must contain 1-256 bearer-token characters without whitespace');
+    }
+    return value;
+}
+
+function logLevel(env: Environment): LogLevel {
+    const value = env.BPM_LOG_LEVEL?.trim().toLowerCase() || 'info';
+    if (!LOG_LEVELS.includes(value as LogLevel)) throw new ConfigurationError('BPM_LOG_LEVEL must be debug, info, warn, or error');
+    return value as LogLevel;
+}
+
 export function loadSettings(env: Environment = process.env) {
     const scheme = (env.BITCOIN_RPC_SCHEME || 'http').trim().toLowerCase();
     if (!['http', 'https'].includes(scheme)) throw new ConfigurationError('BITCOIN_RPC_SCHEME must be http or https');
@@ -77,6 +93,8 @@ export function loadSettings(env: Environment = process.env) {
         data_dir: resolve(dataDir), geoip_enabled: boolean(env, 'BPM_GEOIP_ENABLED', true),
         geoip_auto_update_override: env.BPM_GEOIP_AUTO_UPDATE?.trim() ? boolean(env, 'BPM_GEOIP_AUTO_UPDATE', true) : null,
         build_version: version(env), build_revision: revision(env),
+        admin_token: adminToken(env),
+        log_level: logLevel(env),
     });
 }
 export type Settings = ReturnType<typeof loadSettings>;

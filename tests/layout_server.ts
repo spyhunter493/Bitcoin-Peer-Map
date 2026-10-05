@@ -60,11 +60,12 @@ export class FixtureRuntime implements ApplicationRuntime {
         clearBans: async () => ({ success: true }),
     };
 }
-export function fixtureSettings(dataDir = '/tmp/bpm-layout-test') {
-    return loadSettings({ BITCOIN_RPC_HOST: 'bitcoin', BITCOIN_RPC_USER: 'bpm', BITCOIN_RPC_PASSWORD: 'secret', BPM_DATA_DIR: dataDir, BPM_BUILD_REVISION: 'abcdef0123456789' });
+export const FIXTURE_ADMIN_TOKEN = 'bpm-test-admin-token-'.padEnd(64, 'x');
+export function fixtureSettings(dataDir = '/tmp/bpm-layout-test', adminToken = FIXTURE_ADMIN_TOKEN) {
+    return loadSettings({ BITCOIN_RPC_HOST: 'bitcoin', BITCOIN_RPC_USER: 'bpm', BITCOIN_RPC_PASSWORD: 'secret', BPM_DATA_DIR: dataDir, BPM_BUILD_REVISION: 'abcdef0123456789', BPM_ADMIN_TOKEN: adminToken });
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-    const settings = fixtureSettings(process.env.BPM_LAYOUT_TEST_DATA_DIR);
+    const settings = fixtureSettings(process.env.BPM_LAYOUT_TEST_DATA_DIR, process.env.BPM_LAYOUT_ADMIN_TOKEN);
     const app = createApplication(settings, new FixtureRuntime(settings));
     await app.listen(Number(process.env.BPM_LAYOUT_TEST_PORT || 58991), process.env.BPM_LAYOUT_TEST_HOST || '127.0.0.1');
     for (const signal of ['SIGTERM', 'SIGINT'] as const) process.once(signal, () => { void app.close(); });

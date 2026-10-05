@@ -4,7 +4,7 @@ import { request } from 'node:http';
 import { writeFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { createApplication, assetRevision } from '../../src/server/app.ts';
-import { FixtureRuntime, fixtureSettings } from '../layout_server.ts';
+import { FixtureRuntime, fixtureSettings, FIXTURE_ADMIN_TOKEN } from '../layout_server.ts';
 import { temporaryDirectory, deferred, flush, FakeRpc } from './helpers.ts';
 import { NodeService } from '../../src/server/services/node.ts';
 import { PeerService } from '../../src/server/services/peers.ts';
@@ -18,7 +18,11 @@ async function application(t: TestContext, version = 'dev') {
     const address = await app.listen(0, '127.0.0.1'); assert.ok(address && typeof address !== 'string');
     t.after(() => app.close());
     const base = `http://127.0.0.1:${address.port}`;
-    return { app, runtime, base, get: (path: string, options?: RequestInit) => fetch(base + path, options) };
+    return { app, runtime, base, get: (path: string, options?: RequestInit) => {
+        const headers = new Headers(options?.headers);
+        if (options?.method === 'POST') headers.set('Authorization', `Bearer ${FIXTURE_ADMIN_TOKEN}`);
+        return fetch(base + path, { ...options, headers });
+    } };
 }
 test('application serves health, configuration without credentials, and revisioned dashboard HTML', async t => {
     const { runtime, get } = await application(t);
@@ -34,13 +38,14 @@ test('application serves health, configuration without credentials, and revision
     assert.equal(response.headers.get('cache-control'), 'no-cache');
     assert.match(html, /data-asset-revision="abcdef0123456789"/);
     assert.match(html, /<script type="module" src="\/static\/v\/abcdef0123456789\/js\/app.js"/);
-    assert.match(html, /class="revision"[^>]*>abcdef0<\/a>/);
+    const header = html.match(/<header id="topbar">([\s\S]*?)<\/header>/)![1];
+    assert.doesNotMatch(header, /abcdef0|View commit|\/commit\//);
     assert.match(html, /class="revision build-version"[^>]*>dev<\/span>/);
     assert.match(html, /id="revision-update"[^>]*hidden/);
     assert.equal(html.includes('{{'), false);
     assert.equal((html.match(/<script/g) || []).length, 1);
 });
-test('release version appears in the UI, configuration, and API docs while revision stays exact', async t => {
+test('header displays only the release version while internal source and cache metadata stay exact', async t => {
     const { get } = await application(t, 'v1.3.0');
     assert.match(await (await get('/')).text(), /class="revision build-version"[^>]*>v1\.3\.0<\/span>/);
     const config = await (await get('/api/config')).json();
@@ -203,7 +208,7 @@ test('cross-origin browser requests cannot change settings or manage peers', asy
     assert.equal(proxied.status, 200, 'TLS termination can preserve the external Host header');
     const defaultPort = await new Promise<number | undefined>((resolve, reject) => {
         const req = request(`${base}/api/geodb/toggle-auto-update`, {
-            method: 'POST', headers: { Host: 'bpm.example:443', Origin: 'https://bpm.example' },
+            method: 'POST', headers: { Host: 'bpm.example:443', Origin: 'https://bpm.example', Authorization: `Bearer ${FIXTURE_ADMIN_TOKEN}` },
         }, res => { res.resume(); resolve(res.statusCode); });
         req.on('error', reject);
         req.end();

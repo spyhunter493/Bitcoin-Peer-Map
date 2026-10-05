@@ -53,6 +53,11 @@ Your node must allow RPC connections from the dashboard. See the
 For a node in another Compose project, see
 [shared Docker networks](docs/configuration.md#another-compose-project).
 
+Viewing is available without a login. To enable peer management and GeoIP setting
+changes, set `BPM_ADMIN_TOKEN` in `.env` to your chosen token. There is no minimum
+length. You will be prompted for it when managing the dashboard.
+Use HTTPS outside a trusted network; see [admin authentication](docs/configuration.md#admin-token-and-read-only-mode).
+
 ### 3. Start the dashboard
 
 ```bash
@@ -70,11 +75,10 @@ docker compose down
 
 ## Updating
 
-The header shows the installed release version and a short commit linking to its
-exact source. An update arrow links to the release notes when a newer stable
-GitHub Release is available; the server checks once every 24 hours. Unreleased
-commits on `main` do not trigger notices. Development builds show `dev` and skip
-release checks.
+The header shows the installed release version. An update arrow links to the
+release notes when a newer stable GitHub Release is available; the server checks
+once every 24 hours. Unreleased commits on `main` do not trigger notices.
+Development builds show `dev` and skip release checks.
 
 Pull the latest image and recreate the service:
 

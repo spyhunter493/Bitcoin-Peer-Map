@@ -15,7 +15,6 @@
         <div class="topbar-left">
             <a href="{{ repository_url }}" target="_blank" rel="noopener" class="logo" title="Peer map, service provider distribution analysis, and tools for your Bitcoin node - View on GitHub"><span class="brand-primary">Bitcoin</span> <span class="brand-accent">Peer</span> <span class="brand-primary">Map</span></a>
             <span class="revision build-version" title="Installed application version">{{ version }}</span>
-            <a href="{{ revision_url }}" target="_blank" rel="noopener" class="revision" title="View commit {{ revision }} on GitHub">{{ revision }}</a>
             <a id="revision-update" class="revision update-indicator" target="_blank" rel="noopener" aria-label="Update available — view release notes" title="Update available — view release notes" hidden>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6"/></svg>
             </a>
@@ -64,6 +63,7 @@
             </span>
             <span class="topbar-sync-status" id="mo-status" title="Node sync status">&mdash;</span>
             <span id="clock" class="topbar-clock" title="Current local time"></span>
+            <button type="button" class="admin-lock" id="admin-lock" title="Lock management actions in this tab" hidden>Lock</button>
             <button class="topbar-gear" id="topbar-gear" title="Map Settings">&#9881;</button>
         </div>
     </header>
@@ -244,7 +244,7 @@
 
     <!-- Footer -->
     <footer id="footer" class="footer">
-        <span class="footer-btc" id="footer-btc">Support (btc): <span class="footer-btc-addr">bc1qnngus06lk0e60e05yq902e9edx7kt4kcuuuy72</span></span>
+        <span class="footer-btc" id="footer-btc">Support (xbt): <span class="footer-btc-addr">bc1qnngus06lk0e60e05yq902e9edx7kt4kcuuuy72</span></span>
     </footer>
 
     <script type="module" src="/static/v/{{ asset_revision }}/js/app.js"></script>

@@ -1,13 +1,18 @@
 import timers from 'node:timers/promises';
 import { errorMessage } from './types.ts';
+import { createFailureReporter, createLogger, type Logger } from './logging.ts';
 
 export async function sleep(milliseconds: number, signal?: AbortSignal) {
     try { await timers.setTimeout(milliseconds, undefined, { signal }); }
     catch (error) { if (!signal?.aborted) throw error; }
 }
-export async function repeat(task: () => Promise<unknown>, milliseconds: number, signal: AbortSignal) {
+export async function repeat(task: () => Promise<unknown>, milliseconds: number, signal: AbortSignal, logger: Logger = createLogger('tasks')) {
+    const failures = createFailureReporter(logger);
     while (!signal.aborted) {
-        try { await task(); } catch (error) { if (!signal.aborted) console.error(errorMessage(error)); }
+        try {
+            await task();
+            if (!signal.aborted) failures.recovered('Background task recovered');
+        } catch (error) { if (!signal.aborted) failures.failure(`Background task failed: ${errorMessage(error)}`, 'error'); }
         await sleep(milliseconds, signal);
     }
 }

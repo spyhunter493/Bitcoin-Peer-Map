@@ -1,4 +1,10 @@
 /** Browser contract for /api/peers. Strings remain raw until rendered into HTML. */
+export interface AdminAuthentication {
+    getToken(): string;
+    clearToken(): void;
+    requestToken(signal?: AbortSignal): Promise<string>;
+}
+
 export type PeerDirection = 'IN' | 'OUT';
 export type PeerNetwork = 'ipv4' | 'ipv6' | 'onion' | 'i2p' | 'cjdns';
 export interface Peer {
@@ -176,7 +182,7 @@ export interface PeerTableOptions {
         writeSavedDisplaySettings(settings: Partial<TableDisplaySettings>): void;
         readSavedDisplaySettings(): Partial<TableDisplaySettings>;
     };
-    onAction(action: { type: 'layout' } | { type: 'fit'; top?: number; immediate?: boolean }): void;
+    onAction(action: { type: 'layout' } | { type: 'fit'; top?: number; immediate?: boolean } | { type: 'antarctica'; visible: boolean }): void;
 }
 export interface PeerTableController {
     readonly showAntarcticaPeers: boolean;

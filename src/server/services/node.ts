@@ -6,6 +6,9 @@ import type { GeoDatabase } from './geoip.ts';
 import { parsePeerInfo, parseNetworkInfo, parseBlockchainInfo, parseBlockHeader, parseBlock, parseMempoolInfo, parseChainTips, type NetworkInfo, type BlockchainInfo, type BlockHeader } from '../rpc-types.ts';
 import { NodeMetrics } from './node-metrics.ts';
 import type { DashboardDetails, DashboardInfo, RecentBlock, RecentBlocks, ChainTip, ChainTips, NetworkSummary, NetworkScores } from '../api-types.ts';
+import { createFailureReporter, createLogger } from '../logging.ts';
+
+const log = createLogger('node');
 
 export const CHAIN_TIP_HEADER_LIMIT = 100;
 export class NodeService {
@@ -19,6 +22,10 @@ export class NodeService {
     private blocks = new Lru<RecentBlock & { previous_hash: string }>(256);
     private pendingHeaders = new Map<string, Promise<BlockHeader>>();
     private pendingBlocks = new Map<string, Promise<RecentBlock & { previous_hash: string }>>();
+    private blockchainFailures = createFailureReporter(log);
+    private blockFailures = createFailureReporter(log);
+    private networkFailures = createFailureReporter(log);
+    private mempoolFailures = createFailureReporter(log);
     constructor(rpc: Rpc, connectivity: NodeService['connectivity'], geoDatabase: NodeService['geoDatabase'], autoUpdateEnabled: () => boolean) {
         this.rpc = rpc; this.connectivity = connectivity; this.geoDatabase = geoDatabase; this.autoUpdateEnabled = autoUpdateEnabled;
         this.metrics = new NodeMetrics(rpc);
@@ -69,13 +76,15 @@ export class NodeService {
             let indexed = false;
             try { const indexes = await this.rpc.call('getindexinfo', [], 10); indexed = object(indexes) && 'txindex' in indexes; } catch { /* Optional RPC. */ }
             result.blockchain = { size_gb: round((blockchain.size_on_disk || 0) / 1e9, 1), pruned: blockchain.pruned ?? false, indexed, ibd: blockchain.initialblockdownload ?? false };
-        } catch (error) { console.warn(`Could not load blockchain details: ${errorMessage(error)}`); }
+            this.blockchainFailures.recovered('Blockchain details recovered');
+        } catch (error) { this.blockchainFailures.failure(`Could not load blockchain details: ${errorMessage(error)}`); }
         try {
             const hash = blockchain?.bestblockhash || await this.rpc.call('getbestblockhash', [], 10);
             if (typeof hash !== 'string' || !hash) throw new Error('getbestblockhash returned an unexpected response');
             const header = await this.header(hash);
             result.last_block = { height: blockchain?.blocks ?? header.height ?? 0, time: header.time ?? 0 };
-        } catch (error) { console.warn(`Could not load last block: ${errorMessage(error)}`); }
+            this.blockFailures.recovered('Last block details recovered');
+        } catch (error) { this.blockFailures.failure(`Could not load last block: ${errorMessage(error)}`); }
         return result;
     }
     private async networkDetails(): Promise<Pick<DashboardDetails, 'subversion' | 'connected' | 'services' | 'network_details' | 'network_scores'>> {
@@ -94,14 +103,17 @@ export class NodeService {
                 if (scores[family] === null || score > scores[family]) scores[family] = score;
             }
             result.network_scores = network.localaddresses === null ? null : scores;
-        } catch (error) { console.warn(`Could not load network details: ${errorMessage(error)}`); }
+            this.networkFailures.recovered('Network details recovered');
+        } catch (error) { this.networkFailures.failure(`Could not load network details: ${errorMessage(error)}`); }
         return result;
     }
     private async mempoolSize(): Promise<number | null> {
         try {
-            return parseMempoolInfo(await this.rpc.call('getmempoolinfo', [], 10)).size ?? 0;
+            const size = parseMempoolInfo(await this.rpc.call('getmempoolinfo', [], 10)).size ?? 0;
+            this.mempoolFailures.recovered('Mempool details recovered');
+            return size;
         } catch (error) {
-            console.warn(`Could not load mempool details: ${errorMessage(error)}`);
+            this.mempoolFailures.failure(`Could not load mempool details: ${errorMessage(error)}`);
             return null;
         }
     }
