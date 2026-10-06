@@ -29,8 +29,10 @@ export function create(options, getNavigation) {
         if (options.state.panelHistory.length > 0) {
             if (!existing) {
                 existing = document.createElement('button');
+                existing.setAttribute('type', 'button');
                 existing.className = 'as-detail-back';
                 existing.title = 'Back';
+                existing.setAttribute('aria-label', 'Back to distribution summary');
                 existing.innerHTML = '\u2190'; // ← left arrow = back
                 existing.addEventListener('click', function (e) {
                     e.stopPropagation();
@@ -84,7 +86,8 @@ export function create(options, getNavigation) {
         var groups = othersSeg._othersGroups;
         for (var i = 0; i < groups.length; i++) {
             (function (g) {
-                var item = document.createElement('div');
+                var item = document.createElement('button');
+                item.setAttribute('type', 'button');
                 item.className = 'as-others-popup-item';
                 var name = g.asShort || g.asName || g.asNumber;
                 if (name.length > 24) name = name.substring(0, 23) + '\u2026';

@@ -25,7 +25,7 @@ export default async function assertNavigation(browser, baseUrl) {
         await page.locator('#as-donut-center').click();
         const category = page.locator('#as-detail-panel .as-summary-row[data-cat-label="IPv4"]');
         await category.click();
-        const provider = page.locator('#as-sub-tooltip .as-provider-row').first();
+        const provider = page.locator('#as-sub-tooltip .as-provider-peer-list').first();
         const providerKey = await provider.getAttribute('data-as');
         await provider.click();
         await page.waitForSelector('#as-sub-sub-tooltip .as-sub-tt-id-link');
@@ -74,7 +74,7 @@ export default async function assertNavigation(browser, baseUrl) {
 
         // Escape dismisses the deepest tooltip; map clicks close nested views together before exiting focus.
         await category.click();
-        await page.locator('#as-sub-tooltip .as-provider-row').first().click();
+        await page.locator('#as-sub-tooltip .as-provider-peer-list').first().click();
         await page.waitForSelector('#as-sub-sub-tooltip', { state: 'visible' });
         await page.keyboard.press('Escape');
         await page.waitForSelector('#as-sub-sub-tooltip', { state: 'hidden' });

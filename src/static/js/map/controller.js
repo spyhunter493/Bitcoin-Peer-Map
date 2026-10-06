@@ -741,6 +741,11 @@ function create() {
 
         const distribution = BPMDistribution;
         distribution.init();
+        const distributionContainer = document.getElementById('as-distribution-container');
+        if (distributionContainer) {
+            // Focus and hover reveal native legend controls, changing stack height.
+            new ResizeObserver(fitDonutStackToViewport).observe(distributionContainer);
+        }
 
         // Apply initial "Display Top ISP/Net" toggle state
         if (!advSettings.showDonutLegends) {

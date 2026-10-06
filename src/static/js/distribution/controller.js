@@ -873,6 +873,7 @@ function updateLensChrome() {
         var active = buttons[i].dataset.lens === distributionState.lens;
         buttons[i].classList.toggle('active', active);
         buttons[i].setAttribute('aria-selected', active ? 'true' : 'false');
+        buttons[i].tabIndex = active ? 0 : -1;
     }
 }
 
@@ -896,6 +897,15 @@ function init() {
         true
     );
     focusedCloseBtn = document.getElementById('as-focused-close');
+    const overview = document.getElementById('as-overview-trigger');
+    overview?.addEventListener('click', event => {
+        event.stopPropagation();
+        if (distributionState.donutFocused) navigation.navigateBack();
+        else enterFocusedMode();
+        query('.as-detail-close', panelEl)?.focus({ preventScroll: true });
+    });
+    new MutationObserver(() => overview?.setAttribute('aria-expanded', String(distributionState.donutFocused)))
+        .observe(document.body, { attributes: true, attributeFilter: ['class'] });
     donutController.init({
         wrap: document.getElementById('as-donut-wrap'),
         svg: document.getElementById('as-donut'),
@@ -943,6 +953,16 @@ function init() {
 
     if (lensToggleEl) {
         var lensButtons = queryAll('.as-lens-btn', lensToggleEl);
+        lensToggleEl.addEventListener('keydown', event => {
+            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+            const current = lensButtons.findIndex(button => button === event.target);
+            if (current < 0) return;
+            event.preventDefault();
+            const next = event.key === 'Home' ? 0 : event.key === 'End' ? lensButtons.length - 1
+                : (current + (event.key === 'ArrowRight' ? 1 : lensButtons.length - 1)) % lensButtons.length;
+            setDistributionLens(lensButtons[next].dataset.lens || '');
+            lensButtons[next].focus({ preventScroll: true });
+        });
         for (var lbi = 0; lbi < lensButtons.length; lbi++) {
             lensButtons[lbi].addEventListener('click', function (e) {
                 e.stopPropagation();
@@ -1441,6 +1461,14 @@ const tooltipController = BPMDistributionTooltips.create({
     state: distributionState,
     getPanel: () => panelEl,
     actions: {
+        dismissTooltip: (level) => {
+            // A peer popup can sit above either pinned list. Dismiss children
+            // through the same transitions before closing the requested list.
+            for (let stage = 0; stage < 3; stage++) {
+                navigation.onKeyDown(new KeyboardEvent('keydown', { key: 'Escape' }));
+                if (level === 'primary' ? !distributionState.subTooltipPinned : !distributionState.subSubTooltipPinned) break;
+            }
+        },
         clearSecondaryFilter: () => navigation.clearSecondaryFilter(),
         aggregateProvidersForPeers: (...args) => aggregateProvidersForPeers(...args),
         buildFastestProvHtml: (...args) => buildFastestProvHtml(...args),

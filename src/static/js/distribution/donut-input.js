@@ -1,5 +1,6 @@
 
 
+import * as BPMDomState from '../core/dom-state.js';
 /** @typedef {Pick<import('../types').DistributionNavigationOptions, 'areLegendsHidden' | 'getContainer' |
  * 'getPeerDetail' | 'getSegments' | 'hooks' | 'state'> & { actions:
  * Pick<import('../types').DistributionNavigationOptions['actions'], 'animateDonutExpand' |
@@ -122,6 +123,8 @@ export function create(options, getNavigation) {
 
         // Auto-enter focused mode if not already
         if (!options.state.donutFocused) {
+            if (containerEl && document.activeElement && document.activeElement !== document.body)
+                containerEl.dataset.returnFocusKey = BPMDomState.key(document.activeElement);
             options.state.donutFocused = true;
             document.body.classList.add('donut-focused');
         }
@@ -184,9 +187,12 @@ export function create(options, getNavigation) {
 
     /** @param {KeyboardEvent} e */
     function onKeyDown(e) {
-        if (e.key === 'Escape') {
+        if (e.key === 'Escape' && !e.defaultPrevented) {
             // The shared modal controller owns Escape while a peer action dialog is open.
-            if (document.getElementById('disconnect-dialog')) return;
+            if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+            if (!options.state.peerDetailActive && !options.state.subTooltipPinned && !options.state.subSubTooltipPinned &&
+                !options.state.activeNetwork && !options.state.summarySelected && !options.state.selectedProvider && !options.state.donutFocused) return;
+            e.preventDefault();
             // Close peer popup first
             if (options.state.peerDetailActive && options.getPeerDetail().isOpen()) {
                 getNavigation().closePeerPopup();

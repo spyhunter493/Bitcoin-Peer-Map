@@ -1,7 +1,8 @@
 import { fmtPing } from '../core/ping.js';
-import { query, required } from '../core/dom.js';
+import { query, queryAll, required } from '../core/dom.js';
 import * as BPMModal from '../core/modal.js';
 import * as BPMDistributionData from '../distribution/data.js';
+import * as BPMDomState from '../core/dom-state.js';
 import * as BPMFormat from '../core/format.js';
 import { formatGeoAge, geoSourceLabel, geoFreshnessLabel } from '../core/geo.js';
 const escapeHtml = BPMModal.escapeHtml;
@@ -311,6 +312,8 @@ function create(options) {
     let source = null;
     /** @type {Element | null} */
     let returnFocus = null;
+    /** @type {string | null} */
+    let returnFocusKey = null;
     /** @type {(() => void) | null} */
     let cleanupInteraction = null;
     /** @type {number | null} */
@@ -350,7 +353,10 @@ function create(options) {
      * @param {string} [borderColor]
      */
     function mount(html, ariaLabel, borderColor) {
-        if (!popup) returnFocus = document.activeElement;
+        if (!popup) {
+            returnFocus = document.activeElement;
+            returnFocusKey = returnFocus instanceof Element ? BPMDomState.key(returnFocus) : null;
+        }
         removeCurrent();
         removeClosingPopups();
         popup = document.createElement('div');
@@ -526,10 +532,14 @@ function create(options) {
             }, 200);
             closingPopups.set(closing, timer);
         }
-        if (closeOptions?.restoreFocus !== false && returnFocus instanceof HTMLElement && returnFocus.isConnected) {
-            returnFocus.focus({ preventScroll: true });
+        if (closeOptions?.restoreFocus !== false && (returnFocus || returnFocusKey)) {
+            const source = returnFocus instanceof HTMLElement && returnFocus.isConnected ? returnFocus
+                : returnFocusKey ? queryAll('*', document).find(element => BPMDomState.key(element) === returnFocusKey) : null;
+            const target = source && source.getClientRects().length ? source : query('.peer-table-wrap', document);
+            target?.focus({ preventScroll: true });
         }
         returnFocus = null;
+        returnFocusKey = null;
     }
 
     function dispose() {

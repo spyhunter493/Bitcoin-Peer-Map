@@ -114,7 +114,7 @@ test('frontend modules', async () => {
         getColor: () => '#123456',
     });
     assert.ok(legend.includes(escaped));
-    assert.ok(legend.includes('role="button" tabindex="0"'));
+    assert.ok(legend.includes('<button type="button" class="as-legend-item'));
     assert.ok(!legend.includes('<img'));
 
     const insight = donut.buildInsightHtml('fastest', {
@@ -315,8 +315,7 @@ test('frontend modules', async () => {
 
     const networkPanelHtml = networkPanel.renderNetworkPanelBody(ipv4Panel);
     assert.ok(networkPanelHtml.includes('IPv4 Connections by Provider'));
-    assert.ok(networkPanelHtml.includes('role="button"'));
-    assert.ok(networkPanelHtml.includes('tabindex="0"'));
+    assert.ok(networkPanelHtml.includes('<button type="button" class="as-detail-sub-row'));
     assert.ok(networkPanelHtml.includes('Bytes Recv'));
 
     const safeNetworkRow = networkPanel.renderInteractiveRow(hostile, hostile, {

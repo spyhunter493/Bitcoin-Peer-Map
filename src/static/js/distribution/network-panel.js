@@ -102,11 +102,11 @@ function renderInteractiveRow(label, value, category) {
     const coverage = category.coverage;
     const coverageText = coverage ? distributionData.coverageLabel(coverage) : '';
     return (
-        '<div class="as-detail-sub-row as-interactive-row as-summary-row" ' +
-        'role="button" tabindex="0" aria-label="' +
+        '<button type="button" class="as-detail-sub-row as-interactive-row as-summary-row" ' +
+        'aria-label="' +
         safeLabel +
         ': ' +
-        safeValue +
+        safeValue + (coverageText ? '. ' + escapeHtml(coverageText) : '') +
         '" ' +
         'data-peer-ids="' +
         peerData +
@@ -123,7 +123,7 @@ function renderInteractiveRow(label, value, category) {
         '</span>' +
         '<span class="as-detail-sub-val">' +
         safeValue + (coverageText ? '<span class="as-row-coverage">' + escapeHtml(coverageText) + '</span>' : '') +
-        '</span></div>'
+        '</span></button>'
     );
 }
 

@@ -259,6 +259,23 @@ external peer lookups.
 
 ## Dashboard controls
 
+The peer table provides keyboard access to every connected peer. Tab to a column
+heading and press Enter or Space to cycle ascending, descending, and unsorted
+order. Network filter buttons announce whether each network is selected. Each
+row has separate **Details** and **Disconnect** buttons; details also work for
+private peers and peers awaiting a location. Tab and Shift+Tab move through the
+complete sorted, filtered peer list, revealing rows as needed. Polling retains
+the focused peer and action, or moves to the nearest surviving row when a peer
+leaves.
+
+**Explore distribution** opens the overview. The Providers and Countries tabs
+support Left/Right arrows, Home, and End. Category, direction, provider, insight,
+and peer buttons open further details. Pinned group details behave as nonmodal
+dialogs: focus enters the dialog, Escape closes the deepest open layer first,
+and closing restores the invoking control. Hover previews keep keyboard focus
+where it is. **Explore private peers** provides the same controls for Tor, I2P,
+and CJDNS peers.
+
 **Peer data** reports the connection to your Bitcoin node. If RPC fails, the
 dashboard retains the last successful peer snapshot and identifies the outage.
 Its tooltip shows the last successful snapshot time. The top-right countdown

@@ -32,6 +32,8 @@ export function create(options) {
                 const isCollapsed = panel.classList.contains('collapsed');
                 minimizeBtn.innerHTML = isCollapsed ? '&#9650;' : '&#9660;';
                 minimizeBtn.title = isCollapsed ? 'Show peer list table' : 'Hide peer list table';
+                minimizeBtn.setAttribute('aria-expanded', String(!isCollapsed));
+                minimizeBtn.setAttribute('aria-label', minimizeBtn.title);
                 options.onPanelResize();
             }
         });
@@ -108,6 +110,7 @@ export function create(options) {
             pnMiniDonut.addEventListener('click', (e) => {
                 e.stopPropagation();
                 enterPrivateNetMode();
+                if (e.target instanceof Element && e.target.closest('button')) document.getElementById('pn-detail-close')?.focus({ preventScroll: true });
             });
             pnMiniDonut.addEventListener('mouseenter', () => {
                 if (!privateState.privateNetMode) privateState.pnMiniHover = true;
@@ -124,6 +127,7 @@ export function create(options) {
             pnExitBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 exitPrivateNetMode();
+                document.getElementById('pn-mini-trigger')?.focus({ preventScroll: true });
             });
         }
 
@@ -132,7 +136,7 @@ export function create(options) {
         if (pnDonutCenterEl) {
             pnDonutCenterEl.style.pointerEvents = 'auto';
             pnDonutCenterEl.style.cursor = 'pointer';
-            pnDonutCenterEl.addEventListener('click', (e) => {
+            const showPrivateOverview = (/** @type {MouseEvent} */ e) => {
                 e.stopPropagation();
                 // If a peer is selected, deselect it first
                 if (privateState.privateNetSelectedPeerId !== null) {
@@ -147,7 +151,10 @@ export function create(options) {
                 if (privateState.pnContainerEl) privateState.pnContainerEl.classList.add('pn-focused');
                 privatePanel.openPnOverviewPanel();
                 updatePrivateNetUI();
-            });
+                if (e.currentTarget instanceof HTMLButtonElement) document.getElementById('pn-detail-close')?.focus({ preventScroll: true });
+            };
+            pnDonutCenterEl.addEventListener('click', showPrivateOverview);
+            document.getElementById('pn-overview-trigger')?.addEventListener('click', showPrivateOverview);
         }
 
         // [PRIVATE-NET] Detail panel close button → exit private mode entirely
@@ -156,6 +163,7 @@ export function create(options) {
             pnDetailClose.addEventListener('click', (e) => {
                 e.stopPropagation();
                 exitPrivateNetMode();
+                document.getElementById('pn-mini-trigger')?.focus({ preventScroll: true });
             });
         }
 
@@ -172,6 +180,19 @@ export function create(options) {
                 pnDetailBack.classList.add('hidden');
             });
         }
+
+        document.addEventListener('keydown', event => {
+            if (event.key !== 'Escape' || event.defaultPrevented || !privateState.privateNetMode ||
+                document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+            event.preventDefault();
+            const popupClose = document.querySelector('.pn-big-popup.visible .peer-popup-close');
+            if (popupClose instanceof HTMLButtonElement) popupClose.click();
+            else if (privateState.pnSubTooltipPinned) {
+                privatePanel.hidePnSubTooltip();
+                updatePrivateNetUI();
+            } else if (privateState.pnSelectedNet) document.getElementById('pn-detail-back')?.click();
+            else document.getElementById('pn-exit-btn')?.click();
+        });
 
         // [PRIVATE-NET] Double-click on canvas to exit private net mode
         canvas.addEventListener('dblclick', (e) => {

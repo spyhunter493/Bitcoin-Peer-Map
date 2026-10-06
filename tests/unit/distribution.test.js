@@ -161,7 +161,7 @@ const summaryRow = summary.view.summaryInteractiveRow(hostile, '2p / 1prov', {
     peerIds: [7, 8],
     providers: [{ asNumber: 'AS64500', name: hostile, color: '#58a6ff', peerCount: 2, peerIds: [7, 8] }],
 });
-assert.ok(summaryRow.includes('role="button" tabindex="0"'));
+assert.ok(summaryRow.includes('<button type="button"'));
 assert.ok(summaryRow.includes('data-cat-label="' + escaped + '"'));
 assert.ok(summaryRow.includes('data-peer-ids="[7,8]"'));
 assert.ok(!summaryRow.includes('<img'));

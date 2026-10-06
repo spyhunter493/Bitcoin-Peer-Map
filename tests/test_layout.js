@@ -9,6 +9,7 @@ import { chromium } from 'playwright';
 import assertPeerViews from './test_peer_views.js';
 import assertPeerLifecycle from './test_peer_lifecycle.js';
 import assertTableDom from './test_peer_table_dom.js';
+import assertPeerActionGeometry from './test_peer_action_geometry.js';
 import assertModules from './test_modules.js';
 import assertMapGroups from './test_map_groups.js';
 import assertMapInput from './test_map_input.js';
@@ -21,6 +22,7 @@ import assertAdminAuthentication from './test_admin_auth.js';
 import assertManagementFeedback from './test_management_feedback.js';
 import assertNetworkExamples from './test_network_examples.js';
 import assertTableSettings from './test_table_settings.js';
+import assertKeyboardNavigation from './test_keyboard_navigation.js';
 import assertDistributionCoverage from './test_distribution_coverage.js';
 
 const repoRoot = path.resolve(import.meta.dirname, '..');
@@ -136,7 +138,10 @@ async function assertDonutFits(page, label) {
         const moving = [...panel.getAnimations(), ...container.getAnimations()]
             .some(animation => animation.playState === 'running');
         return !moving && panelRect.top - containerRect.bottom >= 8;
-    }, null, { timeout: 2500 });
+    }, null, { timeout: 2500 }).catch(async error => {
+        error.message += '\n' + label + ': ' + JSON.stringify(await donutLayout(page));
+        throw error;
+    });
 
     const layout = await donutLayout(page);
     assert.ok(layout.privateVisible, `${label}: private donut should be visible`);
@@ -435,8 +440,9 @@ async function assertDistributionNetworkPanelInteractions(page) {
         'Software',
         'Services',
     ]);
-    assert.strictEqual(panel.rowRole, 'button');
-    assert.strictEqual(panel.rowTabIndex, '0');
+    assert.strictEqual(panel.rowRole, null);
+    assert.strictEqual(panel.rowTabIndex, null);
+    assert.strictEqual(await page.locator('#as-detail-panel .as-summary-row').first().evaluate(row => row.tagName), 'BUTTON');
 
     const firstRow = page.locator('#as-detail-panel .as-summary-row').first();
     await firstRow.focus();
@@ -514,7 +520,7 @@ async function assertDistributionSummaryInteractions(page) {
     await category.focus();
     await page.keyboard.press('Space');
     await page.waitForSelector('#as-sub-tooltip .as-provider-row');
-    const provider = page.locator('#as-sub-tooltip .as-provider-row').first();
+    const provider = page.locator('#as-sub-tooltip .as-provider-peer-list').first();
     await provider.click();
     await page.waitForSelector('#as-sub-sub-tooltip .as-sub-tt-id-link');
 
@@ -562,7 +568,7 @@ async function assertDistributionSummaryInteractions(page) {
         await row.click();
         await page.waitForSelector('#as-sub-tooltip', { state: 'visible' });
         if (selector === '.as-conn-others-row') {
-            await page.locator('#as-sub-tooltip .as-provider-row').first().click();
+            await page.locator('#as-sub-tooltip').locator('.as-provider-peer-list, button.as-provider-row').first().click();
             await page.waitForSelector('#as-sub-sub-tooltip', { state: 'visible' });
             await page.keyboard.press('Escape');
         } else {
@@ -577,7 +583,7 @@ async function assertDistributionSummaryInteractions(page) {
         await page.locator('#as-detail-panel ' + selector).click();
         await page.waitForSelector('#as-sub-tooltip', { state: 'visible' });
         if (selector !== '.as-stable-link') {
-            await page.locator('#as-sub-tooltip .as-provider-row').first().click();
+            await page.locator('#as-sub-tooltip').locator('.as-provider-peer-list, button.as-provider-row').first().click();
             await page.waitForSelector('#as-sub-sub-tooltip .as-sub-tt-rank');
             await pollPeers(page);
             assert.strictEqual(await page.locator('#as-sub-sub-tooltip').isVisible(), true);
@@ -859,6 +865,14 @@ async function assertDashboardInteractions(browser, baseUrl) {
 
         await applyTablePreferences(page);
         await assertDonutFits(page, 'after row-count change');
+        await page.keyboard.press('Escape');
+        await page.locator('#topbar-gear').click();
+        await page.locator('#dsp-donut-legends').focus();
+        await page.keyboard.press('Space');
+        await page.keyboard.press('Escape');
+        await page.locator('#as-legend .as-legend-item').first().focus();
+        assert.equal(await page.locator('#as-legend .as-legend-item').first().evaluate(button => button === document.activeElement), true);
+        await assertDonutFits(page, 'with keyboard legend controls revealed');
 
         await page.reload({ waitUntil: 'domcontentloaded' });
         await waitForDashboardReady(page);
@@ -882,16 +896,18 @@ const suites = [
     ['peer views and safe rendering', assertPeerViews],
     ['peer lifecycle', assertPeerLifecycle],
     ['peer table DOM updates', assertTableDom],
+    ['peer action pointer geometry', assertPeerActionGeometry],
     ['dashboard polling and reduced motion', assertDashboardLifecycle],
     ['GeoIP settings', assertGeoIPSettings],
+    ['distribution coverage', assertDistributionCoverage],
     ['node services', assertNodeServices],
     ['RPC node metrics', assertNodeMetrics],
     ['revisioned modules', assertModules],
     ['map groups', assertMapGroups],
-    ['distribution coverage', assertDistributionCoverage],
     ['map pan, zoom, touch, and canvas rendering', assertMapInput],
     ['large peer tables and static map rendering', assertDashboardPerformance],
     ['tooltip refresh and navigation', assertNavigation],
+    ['keyboard exploration', assertKeyboardNavigation],
     ['admin authentication', assertAdminAuthentication],
     ['management feedback', assertManagementFeedback],
     ['network connection examples', assertNetworkExamples],
@@ -911,5 +927,8 @@ await test('browser layout regressions', { concurrency: workers }, async t => {
     await waitForServer(baseUrl, server);
     browser = await chromium.launch();
     // Each suite owns its browser context; interactions on a shared page remain serial.
-    await Promise.all(suites.map(([name, run]) => t.test(name, { timeout: 120000 }, () => run(browser, baseUrl))));
+    const selected = process.env.BPM_LAYOUT_TEST_FILTER
+        ? suites.filter(([name]) => name.includes(process.env.BPM_LAYOUT_TEST_FILTER)) : suites;
+    assert.ok(selected.length, 'BPM_LAYOUT_TEST_FILTER must match at least one suite');
+    await Promise.all(selected.map(([name, run]) => t.test(name, { timeout: 120000 }, () => run(browser, baseUrl))));
 });

@@ -111,14 +111,14 @@ export function create(options) {
     function selectPeer(peerId, source, groupPeerIds) {
         const node = nodeFor(peerId),
             peer = options.getPeer(peerId);
-        if (!node || !peer) return false;
+        if (!peer) return false;
         clearMapDotFilter();
         interaction.mapFilterPeerIds = new Set([peerId]);
         options.renderTable();
         if (source === 'map-group') hideTooltip();
         // The popup changes focused-mode layout, so open it before measuring the camera target.
         const opened = options.openPeerDetail(peer, source, groupPeerIds);
-        framePeer(node, !opened);
+        if (node) framePeer(node, !opened);
         if (source === 'peerlist' || !options.isPanelCollapsed()) options.highlightRow(peerId, true);
         return true;
     }

@@ -5,7 +5,7 @@ import { query, queryAll } from './dom.js';
  */
 function key(element) {
     if (element.id) return '#' + element.id;
-    const attributes = ['data-peer-id', 'data-as', 'data-filter', 'data-category', 'data-cat-label', 'data-insight-type'];
+    const attributes = ['data-peer-id', 'data-as', 'data-net', 'data-id', 'data-action', 'data-filter', 'data-category', 'data-cat-label', 'data-insight-type'];
     return (
         element.tagName +
         ':' +

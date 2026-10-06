@@ -42,8 +42,10 @@ export function create(options) {
         const btn = closest('.peer-action-btn', e.target);
         if (btn) {
             e.stopPropagation();
-            showDisconnectDialog(parseInt(btn.dataset.id || ''), btn.dataset.net || 'ipv4');
-            return;
+            if (btn.dataset.action === 'disconnect') {
+                showDisconnectDialog(parseInt(btn.dataset.id || ''), btn.dataset.net || 'ipv4');
+                return;
+            }
         }
 
         const row = closest('tr[data-id]', e.target);
@@ -284,9 +286,11 @@ export function create(options) {
             if (net === 'all') {
                 badge.classList.toggle('active', allOn);
                 badge.classList.toggle('dimmed', !allOn);
+                badge.setAttribute('aria-pressed', String(allOn));
             } else {
                 badge.classList.toggle('active', interaction.enabledNets.has(net));
                 badge.classList.toggle('dimmed', !interaction.enabledNets.has(net));
+                badge.setAttribute('aria-pressed', String(interaction.enabledNets.has(net)));
             }
         });
 
@@ -325,7 +329,7 @@ export function create(options) {
         });
 
         // Hover to show network stats popover (positioned above the badge)
-        badge.addEventListener('mouseenter', () => {
+        const showNetworkStats = () => {
             const net = badge.dataset.net || '';
             const stats = getNetworkStats(net);
             if (!stats) return;
@@ -335,10 +339,14 @@ export function create(options) {
             const rect = badge.getBoundingClientRect();
             netPopover.style.left = rect.left + 'px';
             netPopover.style.top = rect.top - netPopover.offsetHeight - 6 + 'px';
-        });
-        badge.addEventListener('mouseleave', () => {
+        };
+        const hideNetworkStats = () => {
             netPopover.classList.add('hidden');
-        });
+        };
+        badge.addEventListener('mouseenter', showNetworkStats);
+        badge.addEventListener('focus', showNetworkStats);
+        badge.addEventListener('mouseleave', hideNetworkStats);
+        badge.addEventListener('blur', hideNetworkStats);
     });
 
     // Close Antarctica modal ("Got it" button or click outside)

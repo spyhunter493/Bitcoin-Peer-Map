@@ -2,6 +2,32 @@
    Distribution dashboard styles — provider and country lenses.
    ============================================================ */
 
+button.as-legend-item, button.as-others-popup-item, button.as-detail-sub-row,
+.as-sub-tooltip button, button.pn-interactive-row, button.pn-insight-row,
+.as-summary-insight button, button.as-all-providers-link, button.as-others-back-link,
+button.pn-mini-legend-item {
+    font: inherit; color: inherit; text-align: left; cursor: pointer;
+    border: 0; background: transparent;
+}
+button.as-detail-sub-row, button.as-legend-item, button.as-others-popup-item,
+button.pn-interactive-row, button.pn-insight-row { width: 100%; }
+button.as-provider-peer-list { display: flex; flex: 1; align-items: center; gap: 4px; min-width: 0; }
+.as-popover-close, .as-overview-trigger, .pn-overview-trigger {
+    font: inherit; font-size: 10px; color: var(--accent); background: rgba(22, 27, 34, 0.85);
+    border: 1px solid var(--accent-dim); border-radius: 4px; padding: 3px 7px; cursor: pointer;
+    pointer-events: auto;
+}
+.as-overview-trigger, .pn-overview-trigger { margin: 3px 0; }
+.as-popover-close { display: block; margin: 0 0 4px auto; }
+.as-distribution-container:focus-within { opacity: 1; }
+.as-distribution-container button:focus-visible, .as-detail-panel button:focus-visible,
+.as-sub-tooltip button:focus-visible, .as-others-popup button:focus-visible,
+.pn-container button:focus-visible, .pn-detail-panel button:focus-visible,
+.as-donut-segment:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: -2px;
+}
+body.donut-focused .as-focused-close:focus-visible { opacity: 1; }
+
 /* ==========================================================
    2. DISTRIBUTION CONTAINER — Upper-right corner of map
    ========================================================== */
@@ -313,6 +339,29 @@ body.insight-rect-active .as-focused-close {
 .as-score-critical  { color: var(--err-bright); }
 
 /* No-data greyed state */
+.as-coverage {
+    max-width: 310px;
+    margin: 4px auto 8px;
+    color: var(--text-secondary);
+    font-size: 10px;
+    line-height: 1.4;
+    text-align: center;
+}
+
+.as-row-coverage {
+    display: block;
+    max-width: 180px;
+    color: var(--text-muted);
+    font-size: 9px;
+    white-space: normal;
+}
+.as-popover-coverage {
+    color: var(--text-secondary);
+    font-size: 10px;
+    padding: 6px;
+    line-height: 1.4;
+}
+
 .as-distribution-container.no-data .as-donut-wrap {
     filter: drop-shadow(0 4px 12px rgba(0,0,0,0.3)) saturate(0.3);
     opacity: 0.6;
@@ -339,29 +388,6 @@ body.insight-rect-active .as-focused-close {
 }
 
 /* Update pulse ring animation */
-.as-coverage {
-    max-width: 310px;
-    margin: 4px auto 8px;
-    color: var(--text-secondary);
-    font-size: 10px;
-    line-height: 1.4;
-    text-align: center;
-}
-
-.as-row-coverage {
-    display: block;
-    max-width: 180px;
-    color: var(--text-muted);
-    font-size: 9px;
-    white-space: normal;
-}
-.as-popover-coverage {
-    color: var(--text-secondary);
-    font-size: 10px;
-    padding: 6px;
-    line-height: 1.4;
-}
-
 @keyframes as-ring-pulse {
     0% { opacity: 0.6; r: inherit; }
     100% { opacity: 0; r: calc(inherit + 8px); }
@@ -564,6 +590,7 @@ body.insight-rect-active .as-focused-close {
 }
 /* Show legend when hovering the donut area (but NOT when only hovering the mini private donut) */
 .as-distribution-container:hover:not(:has(.pn-mini-donut:hover)) .as-legend,
+.as-distribution-container:focus-within:not(:has(.pn-mini-donut:focus-within)) .as-legend,
 .as-distribution-container.as-legend-visible .as-legend {
     opacity: 1;
     transform: translateY(0);
@@ -574,6 +601,7 @@ body.insight-rect-active .as-focused-close {
 /* When "Display Top ISP/Net" toggle is OFF, suppress legend expansion even on hover */
 .as-distribution-container.legends-hidden .as-legend,
 .as-distribution-container.legends-hidden:hover:not(:has(.pn-mini-donut:hover)) .as-legend {
+    display: none !important;
     max-height: 0 !important;
     opacity: 0 !important;
     pointer-events: none !important;
@@ -1771,7 +1799,7 @@ body.as-panel-open .peer-detail-popup {
 .pn-mini-donut.hidden {
     display: none;
 }
-.pn-mini-donut:hover {
+.pn-mini-donut:hover, .pn-mini-donut:focus-within {
     opacity: 1;
 }
 .pn-mini-label {
@@ -1847,7 +1875,7 @@ body.as-panel-open .peer-detail-popup {
     transition: opacity 0.25s ease, transform 0.25s ease;
     pointer-events: none;
 }
-.pn-mini-donut:hover .pn-mini-legend {
+.pn-mini-donut:hover .pn-mini-legend, .pn-mini-donut:focus-within .pn-mini-legend {
     opacity: 1;
     transform: translateY(0);
     pointer-events: auto;

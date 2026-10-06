@@ -816,6 +816,7 @@ body.theme-light .fd-net-counts {
     pointer-events: auto;
 }
 .handle-nets .net-badge {
+    font-family: inherit;
     font-size: 12px;
     font-weight: 600;
     padding: 3px 10px;
@@ -829,6 +830,8 @@ body.theme-light .fd-net-counts {
     align-items: center;
     gap: 4px;
 }
+button.fd-net-chip { background: transparent; font: inherit; color: inherit; border: 0; }
+button.fd-net-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .handle-nets .net-badge .badge-count {
     font-size: 11px;
     font-weight: 700;
@@ -1050,7 +1053,7 @@ body.theme-light .fd-net-counts {
 .peer-table th:hover { color: var(--text-secondary); }
 .peer-table th .sort-arrow { font-size: 8px; margin-left: 2px; opacity: 0.5; }
 .peer-table th .sort-arrow.active { opacity: 1; color: var(--accent); }
-.peer-table th .th-text { display: block; overflow: hidden; text-overflow: ellipsis; }
+.peer-table th .th-text { display: block; overflow: hidden; text-overflow: ellipsis; width: 100%; border: 0; padding: 0; background: transparent; color: inherit; font: inherit; text-align: inherit; text-transform: inherit; letter-spacing: inherit; cursor: pointer; }
 .peer-table th .th-resize {
     position: absolute; top: 0; right: 0;
     width: 5px; height: 100%;
@@ -1120,12 +1123,19 @@ body.theme-light .fd-net-counts {
     background: transparent;
     color: var(--err) !important;
     cursor: pointer;
-    transition: all var(--transition);
+    transition: color var(--transition), background-color var(--transition), border-color var(--transition);
     font-family: inherit;
 }
 .peer-table .peer-action-btn:hover {
     background: rgba(248, 81, 73, 0.15);
     border-color: var(--err);
+}
+.peer-table .peer-action-btn + .peer-action-btn { margin-left: 4px; }
+.peer-table .peer-action-btn[data-action="details"] { color: var(--accent) !important; border-color: var(--accent-dim); }
+.peer-table .peer-action-btn[data-action="details"]:hover { background: rgba(88, 166, 255, 0.15); border-color: var(--accent); }
+.peer-action-btn:focus-visible, .peer-table .th-text:focus-visible,
+.net-badge:focus-visible, .handle-btn:focus-visible, .peer-table-wrap:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
 }
 
 /* ==========================================================

@@ -815,17 +815,21 @@ function create({ mapView, settings: advSettings, onAction }) {
         // Build mini legend (network breakdown list, sorted by count descending)
         const miniLegendEl = document.getElementById('pn-mini-legend');
         if (miniLegendEl) {
+            const focusedNetwork = miniLegendEl.contains(document.activeElement) && document.activeElement instanceof HTMLElement
+                ? document.activeElement.dataset.net : undefined;
             const sorted = segs.slice().sort((a, b) => b.count - a.count);
             let legendHtml = '';
             for (const seg of sorted) {
                 const label = PN_NET_LABELS[seg.net] || seg.net.toUpperCase();
-                legendHtml += '<div class="pn-mini-legend-item" data-net="' + seg.net + '">';
+                legendHtml += '<button type="button" class="pn-mini-legend-item" data-net="' + seg.net + '">';
                 legendHtml += '<span class="pn-mini-legend-dot" style="background:' + seg.color + '"></span>';
                 legendHtml += '<span class="pn-mini-legend-name">' + label + '</span>';
                 legendHtml += '<span class="pn-mini-legend-count">' + seg.count + '</span>';
-                legendHtml += '</div>';
+                legendHtml += '</button>';
             }
             miniLegendEl.innerHTML = legendHtml;
+            if (focusedNetwork) queryAll('.pn-mini-legend-item', miniLegendEl)
+                .find(item => item.dataset.net === focusedNetwork)?.focus({ preventScroll: true });
 
             // Attach hover/click to mini legend items (same behavior as segment hover)
             queryAll('.pn-mini-legend-item', miniLegendEl).forEach((item) => {

@@ -908,6 +908,7 @@ export interface DistributionTooltipsOptions {
     getPanel(): HTMLElement | null;
     getSummaryView(): ReturnType<typeof import('./distribution/summary-panel.js').create>;
     actions: {
+        dismissTooltip?(level: 'primary' | 'secondary'): void;
         clearSecondaryFilter(): void;
         aggregateProvidersForPeers(peers: Peer[]): SummaryProvider[];
         buildFastestProvHtml(): string | null;

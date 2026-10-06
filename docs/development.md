@@ -93,7 +93,11 @@ external GeoIP services.
 browser suites at a time, each in its own browser context. Node's test runner
 reports suite names and timings, with a two-minute timeout per suite. Set
 `BPM_LAYOUT_TEST_WORKERS=1 npm run test:layout` for serial execution, or choose
-another worker count from 1 to 8. The Docker variant uses the same test runner and
+another worker count from 1 to 8. For a focused regression run, set
+`BPM_LAYOUT_TEST_FILTER="peer table DOM updates" npm run test:layout`; the filter
+matches suite names and fails if no suite matches. The keyboard and large-table
+journeys exercise real Tab/Shift+Tab traversal beyond mounted rows while checking
+that the DOM stays bounded. The Docker variant uses the same test runner and
 also requires Docker and curl on the host.
 
 ### Validate the production container
