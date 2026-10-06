@@ -598,7 +598,9 @@
       "size_gb": 710.4,
       "pruned": false,
       "indexed": true,
-      "ibd": false
+      "ibd": false,
+      "txindex_status": "ready",
+      "txindex_height": 875000
     },
     "network_scores": {
       "ipv4": 10,
@@ -617,7 +619,12 @@
     "connected": 14,
     "mempool_size": 1200,
     "subversion": "/Satoshi:29.1.0/",
-    "services": ["NETWORK", "WITNESS", "NETWORK_LIMITED", "P2P_V2"],
+    "services": [
+      "NETWORK",
+      "WITNESS",
+      "NETWORK_LIMITED",
+      "P2P_V2"
+    ],
     "node_metrics": {
       "uptime": "2d 3h 4m",
       "uptime_sec": 183840,
@@ -716,7 +723,8 @@
       },
       "age_lookup_limited": false,
       "age_lookup_limit": 100,
-      "generated_at": 1800000000
+      "generated_at": 1800000000,
+      "age_lookup_timed_out": false
     },
     "tips": [
       {

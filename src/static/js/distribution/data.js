@@ -1,4 +1,5 @@
 import * as BPMFormat from '../core/format.js';
+import { averagePing, comparePing } from '../core/ping.js';
 /**
  * @param {string | null | undefined} asField
  */
@@ -70,7 +71,6 @@ function buildDistributionGroup(base, peers, denominator, nowSeconds) {
     const count = peers.length;
     const percentage = denominator > 0 ? (count / denominator) * 100 : 0;
     const inboundCount = peers.filter((peer) => peer.direction === 'IN').length;
-    const pings = peers.filter((peer) => peer.ping_ms > 0).map((peer) => peer.ping_ms);
     const currentSeconds = nowSeconds == null ? Math.floor(Date.now() / 1000) : nowSeconds;
     const durations = peers
         .filter((peer) => peer.conntime > 0 && currentSeconds - peer.conntime > 0)
@@ -105,7 +105,7 @@ function buildDistributionGroup(base, peers, denominator, nowSeconds) {
         (peer) => peer.connection_type || 'unknown',
         (_peer, key) => ({ type: key, count: 0, peers: /** @type {import('../types').Peer[]} */ ([]) })
     );
-    const averagePing = average(pings);
+    const averagePingMs = averagePing(peers.map((peer) => peer.ping_ms));
     const averageDuration = average(durations);
     const risk = getRisk(percentage);
 
@@ -122,7 +122,7 @@ function buildDistributionGroup(base, peers, denominator, nowSeconds) {
         outboundCount: count - inboundCount,
         connTypes: connectionTypes,
         connTypesList,
-        avgPingMs: averagePing,
+        avgPingMs: averagePingMs,
         avgDurationSecs: averageDuration,
         avgDurationFmt: fmtDuration(averageDuration),
         totalBytesSent,
@@ -534,15 +534,14 @@ function computeInsights(groups, peers, segments, nowSeconds) {
             mostStable = group;
         }
 
-        const pingPeers = group.peers.filter((peer) => peer.ping_ms > 0);
-        if (pingPeers.length) {
-            const averagePing = pingPeers.reduce((total, peer) => total + peer.ping_ms, 0) / pingPeers.length;
+        const measuredAverage = averagePing(group.peers.map((peer) => peer.ping_ms));
+        if (measuredAverage !== null) {
             pingProviders.push({
                 asNumber: group.asNumber,
                 provName: group.asShort || group.asName || group.asNumber,
                 color: colorForProvider(group.asNumber, segments),
-                avgPing: averagePing,
-                peers: group.peers.slice().sort((left, right) => (left.ping_ms || 9999) - (right.ping_ms || 9999)),
+                avgPing: measuredAverage,
+                peers: group.peers.slice().sort((left, right) => comparePing(left.ping_ms, right.ping_ms)),
                 peerIds: group.peerIds,
             });
         }

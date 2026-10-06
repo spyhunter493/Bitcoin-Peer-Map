@@ -112,3 +112,11 @@ test('shutdown cancels an active busy save promptly without counting it as an ou
     await peers.stop(); await pending; geo.close(); writer.exec('ROLLBACK');
     assert.deepEqual(errors, []);
 });
+
+test('peer ping serialization keeps fractional milliseconds and reports absent or negative samples as null', async t => {
+    const { peers, rpc } = setup(t, async () => location());
+    for (const [pingtime, expected] of [[undefined, null], [null, null], [-1, null], [0, 0], [0.000125, 0.125], [0.012345, 12.345]] as const) {
+        rpc.values.getpeerinfo = [{ id: 1, addr: '8.8.8.8:8333', pingtime }];
+        await peers.refreshOnce(); assert.equal(peers.listPeers()[0].ping_ms, expected);
+    }
+});

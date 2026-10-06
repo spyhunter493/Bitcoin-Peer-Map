@@ -1,3 +1,4 @@
+import { fmtPing, isMeasuredPing, averagePing } from '../core/ping.js';
 import { query } from '../core/dom.js';
 import * as BPMDistributionData from './data.js';
 const fmtBytes = BPMDistributionData.fmtBytes;
@@ -140,7 +141,7 @@ function render(options) {
             otherRecv = 0;
         var nowSec = Math.floor(Date.now() / 1000);
         for (var opi2 = 0; opi2 < allOtherPeers.length; opi2++) {
-            if (allOtherPeers[opi2].ping_ms > 0) otherPings.push(allOtherPeers[opi2].ping_ms);
+            if (isMeasuredPing(allOtherPeers[opi2].ping_ms)) otherPings.push(allOtherPeers[opi2].ping_ms);
             if (allOtherPeers[opi2].conntime > 0) {
                 var odur = nowSec - allOtherPeers[opi2].conntime;
                 if (odur > 0) otherDurations.push(odur);
@@ -148,12 +149,7 @@ function render(options) {
             otherSent += allOtherPeers[opi2].bytessent || 0;
             otherRecv += allOtherPeers[opi2].bytesrecv || 0;
         }
-        var oAvgPing =
-            otherPings.length > 0
-                ? otherPings.reduce(function (a, b) {
-                      return a + b;
-                  }, 0) / otherPings.length
-                : 0;
+        var oAvgPing = averagePing(otherPings);
         var oAvgDur =
             otherDurations.length > 0
                 ? otherDurations.reduce(function (a, b) {
@@ -163,7 +159,7 @@ function render(options) {
 
         html += '<div class="modal-section-title">Performance</div>';
         html += view.row('Avg Duration', fmtDuration(oAvgDur));
-        html += view.row('Avg Ping', oAvgPing > 0 ? Math.round(oAvgPing) + 'ms' : '\u2014');
+        html += view.row('Avg Ping', fmtPing(oAvgPing));
         html += view.row('Data Sent', fmtBytes(otherSent));
         html += view.row('Data Recv', fmtBytes(otherRecv));
 
@@ -200,7 +196,7 @@ function render(options) {
 
         html += '<div class="modal-section-title">Performance</div>';
         html += view.row('Avg Duration', fullGroup.avgDurationFmt);
-        html += view.row('Avg Ping', (fullGroup.avgPingMs || 0) > 0 ? Math.round(fullGroup.avgPingMs || 0) + 'ms' : '\u2014');
+        html += view.row('Avg Ping', fmtPing(fullGroup.avgPingMs));
         html += view.row('Data Sent', fullGroup.totalBytesSentFmt);
         html += view.row('Data Recv', fullGroup.totalBytesRecvFmt);
 

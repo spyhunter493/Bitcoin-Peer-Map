@@ -198,17 +198,43 @@ alongside API contract changes.
 | `/api/peers?include_status=true` | Includes RPC connection status and snapshot timestamps |
 | `/api/info` | Node details, RPC metrics, and cached application update status |
 | `/api/config` | Effective configuration without RPC credentials, including `build.updates` |
+| `POST /api/geodb/db-only` | Sets database-only mode with `{ "enabled": boolean }`; true disables external peer lookups |
+| `POST /api/geodb/auto-update` | Sets automatic dataset updates with `{ "enabled": boolean }` |
 
-Node details and RPC metrics use five-second caches shared across clients.
-Independent dashboard RPC reads run concurrently. The dashboard uses one node-info
-poll for node details and metrics, with a 35-second abort deadline to accommodate
-three sequential ten-second blockchain reads. All completion paths release the
-pending request so polling can resume. Failed browser refreshes retain cached
+RPC dispatch is bounded to eight active and 32 FIFO queued calls. Queue time
+counts toward each call's deadline; cancelled or expired queued calls never
+dispatch. Overflow returns HTTP 503 with `code: "rpc_busy"` and `Retry-After: 1`.
+Mutations are never retried automatically. Shared blockchain, mempool, ban,
+chain-tip, and index reads cache successes for five seconds from load start and
+failures for one second from completion. Failed refreshes replace earlier
+successful cache entries. Mutations invalidate affected caches, including reads
+that are still in flight, and each consumer receives an independent copy.
+
+Chain-tip responses have a 15-second overall deadline. Required tips and optional
+blockchain metadata load concurrently, with ten- and five-second budgets.
+Four workers enrich at most 100 tip ages for up to five seconds within the overall
+deadline. Optional timeouts return valid tips with unavailable ages and
+`summary.age_lookup_timed_out: true`; `age_lookup_limited` still describes the
+100-tip cap. Completed results, including partial results, are cached for five
+seconds from completion, with ages and generation timestamps refreshed on return.
+Shared reads own their cancellation controllers; closing one response detaches
+its subscriber, and losing the last subscriber cancels the work. A header still
+needed by the dashboard survives closure of the chain-tip dialog.
+
+Node details and RPC metrics also use five-second caches shared across clients.
+The dashboard uses one node-info poll with a 35-second browser abort deadline.
+All completion paths release the pending request so polling can resume.
+Failed browser refreshes retain cached
 node details, mark the header and Node Info as **Stale**, and show the last
 successful refresh time. Traffic values are cleared. A successful refresh
 restores normal presentation: **Synced** requires explicit `blockchain.ibd:false`,
 **Syncing (IBD)** requires `true`, and unavailable blockchain or IBD data shows
 **Unknown**.
+Transaction indexes report `blockchain.txindex_status` as **Disabled**,
+**Syncing**, **Ready**, or **Unknown**, plus `txindex_height` when available.
+The legacy `indexed` boolean remains true for valid syncing or ready indexes.
+Older responses containing only that boolean identify an enabled index without
+claiming readiness.
 The `services` field in `/api/info` comes from
 [`getnetworkinfo.localservicesnames`](https://bitcoincore.org/en/doc/30.0.0/rpc/network/getnetworkinfo/):
 an empty list means no services are advertised, while `null` means unavailable.
@@ -222,12 +248,41 @@ connection counts, services, and unrelated dashboard reads remain usable.
 Application update status is read from the server cache, rather than triggering
 a GitHub request.
 
+GeoIP setters persist before changing live state. Repeating a desired value does
+not write preferences or reset timers. The old toggle endpoints require admin
+authentication and return HTTP 410 without mutation; clients must reload or move
+to the setters. Dataset validation streams rows inside the merge worker, skips
+invalid records, and reports `added_rows`, `updated_rows`, and `skipped_rows`.
+An import with no valid records fails without changes.
+
+API location saves return explicit saved, superseded, disabled, cancelled, or
+failed outcomes. SQLite writer contention retries asynchronously from 50 ms to
+500 ms for at most 65 seconds; individual synchronous attempts have zero busy
+timeout. Observation timestamps are captured once, and newer stored records win,
+including ties. Failed payloads remain in the active-peer cache and retry after
+60 seconds through the existing serial resolver, without another provider call.
+Dataset generation changes preserve those payloads. Shutdown cancels retry waits
+and drains the resolver before closing SQLite; pending memory-only payloads are
+abandoned, with no persistent retry queue or schema migration.
+
 ### Rendering peer data
 
 Keep peer-supplied strings raw in application state. Assign `textContent` or use
 `BPMModal.escapeHtml` at HTML text and attribute boundaries. Helpers whose names
 include `HtmlRow` accept locally constructed markup; ordinary row helpers escape
 their text.
+
+`core/ping.js` shares measurement and display rules across peer views. `ping_ms`
+is a fractional millisecond value or null; measured zero is valid. Unknown values
+display `—`, sort last in both directions, and are excluded from averages and
+rankings. Positive measurements below 0.1 ms display `<0.1ms`.
+
+Map world copies are derived from camera position, zoom, viewport width, and
+drawing margin, while horizontal camera position remains continuous. Geography,
+peers, hit testing, connections, and private-network lettering use the same
+offsets. Table auto-fit coalesces container-width changes through one animation
+frame, reuses measured natural widths on resize, and updates columns only when
+their final widths change; manual sizing and virtualized row identity are retained.
 
 ## Development flow
 

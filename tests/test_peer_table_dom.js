@@ -88,6 +88,37 @@ export default async function assertTableDom(browser, baseUrl) {
         await poll();
         assert.deepEqual(await page.locator('#peer-tbody tr').evaluateAll(rows => rows.map(row => Number(row.dataset.id)).sort()), [1, 2, 4]);
         assert.equal(await page.evaluate(() => window.testTableElements.row === document.querySelector('#peer-tbody tr[data-id="1"]')), true);
+        peers = [null, 12000, 0, 0.4].map((ping_ms, index) => ({ ...peers[0], id: index + 1, ping_ms }));
+        await poll();
+        await page.click('th[data-sort="ping_ms"]'); // Descending -> unsorted.
+        await page.click('th[data-sort="ping_ms"]'); // Ascending.
+        assert.deepEqual(await page.locator('#peer-tbody tr[data-id]').evaluateAll(rows => rows.map(row => Number(row.dataset.id))), [3, 4, 2, 1]);
+        assert.equal(await page.locator('#peer-tbody tr[data-id="1"] td').nth(12).textContent(), '—');
+        assert.equal(await page.locator('#peer-tbody tr[data-id="3"] td').nth(12).textContent(), '0ms');
+        assert.equal(await page.locator('#peer-tbody tr[data-id="4"] td').nth(12).textContent(), '0.4ms');
+        await page.click('th[data-sort="ping_ms"]');
+        assert.deepEqual(await page.locator('#peer-tbody tr[data-id]').evaluateAll(rows => rows.map(row => Number(row.dataset.id))), [2, 4, 3, 1]);
+        await page.locator('#peer-tbody tr[data-id="1"]').click();
+        await page.waitForSelector('.peer-detail-popup.visible');
+        assert.match(await page.locator('.peer-detail-popup').textContent(), /Ping—/);
+        await page.locator('.peer-popup-close').click();
+        await page.waitForSelector('.peer-detail-popup', { state: 'detached' });
+        peers = [null, 0.4, 0].map((ping_ms, index) => ({ ...peers[0], id: index + 1,
+            network: 'onion', location_status: 'private', lat: null, lon: null, as: '', ping_ms,
+        }));
+        await poll();
+        await page.waitForSelector('#pn-detail-panel.visible');
+        assert.match(await page.locator('#pn-detail-body .pn-insight-row[data-insight-type="fastest"]').textContent(), /#3.*0ms/);
+        await page.locator('#pn-donut-svg .pn-donut-segment[data-net="onion"]').first().dispatchEvent('click');
+        await page.waitForFunction(() => [...document.querySelectorAll('#pn-detail-body .modal-row')].some(row => row.textContent === 'Avg Ping0.2ms'));
+        peers = peers.map(peer => peer.id === 2 ? { ...peer, ping_ms: 12000 } : peer);
+        await poll();
+        assert.ok((await page.locator('#pn-detail-body').textContent()).includes('Avg Ping6000ms'));
+        peers = peers.map(peer => ({ ...peer, ping_ms: null }));
+        await poll();
+        assert.ok((await page.locator('#pn-detail-body').textContent()).includes('Avg Ping—'));
+        await page.locator('#pn-detail-back').click();
+        assert.equal(await page.locator('#pn-detail-body .pn-insight-row[data-insight-type="fastest"]').count(), 0);
     } finally {
         releaseInitial();
         await context.close();

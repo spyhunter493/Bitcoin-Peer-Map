@@ -235,6 +235,13 @@ shows when the next refresh is due.
 **Node Info** includes a Services block explaining the P2P services advertised by
 your node. An empty list means no services are advertised; unavailable service
 information is shown separately.
+The transaction index shows **Disabled**, **Syncing**, **Ready**, or **Unknown**,
+with the indexed block height in its tooltip when available. An older server
+reporting only index presence shows **Enabled** without claiming readiness.
+Chain-tip age lookup timeouts preserve the tip list and identify unavailable ages.
+
+Missing ping measurements display **—** and do not affect averages or rankings.
+Measured zero remains valid, and positive pings below 0.1 ms display **<0.1ms**.
 
 **Blocks** and **Chain Tips** link recognized public-network block hashes to
 [mempool.guide](https://mempool.guide/). Testnet3 and local regtest hashes remain

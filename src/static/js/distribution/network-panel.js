@@ -1,6 +1,7 @@
 import { query } from '../core/dom.js';
 import * as BPMDistributionData from './data.js';
 import * as BPMModal from '../core/modal.js';
+import { averagePing, fmtPing } from '../core/ping.js';
 const distributionData = BPMDistributionData;
 const escapeHtml = BPMModal.escapeHtml;
 const NETWORKS = Object.freeze({
@@ -40,7 +41,6 @@ function computeNetworkPanelData(peers, networkKey, segments) {
     const network = networkDefinition(networkKey);
     const networkPeers = peersForNetwork(peers, networkKey);
     const inboundCount = networkPeers.filter((peer) => peer.direction === 'IN').length;
-    const pings = networkPeers.filter((peer) => peer.ping_ms > 0).map((peer) => peer.ping_ms);
     const totalBytesSent = networkPeers.reduce((total, peer) => total + (peer.bytessent || 0), 0);
     const totalBytesReceived = networkPeers.reduce((total, peer) => total + (peer.bytesrecv || 0), 0);
     const providers = distributionData.aggregateProvidersForPeers(networkPeers, segments);
@@ -52,7 +52,7 @@ function computeNetworkPanelData(peers, networkKey, segments) {
         peerCount: networkPeers.length,
         inboundCount,
         outboundCount: networkPeers.length - inboundCount,
-        averagePing: pings.length ? Math.round(pings.reduce((total, ping) => total + ping, 0) / pings.length) : null,
+        averagePing: averagePing(networkPeers.map((peer) => peer.ping_ms)),
         totalBytesSent,
         totalBytesReceived,
         providers,
@@ -145,9 +145,7 @@ function renderNetworkPanelBody(data) {
     html += renderStatRow('Total Peers', data.peerCount);
     html += renderStatRow('Inbound', data.inboundCount);
     html += renderStatRow('Outbound', data.outboundCount);
-    if (data.averagePing !== null) {
-        html += renderStatRow('Avg Ping', data.averagePing + ' ms');
-    }
+    html += renderStatRow('Avg Ping', fmtPing(data.averagePing));
     html += renderStatRow('Bytes Sent', distributionData.fmtBytes(data.totalBytesSent));
     html += renderStatRow('Bytes Recv', distributionData.fmtBytes(data.totalBytesReceived));
 

@@ -4,6 +4,7 @@ import { query, queryAll, required, closest } from '../core/dom.js';
 import * as BPMFormat from '../core/format.js';
 import * as BPMPeerTableModel from './table-model.js';
 import * as TableWindow from './table-window.js';
+import { fmtPing } from '../core/ping.js';
 /** @param {import('../types').PeerTableOptions} options
  *  @returns {import('../types').PeerTableController} */
 function create(options) {
@@ -66,7 +67,7 @@ function create(options) {
         { key: 'country', label: 'Country', get: (p) => p.country || '—', full: null, vis: true, w: 70 },
         { key: 'continent', label: 'Cont.', get: (p) => p.continent || '—', full: null, vis: true, w: 60 },
         { key: 'isp', label: 'ISP', get: (p) => p.isp || '—', full: null, vis: true, w: 110 },
-        { key: 'ping_ms', label: 'Ping', get: (p) => (p.ping_ms != null ? p.ping_ms + 'ms' : '—'), full: null, vis: true, w: 50 },
+        { key: 'ping_ms', label: 'Ping', get: (p) => fmtPing(p.ping_ms), full: null, vis: true, w: 50 },
         { key: 'bytessent_fmt', label: 'Sent', get: (p) => p.bytessent_fmt || '—', full: null, vis: true, w: 60 },
         { key: 'bytesrecv_fmt', label: 'Recv', get: (p) => p.bytesrecv_fmt || '—', full: null, vis: true, w: 60 },
         { key: 'in_addrman', label: 'Addrman', get: (p) => (p.in_addrman ? 'Yes' : 'No'), full: null, vis: true, w: 55 },

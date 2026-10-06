@@ -43,7 +43,7 @@ export interface Peer {
     port: number | null;
     bytessent: number;
     bytesrecv: number;
-    ping_ms: number;
+    ping_ms: number | null;
     conntime: number;
     version: number;
     lat?: number | null;
@@ -669,7 +669,8 @@ export interface NodeInfo {
     connected: number | null;
     subversion: string | null;
     services: string[] | null;
-    blockchain: { size_gb: number; pruned: boolean; indexed: boolean; ibd: boolean | null } | null;
+    blockchain: { size_gb: number; pruned: boolean; indexed: boolean; ibd: boolean | null;
+        txindex_status?: 'disabled' | 'syncing' | 'ready' | 'unknown'; txindex_height?: number | null } | null;
     last_block: { height: number; time: number } | null;
     mempool_size: number | null;
     internet_state: string;
@@ -731,6 +732,7 @@ export interface ChainTipsResponse {
         best_hash?: string;
         age_lookup_limited?: boolean;
         age_lookup_limit?: number;
+        age_lookup_timed_out?: boolean;
     };
     tips?: {
         status: string;

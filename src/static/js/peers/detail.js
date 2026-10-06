@@ -1,3 +1,4 @@
+import { fmtPing } from '../core/ping.js';
 import { query, required } from '../core/dom.js';
 import * as BPMModal from '../core/modal.js';
 import * as BPMDistributionData from '../distribution/data.js';
@@ -145,7 +146,7 @@ function renderPeerDetails(peer, options) {
     html += '</div>';
 
     html += '<div class="peer-popup-section"><div class="peer-popup-section-title">Performance</div>';
-    html += peerDetailRow('Ping', peer.ping_ms ? peer.ping_ms + ' ms' : '\u2014');
+    html += peerDetailRow('Ping', fmtPing(peer.ping_ms));
     html += peerDetailRow('Min Ping', peer.minping ? (peer.minping * 1000).toFixed(1) + ' ms' : '\u2014');
     html += peerDetailRow('Connected', peer.conntime_fmt || distributionData.fmtDuration(peer.conntime ? nowSeconds - peer.conntime : 0));
     html += peerDetailRow('Last Send', peer.lastsend ? distributionData.fmtDuration(nowSeconds - peer.lastsend) + ' ago' : '\u2014');

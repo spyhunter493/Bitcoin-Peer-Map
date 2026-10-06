@@ -1,3 +1,4 @@
+import { comparePing } from '../core/ping.js';
 import { query, queryAll } from '../core/dom.js';
 import * as BPMDomState from '../core/dom-state.js';
 /** @param {import('../types').DistributionTooltipsOptions} options */
@@ -189,7 +190,7 @@ export function create(options) {
                     ? options
                           .getSummaryView()
                           .buildPingPeerListHtml(
-                              secondaryPeers.slice().sort((a, b) => (a.ping_ms || Infinity) - (b.ping_ms || Infinity))
+                              secondaryPeers.slice().sort((a, b) => comparePing(a.ping_ms, b.ping_ms))
                           )
                     : category && category.startsWith('insight-data-')
                       ? options.getSummaryView().buildDataPeerListHtml(

@@ -184,7 +184,7 @@ export class PeerService {
                 subver: (peer.subver || '').replaceAll('/', ''),
                 bytessent: peer.bytessent ?? 0, bytesrecv: peer.bytesrecv ?? 0,
                 bytessent_fmt: formatBytes(peer.bytessent ?? 0), bytesrecv_fmt: formatBytes(peer.bytesrecv ?? 0),
-                ping_ms: Math.trunc((peer.pingtime || 0) * 1000), conntime: peer.conntime ?? 0,
+                ping_ms: typeof peer.pingtime === 'number' && peer.pingtime >= 0 && Number.isFinite(peer.pingtime * 1000) ? peer.pingtime * 1000 : null, conntime: peer.conntime ?? 0,
                 conntime_fmt: peer.conntime ? formatDuration(Math.floor(observedAt) - peer.conntime) : '-',
                 version: peer.version ?? 0, connection_type: peer.connection_type ?? '',
                 connection_type_abbrev: abbreviateConnectionType(peer.connection_type || ''),

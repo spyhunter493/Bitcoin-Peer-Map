@@ -1,3 +1,4 @@
+import { comparePing } from '../core/ping.js';
 /** @param {readonly import('../types').Peer[]} peers
  *  @param {import('../types').PeerTableFilters} filters
  *  @returns {import('../types').Peer[]} */
@@ -23,7 +24,7 @@ function sortPeers(peers, column, ascending) {
     if (!column) return sorted;
     return sorted.sort((a, b) => {
         let comparison;
-        if (column.key === 'ping_ms') comparison = (a.ping_ms || 0) - (b.ping_ms || 0);
+        if (column.key === 'ping_ms') return comparePing(a.ping_ms, b.ping_ms, ascending);
         else if (column.key === 'bytessent_fmt') comparison = (a.bytessent || 0) - (b.bytessent || 0);
         else if (column.key === 'bytesrecv_fmt') comparison = (a.bytesrecv || 0) - (b.bytesrecv || 0);
         // Older connection timestamps represent longer durations.
