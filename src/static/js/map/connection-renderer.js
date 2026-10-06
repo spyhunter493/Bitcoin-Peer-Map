@@ -13,8 +13,9 @@ export function create(options) {
     const { advSettings } = options.preferences;
     const PRIVATE_NETS = new Set(['onion', 'i2p', 'cjdns']);
 
-    /** Draw private network labels across Antarctica. */
-    function drawPrivateNetworksText() {
+    /** Draw private network labels across every visible Antarctic copy.
+     * @param {number[]} wrapOffsets */
+    function drawPrivateNetworksText(wrapOffsets) {
         if (!privateState.privateNetMode || !options.showAntarcticaPeers()) return;
 
         const fontSize1 = Math.max(12, Math.min(48, 18 * view.zoom));
@@ -44,33 +45,35 @@ export function create(options) {
                 const distFromCenter = Math.abs(sLon) / 180;
                 const alphaFade = 1 - distFromCenter * 0.5;
 
-                const s1 = worldToScreen(sLon, row.lat1);
-                const s2 = worldToScreen(sLon, row.lat2);
+                for (const offset of wrapOffsets) {
+                    const s1 = worldToScreen(sLon + offset, row.lat1);
+                    const s2 = worldToScreen(sLon + offset, row.lat2);
 
-                // Skip if off screen
-                if (s1.x < -200 || s1.x > mapView.width + 200) continue;
-                if (s1.y < -200 || s1.y > mapView.height + 200) continue;
+                    // Skip if off screen
+                    if (s1.x < -200 || s1.x > mapView.width + 200) continue;
+                    if (s1.y < -200 || s1.y > mapView.height + 200) continue;
 
-                // Big "PRIVATE" text
-                ctx.font = `900 ${fontSize1}px 'Cinzel', serif`;
-                ctx.fillStyle = `rgba(240, 136, 62, ${(0.22 * alphaFade).toFixed(3)})`;
-                ctx.shadowColor = `rgba(240, 136, 62, ${(0.12 * alphaFade).toFixed(3)})`;
-                ctx.shadowBlur = 20;
-                ctx.fillText('P R I V A T E', s1.x, s1.y);
+                    // Big "PRIVATE" text
+                    ctx.font = `900 ${fontSize1}px 'Cinzel', serif`;
+                    ctx.fillStyle = `rgba(240, 136, 62, ${(0.22 * alphaFade).toFixed(3)})`;
+                    ctx.shadowColor = `rgba(240, 136, 62, ${(0.12 * alphaFade).toFixed(3)})`;
+                    ctx.shadowBlur = 20;
+                    ctx.fillText('P R I V A T E', s1.x, s1.y);
 
-                // "NETWORKS" below
-                ctx.font = `700 ${fontSize2}px 'Cinzel', serif`;
-                ctx.fillStyle = `rgba(240, 136, 62, ${(0.16 * alphaFade).toFixed(3)})`;
-                ctx.shadowBlur = 15;
-                ctx.fillText('N E T W O R K S', s2.x, s2.y);
+                    // "NETWORKS" below
+                    ctx.font = `700 ${fontSize2}px 'Cinzel', serif`;
+                    ctx.fillStyle = `rgba(240, 136, 62, ${(0.16 * alphaFade).toFixed(3)})`;
+                    ctx.shadowBlur = 15;
+                    ctx.fillText('N E T W O R K S', s2.x, s2.y);
 
-                // Subtitle on first row only
-                if (ri === 0 && (ci === 2 || ci === 3)) {
-                    const s3 = worldToScreen(sLon, row.sub);
-                    ctx.font = `600 ${fontSize3}px 'JetBrains Mono', monospace`;
-                    ctx.fillStyle = `rgba(240, 136, 62, ${(0.1 * alphaFade).toFixed(3)})`;
-                    ctx.shadowBlur = 8;
-                    ctx.fillText('NOT REAL LOCATIONS', s3.x, s3.y);
+                    // Subtitle on first row only
+                    if (ri === 0 && (ci === 2 || ci === 3)) {
+                        const s3 = worldToScreen(sLon + offset, row.sub);
+                        ctx.font = `600 ${fontSize3}px 'JetBrains Mono', monospace`;
+                        ctx.fillStyle = `rgba(240, 136, 62, ${(0.1 * alphaFade).toFixed(3)})`;
+                        ctx.shadowBlur = 8;
+                        ctx.fillText('NOT REAL LOCATIONS', s3.x, s3.y);
+                    }
                 }
             }
         }

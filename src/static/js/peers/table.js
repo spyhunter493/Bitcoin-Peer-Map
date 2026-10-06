@@ -211,20 +211,20 @@ function create(options) {
         });
     }
 
-    /** Build colgroup with column widths.
-     *  Auto-fit ON: compute widths from data distribution (~95th percentile of value lengths),
-     *  then scale proportionally to fill the viewport.
-     *  Auto-fit OFF: use reasonable default widths from column definitions. */
+    /** @type {import('../types').Peer[] | null} */
+    let measuredPeers = null;
+    let measuredColumns = '';
+    /** @type {number[]} */
+    let naturalWidths = [];
+    let layoutSignature = '';
+
+    /** Fit from the full snapshot's 95th percentile, preserving manual widths.
+     * Cached measurements are reused on resize; unchanged widths retain the colgroup. */
     function renderColgroup() {
         const table = required('#peer-table');
-        // Remove old colgroup if present
-        const old = query('colgroup', table);
-        if (old) old.remove();
-
+        const widths = [];
         if (autoFitColumns) {
             // ── Auto-fit: size columns to fit viewport based on data ──
-            table.style.tableLayout = 'fixed';
-            const cg = document.createElement('colgroup');
             const charPx = 7; // approximate px per character at font-size 11px
             const headerPad = 28; // padding + sort arrow
             const colPad = 16; // cell padding (8px each side)
@@ -233,68 +233,81 @@ function create(options) {
             // Measure available width
             const tableWrap = table.closest('.peer-table-wrap');
             const availW = (tableWrap ? tableWrap.clientWidth : mapView.width) - actionsW;
+            if (availW <= 0) return;
+            const columnsSignature = visibleColumns.join('|');
+            if (measuredPeers !== dashboard.peers || measuredColumns !== columnsSignature) {
+                naturalWidths = [];
+                for (const key of visibleColumns) {
+                    const col = COLUMNS.find((c) => c.key === key);
+                    if (!col) {
+                        naturalWidths.push(60);
+                        continue;
+                    }
 
-            const widths = [];
-            for (const key of visibleColumns) {
-                const col = COLUMNS.find((c) => c.key === key);
-                if (!col) {
-                    widths.push(60);
-                    continue;
+                    // Minimum: header label width
+                    const headerW = col.label.length * charPx + headerPad;
+
+                    if (dashboard.peers.length === 0) {
+                        naturalWidths.push(Math.max(headerW, col.w));
+                        continue;
+                    }
+
+                    // Width is capped at 250px, so a bounded length histogram
+                    // finds the percentile without sorting the full peer list.
+                    const maxLength = Math.ceil((250 - colPad) / charPx);
+                    const lengths = new Uint32Array(maxLength + 1);
+                    for (const peer of dashboard.peers) lengths[Math.min(String(col.get(peer)).length, maxLength)]++;
+                    const p95Idx = Math.min(Math.floor(dashboard.peers.length * 0.95), dashboard.peers.length - 1);
+                    let p95Len = 0, count = lengths[0];
+                    while (count <= p95Idx && p95Len < maxLength) count += lengths[++p95Len];
+                    const dataW = p95Len * charPx + colPad;
+
+                    naturalWidths.push(Math.max(headerW, Math.min(dataW, 250)));
                 }
-
-                // Minimum: header label width
-                const headerW = col.label.length * charPx + headerPad;
-
-                if (dashboard.peers.length === 0) {
-                    widths.push(Math.max(headerW, col.w));
-                    continue;
-                }
-
-                // Gather string lengths for all values
-                const lens = dashboard.peers.map((p) => String(col.get(p)).length);
-                lens.sort((a, b) => a - b);
-
-                // Use ~95th percentile to ignore extreme outliers (e.g. Tor/I2P addresses)
-                const p95Idx = Math.min(Math.floor(lens.length * 0.95), lens.length - 1);
-                const p95Len = lens[p95Idx];
-                const dataW = p95Len * charPx + colPad;
-
-                widths.push(Math.max(headerW, Math.min(dataW, 250)));
+                measuredPeers = dashboard.peers;
+                measuredColumns = columnsSignature;
             }
 
             // Scale proportionally to fill available width
-            const totalNatural = widths.reduce((s, w) => s + w, 0);
+            const totalNatural = naturalWidths.reduce((s, w) => s + w, 0);
             const scale = totalNatural > 0 ? Math.max(availW / totalNatural, 0.5) : 1;
 
-            for (const w of widths) {
-                const colEl = document.createElement('col');
-                colEl.style.width = Math.round(w * scale) + 'px';
-                cg.appendChild(colEl);
+            for (const width of naturalWidths) widths.push(Math.round(width * scale));
+        } else {
+            for (const key of visibleColumns) {
+                const col = COLUMNS.find((c) => c.key === key);
+                widths.push(userColumnWidths[key] || (col ? col.w : 80));
             }
-            // Actions column
-            const actCol = document.createElement('col');
-            actCol.style.width = actionsW + 'px';
-            cg.appendChild(actCol);
-            table.insertBefore(cg, table.firstChild);
-            return;
         }
-
-        // ── Auto-fit OFF: use reasonable default widths from column definitions ──
+        widths.push(80);
+        const signature = `${visibleColumns.join('|')}:${widths.join('|')}`;
+        if (signature === layoutSignature) return;
+        layoutSignature = signature;
         table.style.tableLayout = 'fixed';
-        const cg = document.createElement('colgroup');
-        for (const key of visibleColumns) {
-            const col = COLUMNS.find((c) => c.key === key);
-            const colEl = document.createElement('col');
-            const w = userColumnWidths[key] || (col ? col.w : 80);
-            colEl.style.width = w + 'px';
-            cg.appendChild(colEl);
-        }
-        // Actions column (single Disconnect button)
-        const actCol = document.createElement('col');
-        actCol.style.width = '80px';
-        cg.appendChild(actCol);
-        table.insertBefore(cg, table.firstChild);
+        let cg = query('colgroup', table);
+        if (!cg) { cg = document.createElement('colgroup'); table.insertBefore(cg, table.firstChild); }
+        while (cg.children.length > widths.length) cg.lastElementChild?.remove();
+        while (cg.children.length < widths.length) cg.appendChild(document.createElement('col'));
+        widths.forEach((width, index) => {
+            const column = /** @type {HTMLElement} */ (cg.children[index]);
+            const value = `${width}px`;
+            if (column.style.width !== value) column.style.width = value;
+        });
     }
+
+    const tableViewport = required('.peer-table-wrap', panelEl);
+    let observedWidth = tableViewport.clientWidth;
+    let layoutFrame = 0;
+    new ResizeObserver(() => {
+        const width = tableViewport.clientWidth;
+        if (width === observedWidth) return;
+        observedWidth = width;
+        if (!autoFitColumns || layoutFrame) return;
+        layoutFrame = requestAnimationFrame(() => {
+            layoutFrame = 0;
+            if (autoFitColumns) renderColgroup();
+        });
+    }).observe(tableViewport);
 
     /** Build table header row with resize handles */
     function renderPeerTableHead() {
@@ -369,6 +382,7 @@ function create(options) {
     /** Build table body from lastPeers (filtered by active network filter) */
     function renderPeerTable() {
         if (!tbodyEl) return;
+        if (autoFitColumns) renderColgroup();
         const peers =
             privateState.privateNetMode && privateState.pnFilter
                 ? PeerFilters.resolve(dashboard.peers, privateState.pnFilter.filter)
