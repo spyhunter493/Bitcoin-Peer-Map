@@ -32,7 +32,7 @@ export default async function assertMapInput(browser, baseUrl) {
                 error.message += `\nCanvas state: ${JSON.stringify(state)}\nBrowser errors: ${JSON.stringify(errors)}`;
                 throw error;
             }
-            // Wait for an actual frame after the reduced-motion 10fps interval;
+            // Wait for an actual frame after a pending redraw;
             // a wall-clock pause can end before a throttled browser redraws.
             await page.evaluate(() => new Promise(resolve => {
                 const started = performance.now();
@@ -42,7 +42,7 @@ export default async function assertMapInput(browser, baseUrl) {
                 };
                 requestAnimationFrame(afterFrame);
             }));
-            return page.evaluate(async () => Promise.all(['basemap', 'worldmap'].map(async id => {
+            return page.evaluate(async () => Promise.all(['basemap', 'worldmap', 'map-connections'].map(async id => {
                 const el = document.getElementById(id);
                 const pixels = el.getContext('2d').getImageData(0, 0, el.width, el.height).data;
                 const digest = await crypto.subtle.digest('SHA-256', pixels);
@@ -101,6 +101,8 @@ export default async function assertMapInput(browser, baseUrl) {
         assert.deepEqual(await dimensions(), { width: 1650, height: 1200 });
         assert.deepEqual(await page.locator('#basemap').evaluate(el => ({ width: el.width, height: el.height })),
             { width: 1650, height: 1200 }, 'resize updates both canvas surfaces');
+        assert.deepEqual(await page.locator('#map-connections').evaluate(el => ({ width: el.width, height: el.height })),
+            { width: 1650, height: 1200 }, 'resize updates the cached connection layer');
         assert.deepEqual(errors, []);
     } finally {
         await context.close();

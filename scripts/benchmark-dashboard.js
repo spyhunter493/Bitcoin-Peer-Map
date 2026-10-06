@@ -104,49 +104,63 @@ async function main() {
     let browser;
     try {
         browser = await chromium.launch();
-        console.log('Peers | Main-thread task time / 3 s | DOM nodes | JS heap | Unchanged-poll table mutations');
-        for (const count of [14, 125, 500]) {
-            fixture.setPeerCount(count);
-            const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
-            try {
-                const page = await context.newPage();
-                const errors = [];
-                page.on('pageerror', error => errors.push(error.message));
-                await page.route('https://fonts.googleapis.com/**', route => route.abort());
-                await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
-                await page.waitForFunction(expected => document.querySelectorAll('#peer-tbody tr').length === expected,
-                    count, { timeout: 30000 });
-                await page.waitForTimeout(6000); // Let arrival effects settle.
-                const session = await context.newCDPSession(page);
-                await session.send('Performance.enable');
-                const metrics = async () => Object.fromEntries(
-                    (await session.send('Performance.getMetrics')).metrics.map(metric => [metric.name, metric.value])
-                );
-                const before = await metrics();
-                await page.waitForTimeout(3000);
-                const after = await metrics();
-                await page.evaluate(() => {
-                    window.benchmarkTableMutations = 0;
-                    new MutationObserver(records => { window.benchmarkTableMutations += records.length; })
-                        .observe(document.getElementById('peer-tbody'), {
-                            subtree: true, childList: true, characterData: true, attributes: true,
-                        });
-                });
-                const deadline = Date.now() + 5000;
-                while (fixture.peerRequests < 2 && Date.now() < deadline) {
-                    await page.waitForTimeout(100);
+        console.log('Motion | Peers | Main-thread task time / 3 s | DOM nodes | Mounted rows | JS heap | Canvas redraws | Unchanged-poll table mutations');
+        for (const reducedMotion of ['no-preference', 'reduce']) {
+            for (const count of [14, 125, 500]) {
+                fixture.setPeerCount(count);
+                const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1, reducedMotion });
+                try {
+                    const page = await context.newPage();
+                    const errors = [];
+                    page.on('pageerror', error => errors.push(error.message));
+                    await page.route('https://fonts.googleapis.com/**', route => route.abort());
+                    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+                    await page.waitForFunction(expected => Number(document.getElementById('peer-tbody').dataset.peerCount) === expected,
+                        count, { timeout: 30000 });
+                    await page.waitForTimeout(6000); // Let arrival effects settle.
+                    await page.evaluate(() => {
+                        window.benchmarkRedraws = 0;
+                        const clear = CanvasRenderingContext2D.prototype.clearRect;
+                        CanvasRenderingContext2D.prototype.clearRect = function (...args) {
+                            if (this.canvas.id === 'worldmap') window.benchmarkRedraws++;
+                            return clear.apply(this, args);
+                        };
+                    });
+                    const session = await context.newCDPSession(page);
+                    await session.send('Performance.enable');
+                    const metrics = async () => Object.fromEntries(
+                        (await session.send('Performance.getMetrics')).metrics.map(metric => [metric.name, metric.value])
+                    );
+                    const before = await metrics();
+                    await page.waitForTimeout(3000);
+                    const after = await metrics();
+                    const redraws = await page.evaluate(() => window.benchmarkRedraws);
+                    await page.evaluate(() => {
+                        window.benchmarkTableMutations = 0;
+                        new MutationObserver(records => { window.benchmarkTableMutations += records.length; })
+                            .observe(document.getElementById('peer-tbody'), {
+                                subtree: true, childList: true, characterData: true, attributes: true,
+                            });
+                    });
+                    // Observe an actual refresh after attaching the mutation observer.
+                    // Earlier polls may already have finished during the idle sample.
+                    const requestsBefore = fixture.peerRequests;
+                    const refreshed = page.waitForResponse(response => new URL(response.url()).pathname === '/api/peers');
+                    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+                    await refreshed;
+                    if (fixture.peerRequests <= requestsBefore) throw new Error('Peer poll did not run');
+                    await page.waitForTimeout(250);
+                    const dom = await page.evaluate(() => ({
+                        nodes: document.getElementsByTagName('*').length,
+                        rows: document.querySelectorAll('#peer-tbody tr[data-id]').length,
+                        mutations: window.benchmarkTableMutations,
+                    }));
+                    if (errors.length) throw new Error(`Page errors at ${count} peers: ${errors.join('; ')}`);
+                    console.log(`${reducedMotion} | ${count} | ${(after.TaskDuration - before.TaskDuration).toFixed(3)} s | ` +
+                        `${dom.nodes} | ${dom.rows} | ${(after.JSHeapUsedSize / 1048576).toFixed(1)} MB | ${redraws} | ${dom.mutations}`);
+                } finally {
+                    await context.close();
                 }
-                if (fixture.peerRequests < 2) throw new Error('Peer poll did not run');
-                await page.waitForTimeout(250);
-                const dom = await page.evaluate(() => ({
-                    nodes: document.getElementsByTagName('*').length,
-                    mutations: window.benchmarkTableMutations,
-                }));
-                if (errors.length) throw new Error(`Page errors at ${count} peers: ${errors.join('; ')}`);
-                console.log(`${count} | ${(after.TaskDuration - before.TaskDuration).toFixed(3)} s | ` +
-                    `${dom.nodes} | ${(after.JSHeapUsedSize / 1048576).toFixed(1)} MB | ${dom.mutations}`);
-            } finally {
-                await context.close();
             }
         }
     } finally {
@@ -156,6 +170,6 @@ async function main() {
     }
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
     main().catch(error => { console.error(error); process.exitCode = 1; });
 }

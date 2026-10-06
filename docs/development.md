@@ -117,10 +117,11 @@ container and volume.
 npm run benchmark:dashboard
 ```
 
-The benchmark profiles 14, 125, and 500 synthetic peers in Chromium. It reports
-main-thread task time over three idle seconds, DOM size, JavaScript heap use, and
-table mutations during an unchanged peer poll. Compare runs on the same machine
-and browser; absolute timings vary by environment.
+The benchmark profiles 14, 125, and 500 synthetic peers in Chromium with normal
+and reduced motion. It reports main-thread task time over three idle seconds,
+DOM size, mounted table rows, JavaScript heap use, peer-canvas redraws, and table
+mutations during an unchanged peer poll. Compare runs on the same machine and
+browser; absolute timings vary by environment.
 
 ## Architecture
 
@@ -160,6 +161,18 @@ geography loading and cached paths, `peer-renderer.js` owns peer animation and
 hit testing, and `connection-renderer.js` draws lines from distribution and
 private-network views. `input.js` binds pointer, touch, table, and badge input;
 `controls.js` binds dashboard buttons.
+
+Geography and static connections have separate cached canvas layers. Peer
+animations continue at the existing frame rate; reduced-motion scenes redraw on
+state changes and once per second while connection-age brightness is changing.
+Large settled peer sets reuse a bounded cache of glow sprites.
+
+`peers/table-window.js` mounts the viewport plus six buffer rows on each side for
+tables above 80 peers. Smaller tables retain every row. Sorting and filtering use
+the full snapshot, while scroll and resize update only the mounted window.
+Spacer rows preserve the full scroll height, and cross-highlighting can reveal
+an unmounted peer. Logical row indices and counts describe the full table to
+assistive technology.
 
 `distribution/navigation.js` composes the existing navigation API from
 `selection.js` (selection transitions), `selection-filters.js` (persistent filters

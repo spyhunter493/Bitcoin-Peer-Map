@@ -21,6 +21,35 @@ export function create(options) {
     const isAllNetsEnabled = () => [...ALL_NETS].every(net => interaction.enabledNets.has(net));
     /** @param {string} network */
     const passesNetFilter = network => interaction.enabledNets.has(network);
+    // Reuse the expensive radial gradients at large peer counts. Only the glow
+    // radius is quantized (within 0.125 CSS pixels); pulse/opacity stay continuous.
+    /** @type {Map<string, {canvas: HTMLCanvasElement; radius: number}>} */
+    const glows = new Map();
+    /** @param {import('../types').RGB} color @param {number} core @param {number} glow */
+    function glowSprite(color, core, glow) {
+        const radius = Math.max(core + 0.25, Math.round(glow * 4) / 4);
+        const key = `${color.r},${color.g},${color.b},${core},${radius}`;
+        let sprite = glows.get(key);
+        if (!sprite) {
+            const canvas = document.createElement('canvas');
+            const extent = Math.ceil(radius + 1);
+            canvas.width = canvas.height = extent * 4;
+            const context = /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d'));
+            context.scale(2, 2);
+            const gradient = context.createRadialGradient(extent, extent, core, extent, extent, radius);
+            gradient.addColorStop(0, rgba(color, 0.55));
+            gradient.addColorStop(0.5, rgba(color, 0.18));
+            gradient.addColorStop(1, rgba(color, 0));
+            context.fillStyle = gradient;
+            context.beginPath();
+            context.arc(extent, extent, radius, 0, Math.PI * 2);
+            context.fill();
+            sprite = { canvas, radius: extent };
+            if (glows.size >= 256) glows.delete(glows.keys().next().value || '');
+            glows.set(key, sprite);
+        }
+        return sprite;
+    }
 
     /**
  * Draw a single node at a specific screen position.
@@ -34,17 +63,26 @@ export function create(options) {
  * @param {number} pulse
  * @param {number} opacity
  * @param {import('../types').RGB} c
+ * @param {boolean} cached
  */
-    function drawNodeAt(sx, sy, c, r, gr, pulse, opacity, brightness) {
+    function drawNodeAt(sx, sy, c, r, gr, pulse, opacity, brightness, cached) {
         // Outer glow (radial gradient) — modulated by brightness and pulse
-        const grad = ctx.createRadialGradient(sx, sy, r, sx, sy, gr);
-        grad.addColorStop(0, rgba(c, 0.55 * pulse * opacity * brightness));
-        grad.addColorStop(0.5, rgba(c, 0.18 * pulse * opacity * brightness));
-        grad.addColorStop(1, rgba(c, 0));
-        ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.arc(sx, sy, gr, 0, Math.PI * 2);
-        ctx.fill();
+        if (cached) {
+            const sprite = glowSprite(c, r, gr);
+            const alpha = ctx.globalAlpha;
+            ctx.globalAlpha = alpha * pulse * opacity * brightness;
+            ctx.drawImage(sprite.canvas, sx - sprite.radius, sy - sprite.radius, sprite.radius * 2, sprite.radius * 2);
+            ctx.globalAlpha = alpha;
+        } else {
+            const grad = ctx.createRadialGradient(sx, sy, r, sx, sy, gr);
+            grad.addColorStop(0, rgba(c, 0.55 * pulse * opacity * brightness));
+            grad.addColorStop(0.5, rgba(c, 0.18 * pulse * opacity * brightness));
+            grad.addColorStop(1, rgba(c, 0));
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(sx, sy, gr, 0, Math.PI * 2);
+            ctx.fill();
+        }
 
         // Core dot — now subtly modulated by pulse for continuous twinkle
         const coreTwinkle = 0.88 + 0.12 * pulse;
@@ -258,7 +296,8 @@ export function create(options) {
                 drawArrivalBloom(s.x, s.y, c, ageMs, finalOpacity);
             }
 
-            drawNodeAt(s.x, s.y, c, r, gr, pulse, finalOpacity, brightness);
+            drawNodeAt(s.x, s.y, c, r, gr, pulse, finalOpacity, brightness,
+                mapView.nodes.length >= 250 && ageMs >= CFG.arrivalDuration);
         }
     }
 
@@ -268,8 +307,10 @@ export function create(options) {
  * and skips fading-out nodes to avoid visual clutter.
  * Uses wrap offsets so connections work across the date line.
 
- * @param {number[]} wrapOffsets */
-    function drawConnectionLines(wrapOffsets) {
+ * @param {number[]} wrapOffsets
+ * @param {CanvasRenderingContext2D} [ctx] */
+    function drawConnectionLines(wrapOffsets, ctx = options.ctx) {
+        let drawn = 0;
         ctx.lineWidth = 0.5;
         let aliveNodes = mapView.nodes.filter((n) => n.alive && isMapNodeVisible(n));
         // Respect network filter for connection lines too
@@ -294,8 +335,10 @@ export function create(options) {
                 ctx.moveTo(a.x, a.y);
                 ctx.lineTo(b.x, b.y);
                 ctx.stroke();
+                drawn++;
             }
         }
+        return drawn;
     }
 
     /** Draw a highlight ring around a node when it's highlighted via table hover.

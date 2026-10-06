@@ -458,6 +458,33 @@ export function create(options) {
     }
 
     return Object.freeze({
+        // Origins can move during panel transitions without changing selection.
+        // Include their current geometry when deciding whether cached lines match.
+        getLayoutKey() {
+            /** @type {number[]} */
+            const key = [];
+            /** @param {import('../types').Point | null} point */
+            const addPoint = point => { key.push(point?.x ?? -1, point?.y ?? -1); };
+            if (interaction.asLineGroups?.length) {
+                for (const group of interaction.asLineGroups) addPoint(options.distribution.getLineOriginForAs(group.asNum));
+            } else if (interaction.asLinePeerIds?.length && interaction.asLineAsNum) {
+                addPoint(options.distribution.getLineOriginForAs(interaction.asLineAsNum));
+            }
+            if (privateState.privateNetMode || privateState.pnMiniHover) {
+                const el = document.getElementById(privateState.privateNetMode ? 'pn-donut-wrap' : 'pn-mini-donut');
+                const rect = el?.getBoundingClientRect();
+                key.push(rect?.left ?? -1, rect?.top ?? -1, rect?.width ?? -1, rect?.height ?? -1);
+                if (privateState.pnInsightRectVisible) addPoint(options.getPrivateInsightOrigin());
+                if (privateState.pnMiniHover) {
+                    for (const net of PRIVATE_NETS) addPoint(options.getPnMiniLegendDotPos(net));
+                }
+            }
+            if (key.length) {
+                const rect = canvas.getBoundingClientRect();
+                key.push(rect.left, rect.top, rect.width, rect.height);
+            }
+            return key;
+        },
         drawPrivateNetworksText,
         drawPrivateNetLines,
         drawAsLines,

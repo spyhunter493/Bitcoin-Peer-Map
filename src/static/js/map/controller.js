@@ -97,6 +97,7 @@ function create() {
             switch (type) {
                 case 'theme':
                     for (const node of mapView.nodes) node.color = NET_COLORS[node.peer.network] || NET_COLOR_UNKNOWN;
+                    renderer.invalidate();
                     break;
                 case 'map-style':
                     markBasemapDirty();
@@ -285,6 +286,7 @@ function create() {
         ctx,
         basemapCanvas,
         baseCtx,
+        connectionCanvas: required('#map-connections'),
         config: CFG,
         preferences,
         interaction: dashboard.interaction,

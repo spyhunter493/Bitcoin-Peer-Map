@@ -11,6 +11,7 @@ import * as ConnectionRenderer from './connection-renderer.js';
  * @property {CanvasRenderingContext2D} ctx
  * @property {HTMLCanvasElement} basemapCanvas
  * @property {CanvasRenderingContext2D} baseCtx
+ * @property {HTMLCanvasElement} connectionCanvas
  * @property {import('../types').DashboardConfig} config
  * @property {ReturnType<typeof import('../settings/preferences.js').create>} preferences
  * @property {import('../types').MapInteraction} interaction
@@ -34,7 +35,9 @@ export function create(options) {
     const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
     const basemap = Basemap.create({ ...options, getDpr: () => basemapDpr, getWrapOffsetsFor });
     const peers = PeerRenderer.create({ ...options, reducedMotionQuery, worldToScreen, getWrapOffsets });
-    const connections = ConnectionRenderer.create({ ...options, worldToScreen });
+    const { connectionCanvas } = options;
+    const connectionCtx = /** @type {CanvasRenderingContext2D} */ (connectionCanvas.getContext('2d'));
+    const connections = ConnectionRenderer.create({ ...options, ctx: connectionCtx, worldToScreen });
 
     // canvas logical dimensions (CSS pixels)
     const BASEMAP_DPR_CAP = 1.5;
@@ -43,6 +46,43 @@ export function create(options) {
     let peerDpr = 1;
 
     let lastPeerFrameTime = 0;
+    /** @type {unknown[] | null} */
+    let lastScene = null;
+    /** @type {unknown[] | null} */
+    let lastConnections = null;
+    /** @type {import('../types').MapNode[] | null} */
+    let ageNodes = null;
+    let ageVisibility = '';
+    let brightnessChangesUntil = 0;
+    let fadingUntil = 0;
+    let animatedPeers = false;
+
+    function invalidate() {
+        lastScene = null;
+        lastConnections = null;
+    }
+    // Labels drawn before a web font arrives must not remain in a cached layer.
+    document.fonts.addEventListener('loadingdone', () => {
+        basemap.markBasemapDirty();
+        invalidate();
+    });
+
+    /** @param {unknown[] | null} previous @param {unknown[]} next */
+    const sameScene = (previous, next) => previous?.length === next.length &&
+        next.every((value, index) => value === previous[index]);
+
+    /** Small state keys avoid walking every peer on idle animation frames. */
+    function sceneKey() {
+        return [view.x, view.y, view.zoom, mapView.width, mapView.height, peerDpr, mapView.nodes,
+            [...interaction.enabledNets].join('|'), interaction.asFilterPeerIds,
+            interaction.asLinePeerIds, interaction.asLineColor, interaction.asLineAsNum, interaction.asLineGroups,
+            interaction.highlightedPeerId, interaction.pinnedNode, interaction.groupedNodes,
+            privateState.privateNetMode, privateState.pnSelectedNet, privateState.pnHoveredNet,
+            privateState.pnMiniHover, privateState.pnMiniHoverNet, privateState.pnPreviewPeerIds,
+            privateState.privateNetLinePeer, privateState.pnInsightRectVisible, options.showAntarcticaPeers(),
+            options.preferences.advSettings.asLineWidth, options.preferences.advSettings.asLineFan,
+            ...connections.getLayoutKey()];
+    }
 
     /** @param {number} lon
      * @param {number} lat */
@@ -78,6 +118,7 @@ export function create(options) {
         if (nextDpr === peerDpr && canvas.width && canvas.height) return;
         peerDpr = nextDpr;
         sizeCanvas(canvas, ctx, peerDpr);
+        invalidate();
     }
 
     function resize() {
@@ -89,6 +130,7 @@ export function create(options) {
         sizeCanvas(basemapCanvas, baseCtx, basemapDpr);
         sizeCanvas(canvas, ctx, peerDpr);
         basemap.resize();
+        invalidate();
         options.onResize();
     }
 
@@ -225,15 +267,45 @@ export function create(options) {
         }
         basemap.draw(settled, interacting);
 
-        // Large peer sets draw at 20fps while idle; the usual limit is 30fps.
-        // Reduced motion uses static effects at 10fps. Interaction stays responsive.
-        const idleFps = reducedMotion ? 10 : mapView.nodes.length >= 250 ? 20 : 30;
+        const visibility = `${options.showAntarcticaPeers()}|${privateState.privateNetMode}|${[...interaction.enabledNets].join('|')}`;
+        if (ageNodes !== mapView.nodes || ageVisibility !== visibility) {
+            ageNodes = mapView.nodes;
+            ageVisibility = visibility;
+            brightnessChangesUntil = 0;
+            fadingUntil = 0;
+            animatedPeers = false;
+            for (const node of mapView.nodes) {
+                if (!options.isMapNodeVisible(node)) continue;
+                if (privateState.privateNetMode && !PRIVATE_NETS.has(node.peer.network)) continue;
+                if (!node.alive && node.fadeOutStart !== null) fadingUntil = Math.max(fadingUntil,
+                    node.fadeOutStart + CFG.fadeOutDuration);
+                if (node.alive && interaction.enabledNets.has(node.peer.network)) {
+                    animatedPeers = true;
+                    if (node.peer.conntime > 0) brightnessChangesUntil = Math.max(brightnessChangesUntil,
+                        (node.peer.conntime + CFG.ageRampSeconds) * 1000);
+                }
+            }
+        }
+
+        // Animated peers retain their frame rate. Static scenes redraw only when
+        // their state changes, including the once-per-second age brightness ramp.
+        const idleFps = mapView.nodes.length >= 250 ? 20 : 30;
         const frameInterval = interacting || !settled ? 1000 / 60 : 1000 / idleFps;
         if (timestamp - lastPeerFrameTime < frameInterval - 1) {
             requestAnimationFrame(frame);
             return;
         }
         lastPeerFrameTime = timestamp;
+        const scene = sceneKey();
+        const fading = !reducedMotion && now < fadingUntil;
+        const nextScene = [...scene, reducedMotion, fading,
+            reducedMotion && now < brightnessChangesUntil ? Math.floor(now / 1000) : 0];
+        if (settled && !interacting && (reducedMotion || (!animatedPeers && !fading)) &&
+            sameScene(lastScene, nextScene)) {
+            requestAnimationFrame(frame);
+            return;
+        }
+        lastScene = nextScene;
 
         ctx.setTransform(peerDpr, 0, 0, peerDpr, 0, 0);
         ctx.clearRect(0, 0, mapView.width, mapView.height);
@@ -241,32 +313,45 @@ export function create(options) {
         // Compute wrap offsets once per frame
         const wrapOffsets = getWrapOffsets();
 
-        // [PRIVATE-NET] Draw "PRIVATE NETWORKS" text across Antarctica
-        if (privateState.privateNetMode) {
-            connections.drawPrivateNetworksText();
-        }
+        if (!sameScene(lastConnections, scene)) {
+            sizeCanvas(connectionCanvas, connectionCtx, peerDpr);
+            connectionCtx.clearRect(0, 0, mapView.width, mapView.height);
+            let hasConnections = false;
 
-        // 9. Connection mesh lines between nearby peers (skip in private net mode)
-        if (!privateState.privateNetMode) {
-            peers.drawConnectionLines(wrapOffsets);
-        }
-
-        // [DISTRIBUTION] 9b. Draw lines from map center to AS peers (hover/selection)
-        if (!privateState.privateNetMode) {
-            if (interaction.asLineGroups && interaction.asLineGroups.length > 0) {
-                connections.drawAsLinesAll(wrapOffsets);
-            } else if (
-                interaction.asLinePeerIds &&
-                interaction.asLinePeerIds.length > 0 &&
-                interaction.asLineColor
-            ) {
-                connections.drawAsLines(wrapOffsets);
+            // [PRIVATE-NET] Draw "PRIVATE NETWORKS" text across Antarctica
+            if (privateState.privateNetMode) {
+                connections.drawPrivateNetworksText();
+                hasConnections = options.showAntarcticaPeers();
             }
-        }
 
-        // [PRIVATE-NET] Draw lines from donut to all private peers
-        if (privateState.privateNetMode || privateState.pnMiniHover) {
-            connections.drawPrivateNetLines(wrapOffsets);
+            // 9. Connection mesh lines between nearby peers (skip in private net mode)
+            if (!privateState.privateNetMode) {
+                hasConnections = peers.drawConnectionLines(wrapOffsets, connectionCtx) > 0;
+            }
+
+            // [DISTRIBUTION] 9b. Draw lines from map center to AS peers (hover/selection)
+            if (!privateState.privateNetMode) {
+                if (interaction.asLineGroups && interaction.asLineGroups.length > 0) {
+                    connections.drawAsLinesAll(wrapOffsets);
+                    hasConnections = true;
+                } else if (
+                    interaction.asLinePeerIds &&
+                    interaction.asLinePeerIds.length > 0 &&
+                    interaction.asLineColor
+                ) {
+                    connections.drawAsLines(wrapOffsets);
+                    hasConnections = true;
+                }
+            }
+
+            // [PRIVATE-NET] Draw lines from donut to all private peers
+            if (privateState.privateNetMode || privateState.pnMiniHover) {
+                connections.drawPrivateNetLines(wrapOffsets);
+                hasConnections ||= options.showAntarcticaPeers();
+            }
+            // Avoid compositing a full transparent surface in scenes without lines.
+            if (connectionCanvas.hidden !== !hasConnections) connectionCanvas.hidden = !hasConnections;
+            lastConnections = scene;
         }
 
         // 10. Peer nodes (alive + fading out)
@@ -309,7 +394,8 @@ export function create(options) {
         screenToWorld,
         getWrapOffsets,
         findNodesAtScreen: peers.findNodesAtScreen,
-        markBasemapDirty: basemap.markBasemapDirty,
+        invalidate,
+        markBasemapDirty() { basemap.markBasemapDirty(); invalidate(); },
         loadGeometry: basemap.loadGeometry,
         start: () => requestAnimationFrame(frame),
     });

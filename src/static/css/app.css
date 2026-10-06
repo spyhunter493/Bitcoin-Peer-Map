@@ -85,6 +85,7 @@ html, body {
    2. CANVAS
    ========================================================== */
 #basemap,
+#map-connections,
 #worldmap {
     position: fixed;
     inset: 0;
@@ -97,8 +98,9 @@ html, body {
     transform-origin: 0 0;
     will-change: transform;
 }
+#map-connections { z-index: 1; pointer-events: none; }
 #worldmap {
-    z-index: 1;
+    z-index: 2;
     cursor: grab;
 }
 #worldmap:active { cursor: grabbing; }
@@ -1022,7 +1024,7 @@ body.theme-light .fd-net-counts {
 /* ==========================================================
    12. PEER TABLE
    ========================================================== */
-.peer-table-wrap { flex: 1; overflow: auto; }
+.peer-table-wrap { flex: 1; overflow: auto; overflow-anchor: none; }
 .peer-table-wrap::-webkit-scrollbar { height: 6px; width: 6px; }
 .peer-table-wrap::-webkit-scrollbar-track { background: var(--bg-deep); }
 .peer-table-wrap::-webkit-scrollbar-thumb { background: var(--accent-dim); border-radius: 3px; }
@@ -1090,6 +1092,9 @@ body.theme-light .fd-net-counts {
 .peer-table tbody tr:hover { background: rgba(88, 166, 255, 0.06); }
 .peer-table tbody tr.row-highlight { background: rgba(88, 166, 255, 0.1); }
 .peer-table tbody tr.row-selected { background: rgba(88, 166, 255, 0.15); }
+.peer-table tbody .peer-table-spacer { pointer-events: none; background: none; }
+.peer-table .peer-table-spacer td { padding: 0; border: 0; line-height: 0; }
+.peer-table-spacer, .peer-table-spacer td, .peer-table-spacer div { transition-property: none; }
 
 /* Network-coloured left border + text tint on rows */
 .peer-table tbody tr[data-net="ipv4"]  { border-left: 2px solid var(--net-ipv4); color: rgba(227,179,65,0.85); }
