@@ -28,6 +28,44 @@ Match the username and password in the dashboard's `.env`. Restrict `rpcbind` an
 off the public internet. Prefer `rpcauth` over plaintext `rpcuser` and
 `rpcpassword` where practical.
 
+### Limit the BPM account's RPC methods
+
+Knots supports a per-user [`rpcwhitelist`](https://github.com/bitcoinknots/bitcoin/blob/29.x-knots/src/init.cpp).
+For the complete read-only dashboard, add this to the node's configuration and
+leave `BPM_ADMIN_TOKEN` unset:
+
+```ini
+rpcwhitelistdefault=0
+rpcwhitelist=bpm:getbestblockhash,getblock,getblockchaininfo,getblockheader,getchaintips,getindexinfo,getmempoolinfo,getnettotals,getnetworkinfo,getnodeaddresses,getpeerinfo,listbanned,uptime
+```
+
+For peer management, configure `BPM_ADMIN_TOKEN` and **replace** that whitelist
+line with the complete list below. It adds only `addnode`, `clearbanned`,
+`disconnectnode`, and `setban`:
+
+```ini
+rpcwhitelistdefault=0
+rpcwhitelist=bpm:addnode,clearbanned,disconnectnode,getbestblockhash,getblock,getblockchaininfo,getblockheader,getchaintips,getindexinfo,getmempoolinfo,getnettotals,getnetworkinfo,getnodeaddresses,getpeerinfo,listbanned,setban,uptime
+```
+
+Use the username from `BITCOIN_RPC_USER` in place of `bpm`, and restart Knots
+after changing its configuration. Repeated whitelist lines for the same user
+are intersected, so a second line containing only the management methods would
+remove the read methods. `rpcwhitelistdefault=0` keeps other RPC accounts,
+including the cookie account, working as before while restricting BPM. Use
+`rpcwhitelistdefault=1` only when every account that needs access has an explicit
+whitelist; adding a whitelist without setting the default also denies unlisted
+accounts.
+
+The whitelist grants methods, not particular arguments: for example, `setban`
+permits adding and removing bans. It does not authenticate dashboard users or
+replace the BPM admin token. No wallet or node shutdown methods are required.
+After restarting, check `getnetworkinfo` using the BPM credentials and verify
+that an unlisted method such as `getrpcinfo` returns HTTP 403. Knots also returns
+403 for a required method omitted from the whitelist; BPM currently reports
+that as an RPC authentication failure, so check the whitelist as well as the
+credentials when troubleshooting.
+
 ### Another Compose project
 
 Attach both projects to the same external Docker network. For an existing

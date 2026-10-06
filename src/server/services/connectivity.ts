@@ -41,6 +41,7 @@ export class ConnectivityService {
     consecutiveSuccesses = 0;
     failureStartedAt: number | null = null;
     private providers: Record<Provider, ProviderHealth> = { geoip: health() };
+    private retryWindows: Record<Provider, { quotaAt: number | null; outageAt: number | null }> = { geoip: { quotaAt: null, outageAt: null } };
     private providerFailures = createFailureReporter(createLogger('geoip'));
     get apiConsecutiveFailures() { return this.providers.geoip.consecutive_failures; }
     apiPromptCount = 0;
@@ -58,18 +59,33 @@ export class ConnectivityService {
         if (state !== this.internetState) log[state === 'green' ? 'info' : 'warn'](`Internet state changed from ${this.internetState} to ${state}`);
         this.internetState = state;
     }
+    private updateProvider(provider: Provider) {
+        const current = this.providers[provider], windows = this.retryWindows[provider], now = nowSeconds();
+        if (windows.quotaAt !== null && now >= windows.quotaAt) windows.quotaAt = null;
+        if (windows.outageAt !== null && now >= windows.outageAt) windows.outageAt = null;
+        current.retry_at = windows.quotaAt === null ? windows.outageAt : windows.outageAt === null ? windows.quotaAt : Math.max(windows.quotaAt, windows.outageAt);
+        current.state = windows.quotaAt !== null ? 'rate_limited' : current.consecutive_failures ? 'unavailable' : current.last_success_at !== null ? 'healthy' : 'unknown';
+        return current;
+    }
     providerReady(provider: Provider) {
-        const retryAt = this.providers[provider].retry_at;
+        const retryAt = this.updateProvider(provider).retry_at;
         return !this.signal.aborted && (retryAt === null || nowSeconds() >= retryAt);
     }
     providerFailure(provider: Provider, error: unknown, response?: Response) {
         if (this.signal.aborted) return;
         const current = this.providers[provider];
         current.consecutive_failures++;
-        current.state = response?.status === 429 ? 'rate_limited' : 'unavailable';
         current.last_error = errorMessage(error); current.last_failure_at = nowSeconds();
+        const windows = this.retryWindows[provider];
         const delay = response ? retryDelay(response) : null;
-        if (delay !== null) current.retry_at = Math.max(current.retry_at ?? 0, nowSeconds() + delay);
+        if (response?.status === 429 || response?.headers.get('X-Rl') === '0') {
+            windows.quotaAt = Math.max(windows.quotaAt ?? 0, nowSeconds() + (delay ?? 60));
+        } else {
+            const outageDelay = current.consecutive_failures >= 5 ? Math.min(300, 30 * 2 ** Math.min(4, current.consecutive_failures - 5)) : 0;
+            const wait = Math.max(outageDelay, delay ?? 0);
+            if (wait > 0) windows.outageAt = Math.max(windows.outageAt ?? 0, nowSeconds() + wait);
+        }
+        this.updateProvider(provider);
         this.providerFailures.failure(`GeoIP provider ${current.state}: ${current.last_error}`);
     }
     providerSuccess(provider: Provider, response?: Response) {
@@ -77,10 +93,11 @@ export class ConnectivityService {
         const current = this.providers[provider];
         current.consecutive_failures = 0;
         current.last_error = null; current.last_success_at = nowSeconds();
-        if (current.retry_at !== null && nowSeconds() >= current.retry_at) current.retry_at = null;
-        current.state = current.retry_at === null ? 'healthy' : 'rate_limited';
+        const windows = this.retryWindows[provider];
+        windows.outageAt = null;
         const delay = response ? retryDelay(response) : null;
-        if (delay !== null && delay > 0) { current.retry_at = Math.max(current.retry_at ?? 0, nowSeconds() + delay); current.state = 'rate_limited'; }
+        if (delay !== null && delay > 0) windows.quotaAt = Math.max(windows.quotaAt ?? 0, nowSeconds() + delay);
+        this.updateProvider(provider);
         if (current.state === 'healthy') this.providerFailures.recovered('GeoIP provider recovered');
         else this.providerFailures.failure('GeoIP provider rate limited; waiting until retry deadline');
         this.apiPromptCount = 0; this.apiPromptAt = 0;
@@ -122,13 +139,13 @@ export class ConnectivityService {
     acknowledgePrompt() { this.apiPromptAt = nowSeconds(); this.apiPromptCount++; }
     snapshot(): ConnectivityStatus {
         let shouldPrompt = false;
-        if (this.apiConsecutiveFailures >= 5 && this.internetState === 'green' && !this.geoipApiDisabled) {
+        if (this.apiConsecutiveFailures >= 5 && !this.geoipApiDisabled) {
             const elapsed = this.apiPromptAt ? nowSeconds() - this.apiPromptAt : Infinity;
             shouldPrompt = this.apiPromptCount === 0 || (this.apiPromptCount <= 3 && elapsed >= this.apiPromptCount * 60) || (this.apiPromptCount > 3 && elapsed >= 300);
         }
         return { internet_state: this.internetState, api_available: this.apiConsecutiveFailures < 5 && this.providerReady('geoip'),
             api_consecutive_failures: this.apiConsecutiveFailures,
             geo_db_only_mode: this.geoipApiDisabled, api_down_prompt: shouldPrompt,
-            providers: { geoip: { ...this.providers.geoip } } };
+            providers: { geoip: { ...this.updateProvider('geoip') } } };
     }
 }

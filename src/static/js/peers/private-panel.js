@@ -16,6 +16,32 @@ function create(options) {
         label: /** @type {string | null} */ (null),
         centerPeerIds: /** @type {number[] | null} */ (null),
     };
+    /** @type {string | null} */
+    let pinnedSourceKey = null;
+
+    function currentPinnedSource() {
+        if (privateState.pnPinnedSubSrc?.isConnected) return privateState.pnPinnedSubSrc;
+        const body = privateState.pnDetailBodyEl;
+        return pinnedSourceKey && body ? queryAll('*', body).find(element => BPMDomState.key(element) === pinnedSourceKey) || null : null;
+    }
+
+    /** @param {HTMLElement} tip */
+    function addPopoverClose(tip) {
+        if (query('.as-popover-close', tip)) return;
+        const close = document.createElement('button');
+        close.type = 'button';
+        close.className = 'as-popover-close';
+        close.textContent = 'Close';
+        close.setAttribute('aria-label', 'Close private peer group');
+        close.addEventListener('click', event => {
+            event.stopPropagation();
+            const source = currentPinnedSource();
+            hidePnSubTooltip();
+            source?.classList.remove('pn-sub-filter-active');
+            restorePnCenterText();
+        });
+        tip.prepend(close);
+    }
     const privateNetworks = new Set(['onion', 'i2p', 'cjdns']);
     /** @type {Record<string, string>} */
     const networkLabels = { onion: 'Tor', i2p: 'I2P', cjdns: 'CJDNS' };
@@ -222,7 +248,7 @@ function create(options) {
      */
     function pnInteractiveRow(label, count, category, key = label) {
         return (
-            '<div class="as-detail-sub-row pn-interactive-row" data-filter=\'' +
+            '<button type="button" class="as-detail-sub-row pn-interactive-row" data-filter=\'' +
             escapeHtml(JSON.stringify({ kind: category, key })) +
             '\' data-category="' +
             escapeHtml(category) +
@@ -233,7 +259,7 @@ function create(options) {
             '<span class="as-detail-sub-val">' +
             escapeHtml(count) +
             '</span>' +
-            '</div>'
+            '</button>'
         );
     }
 
@@ -284,7 +310,7 @@ function create(options) {
 
         // ── Search bar ──
         html +=
-            '<div class="pn-search-wrap"><input type="text" class="pn-search-input" id="pn-overview-search" placeholder="Search peers..." autocomplete="off" spellcheck="false"></div>';
+            '<div class="pn-search-wrap"><input type="text" class="pn-search-input" id="pn-overview-search" aria-label="Search private peers" placeholder="Search peers..." autocomplete="off" spellcheck="false"></div>';
 
         // ── Insights section ──
         html += '<div class="modal-section-title">Scores and Insights</div>';
@@ -304,7 +330,7 @@ function create(options) {
         }
         if (bestStablePeer) {
             html +=
-                '<div class="pn-insight-row" data-peer-id="' +
+                '<button type="button" class="pn-insight-row" data-peer-id="' +
                 bestStablePeer.id +
                 '" data-insight-type="stable" data-peer-net="' +
                 (bestStablePeer.network || 'onion') +
@@ -312,7 +338,7 @@ function create(options) {
             html += '<span class="pn-insight-icon">\u23f3</span>';
             html += '<span class="pn-insight-label">Most Stable</span>';
             html += '<span class="pn-insight-val">#' + bestStablePeer.id + ' \u2014 ' + fmtDuration(bestStableDur) + '</span>';
-            html += '</div>';
+            html += '</button>';
         }
 
         // Fastest — lowest ping
@@ -326,7 +352,7 @@ function create(options) {
         }
         if (bestPingPeer) {
             html +=
-                '<div class="pn-insight-row" data-peer-id="' +
+                '<button type="button" class="pn-insight-row" data-peer-id="' +
                 bestPingPeer.id +
                 '" data-insight-type="fastest" data-peer-net="' +
                 (bestPingPeer.network || 'onion') +
@@ -334,7 +360,7 @@ function create(options) {
             html += '<span class="pn-insight-icon">\u26a1</span>';
             html += '<span class="pn-insight-label">Fastest</span>';
             html += '<span class="pn-insight-val">#' + bestPingPeer.id + ' \u2014 ' + escapeHtml(fmtPing(bestPing)) + '</span>';
-            html += '</div>';
+            html += '</button>';
         }
 
         // Most Bytes Sent
@@ -348,7 +374,7 @@ function create(options) {
         }
         if (bestSentPeer) {
             html +=
-                '<div class="pn-insight-row" data-peer-id="' +
+                '<button type="button" class="pn-insight-row" data-peer-id="' +
                 bestSentPeer.id +
                 '" data-insight-type="data-bytessent" data-peer-net="' +
                 (bestSentPeer.network || 'onion') +
@@ -356,7 +382,7 @@ function create(options) {
             html += '<span class="pn-insight-icon">\u2b06</span>';
             html += '<span class="pn-insight-label">Most Bytes Sent</span>';
             html += '<span class="pn-insight-val">#' + bestSentPeer.id + ' \u2014 ' + fmtBytesShort(bestSent) + '</span>';
-            html += '</div>';
+            html += '</button>';
         }
 
         // Most Bytes Received
@@ -370,7 +396,7 @@ function create(options) {
         }
         if (bestRecvPeer) {
             html +=
-                '<div class="pn-insight-row" data-peer-id="' +
+                '<button type="button" class="pn-insight-row" data-peer-id="' +
                 bestRecvPeer.id +
                 '" data-insight-type="data-bytesrecv" data-peer-net="' +
                 (bestRecvPeer.network || 'onion') +
@@ -378,7 +404,7 @@ function create(options) {
             html += '<span class="pn-insight-icon">\u2b07</span>';
             html += '<span class="pn-insight-label">Most Bytes Recv</span>';
             html += '<span class="pn-insight-val">#' + bestRecvPeer.id + ' \u2014 ' + fmtBytesShort(bestRecv) + '</span>';
-            html += '</div>';
+            html += '</button>';
         }
 
         // ── Networks breakdown (clickable to go to per-network panel) ──
@@ -386,14 +412,14 @@ function create(options) {
         for (const seg of privateState.pnSegments) {
             const filter = JSON.stringify({ kind: 'network', key: seg.net });
             html +=
-                '<div class="pn-interactive-row pn-net-link-row" data-net="' +
+                '<button type="button" class="pn-interactive-row pn-net-link-row" data-net="' +
                 seg.net +
                 '" data-filter=\'' +
                 escapeHtml(filter) +
                 '\' data-category="network">';
             html += '<span class="as-detail-sub-label">' + escapeHtml(seg.label) + '</span>';
             html += '<span class="as-detail-sub-val">' + seg.count + '</span>';
-            html += '</div>';
+            html += '</button>';
         }
 
         // ── Software (combined across all private peers) ──
@@ -627,6 +653,11 @@ function create(options) {
             clientY: rect.top + rect.height / 2,
         });
         privateState.pnPinnedSubSrc = row || null;
+        if (row) {
+            pinnedSourceKey = BPMDomState.key(row);
+            row.setAttribute('aria-expanded', 'true');
+            row.setAttribute('aria-controls', 'pn-sub-tooltip');
+        }
         row?.classList.add('pn-sub-filter-active');
         privateState.pnPreviewPeerIds = peerIds;
         previewPnCenterText(peerIds, pinned.label, allNetPeers.length);
@@ -877,7 +908,7 @@ function create(options) {
             const extraCls = i >= initialShow ? ' as-sub-tt-peer-extra' : '';
             const extraStyle = i >= initialShow ? ' style="display:none"' : '';
             html += '<div class="as-sub-tt-peer' + extraCls + '" data-peer-id="' + p.id + '"' + extraStyle + '>';
-            html += '<span class="as-sub-tt-id pn-sub-tt-id-link" data-peer-id="' + p.id + '">ID\u00a0' + p.id + '</span>';
+            html += '<button type="button" class="as-sub-tt-id pn-sub-tt-id-link" data-peer-id="' + p.id + '">ID\u00a0' + p.id + '</button>';
             html += '<span class="as-sub-tt-type">' + dir + '</span>';
             if (addr) html += '<span class="as-sub-tt-loc">' + escapeHtml(addr) + '</span>';
             html += '</div>';
@@ -886,11 +917,11 @@ function create(options) {
         if (matched.length > initialShow) {
             const remaining = matched.length - initialShow;
             html +=
-                '<div class="as-sub-tt-more pn-sub-tt-show-more">+' +
+                '<button type="button" class="as-sub-tt-more pn-sub-tt-show-more">+' +
                 remaining +
-                ' more <span class="as-sub-tt-toggle">(show)</span></div>';
+                ' more <span class="as-sub-tt-toggle">(show)</span></button>';
             html +=
-                '<div class="as-sub-tt-more pn-sub-tt-show-less" style="display:none"><span class="as-sub-tt-toggle">(less)</span></div>';
+                '<button type="button" class="as-sub-tt-more pn-sub-tt-show-less" style="display:none"><span class="as-sub-tt-toggle">(less)</span></button>';
         }
         return html;
     }
@@ -906,13 +937,18 @@ function create(options) {
             document.body.appendChild(tip);
         }
         tip.innerHTML = html;
+        if (privateState.pnSubTooltipPinned) addPopoverClose(tip);
+        else {
+            tip.removeAttribute('role');
+            tip.removeAttribute('aria-modal');
+        }
         tip.classList.remove('hidden');
         tip.style.display = '';
         positionPnSubTooltip(event);
         attachPnSubTooltipHandlers(tip);
     }
 
-    /** @param {{clientY: number}} event */
+    /** @param {{clientY: number} & Partial<Pick<MouseEvent, 'type' | 'detail' | 'currentTarget'>>} event */
     function positionPnSubTooltip(event) {
         const tip = document.getElementById('pn-sub-tooltip');
         if (!tip) return;
@@ -921,7 +957,10 @@ function create(options) {
         const panelRect = privateState.pnDetailPanelEl ? privateState.pnDetailPanelEl.getBoundingClientRect() : { left: window.innerWidth };
         let x = panelRect.left - rect.width - pad;
         if (x < pad) x = pad;
-        let y = event.clientY - rect.height / 2;
+        const source = event.currentTarget;
+        const anchor = event.type === 'click' && event.detail === 0 && source instanceof HTMLElement
+            ? source.getBoundingClientRect().top + source.getBoundingClientRect().height / 2 : event.clientY;
+        let y = anchor - rect.height / 2;
         if (y < pad) y = pad;
         if (y + rect.height > window.innerHeight - pad) y = window.innerHeight - rect.height - pad;
         tip.style.left = x + 'px';
@@ -930,6 +969,8 @@ function create(options) {
 
     function hidePnSubTooltip() {
         const tip = document.getElementById('pn-sub-tooltip');
+        const source = currentPinnedSource();
+        const restoreFocus = !!tip?.contains(document.activeElement);
         if (tip) {
             // Clear saved preview state BEFORE hiding, so deferred mouseleave
             // events (triggered by display:none) can't restore stale peer IDs
@@ -942,6 +983,9 @@ function create(options) {
             tip.style.pointerEvents = 'none';
         }
         privateState.pnSubTooltipPinned = false;
+        source?.setAttribute('aria-expanded', 'false');
+        if (restoreFocus) source?.focus({ preventScroll: true });
+        pinnedSourceKey = null;
         privateState.pnFilter = null;
         privateState.pnPinnedSubSrc = null;
         privateState.pnPreviewPeerIds = null;
@@ -956,13 +1000,23 @@ function create(options) {
     function pinPnSubTooltip(srcEl) {
         privateState.pnSubTooltipPinned = true;
         privateState.pnPinnedSubSrc = srcEl || null;
+        pinnedSourceKey = srcEl ? BPMDomState.key(srcEl) : null;
         if (srcEl)
             privateState.pnFilter = {
                 filter: JSON.parse(srcEl.dataset.filter || 'null'),
                 label: required('.as-detail-sub-label', srcEl).textContent,
             };
         const tip = document.getElementById('pn-sub-tooltip');
-        if (tip) tip.style.pointerEvents = 'auto';
+        if (tip) {
+            tip.style.pointerEvents = 'auto';
+            tip.setAttribute('role', 'dialog');
+            tip.setAttribute('aria-modal', 'false');
+            tip.setAttribute('aria-label', privateState.pnFilter?.label || 'Private peer group');
+            srcEl?.setAttribute('aria-expanded', 'true');
+            srcEl?.setAttribute('aria-controls', tip.id);
+            addPopoverClose(tip);
+            (query('.pn-sub-tt-id-link', tip) || query('button', tip))?.focus({ preventScroll: true });
+        }
         options.onAction({ type: 'table' });
     }
 
@@ -1031,6 +1085,7 @@ function create(options) {
                 queryAll('.as-sub-tt-peer-extra', tip).forEach((el) => (el.style.display = ''));
                 showMore.style.display = 'none';
                 showLess.style.display = '';
+                showLess.focus({ preventScroll: true });
                 const scroll = query('.as-sub-tt-scroll', tip);
                 if (scroll) scroll.classList.add('as-sub-tt-expanded');
             });
@@ -1039,6 +1094,7 @@ function create(options) {
                 queryAll('.as-sub-tt-peer-extra', tip).forEach((el) => (el.style.display = 'none'));
                 showLess.style.display = 'none';
                 showMore.style.display = '';
+                showMore.focus({ preventScroll: true });
                 const scroll = query('.as-sub-tt-scroll', tip);
                 if (scroll) scroll.classList.remove('as-sub-tt-expanded');
             });

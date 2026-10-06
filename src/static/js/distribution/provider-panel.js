@@ -80,7 +80,7 @@ function render(options) {
         barFill.style.width = seg.percentage.toFixed(1) + '%';
         barFill.style.background = seg.color;
     }
-    if (pctEl) pctEl.textContent = seg.percentage.toFixed(1) + '% of peers';
+    if (pctEl) pctEl.textContent = seg.percentage.toFixed(1) + '% of public peers with known provider';
 
     // Risk label
     if (riskEl) {
@@ -98,6 +98,7 @@ function render(options) {
     if (!bodyEl) return;
 
     var html = '';
+    if (options.coverage) html += view.row('Coverage', BPMDistributionData.coverageLabel(options.coverage));
 
     if (seg.isOthers) {
         // ── Others: enriched summary ──

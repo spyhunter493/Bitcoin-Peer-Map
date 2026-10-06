@@ -93,7 +93,11 @@ external GeoIP services.
 browser suites at a time, each in its own browser context. Node's test runner
 reports suite names and timings, with a two-minute timeout per suite. Set
 `BPM_LAYOUT_TEST_WORKERS=1 npm run test:layout` for serial execution, or choose
-another worker count from 1 to 8. The Docker variant uses the same test runner and
+another worker count from 1 to 8. For a focused regression run, set
+`BPM_LAYOUT_TEST_FILTER="peer table DOM updates" npm run test:layout`; the filter
+matches suite names and fails if no suite matches. The keyboard and large-table
+journeys exercise real Tab/Shift+Tab traversal beyond mounted rows while checking
+that the DOM stays bounded. The Docker variant uses the same test runner and
 also requires Docker and curl on the host.
 
 ### Validate the production container
@@ -107,9 +111,20 @@ npm run test:container
 ```
 
 The smoke test uses Linux host networking and a local mock RPC server. It checks
-the entrypoint, health check, unprivileged read-only operation, persisted SQLite
-data and preferences, and clean shutdown. It creates and removes its own test
-container and volume.
+the entrypoint, baked build metadata, health check, unprivileged read-only
+operation, persisted SQLite data and preferences, and clean shutdown. It creates
+and removes its own test container and volume. Set `BPM_TEST_IMAGE` to select an
+already-built image and `BPM_TEST_PLATFORM` to `linux/amd64` or `linux/arm64` to
+test a specific architecture. `BPM_TEST_EXPECT_VERSION` and
+`BPM_TEST_EXPECT_REVISION` verify the release tag and full commit SHA. These
+checks use the image's baked metadata without runtime overrides. Stable builds
+receive a recent update-check cache in the test volume to avoid external GitHub
+requests.
+
+Release orchestration and registry error handling are covered by
+`node --test tests/deployment/release.test.js`, also included in
+`npm run test:compose`. These tests inject command and registry fixtures and
+never publish images.
 
 ### Profile the dashboard
 
@@ -328,7 +343,7 @@ these required checks: an unprotected direct push would not be tested.
 ## Release flow
 
 ```text
-ready main → publish GitHub Release/tag → build → publish multi-arch GHCR image
+ready main → publish GitHub Release/tag → build once → smoke both architectures → publish exact GHCR image → conditionally promote latest
 ```
 
 The [release workflow](../.github/workflows/release.yml) uses
@@ -353,14 +368,21 @@ excluded. There is no push, PR, tag-push, or manual-dispatch publish trigger.
    unchecked and select **Set as the latest release**.
 5. Publish the release. The workflow validates the tag, checks out the release
    event's exact commit, verifies the tag still resolves to that commit and the
-   commit is part of `main`, then builds Linux AMD64 and ARM64 images with QEMU
-   and Docker Buildx. It uses GitHub Actions build caching and authenticates to
-   GHCR with `GITHUB_TOKEN`; only the publish job has `packages: write`.
+   commit is part of `main`, then builds a Linux AMD64/ARM64 image once with QEMU
+   and Docker Buildx. It loads the multi-platform index into the runner's
+   containerd image store, runs the production smoke test on both architectures
+   with the baked release version and revision, and uploads that same image
+   only after both pass. There is no rebuild between testing and publication.
+   It verifies the registry index digest, both architecture manifests, and their
+   build metadata before attaching the SHA tag or promoting `latest`. It uses
+   GitHub Actions build caching and authenticates to GHCR with `GITHUB_TOKEN`;
+   only the publish job has `packages: write`.
 6. Wait for **Release → Publish container image** to succeed before announcing
    the image or deploying it. If a build fails, fix the cause and rerun the failed
    workflow from Actions without moving the published tag.
 
-For `v1.3.0`, all three tags identify the same multi-architecture image:
+For a new highest version `v1.3.0`, all three tags identify the same tested
+multi-architecture image:
 
 ```text
 ghcr.io/spyhunter493/bitcoin-peer-map:v1.3.0
@@ -368,11 +390,20 @@ ghcr.io/spyhunter493/bitcoin-peer-map:latest
 ghcr.io/spyhunter493/bitcoin-peer-map:sha-<full-release-commit>
 ```
 
-Publish releases in increasing version order and wait for each publication to
-finish before starting another. Each successful publication updates `latest`;
-do not rerun an older successful release or publish older maintenance versions
-as the latest release. Never move/reuse published version tags or repurpose SHA
-tags. Pin a version or image digest for deployments that must not follow `latest`.
+Publication is serialized without cancelling an active registry push. Immediately
+before promotion, the workflow reads the existing GHCR `latest` version and
+compares stable semantic versions. It updates `latest` only for a higher version;
+an older maintenance release still receives its version and SHA tags, and equal
+versions leave `latest` unchanged. A confirmed missing manifest permits initial
+promotion. Authentication, network, malformed metadata, and other registry
+failures stop promotion rather than treating the current image as absent. The
+Actions summary records both tested architectures, the index digest, and why
+`latest` was promoted or skipped.
+
+Never move/reuse published version tags or repurpose SHA tags. The workflow
+rejects publication if either existing tag identifies a different index digest;
+rerunning a successful release cannot replace its image with a rebuilt one.
+Pin a version or image digest for deployments that must not follow `latest`.
 The GitHub Release becomes visible before the image build completes, so a notice
 can briefly precede image availability.
 

@@ -161,7 +161,7 @@ const summaryRow = summary.view.summaryInteractiveRow(hostile, '2p / 1prov', {
     peerIds: [7, 8],
     providers: [{ asNumber: 'AS64500', name: hostile, color: '#58a6ff', peerCount: 2, peerIds: [7, 8] }],
 });
-assert.ok(summaryRow.includes('role="button" tabindex="0"'));
+assert.ok(summaryRow.includes('<button type="button"'));
 assert.ok(summaryRow.includes('data-cat-label="' + escaped + '"'));
 assert.ok(summaryRow.includes('data-peer-ids="[7,8]"'));
 assert.ok(!summaryRow.includes('<img'));
@@ -191,8 +191,8 @@ console.log('Distribution feature module tests passed');
 // Filter meaning survives snapshot replacement; no matches remain an empty set.
 const peerFilters = BPMPeerFilters;
 const filterPeers = [
-    { id: 0, as: 'AS1 First', network: 'ipv4', direction: 'IN', countryCode: 'NZ', subver: 'Core', services_abbrev: 'N', ping_ms: 10 },
-    { id: 2, as: 'AS2 Second', network: 'ipv6', direction: 'OUT', countryCode: 'US', subver: 'Other', services_abbrev: 'W', ping_ms: null },
+    { id: 0, is_public: true, as: 'AS1 First', network: 'ipv4', direction: 'IN', countryCode: 'NZ', subver: 'Core', services_abbrev: 'N', ping_ms: 10 },
+    { id: 2, is_public: true, as: 'AS2 Second', network: 'ipv6', direction: 'OUT', countryCode: 'US', subver: 'Other', services_abbrev: 'W', ping_ms: null },
 ];
 const filteredIds = (peers, descriptor, groups) => Array.from(peerFilters.resolve(peers, descriptor, groups), peer => peer.id);
 const inbound = peerFilters.forCategory('conn-in', 'AS1');

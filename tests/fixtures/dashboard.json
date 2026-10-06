@@ -40,7 +40,15 @@
       "in_addrman": false,
       "hosting": true,
       "mobile": false,
-      "proxy": false
+      "proxy": false,
+      "geo": {
+        "source": "ip_api",
+        "observed_at": 1787854626,
+        "age_seconds": 3456000,
+        "freshness": "stale",
+        "stale_after_seconds": 2592000
+      },
+      "is_public": true
     },
     {
       "id": 2,
@@ -82,7 +90,15 @@
       "in_addrman": false,
       "hosting": true,
       "mobile": false,
-      "proxy": false
+      "proxy": false,
+      "geo": {
+        "source": "dataset",
+        "observed_at": 1791224226,
+        "age_seconds": 86400,
+        "freshness": "fresh",
+        "stale_after_seconds": 2592000
+      },
+      "is_public": true
     },
     {
       "id": 3,
@@ -124,7 +140,15 @@
       "in_addrman": true,
       "hosting": true,
       "mobile": false,
-      "proxy": false
+      "proxy": false,
+      "geo": {
+        "source": "dataset",
+        "observed_at": 1791224226,
+        "age_seconds": 86400,
+        "freshness": "fresh",
+        "stale_after_seconds": 2592000
+      },
+      "is_public": true
     },
     {
       "id": 4,
@@ -166,7 +190,15 @@
       "in_addrman": false,
       "hosting": true,
       "mobile": false,
-      "proxy": false
+      "proxy": false,
+      "geo": {
+        "source": "dataset",
+        "observed_at": 1791224226,
+        "age_seconds": 86400,
+        "freshness": "fresh",
+        "stale_after_seconds": 2592000
+      },
+      "is_public": true
     },
     {
       "id": 5,
@@ -208,7 +240,15 @@
       "in_addrman": false,
       "hosting": true,
       "mobile": false,
-      "proxy": false
+      "proxy": false,
+      "geo": {
+        "source": "dataset",
+        "observed_at": 1791224226,
+        "age_seconds": 86400,
+        "freshness": "fresh",
+        "stale_after_seconds": 2592000
+      },
+      "is_public": true
     },
     {
       "id": 6,
@@ -250,7 +290,15 @@
       "in_addrman": true,
       "hosting": true,
       "mobile": false,
-      "proxy": false
+      "proxy": false,
+      "geo": {
+        "source": "dataset",
+        "observed_at": 1791224226,
+        "age_seconds": 86400,
+        "freshness": "fresh",
+        "stale_after_seconds": 2592000
+      },
+      "is_public": true
     },
     {
       "id": 7,
@@ -292,7 +340,15 @@
       "in_addrman": false,
       "hosting": true,
       "mobile": false,
-      "proxy": false
+      "proxy": false,
+      "geo": {
+        "source": "dataset",
+        "observed_at": 1791224226,
+        "age_seconds": 86400,
+        "freshness": "fresh",
+        "stale_after_seconds": 2592000
+      },
+      "is_public": true
     },
     {
       "id": 8,
@@ -334,7 +390,15 @@
       "in_addrman": false,
       "hosting": true,
       "mobile": false,
-      "proxy": false
+      "proxy": false,
+      "geo": {
+        "source": "dataset",
+        "observed_at": 1791224226,
+        "age_seconds": 86400,
+        "freshness": "fresh",
+        "stale_after_seconds": 2592000
+      },
+      "is_public": true
     },
     {
       "id": 9,
@@ -376,7 +440,15 @@
       "in_addrman": true,
       "hosting": true,
       "mobile": false,
-      "proxy": false
+      "proxy": false,
+      "geo": {
+        "source": "dataset",
+        "observed_at": 1791224226,
+        "age_seconds": 86400,
+        "freshness": "fresh",
+        "stale_after_seconds": 2592000
+      },
+      "is_public": true
     },
     {
       "id": 10,
@@ -418,7 +490,15 @@
       "in_addrman": false,
       "hosting": true,
       "mobile": false,
-      "proxy": false
+      "proxy": false,
+      "geo": {
+        "source": "dataset",
+        "observed_at": 1791224226,
+        "age_seconds": 86400,
+        "freshness": "fresh",
+        "stale_after_seconds": 2592000
+      },
+      "is_public": true
     },
     {
       "id": 11,
@@ -460,7 +540,15 @@
       "in_addrman": false,
       "hosting": false,
       "mobile": false,
-      "proxy": true
+      "proxy": true,
+      "geo": {
+        "source": null,
+        "observed_at": null,
+        "age_seconds": null,
+        "freshness": "unavailable",
+        "stale_after_seconds": 2592000
+      },
+      "is_public": false
     },
     {
       "id": 12,
@@ -502,7 +590,15 @@
       "in_addrman": true,
       "hosting": false,
       "mobile": false,
-      "proxy": true
+      "proxy": true,
+      "geo": {
+        "source": null,
+        "observed_at": null,
+        "age_seconds": null,
+        "freshness": "unavailable",
+        "stale_after_seconds": 2592000
+      },
+      "is_public": false
     },
     {
       "id": 13,
@@ -544,7 +640,15 @@
       "in_addrman": false,
       "hosting": false,
       "mobile": false,
-      "proxy": true
+      "proxy": true,
+      "geo": {
+        "source": null,
+        "observed_at": null,
+        "age_seconds": null,
+        "freshness": "unavailable",
+        "stale_after_seconds": 2592000
+      },
+      "is_public": false
     },
     {
       "id": 14,
@@ -586,7 +690,15 @@
       "in_addrman": false,
       "hosting": false,
       "mobile": false,
-      "proxy": true
+      "proxy": true,
+      "geo": {
+        "source": null,
+        "observed_at": null,
+        "age_seconds": null,
+        "freshness": "unavailable",
+        "stale_after_seconds": 2592000
+      },
+      "is_public": false
     }
   ],
   "info": {
@@ -646,6 +758,16 @@
     "bitcoin_network": {
       "chain": "main",
       "default_peer_port": 8333
+    },
+    "providers": {
+      "geoip": {
+        "state": "healthy",
+        "consecutive_failures": 0,
+        "last_error": null,
+        "last_success_at": 1791310626,
+        "last_failure_at": null,
+        "retry_at": null
+      }
     }
   },
   "mempool": {

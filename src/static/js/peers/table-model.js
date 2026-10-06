@@ -25,6 +25,12 @@ function sortPeers(peers, column, ascending) {
     return sorted.sort((a, b) => {
         let comparison;
         if (column.key === 'ping_ms') return comparePing(a.ping_ms, b.ping_ms, ascending);
+        else if (column.key === 'geo_age_seconds') {
+            const left = a.geo?.age_seconds, right = b.geo?.age_seconds;
+            if (left == null) return right == null ? 0 : 1;
+            if (right == null) return -1;
+            comparison = left - right;
+        }
         else if (column.key === 'bytessent_fmt') comparison = (a.bytessent || 0) - (b.bytessent || 0);
         else if (column.key === 'bytesrecv_fmt') comparison = (a.bytesrecv || 0) - (b.bytesrecv || 0);
         // Older connection timestamps represent longer durations.

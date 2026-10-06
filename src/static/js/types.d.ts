@@ -7,9 +7,25 @@ export interface AdminAuthentication {
 
 export type PeerDirection = 'IN' | 'OUT';
 export type PeerNetwork = 'ipv4' | 'ipv6' | 'onion' | 'i2p' | 'cjdns';
+export interface PeerGeo {
+    source: 'dataset' | 'ip_api' | 'unknown' | null;
+    observed_at: number | null;
+    age_seconds: number | null;
+    freshness: 'fresh' | 'stale' | 'unknown' | 'unavailable';
+    stale_after_seconds: number;
+}
+export interface GeoProviderHealth {
+    state: 'unknown' | 'healthy' | 'unavailable' | 'rate_limited';
+    consecutive_failures: number;
+    last_error: string | null;
+    last_success_at: number | null;
+    last_failure_at: number | null;
+    retry_at: number | null;
+}
 export interface Peer {
     id: number;
     network: PeerNetwork;
+    is_public?: boolean;
     direction: PeerDirection;
     addr: string;
     ip: string;
@@ -37,6 +53,7 @@ export interface Peer {
     asname: string;
     location: string;
     location_status: string;
+    geo?: PeerGeo;
     transport_protocol_type: string;
     session_id: string;
     addrlocal: string;
@@ -115,7 +132,7 @@ export interface PollingController {
     setIntervalMs(value: number): void;
 }
 export interface PeerColumn {
-    key: keyof Peer | 'services_abbrev';
+    key: keyof Peer | 'services_abbrev' | 'geo_source' | 'geo_age_seconds' | 'geo_freshness';
     get: (peer: Peer) => string | number | boolean;
 }
 export interface PeerTableFilters {
@@ -603,6 +620,7 @@ export interface SummaryPanelOptions {
     };
 }
 export interface EntityPanelOptions {
+    coverage?: ReturnType<typeof import('./distribution/data.js').distributionCoverage>;
     panelEl: HTMLElement;
     segment: DistributionSegment;
     group: DistributionSegment;
@@ -676,6 +694,7 @@ export interface NodeInfo {
     internet_state: string;
     api_available: boolean;
     geo_db_only_mode: boolean;
+    providers?: { geoip: GeoProviderHealth };
     node_traffic: NodeTraffic | null;
     node_metrics?: NodeMetrics;
     geo_db_stats: GeoStats;
@@ -889,6 +908,7 @@ export interface DistributionTooltipsOptions {
     getPanel(): HTMLElement | null;
     getSummaryView(): ReturnType<typeof import('./distribution/summary-panel.js').create>;
     actions: {
+        dismissTooltip?(level: 'primary' | 'secondary'): void;
         clearSecondaryFilter(): void;
         aggregateProvidersForPeers(peers: Peer[]): SummaryProvider[];
         buildFastestProvHtml(): string | null;

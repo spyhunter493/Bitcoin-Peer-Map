@@ -222,7 +222,7 @@ test('peer failures retain the last snapshot, while successful empty responses c
     rpc.values.getpeerinfo = []; await peers.refreshOnce();
     assert.deepEqual(peers.listPeers(), []); assert.equal(peers.snapshot().status.connected, true);
 });
-test('GeoIP misses retry after 60 seconds and cached records invalidate after a dataset merge', async t => {
+test('GeoIP misses retry after 60 seconds and cached locations survive dataset reloads', async t => {
     let time = 0; t.mock.method(performance, 'now', () => time);
     const { rpc, geo, connectivity } = services(t); connectivity.setGeoipApiDisabled(true);
     const peers = new PeerService(rpc, geo, connectivity);
@@ -234,7 +234,9 @@ test('GeoIP misses retry after 60 seconds and cached records invalidate after a 
     await geo.save('8.8.8.8', { lat: 1, lon: 2, city: 'Auckland', country: 'New Zealand', countryCode: 'NZ', as: 'AS1', offset: 43200 });
     await peers.resolveGeo('8.8.8.8', 'ipv4');
     assert.equal(peers.listPeers()[0].location, 'Auckland, NZ'); assert.equal(peers.listPeers()[0].as, 'AS1');
-    geo.datasetChanged(); assert.equal(peers.cachedGeo('8.8.8.8'), null);
+    geo.datasetChanged(); assert.equal(peers.cachedGeo('8.8.8.8')?.city, 'Auckland');
+    await peers.refreshOnce(); await peers.resolveGeo('8.8.8.8', 'ipv4');
+    assert.equal(peers.geoCache.get('8.8.8.8')?.generation, geo.generation);
 });
 test('private and departed peers do not trigger API requests and fresh in-flight results survive dataset generation changes', async t => {
     const { rpc, geo, connectivity } = services(t), gate = deferred<Response>(); let calls = 0;

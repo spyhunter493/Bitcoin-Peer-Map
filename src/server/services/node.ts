@@ -53,7 +53,7 @@ export class NodeService {
             stats.newest_age_days = typeof stats.last_updated === 'number' && stats.last_updated ? Math.trunc((now - stats.last_updated) / 86400) : null;
             stats.newest_age_seconds = typeof stats.last_updated === 'number' && stats.last_updated ? Math.trunc(now - stats.last_updated) : null;
         }
-        return { ...cached, bitcoin_network: { chain: this.chain, ...BITCOIN_NETWORKS[this.chain] }, internet_state: connectivity.internet_state, api_available: connectivity.api_available, geo_db_only_mode: connectivity.geo_db_only_mode,
+        return { ...cached, bitcoin_network: { chain: this.chain, ...BITCOIN_NETWORKS[this.chain] }, internet_state: connectivity.internet_state, api_available: connectivity.api_available, geo_db_only_mode: connectivity.geo_db_only_mode, providers: connectivity.providers,
             geo_db_stats: { ...stats, auto_lookup: this.geoDatabase.enabled, auto_update: this.autoUpdateEnabled(), db_only_mode: connectivity.geo_db_only_mode } };
     }
     private readBlockchain(signal?: AbortSignal) {

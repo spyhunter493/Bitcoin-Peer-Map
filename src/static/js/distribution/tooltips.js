@@ -1,10 +1,64 @@
 import { comparePing } from '../core/ping.js';
 import { query, queryAll } from '../core/dom.js';
 import * as BPMDomState from '../core/dom-state.js';
+import { distributionCoverage } from './data.js';
 /** @param {import('../types').DistributionTooltipsOptions} options */
 export function create(options) {
     /** @type {HTMLElement | null} */
     let pinnedSubTooltipSrc = null;
+    /** @type {HTMLElement | null} */
+    let secondarySource = null;
+    /** @type {string | null} */
+    let primarySourceKey = null;
+    /** @type {string | null} */
+    let secondarySourceKey = null;
+
+    /** @param {HTMLElement | null} source @param {string | null} key */
+    function currentSource(source, key) {
+        if (source?.isConnected) return source;
+        return key ? queryAll('*', document).find(element => BPMDomState.key(element) === key) || null : null;
+    }
+
+    /** @param {MouseEvent} event */
+    function eventSource(event) {
+        if (event.currentTarget instanceof HTMLElement) return event.currentTarget;
+        return event.target instanceof HTMLElement ? event.target.closest('button, [role="button"]') : null;
+    }
+
+    /** @param {MouseEvent} event */
+    function anchorY(event) {
+        const source = eventSource(event);
+        if (event.type === 'click' && event.detail === 0 && source) {
+            const bounds = source.getBoundingClientRect();
+            return bounds.top + bounds.height / 2;
+        }
+        return event.clientY;
+    }
+
+    /** @param {HTMLElement} tip @param {'primary' | 'secondary'} level */
+    function addCloseControl(tip, level) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'as-popover-close';
+        button.textContent = 'Close';
+        button.setAttribute('aria-label', level === 'primary' ? 'Close peer group details' : 'Close provider peer list');
+        button.addEventListener('click', event => {
+            event.stopPropagation();
+            options.actions.dismissTooltip?.(level);
+        });
+        tip.prepend(button);
+    }
+
+    /** @param {HTMLElement} tip @param {HTMLElement | null} source */
+    function activateDialog(tip, source) {
+        tip.setAttribute('role', 'dialog');
+        tip.setAttribute('aria-modal', 'false');
+        tip.setAttribute('aria-label', source?.textContent?.trim() || 'Peer group details');
+        source?.setAttribute('aria-expanded', 'true');
+        source?.setAttribute('aria-controls', tip.id);
+        const first = queryAll('button', tip).find(button => !button.classList.contains('as-popover-close')) || query('button', tip);
+        first?.focus({ preventScroll: true });
+    }
     function captureSource() {
         return pinnedSubTooltipSrc ? BPMDomState.key(pinnedSubTooltipSrc) : null;
     }
@@ -13,6 +67,11 @@ export function create(options) {
         const panel = options.getPanel();
         pinnedSubTooltipSrc =
             key && panel ? queryAll('*', panel).find((el) => BPMDomState.key(el) === key) || null : null;
+        primarySourceKey = key;
+        if (pinnedSubTooltipSrc && options.state.subTooltipPinned) {
+            pinnedSubTooltipSrc.setAttribute('aria-expanded', 'true');
+            pinnedSubTooltipSrc.setAttribute('aria-controls', 'as-sub-tooltip');
+        }
     }
     function clearPeerHighlight() {
         queryAll('.as-sub-tt-peer-selected', document).forEach((el) => el.classList.remove('as-sub-tt-peer-selected'));
@@ -36,6 +95,8 @@ export function create(options) {
             document.body.appendChild(tip);
         }
         tip.innerHTML = html;
+        tip.removeAttribute('role');
+        tip.removeAttribute('aria-modal');
         tip.classList.remove('hidden');
         tip.style.display = '';
         tooltipPositionSubTooltip(event);
@@ -52,7 +113,7 @@ export function create(options) {
         var panelRect = options.getPanel()?.getBoundingClientRect() || { left: window.innerWidth };
         var x = panelRect.left - rect.width - pad;
         if (x < pad) x = pad;
-        var y = event.clientY - rect.height / 2;
+        var y = anchorY(event) - rect.height / 2;
         if (y < pad) y = pad;
         if (y + rect.height > window.innerHeight - pad) y = window.innerHeight - rect.height - pad;
         tip.style.left = x + 'px';
@@ -61,27 +122,41 @@ export function create(options) {
 
     function tooltipHideSubTooltip() {
         var tip = document.getElementById('as-sub-tooltip');
+        const secondary = document.getElementById('as-sub-sub-tooltip');
+        const restoreFocus = !!tip?.contains(document.activeElement) || !!secondary?.contains(document.activeElement);
+        const source = currentSource(pinnedSubTooltipSrc, primarySourceKey);
+        tooltipHideSubSubTooltip();
         if (tip) {
             tip.classList.add('hidden');
             tip.style.display = 'none';
             tip.style.pointerEvents = 'none';
         }
         options.state.subTooltipPinned = false;
+        source?.setAttribute('aria-expanded', 'false');
+        if (restoreFocus) source?.focus({ preventScroll: true });
         pinnedSubTooltipSrc = null;
-        tooltipHideSubSubTooltip();
+        primarySourceKey = null;
     }
 
     /** @param {HTMLElement} srcEl */
     function tooltipPinSubTooltip(srcEl) {
         options.state.subTooltipPinned = true;
         pinnedSubTooltipSrc = srcEl || null;
+        primarySourceKey = srcEl ? BPMDomState.key(srcEl) : null;
         var tip = document.getElementById('as-sub-tooltip');
-        if (tip) tip.style.pointerEvents = 'auto';
+        if (tip) {
+            tip.style.pointerEvents = 'auto';
+            addCloseControl(tip, 'primary');
+            activateDialog(tip, srcEl);
+        }
     }
 
     /** @param {string} html
      * @param {MouseEvent} event */
     function tooltipShowSubSubTooltip(html, event) {
+        const source = eventSource(event);
+        secondarySource = source instanceof HTMLElement ? source : null;
+        secondarySourceKey = secondarySource ? BPMDomState.key(secondarySource) : null;
         var tip = document.getElementById('as-sub-sub-tooltip');
         if (!tip) {
             tip = document.createElement('div');
@@ -110,7 +185,7 @@ export function create(options) {
             : options.getPanel()?.getBoundingClientRect() || { left: window.innerWidth, top: 0 };
         var x = anchor.left - rect.width - pad;
         if (x < pad) x = pad;
-        var y = event ? event.clientY - rect.height / 2 : anchor.top;
+        var y = event ? anchorY(event) - rect.height / 2 : anchor.top;
         if (y < pad) y = pad;
         if (y + rect.height > window.innerHeight - pad) y = window.innerHeight - rect.height - pad;
         tip.style.left = x + 'px';
@@ -119,12 +194,18 @@ export function create(options) {
 
     function tooltipHideSubSubTooltip() {
         var tip = document.getElementById('as-sub-sub-tooltip');
+        const restoreFocus = !!tip?.contains(document.activeElement);
+        const source = currentSource(secondarySource, secondarySourceKey);
         if (tip) {
             tip.classList.add('hidden');
             tip.style.display = 'none';
             tip.style.pointerEvents = 'none';
         }
         options.state.subSubTooltipPinned = false;
+        source?.setAttribute('aria-expanded', 'false');
+        if (restoreFocus) source?.focus({ preventScroll: true });
+        secondarySource = null;
+        secondarySourceKey = null;
         options.actions.clearSecondaryFilter();
         // Clear provider row selection highlight in the sub-tooltip
         var subTip = document.getElementById('as-sub-tooltip');
@@ -160,7 +241,7 @@ export function create(options) {
             let html;
             if (category === 'summary' || category === 'conn-others') {
                 const providers = options.actions.aggregateProvidersForPeers(filtered);
-                html = options.getSummaryView().buildProviderListHtml(providers, label);
+                html = options.getSummaryView().buildProviderListHtml(providers, label, undefined, distributionCoverage(filtered));
             } else if (category === 'insight-fastest') html = options.actions.buildFastestProvHtml() || '';
             else if (category.startsWith('insight-data-'))
                 html = options.actions.buildDataProviderHtml(category.slice('insight-data-'.length))?.html || '';
@@ -168,6 +249,7 @@ export function create(options) {
                 html = options.getSummaryView().buildPeerSummaryHtml(filtered, category, label);
             else html = options.getSummaryView().buildPeerSummaryHtml(filtered, category, label);
             tip.innerHTML = html;
+            addCloseControl(tip, 'primary');
             options.actions.tooltipAttachSubTooltipHandlers();
             if (category === 'summary' || category === 'conn-others')
                 options.actions.summaryAttachProviderClickHandlers(tip);
@@ -199,6 +281,7 @@ export function create(options) {
                         )
                       : options.getSummaryView().buildPeerListHtmlForSubSub(secondaryPeers);
             options.actions.tooltipAttachSubSubTooltipHandlers();
+            addCloseControl(subTip, 'secondary');
             restore();
         }
     }
@@ -214,6 +297,11 @@ export function create(options) {
     }
     function tooltipPinSecondary() {
         options.state.subSubTooltipPinned = true;
+        const tip = document.getElementById('as-sub-sub-tooltip');
+        if (tip) {
+            addCloseControl(tip, 'secondary');
+            activateDialog(tip, secondarySource);
+        }
     }
     return Object.freeze({
         tooltipPinSecondary,

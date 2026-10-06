@@ -281,18 +281,20 @@ function formatNameForDonut(name) {
 /** @param {import('../types').DistributionSegment} segment
  * @param {string} className
  * @param {number} totalPeers
- * @param {string} [color] */
-function legendItem(segment, className, totalPeers, color) {
+ * @param {string} [color]
+ * @param {boolean} [countryLens] */
+function legendItem(segment, className, totalPeers, color, countryLens = false) {
     const displayName = segment.isOthers ? segment.asName : segment.asShort || segment.asName || segment.asNumber;
     const shortName = displayName.length > 18 ? displayName.substring(0, 17) + '…' : displayName;
     const percentage = segment.percentage == null ? (totalPeers > 0 ? (segment.peerCount / totalPeers) * 100 : 0) : segment.percentage;
-    const itemLabel = displayName + ', ' + segment.peerCount + ' peers, ' + percentage.toFixed(0) + ' percent';
+    const itemLabel = displayName + ', ' + segment.peerCount + ' of ' + totalPeers + ' public peers with known ' +
+        (countryLens ? 'country' : 'provider') + ', ' + percentage.toFixed(0) + ' percent';
     return (
-        '<div class="as-legend-item' +
+        '<button type="button" class="as-legend-item' +
         (className ? ' ' + className : '') +
         '" data-as="' +
         escapeHtml(segment.asNumber) +
-        '" role="button" tabindex="0" ' +
+        '" aria-pressed="' + (className === 'selected') + '" ' +
         'aria-label="' +
         escapeHtml(itemLabel) +
         '">' +
@@ -306,7 +308,7 @@ function legendItem(segment, className, totalPeers, color) {
         escapeHtml(segment.peerCount) +
         '</span><span class="as-legend-pct">' +
         percentage.toFixed(0) +
-        '%</span></div>'
+        '%</span></button>'
     );
 }
 
@@ -324,11 +326,11 @@ function buildLegendHtml(options) {
         segments.find((segment) => segment.asNumber === provider) || groups.find((group) => group.asNumber === provider);
     if (focusProvider) {
         const item = findItem(focusProvider);
-        return item ? legendItem(item, 'highlighted', totalPeers, options.getColor(focusProvider)) : '';
+        return item ? legendItem(item, 'highlighted', totalPeers, options.getColor(focusProvider), options.countryLens) : '';
     }
     if (selectedProvider) {
         const item = findItem(selectedProvider);
-        return item ? legendItem(item, 'selected', totalPeers, options.getColor(selectedProvider)) : '';
+        return item ? legendItem(item, 'selected', totalPeers, options.getColor(selectedProvider), options.countryLens) : '';
     }
     let html =
         '<div class="as-legend-header">TOP ' +
@@ -336,7 +338,7 @@ function buildLegendHtml(options) {
         ' ' +
         (options.countryLens ? 'COUNTRIES' : 'PROVIDERS') +
         '</div>';
-    for (const segment of segments) html += legendItem(segment, '', totalPeers);
+    for (const segment of segments) html += legendItem(segment, '', totalPeers, undefined, options.countryLens);
     return html;
 }
 
@@ -461,6 +463,7 @@ function create(options) {
             element.addEventListener('mouseleave', options.onSegmentLeave);
             element.addEventListener('click', options.onSegmentClick);
             element.addEventListener('keydown', (event) => {
+                if (element instanceof HTMLButtonElement) return;
                 if (event.key !== 'Enter' && event.key !== ' ') return;
                 event.preventDefault();
                 options.onSegmentClick(event);
@@ -584,6 +587,8 @@ function create(options) {
 
     function renderLegend() {
         if (!elements.legend) return;
+        const focused = elements.legend.contains(document.activeElement) && document.activeElement instanceof HTMLElement
+            ? document.activeElement.dataset.as : undefined;
         const view = options.getView();
         const focusProvider =
             state.legendFocusProvider || (state.summarySelected && state.subSubTooltipPinned ? state.subSubFilterProvider : null);
@@ -598,6 +603,7 @@ function create(options) {
             getColor: options.getColor,
         });
         bindSegmentEvents(elements.legend);
+        if (focused) queryAll('.as-legend-item', elements.legend).find(item => item.dataset.as === focused)?.focus({ preventScroll: true });
     }
 
     function centerParts() {
@@ -613,8 +619,9 @@ function create(options) {
 
     /** @param {number} peerCount
      * @param {string} label
-     * @param {number} totalPeers */
-    function renderFilterCenter(peerCount, label, totalPeers) {
+     * @param {number} totalPeers
+     * @param {string} [scopeLabel] */
+    function renderFilterCenter(peerCount, label, totalPeers, scopeLabel = 'peers') {
         const parts = centerParts();
         if (!parts) return;
         if (parts.distribution) parts.distribution.style.display = 'none';
@@ -631,7 +638,7 @@ function create(options) {
         }
         if (parts.quality) {
             const percentage = totalPeers > 0 ? (peerCount / totalPeers) * 100 : 0;
-            parts.quality.textContent = percentage.toFixed(1) + '% of peers';
+            parts.quality.textContent = percentage.toFixed(1) + '% of ' + scopeLabel;
             parts.quality.className = 'as-score-quality';
             parts.quality.style.color = 'var(--text-secondary)';
         }
@@ -640,11 +647,12 @@ function create(options) {
 
     /** @param {string} network
      * @param {number} peerCount
-     * @param {number} totalPeers */
-    function renderNetworkCenter(network, peerCount, totalPeers) {
+     * @param {number} totalPeers
+     * @param {string} [scopeLabel] */
+    function renderNetworkCenter(network, peerCount, totalPeers, scopeLabel = 'peers') {
         const label = network === 'ipv4' ? 'IPv4' : 'IPv6';
         const color = network === 'ipv4' ? 'var(--net-ipv4, #e3b341)' : 'var(--net-ipv6, #f07178)';
-        renderFilterCenter(peerCount, label, totalPeers);
+        renderFilterCenter(peerCount, label, totalPeers, scopeLabel);
         const parts = centerParts();
         if (!parts || !parts.value) return;
         parts.value.style.color = color;
@@ -673,7 +681,7 @@ function create(options) {
         }
         if (parts.distribution) {
             if (opts.isSubProvider && opts.focused) {
-                parts.distribution.innerHTML = '<span class="as-others-back-link">← Others</span>';
+                parts.distribution.innerHTML = '<button type="button" class="as-others-back-link">← Others</button>';
                 parts.distribution.style.color = '';
             } else if (opts.legendHover) {
                 parts.distribution.textContent = segment.isOthers ? 'Bucket:' : 'Rank #' + opts.rank;
@@ -783,13 +791,13 @@ function create(options) {
             if (parts.distribution) parts.distribution.style.display = 'none';
             if (parts.heading) parts.heading.textContent = '';
             if (parts.quality) {
-                parts.quality.textContent = '';
-                parts.quality.className = 'as-score-quality q-nodata';
+                parts.quality.textContent = 'Unavailable';
+                parts.quality.className = 'as-score-quality';
             }
             parts.value.textContent = '—';
             parts.value.title = opts.countryLens
                 ? 'No country data available for public peers'
-                : 'No AS data available — all peers are on private or anonymous networks';
+                : 'No provider data available for public peers';
             parts.label.textContent = 'NO DATA';
             parts.label.classList.remove('as-summary-link');
             return;

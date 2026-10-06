@@ -283,7 +283,8 @@ function buildActiveScoreTooltip(score) {
         ')\n' +
         'Based on Herfindahl\u2013Hirschman Index (HHI)\n' +
         'Higher = more evenly distributed peers across ' +
-        noun
+        noun + '\nAmong public peers with known ' + (isCountryLens() ? 'country' : 'provider') + ' only.\n' +
+        distributionData.coverageLabel(distributionData.distributionCoverage(dashboard.peers, isCountryLens() ? 'country' : 'provider'))
     );
 }
 
@@ -318,12 +319,12 @@ function computeSummaryData() {
         peers: dashboard.peers,
         connectionTypeLabels: CONN_TYPE_LABELS,
     });
-    return { ...data, quality: getQuality(distributionScore) };
+    return { ...data, quality: data.coverage.known ? getQuality(distributionScore) : { word: 'Unavailable', cls: '' } };
 }
 
 function computeCountrySummaryData() {
-    const data = distributionData.computeCountrySummaryData(countryGroups, countryTotalPeers, countryDistributionScore);
-    return { ...data, quality: getQuality(countryDistributionScore) };
+    const data = distributionData.computeCountrySummaryData(countryGroups, countryTotalPeers, countryDistributionScore, dashboard.peers);
+    return { ...data, quality: data.coverage.known ? getQuality(countryDistributionScore) : { word: 'Unavailable', cls: '' } };
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -472,6 +473,9 @@ function closeActiveInsight(...args) {
 }
 
 function renderCenter() {
+    const coverage = distributionData.distributionCoverage(dashboard.peers, isCountryLens() ? 'country' : 'provider');
+    const coverageEl = document.getElementById('as-coverage');
+    if (coverageEl) coverageEl.textContent = distributionData.coverageLabel(coverage);
     var activePeerTotal = getActiveTotalPeers();
     donutController.clearLegendHover();
     if (distributionState.peerDetailActive) return;
@@ -517,7 +521,8 @@ function renderCenter() {
         donutController.renderFilterCenter(
             distributionState.filterPeerIds.length,
             distributionState.filterLabel,
-            activePeerTotal
+            dashboard.peers.length,
+            'connected peers'
         );
         return;
     }
@@ -536,7 +541,8 @@ function renderCenter() {
             donutController.renderFilterCenter(
                 distributionState.filterPeerIds.length,
                 distributionState.filterLabel,
-                activePeerTotal
+                dashboard.peers.length,
+                'connected peers'
             );
             return;
         }
@@ -544,7 +550,7 @@ function renderCenter() {
         var networkPeerCount = dashboard.peers.filter(function (peer) {
             return (peer.network || 'ipv4') === networkKey;
         }).length;
-        donutController.renderNetworkCenter(networkKey, networkPeerCount, activePeerTotal);
+        donutController.renderNetworkCenter(networkKey, networkPeerCount, dashboard.peers.length, 'connected peers');
         return;
     }
     if (distributionState.selectedProvider) {
@@ -622,6 +628,7 @@ function renderCountryPanel(countryId) {
             attachInteractiveRowHandlers: summaryAttachInteractiveRowHandlers,
             attachPanelBlankClickHandler: summaryAttachPanelBlankClickHandler,
             connectionTypeLabels: CONN_TYPE_LABELS,
+            coverage: distributionData.distributionCoverage(dashboard.peers, 'country'),
         })
     )
         return;
@@ -647,6 +654,7 @@ function renderPanel(asNum) {
             attachInteractiveRowHandlers: summaryAttachInteractiveRowHandlers,
             attachPanelBlankClickHandler: summaryAttachPanelBlankClickHandler,
             connectionTypeLabels: CONN_TYPE_LABELS,
+            coverage: distributionData.distributionCoverage(dashboard.peers),
         })
     )
         return;
@@ -865,6 +873,7 @@ function updateLensChrome() {
         var active = buttons[i].dataset.lens === distributionState.lens;
         buttons[i].classList.toggle('active', active);
         buttons[i].setAttribute('aria-selected', active ? 'true' : 'false');
+        buttons[i].tabIndex = active ? 0 : -1;
     }
 }
 
@@ -888,6 +897,15 @@ function init() {
         true
     );
     focusedCloseBtn = document.getElementById('as-focused-close');
+    const overview = document.getElementById('as-overview-trigger');
+    overview?.addEventListener('click', event => {
+        event.stopPropagation();
+        if (distributionState.donutFocused) navigation.navigateBack();
+        else enterFocusedMode();
+        query('.as-detail-close', panelEl)?.focus({ preventScroll: true });
+    });
+    new MutationObserver(() => overview?.setAttribute('aria-expanded', String(distributionState.donutFocused)))
+        .observe(document.body, { attributes: true, attributeFilter: ['class'] });
     donutController.init({
         wrap: document.getElementById('as-donut-wrap'),
         svg: document.getElementById('as-donut'),
@@ -935,6 +953,16 @@ function init() {
 
     if (lensToggleEl) {
         var lensButtons = queryAll('.as-lens-btn', lensToggleEl);
+        lensToggleEl.addEventListener('keydown', event => {
+            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+            const current = lensButtons.findIndex(button => button === event.target);
+            if (current < 0) return;
+            event.preventDefault();
+            const next = event.key === 'Home' ? 0 : event.key === 'End' ? lensButtons.length - 1
+                : (current + (event.key === 'ArrowRight' ? 1 : lensButtons.length - 1)) % lensButtons.length;
+            setDistributionLens(lensButtons[next].dataset.lens || '');
+            lensButtons[next].focus({ preventScroll: true });
+        });
         for (var lbi = 0; lbi < lensButtons.length; lbi++) {
             lensButtons[lbi].addEventListener('click', function (e) {
                 e.stopPropagation();
@@ -1433,6 +1461,14 @@ const tooltipController = BPMDistributionTooltips.create({
     state: distributionState,
     getPanel: () => panelEl,
     actions: {
+        dismissTooltip: (level) => {
+            // A peer popup can sit above either pinned list. Dismiss children
+            // through the same transitions before closing the requested list.
+            for (let stage = 0; stage < 3; stage++) {
+                navigation.onKeyDown(new KeyboardEvent('keydown', { key: 'Escape' }));
+                if (level === 'primary' ? !distributionState.subTooltipPinned : !distributionState.subSubTooltipPinned) break;
+            }
+        },
         clearSecondaryFilter: () => navigation.clearSecondaryFilter(),
         aggregateProvidersForPeers: (...args) => aggregateProvidersForPeers(...args),
         buildFastestProvHtml: (...args) => buildFastestProvHtml(...args),

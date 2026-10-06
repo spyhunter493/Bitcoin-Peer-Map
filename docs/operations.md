@@ -12,7 +12,11 @@ docker compose pull bpm
 docker compose up -d bpm
 ```
 
-The `latest` image follows intentional stable GitHub Releases. Merges into `main`
+The `latest` image follows successfully tested stable GitHub Releases in
+increasing semantic-version order. Older maintenance releases do not move it
+backward. Release images are built once and smoke-tested on AMD64 and ARM64
+before upload; version and SHA tags identify the tested multi-platform index.
+Registry failures stop `latest` promotion. Merges into `main`
 do not publish images. Published images support Linux AMD64 and ARM64. Keep the
 existing data volume when recreating the service.
 
@@ -104,21 +108,25 @@ under `server.log_level`.
 For RPC endpoints and effective settings, see
 [configuration inspection](configuration.md#inspect-the-effective-configuration).
 
-`/api/connectivity` reports internet reachability and `providers.geoip` health.
+`/api/connectivity` reports reachability-probe status and `providers.geoip` health;
+`/api/info` also includes the same provider health for dashboard polling.
 GeoIP reports its state, consecutive failures, last error, success/failure
 timestamps, and retry deadline. The `api_available` and `api_consecutive_failures`
 fields refer to GeoIP.
 
-Provider failures do not change internet status or trigger reachability checks.
+Provider failures do not change probe status, and failed Google probes do not
+suppress GeoIP lookups or provider notices.
 A separate HEAD request to Google runs at startup and every 30 seconds while
 online, with two-second retries while offline. Any HTTP response proves
 reachability. Failed probes turn the status yellow, then red after ten seconds;
 four successful probes restore green.
 
-Rate limits pause only the affected provider. Both providers honor `Retry-After`
-seconds or HTTP dates. GeoIP also honors `X-Rl: 0` and `X-Ttl`, including on
+GeoIP honors `Retry-After` seconds or HTTP dates, plus `X-Rl: 0` and `X-Ttl`, including on
 successful responses, as described by [ip-api](https://ip-api.com/docs/api:json#usage_limits).
 HTTP 429 defaults to a 60-second cooldown when no valid retry header is supplied.
+After five consecutive provider failures, outage retries wait 30, 60, 120, 240,
+then at most 300 seconds. A successful recovery clears outage backoff while
+preserving any active quota deadline. Recovery attempts resume when deadlines expire.
 
 To stop the dashboard while retaining its data volume:
 
@@ -186,6 +194,20 @@ so the dashboard reports a successful ban and refreshes peers after one second.
 responses display an error; **No banned IPs** appears only after a successful
 empty list.
 
+## Distribution coverage
+
+Provider percentages and the HHI distribution score describe public peers with
+known AS information. The displayed X/Y coverage counts show how many public
+peers are identified, with inbound and outbound counts beside the combined view.
+Overview charts use the full connected-peer snapshot independently of table or
+map filters. A small identified sample does not establish the distribution of
+the whole node; a zero-sized sample has an unavailable score.
+
+Country coverage is independent of provider coverage. Summary categories include
+unidentified peers in their totals and show provider coverage for that category.
+Unknown provider information is labelled Unknown in the hosting summary. Usable
+stale records continue to count as known; peer details expose their freshness.
+
 ## GeoIP updates and privacy
 
 Open **GEOIP-DB** in the dashboard to manage the local database:
@@ -193,7 +215,7 @@ Open **GEOIP-DB** in the dashboard to manage the local database:
 | Control | Behavior |
 | --- | --- |
 | Auto-update | Downloads the GeoIP dataset at startup and hourly after each completed attempt |
-| API Lookup | Looks up public peer IPs missing from the local database through ip-api.com |
+| API Lookup | Looks up missing, stale, or unknown-age public peer IPs through ip-api.com |
 | Manual update | Updates the dataset on demand, including when auto-update is disabled |
 
 Auto-update and API Lookup are enabled on new installs. Both choices are saved
@@ -204,6 +226,16 @@ Enabling auto-update starts a check immediately. Disabling it prevents future
 checks; an update already running finishes normally. Dataset imports add new IPs
 and replace records only when the downloaded `last_updated` timestamp is newer,
 preserving newer local API results.
+Peer details show the winning record's source, observation time, age, and
+freshness. Locations become stale at 30 days; missing, zero, or future timestamps
+have unknown age. Source is recorded as downloaded dataset or ip-api.com in a
+local companion table, while older records with no provenance report unknown.
+Imports retain their record timestamps rather than becoming fresh on download.
+
+Cached locations remain visible while refreshing. An unsuccessful refresh with
+usable cached data retries after one hour; missing locations retry after 60
+seconds. Provider cooldowns also apply, and only active public peers are queried.
+Optional Source, Geo age, and Freshness table columns expose the same metadata.
 Invalid dataset rows are skipped and cannot replace local locations. The update
 result reports how many rows were added, updated, and skipped; a dataset with no
 valid rows is rejected without changes. Temporary SQLite writer contention is
@@ -226,6 +258,23 @@ network.
 external peer lookups.
 
 ## Dashboard controls
+
+The peer table provides keyboard access to every connected peer. Tab to a column
+heading and press Enter or Space to cycle ascending, descending, and unsorted
+order. Network filter buttons announce whether each network is selected. Each
+row has separate **Details** and **Disconnect** buttons; details also work for
+private peers and peers awaiting a location. Tab and Shift+Tab move through the
+complete sorted, filtered peer list, revealing rows as needed. Polling retains
+the focused peer and action, or moves to the nearest surviving row when a peer
+leaves.
+
+**Explore distribution** opens the overview. The Providers and Countries tabs
+support Left/Right arrows, Home, and End. Category, direction, provider, insight,
+and peer buttons open further details. Pinned group details behave as nonmodal
+dialogs: focus enters the dialog, Escape closes the deepest open layer first,
+and closing restores the invoking control. Hover previews keep keyboard focus
+where it is. **Explore private peers** provides the same controls for Tor, I2P,
+and CJDNS peers.
 
 **Peer data** reports the connection to your Bitcoin node. If RPC fails, the
 dashboard retains the last successful peer snapshot and identifies the outage.

@@ -127,6 +127,20 @@ test('camera framing reads layout after the peer popup opens', () => {
     assert.ok(Math.abs(f.target.y + 40.0666666667) < 1e-6);
 });
 
+test('table details open for a peer without a rendered map node', () => {
+    const f = fixture();
+    const opened = [];
+    const navigation = create({
+        ...minimalOptions(f),
+        getNodes: () => [],
+        openPeerDetail: (peer, source) => { opened.push({ id: peer.id, source }); return true; },
+    });
+    assert.equal(navigation.selectTablePeer(1), true);
+    assert.deepEqual(opened, [{ id: 1, source: 'peerlist' }]);
+    assert.deepEqual(f.target, { x: 0, y: 0, zoom: 1 });
+    assert.equal(navigation.selectTablePeer(999), false);
+});
+
 function minimalOptions(f) {
     return {
         interaction: f.dashboard.interaction,

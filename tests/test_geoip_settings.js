@@ -10,6 +10,7 @@ export default async function assertGeoIPSettings(browser, baseUrl) {
     let manualUpdates = 0;
     let manualGate = Promise.resolve();
     let showApiDown = false;
+    let rateLimited = false;
     const requestedSettings = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.addInitScript(() => {
@@ -29,6 +30,10 @@ export default async function assertGeoIPSettings(browser, baseUrl) {
         info.geo_db_stats.db_path = '/var/lib/bitcoin-peer-map/geo.db';
         info.geo_db_only_mode = dbOnly;
         info.api_available = !showApiDown;
+        info.internet_state = 'red';
+        info.providers = { geoip: { state: showApiDown ? 'unavailable' : rateLimited ? 'rate_limited' : 'healthy', consecutive_failures: showApiDown ? 5 : 0,
+            last_error: rateLimited ? 'Quota <exhausted>' : null, last_success_at: Date.now() / 1000 - 60, last_failure_at: null,
+            retry_at: rateLimited ? Date.now() / 1000 + 60 : null } };
         await route.fulfill({ json: info });
     });
     await page.route('**/api/connectivity', route => route.fulfill({ json: {
@@ -67,6 +72,9 @@ export default async function assertGeoIPSettings(browser, baseUrl) {
     try {
         await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
         await openSettings();
+        assert.match(await page.locator('#geodb-provider-health').textContent(), /healthy/);
+        assert.match(await page.locator('#geodb-provider-health').textContent(), /Last success/);
+        assert.notEqual(await page.locator('#mo-status-msg').textContent(), 'Offline', 'Google probe failure does not hide healthy GeoIP');
         assert.equal(await page.locator('#geodb-modal [role="dialog"]').getAttribute('aria-modal'), 'true');
         assert.equal(await page.evaluate(() => document.activeElement?.id), 'geodb-modal-close');
         assert.match(await page.locator('#geodb-modal-body').textContent(), /\/var\/lib\/bitcoin-peer-map\/geo.db/);
@@ -76,6 +84,7 @@ export default async function assertGeoIPSettings(browser, baseUrl) {
         await openSettings();
         assert.match(await page.locator('#geodb-modal-body').textContent(), /unencrypted HTTP/);
         assert.match(await page.locator('#geodb-modal-body').textContent(), /survives restarts/);
+        assert.match(await page.locator('#geodb-modal-body').textContent(), /stale after 30 days/);
         assert.equal(await page.locator('#geodb-autoupdate-toggle').isChecked(), true);
         assert.equal(await page.locator('#geodb-dbonly-toggle').isChecked(), true);
 
@@ -144,6 +153,16 @@ export default async function assertGeoIPSettings(browser, baseUrl) {
         await page.waitForSelector('#api-down-modal', { state: 'detached' });
         assert.equal(dbOnly, true);
         assert.deepEqual(requestedSettings.at(-1), ['db-only', true]);
+        showApiDown = false;
+        dbOnly = false;
+        rateLimited = true;
+        await page.reload({ waitUntil: 'domcontentloaded' });
+        await openSettings();
+        assert.match(await page.locator('#geodb-provider-health').textContent(), /rate_limited/);
+        assert.match(await page.locator('#geodb-provider-health').textContent(), /Retry in/);
+        assert.match(await page.locator('#geodb-provider-health').textContent(), /Quota <exhausted>/);
+        assert.equal(await page.locator('#geodb-provider-health exhausted').count(), 0);
+        assert.match(await page.locator('#mo-status-msg').textContent(), /GeoIP rate limited/);
         assert.deepEqual(errors, []);
     } finally {
         await context.close();

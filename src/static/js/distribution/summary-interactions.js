@@ -79,7 +79,7 @@ export function create(options) {
                     /** @type {Parameters<ReturnType<typeof import('./summary-panel.js').create>['buildProviderListHtml']>[0]} */
                     var providers = JSON.parse(rowEl.dataset.providers || '');
                     var catLabel = rowEl.dataset.catLabel || '';
-                    var html = options.getSummaryView().buildProviderListHtml(providers, catLabel);
+                    var html = options.getSummaryView().buildProviderListHtml(providers, catLabel, undefined, JSON.parse(rowEl.dataset.coverage || 'null'));
                     options.actions.tooltipShowSubTooltip(html, e);
                     // Preview lines/filter for hovered category
                     options.actions.summaryPreviewSummaryLines(peerIds);
@@ -119,12 +119,13 @@ export function create(options) {
                     options.actions.summaryRestoreDonutAfterPreview();
 
                     // Pin the sub-tooltip with provider list
-                    var html = options.getSummaryView().buildProviderListHtml(providers, catLabel);
+                    var html = options.getSummaryView().buildProviderListHtml(providers, catLabel, undefined, JSON.parse(rowEl.dataset.coverage || 'null'));
                     options.actions.tooltipShowSubTooltip(html, e);
                     options.actions.tooltipPinSubTooltip(rowEl);
                     summaryAttachProviderClickHandlers(required('#as-sub-tooltip'));
                 });
                 rowEl.addEventListener('keydown', function (e) {
+                    if (rowEl instanceof HTMLButtonElement) return;
                     if (e.key !== 'Enter' && e.key !== ' ') return;
                     e.preventDefault();
                     rowEl.click();
@@ -147,7 +148,8 @@ export function create(options) {
                     options.actions.summaryRestoreSummaryFromPreview();
                     options.actions.summaryRestoreDonutAfterPreview();
                 });
-                provRow.addEventListener('click', (e) => options.actions.selectNestedProvider(provRow, e));
+                const peerListButton = query('.as-provider-peer-list', provRow) || provRow;
+                peerListButton.addEventListener('click', (e) => options.actions.selectNestedProvider(provRow, e));
             })(provRows[pi]);
         }
 
@@ -184,9 +186,9 @@ export function create(options) {
                         escapeHtml(provName) +
                         ' Peers</div>';
                     html +=
-                        '<div class="as-sub-tt-nav as-grid-provider-click" data-as="' +
+                        '<button type="button" class="as-sub-tt-nav as-grid-provider-click" data-as="' +
                         asNum +
-                        '" style="font-size:9px; color:var(--accent); cursor:pointer; margin-top:2px">\u25B6 Open provider panel</div>';
+                        '" style="font-size:9px; color:var(--accent); cursor:pointer; margin-top:2px">\u25B6 Open provider panel</button>';
                     html += '</div>';
                     html += options.getSummaryView().buildPeerListHtmlForSubSub(matchedPeers);
                     return html;
@@ -404,6 +406,7 @@ export function create(options) {
             }
             showMore.style.display = 'none';
             showLess.style.display = '';
+            showLess.focus({ preventScroll: true });
 
             // Add scroll container class if many peers
             var peerList = query('.as-sub-tt-scroll', tip);
@@ -419,6 +422,7 @@ export function create(options) {
             }
             showLess.style.display = 'none';
             showMore.style.display = '';
+            showMore.focus({ preventScroll: true });
 
             var peerList = query('.as-sub-tt-scroll', tip);
             if (peerList) peerList.classList.remove('as-sub-tt-expanded');
@@ -450,6 +454,7 @@ export function create(options) {
             for (var i = 0; i < extras.length; i++) extras[i].style.display = '';
             showMore.style.display = 'none';
             showLess.style.display = '';
+            showLess.focus({ preventScroll: true });
             var peerList = query('.as-sub-tt-scroll', tip);
             if (peerList) peerList.classList.add('as-sub-tt-expanded');
         });
@@ -460,6 +465,7 @@ export function create(options) {
             for (var i = 0; i < extras.length; i++) extras[i].style.display = 'none';
             showLess.style.display = 'none';
             showMore.style.display = '';
+            showMore.focus({ preventScroll: true });
             var peerList = query('.as-sub-tt-scroll', tip);
             if (peerList) peerList.classList.remove('as-sub-tt-expanded');
         });

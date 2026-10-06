@@ -20,6 +20,39 @@ function parseAsOrg(asField) {
 
 const { fmtBytes, fmtDuration } = BPMFormat;
 
+/** @param {import('../types').Peer} peer */
+function isPublicPeer(peer) {
+    return peer.is_public === true;
+}
+
+/** @param {import('../types').Peer[]} peers
+ * @param {'provider' | 'country'} [lens] */
+function distributionCoverage(peers, lens = 'provider') {
+    const eligible = peers.filter(isPublicPeer);
+    const hasData = lens === 'provider'
+        ? /** @param {import('../types').Peer} peer */ (peer) => !!parseAsNumber(peer.as)
+        : /** @param {import('../types').Peer} peer */ (peer) => !!(peer.countryCode || '').trim();
+    /** @param {import('../types').Peer[]} scope */
+    const counts = (scope) => {
+        const known = scope.filter(hasData).length;
+        return { eligible: scope.length, known, unknown: scope.length - known };
+    };
+    return { ...counts(eligible), lens, inbound: counts(eligible.filter(peer => peer.direction === 'IN')),
+        outbound: counts(eligible.filter(peer => peer.direction === 'OUT')) };
+}
+
+/** @param {ReturnType<typeof distributionCoverage>} coverage */
+function coverageLabel(coverage) {
+    const noun = coverage.lens === 'country' ? 'Country' : 'Provider';
+    return `${noun} known for ${coverage.known}/${coverage.eligible} public peers · Inbound ${coverage.inbound.known}/${coverage.inbound.eligible} · Outbound ${coverage.outbound.known}/${coverage.outbound.eligible} · Inbound + outbound`;
+}
+
+/** @param {import('../types').Peer} peer */
+function hostingCategory(peer) {
+    if (!isPublicPeer(peer) || !parseAsNumber(peer.as)) return 'unknown';
+    return peer.hosting ? 'cloud' : peer.proxy ? 'proxy' : peer.mobile ? 'mobile' : 'residential';
+}
+
 /**
  * @param {import('../types').Peer[]} peers
  */
@@ -150,6 +183,7 @@ function aggregateProviders(peers, nowSeconds) {
     const groupedPeers = Object.create(null);
     let total = 0;
     for (const peer of peers) {
+        if (!isPublicPeer(peer)) continue;
         const asNumber = parseAsNumber(peer.as);
         if (!asNumber) continue;
         total += 1;
@@ -165,7 +199,7 @@ function aggregateProviders(peers, nowSeconds) {
     }
     const groups = Object.values(groupedPeers).map((group) => buildDistributionGroup(group, group.peers, total, nowSeconds));
     groups.sort((left, right) => right.peerCount - left.peerCount);
-    return { groups, total };
+    return { groups, total, coverage: distributionCoverage(peers) };
 }
 
 /**
@@ -177,6 +211,7 @@ function aggregateCountries(peers, nowSeconds) {
     const groupedPeers = Object.create(null);
     let total = 0;
     for (const peer of peers) {
+        if (!isPublicPeer(peer)) continue;
         const countryCode = (peer.countryCode || '').trim();
         if (!countryCode) continue;
         total += 1;
@@ -196,7 +231,7 @@ function aggregateCountries(peers, nowSeconds) {
     }
     const groups = Object.values(groupedPeers).map((group) => buildDistributionGroup(group, group.peers, total, nowSeconds));
     groups.sort((left, right) => right.peerCount - left.peerCount);
-    return { groups, total };
+    return { groups, total, coverage: distributionCoverage(peers, 'country') };
 }
 
 /**
@@ -285,13 +320,12 @@ function colorForProvider(asNumber, segments, fallbackColor) {
  * @param {string} kind
  */
 function aggregateSummaryByCategory(peers, getKey, getLabel, segments, kind) {
-    /** @type {Record<string, {key: string; label: string; peerCount: number; peerIds: number[]; providers: Record<string, import('../types').SummaryProvider>}>} */
+    /** @type {Record<string, {key: string; label: string; peerCount: number; peerIds: number[]; peers: import('../types').Peer[]; providers: Record<string, import('../types').SummaryProvider>}>} */
     const categories = Object.create(null);
     for (const peer of peers) {
         const key = getKey(peer);
         if (!key) continue;
-        const asNumber = parseAsNumber(peer.as);
-        if (!asNumber) continue;
+        const asNumber = isPublicPeer(peer) ? parseAsNumber(peer.as) : null;
         const label = getLabel ? getLabel(peer, key) : key;
         if (!categories[key]) {
             categories[key] = {
@@ -299,12 +333,15 @@ function aggregateSummaryByCategory(peers, getKey, getLabel, segments, kind) {
                 label,
                 peerCount: 0,
                 peerIds: [],
+                peers: [],
                 providers: Object.create(null),
             };
         }
         const category = categories[key];
         category.peerCount += 1;
         category.peerIds.push(peer.id);
+        category.peers.push(peer);
+        if (!asNumber) continue;
         if (!category.providers[asNumber]) {
             category.providers[asNumber] = {
                 asNumber,
@@ -331,6 +368,7 @@ function aggregateSummaryByCategory(peers, getKey, getLabel, segments, kind) {
                 providerCount: providers.length,
                 peerIds: category.peerIds,
                 providers,
+                coverage: distributionCoverage(category.peers),
             };
         })
         .sort((left, right) => right.peerCount - left.peerCount);
@@ -363,15 +401,11 @@ function aggregateSummaryHosting(peers, segments) {
         proxy: 'Proxy / VPN',
         mobile: 'Mobile',
         residential: 'Residential',
+        unknown: 'Unknown',
     };
     return aggregateSummaryByCategory(
         peers,
-        (peer) => {
-            if (peer.hosting) return 'cloud';
-            if (peer.proxy) return 'proxy';
-            if (peer.mobile) return 'mobile';
-            return 'residential';
-        },
+        hostingCategory,
         (_peer, key) => labels[key] || key,
         segments,
         'hosting'
@@ -384,8 +418,8 @@ function aggregateSummaryHosting(peers, segments) {
  */
 function aggregateSummaryCountries(peers, segments) {
     return aggregateSummaryByCategory(
-        peers,
-        (peer) => peer.countryCode || null,
+        peers.filter(isPublicPeer),
+        (peer) => (peer.countryCode || '').trim() || null,
         (peer, key) => key + '  ' + (peer.country || key),
         segments,
         'country'
@@ -416,6 +450,7 @@ function aggregateProvidersForPeers(peers, segments) {
     /** @type {Record<string, import('../types').SummaryProvider>} */
     const providers = Object.create(null);
     for (const peer of peers) {
+        if (!isPublicPeer(peer)) continue;
         const asNumber = parseAsNumber(peer.as);
         if (!asNumber) continue;
         if (!providers[asNumber]) {
@@ -493,6 +528,7 @@ function rankProvidersByBytes(peers, groups, segments, field) {
     /** @type {Record<string, {asNumber: string; totalBytes: number; peers: import('../types').Peer[]}>} */
     const providers = Object.create(null);
     for (const peer of peers) {
+        if (!isPublicPeer(peer)) continue;
         const asNumber = parseAsNumber(peer.as);
         if (!asNumber || !(peer[field] > 0)) continue;
         if (!providers[asNumber]) {
@@ -600,6 +636,7 @@ function computeInsights(groups, peers, segments, nowSeconds) {
 function computeSummaryData(options) {
     return {
         score: options.score,
+        coverage: distributionCoverage(options.peers),
         uniqueProviders: options.groups.length,
         topProvider: options.groups.length ? options.groups[0] : null,
         insights: computeInsights(options.groups, options.peers, options.segments, options.nowSeconds),
@@ -617,9 +654,10 @@ function computeSummaryData(options) {
  * @param {number} totalPeers
  * @param {number} score
  */
-function computeCountrySummaryData(groups, totalPeers, score) {
+function computeCountrySummaryData(groups, totalPeers, score, peers = groups.flatMap(group => group.peers)) {
     return {
         score,
+        coverage: distributionCoverage(peers, 'country'),
         uniqueCountries: groups.length,
         totalPeers,
         topCountry: groups.length ? groups[0] : null,
@@ -628,6 +666,7 @@ function computeCountrySummaryData(groups, totalPeers, score) {
 }
 
 export { parseAsNumber };
+export { isPublicPeer, distributionCoverage, coverageLabel, hostingCategory };
 export { parseAsOrg };
 export { fmtBytes };
 export { fmtDuration };

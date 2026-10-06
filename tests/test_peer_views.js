@@ -12,9 +12,26 @@ export default async function assertPeerViews(browser, baseUrl) {
             }
             return original(handler, interval, ...args);
         };
+        const originalFetch = window.fetch.bind(window);
+        window.fetch = async (...args) => {
+            const response = await originalFetch(...args);
+            if (String(args[0]).includes('/api/peers?include_status=true')) {
+                const readJson = response.json.bind(response);
+                response.json = async () => {
+                    const snapshot = await readJson();
+                    const delay = window.__testPeerBodyDelayMs || 0;
+                    window.__testPeerBodyDelayMs = 0;
+                    if (delay) await new Promise(resolve => setTimeout(resolve, delay));
+                    return snapshot;
+                };
+            }
+            return response;
+        };
     });
     const page = await context.newPage();
     const errors = [];
+    const consoleErrors = [];
+    page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
     page.on('pageerror', error => errors.push(error.message));
     const response = await page.request.get(`${baseUrl}/api/peers?include_status=true`);
     const seed = await response.json();
@@ -37,11 +54,25 @@ export default async function assertPeerViews(browser, baseUrl) {
         assert.strictEqual(await page.evaluate(() => window.__unsafePeerText), undefined);
         assert.deepStrictEqual(errors, []);
     }
-    async function poll() {
+    async function poll(bodyDelayMs = 0) {
         const received = page.waitForResponse(response => response.url().includes('/api/peers?include_status=true'));
-        await page.evaluate(() => window.__testPeerPoll());
+        await page.evaluate(delay => {
+            window.__testPeerBodyDelayMs = delay;
+            window.__testPeerPoll();
+        }, bodyDelayMs);
         await received;
-        await page.waitForTimeout(100);
+        // Receiving headers does not mean the browser has decoded and applied
+        // the snapshot. Wait for the real dashboard model before checking views.
+        await page.evaluate(async () => {
+            const revision = document.body.dataset.assetRevision;
+            const { dashboard } = await import(`/static/v/${revision}/js/core/dashboard-state.js`);
+            window.__testDashboard = dashboard;
+        });
+        await page.waitForFunction(expectedIds => {
+            const dashboard = window.__testDashboard;
+            return dashboard.peers.length === expectedIds.length &&
+                dashboard.peers.every((peer, index) => peer.id === expectedIds[index]);
+        }, peers.map(peer => peer.id));
     }
     try {
         await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
@@ -62,7 +93,7 @@ export default async function assertPeerViews(browser, baseUrl) {
         await page.waitForSelector('#as-sub-tooltip .as-provider-row');
         assert.ok((await page.locator('#as-sub-tooltip').textContent()).includes(hostile));
         await safe();
-        await page.locator('#as-sub-tooltip .as-provider-row').first().click();
+        await page.locator('#as-sub-tooltip .as-provider-peer-list').first().click();
         await page.waitForSelector('#as-sub-sub-tooltip .as-sub-tt-peer');
         await safe();
         assert.strictEqual(await page.locator('#as-sub-sub-tooltip b').count(), 0);
@@ -109,8 +140,12 @@ export default async function assertPeerViews(browser, baseUrl) {
             await poll();
             assert.deepStrictEqual(await tableIds(), expected());
             peers = peers.filter(peer => !matches(peer));
-            await poll();
-            assert.deepStrictEqual(await tableIds(), []);
+            await poll(300); // Response headers can arrive before JSON decoding finishes.
+            assert.deepStrictEqual(await tableIds(), [], JSON.stringify({ pageErrors: errors, consoleErrors, state: await page.evaluate(async () => {
+                const { dashboard } = await import(`/static/v/${document.body.dataset.assetRevision}/js/core/dashboard-state.js`);
+                return { ids: dashboard.peers.map(peer => peer.id), state: dashboard.distribution.snapshot(),
+                    focused: document.activeElement?.outerHTML.slice(0, 200), interaction: { filtered: [...dashboard.interaction.asFilterPeerIds || []] } };
+            }) }));
             await page.keyboard.press('Escape');
         }
 

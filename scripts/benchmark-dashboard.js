@@ -24,7 +24,7 @@ function peersForCount(count) {
         const address = `198.51.${Math.floor(index / 250) % 250}.${index % 250 + 1}`;
         const provider = `Provider ${index % 20}`;
         return {
-            id, network: 'ipv4', addr: `${address}:8333`, ip: address, port: 8333,
+            id, network: 'ipv4', is_public: true, addr: `${address}:8333`, ip: address, port: 8333,
             direction: index % 2 ? 'IN' : 'OUT',
             connection_type: index % 2 ? 'inbound' : 'manual',
             conntime: connectedAt - id * 137, conntime_fmt: `${id + 2}m`,

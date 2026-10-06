@@ -106,6 +106,7 @@ test('HTTP responses preserve partial RPC failures and provider health without r
     const health = await (await get('/api/connectivity')).json();
     assert.equal(health.internet_state, 'green'); assert.equal(health.api_available, true);
     assert.deepEqual(Object.keys(health.providers), ['geoip']); assert.equal(health.providers.geoip.state, 'unknown');
+    assert.deepEqual(info.providers, health.providers, 'dashboard exposes independent provider health');
 });
 test('dashboard and legacy stats share RPC node metrics without reporting host resources', async t => {
     let time = 0; t.mock.method(performance, 'now', () => time);

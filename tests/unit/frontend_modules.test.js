@@ -114,7 +114,7 @@ test('frontend modules', async () => {
         getColor: () => '#123456',
     });
     assert.ok(legend.includes(escaped));
-    assert.ok(legend.includes('role="button" tabindex="0"'));
+    assert.ok(legend.includes('<button type="button" class="as-legend-item'));
     assert.ok(!legend.includes('<img'));
 
     const insight = donut.buildInsightHtml('fastest', {
@@ -225,9 +225,9 @@ test('frontend modules', async () => {
 
     const distribution = BPMDistributionData;
     const peers = [
-        { id: 1, as: 'AS64500 Alpha Net', asname: 'Alpha', countryCode: 'NZ', country: 'New Zealand', direction: 'IN', connection_type: 'inbound', network: 'ipv4', subver: '/Satoshi:27.0/', services_abbrev: 'N W', ping_ms: 20, conntime: 900, bytessent: 1024, bytesrecv: 2048 },
-        { id: 2, as: 'AS64500 Alpha Net', asname: 'Alpha', countryCode: 'NZ', country: 'New Zealand', direction: 'OUT', connection_type: 'outbound-full-relay', network: 'ipv6', subver: '/Satoshi:27.0/', services_abbrev: 'N', ping_ms: 40, conntime: 800, hosting: true },
-        { id: 3, as: 'AS64501 Beta Net', asname: 'Beta', countryCode: 'AU', country: 'Australia', direction: 'OUT', connection_type: 'block-relay-only', network: 'onion', subver: '/Satoshi:26.0/', services_abbrev: 'N W', ping_ms: 60, conntime: 700, bytessent: 4096, bytesrecv: 1024, hosting: true },
+        { id: 1, as: 'AS64500 Alpha Net', asname: 'Alpha', countryCode: 'NZ', country: 'New Zealand', direction: 'IN', connection_type: 'inbound', network: 'ipv4', is_public: true, subver: '/Satoshi:27.0/', services_abbrev: 'N W', ping_ms: 20, conntime: 900, bytessent: 1024, bytesrecv: 2048 },
+        { id: 2, as: 'AS64500 Alpha Net', asname: 'Alpha', countryCode: 'NZ', country: 'New Zealand', direction: 'OUT', connection_type: 'outbound-full-relay', network: 'ipv6', is_public: true, subver: '/Satoshi:27.0/', services_abbrev: 'N', ping_ms: 40, conntime: 800, hosting: true },
+        { id: 3, as: 'AS64501 Beta Net', asname: 'Beta', countryCode: 'AU', country: 'Australia', direction: 'OUT', connection_type: 'block-relay-only', network: 'ipv6', is_public: true, subver: '/Satoshi:26.0/', services_abbrev: 'N W', ping_ms: 60, conntime: 700, bytessent: 4096, bytesrecv: 1024, hosting: true },
         { id: 4, as: '', countryCode: '', direction: 'IN', connection_type: 'inbound' },
     ];
     const providers = distribution.aggregateProviders(peers, 1000);
@@ -264,7 +264,7 @@ test('frontend modules', async () => {
     assert.strictEqual(summary.topProvider.asNumber, 'AS64500');
     assert.deepStrictEqual(
         Array.from(summary.networks, item => [item.key, item.peerCount]),
-        [['ipv4', 1], ['ipv6', 1], ['onion', 1]]
+        [['ipv4', 2], ['ipv6', 2]]
     );
     assert.strictEqual(summary.hosting[0].key, 'cloud');
     assert.strictEqual(summary.hosting[0].peerCount, 2);
@@ -308,15 +308,14 @@ test('frontend modules', async () => {
     assert.strictEqual(ipv4Panel.software[0].label, '/Satoshi:27.0/');
 
     const ipv6Panel = networkPanel.computeNetworkPanelData(peers, 'ipv6', segments);
-    assert.strictEqual(ipv6Panel.peerCount, 1);
+    assert.strictEqual(ipv6Panel.peerCount, 2);
     assert.strictEqual(ipv6Panel.inboundCount, 0);
-    assert.strictEqual(ipv6Panel.outboundCount, 1);
-    assert.strictEqual(ipv6Panel.averagePing, 40);
+    assert.strictEqual(ipv6Panel.outboundCount, 2);
+    assert.strictEqual(ipv6Panel.averagePing, 50);
 
     const networkPanelHtml = networkPanel.renderNetworkPanelBody(ipv4Panel);
     assert.ok(networkPanelHtml.includes('IPv4 Connections by Provider'));
-    assert.ok(networkPanelHtml.includes('role="button"'));
-    assert.ok(networkPanelHtml.includes('tabindex="0"'));
+    assert.ok(networkPanelHtml.includes('<button type="button" class="as-detail-sub-row'));
     assert.ok(networkPanelHtml.includes('Bytes Recv'));
 
     const safeNetworkRow = networkPanel.renderInteractiveRow(hostile, hostile, {

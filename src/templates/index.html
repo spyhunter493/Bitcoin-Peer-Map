@@ -23,31 +23,31 @@
         <div class="topbar-center" id="topbar-center">
             <div id="flight-deck" class="flight-deck-inline">
                 <div class="fd-content" id="fd-content">
-                    <div class="fd-net-chip" data-net="ipv4">
+                    <button type="button" class="fd-net-chip" data-net="ipv4" aria-label="Explore IPv4 peers">
                         <span class="fd-net-dot disabled" id="fd-ipv4-dot"></span>
                         <span class="fd-net-name" style="color:var(--net-ipv4)">IPv4</span>
                         <span class="fd-net-counts"><span class="fd-in" id="fd-ipv4-in">0</span>&#8595; <span class="fd-out" id="fd-ipv4-out">0</span>&#8593;</span>
-                    </div>
-                    <div class="fd-net-chip" data-net="ipv6">
+                    </button>
+                    <button type="button" class="fd-net-chip" data-net="ipv6" aria-label="Explore IPv6 peers">
                         <span class="fd-net-dot disabled" id="fd-ipv6-dot"></span>
                         <span class="fd-net-name" style="color:var(--net-ipv6)">IPv6</span>
                         <span class="fd-net-counts"><span class="fd-in" id="fd-ipv6-in">0</span>&#8595; <span class="fd-out" id="fd-ipv6-out">0</span>&#8593;</span>
-                    </div>
-                    <div class="fd-net-chip" data-net="onion">
+                    </button>
+                    <button type="button" class="fd-net-chip" data-net="onion" aria-label="Explore Tor peers">
                         <span class="fd-net-dot disabled" id="fd-tor-dot"></span>
                         <span class="fd-net-name" style="color:var(--net-tor)">Tor</span>
                         <span class="fd-net-counts"><span class="fd-in" id="fd-tor-in">0</span>&#8595; <span class="fd-out" id="fd-tor-out">0</span>&#8593;</span>
-                    </div>
-                    <div class="fd-net-chip" data-net="i2p">
+                    </button>
+                    <button type="button" class="fd-net-chip" data-net="i2p" aria-label="Explore I2P peers">
                         <span class="fd-net-dot disabled" id="fd-i2p-dot"></span>
                         <span class="fd-net-name" style="color:var(--net-i2p)">I2P</span>
                         <span class="fd-net-counts"><span class="fd-in" id="fd-i2p-in">0</span>&#8595; <span class="fd-out" id="fd-i2p-out">0</span>&#8593;</span>
-                    </div>
-                    <div class="fd-net-chip" data-net="cjdns">
+                    </button>
+                    <button type="button" class="fd-net-chip" data-net="cjdns" aria-label="Explore CJDNS peers">
                         <span class="fd-net-dot disabled" id="fd-cjdns-dot"></span>
                         <span class="fd-net-name" style="color:var(--net-cjdns)">CJDNS</span>
                         <span class="fd-net-counts"><span class="fd-in" id="fd-cjdns-in">0</span>&#8595; <span class="fd-out" id="fd-cjdns-out">0</span>&#8593;</span>
-                    </div>
+                    </button>
                 </div>
             </div>
         </div>
@@ -106,7 +106,9 @@
             <button class="as-lens-btn" type="button" data-lens="country" role="tab" aria-selected="false">Countries</button>
         </div>
         <div class="as-donut-title" id="as-donut-title" title="Autonomous System Peer Distribution Analysis"><span class="as-title-peer">Peer</span> <span class="as-title-provider">Service Providers</span><span class="as-title-subtitle" id="as-title-subtitle">(IPv4/IPv6)</span></div>
-        <button class="as-focused-close" id="as-focused-close" title="Back">&#x2192;</button>
+        <div id="as-coverage" class="as-coverage"></div>
+        <button type="button" id="as-overview-trigger" class="as-overview-trigger" aria-controls="as-detail-panel" aria-expanded="false">Explore distribution</button>
+        <button type="button" class="as-focused-close" id="as-focused-close" title="Back" aria-label="Exit distribution exploration">&#x2192;</button>
         <div class="as-donut-wrap" id="as-donut-wrap">
             <svg id="as-donut" class="as-donut" viewBox="0 0 260 260"></svg>
             <div id="as-donut-center" class="as-donut-center">
@@ -123,6 +125,7 @@
         <!-- Mini private donut — shown when private peers exist, click to enter private mode -->
         <div id="pn-mini-donut" class="pn-mini-donut hidden">
             <div class="pn-mini-label">Private Networks<span class="pn-mini-subtitle">(TOR/I2P/CJDNS)</span></div>
+            <button type="button" id="pn-mini-trigger" class="pn-overview-trigger">Explore private peers</button>
             <div class="pn-mini-donut-ring">
                 <svg id="pn-mini-svg" class="pn-mini-svg" viewBox="0 0 260 260"></svg>
                 <div class="pn-mini-center" id="pn-mini-center">
@@ -141,6 +144,7 @@
     <!-- [PRIVATE-NET] Circular donut for private networks — hidden by default -->
     <div id="pn-container" class="pn-container hidden">
         <div class="pn-title">Private Networks<span class="pn-title-subtitle">(TOR/I2P/CJDNS)</span></div>
+        <button type="button" id="pn-overview-trigger" class="pn-overview-trigger" aria-controls="pn-detail-panel">Private peer overview</button>
         <div class="pn-donut-wrap" id="pn-donut-wrap">
             <svg id="pn-donut-svg" class="pn-donut-svg" viewBox="0 0 260 260"></svg>
             <div id="pn-donut-center" class="pn-donut-center">
@@ -149,19 +153,19 @@
                 <div class="pn-center-sub" id="pn-center-sub">peers</div>
             </div>
             <div id="pn-insight-rect" class="pn-insight-rect"></div>
-            <button class="pn-exit-btn" id="pn-exit-btn" title="Return to public network view">&#x2192;</button>
+            <button type="button" class="pn-exit-btn" id="pn-exit-btn" title="Return to public network view" aria-label="Return to public network view">&#x2192;</button>
         </div>
     </div>
 
     <!-- [PRIVATE-NET] Detail panel — slides in from right, like AS detail panel -->
     <div id="pn-detail-panel" class="pn-detail-panel hidden">
         <div class="pn-detail-header" id="pn-detail-header">
-            <button class="pn-detail-back hidden" id="pn-detail-back" title="Back to overview">&#8592;</button>
+            <button type="button" class="pn-detail-back hidden" id="pn-detail-back" title="Back to overview" aria-label="Back to private peer overview">&#8592;</button>
             <div class="pn-detail-header-info">
                 <div class="pn-detail-net-name" id="pn-detail-net-name"></div>
                 <div class="pn-detail-meta" id="pn-detail-meta"></div>
             </div>
-            <button class="pn-detail-close" id="pn-detail-close" title="Close">&times;</button>
+            <button type="button" class="pn-detail-close" id="pn-detail-close" title="Close" aria-label="Close private peer exploration">&times;</button>
         </div>
         <div class="pn-detail-body" id="pn-detail-body"></div>
     </div>
@@ -193,13 +197,13 @@
             <div class="handle-row1">
                 <span class="handle-title">PEER LIST</span>
                 <span class="handle-show-label">Show:</span>
-                <div class="handle-nets">
-                    <span class="net-badge net-all active" data-net="all" title="Click to show all peers">All <span class="badge-count" id="bc-all">0</span></span>
-                    <span class="net-badge net-ipv4" data-net="ipv4" title="Click to filter by IPv4">IPv4 <span class="badge-count" id="bc-ipv4">0</span></span>
-                    <span class="net-badge net-ipv6" data-net="ipv6" title="Click to filter by IPv6">IPv6 <span class="badge-count" id="bc-ipv6">0</span></span>
-                    <span class="net-badge net-tor" data-net="onion" title="Click to filter by Tor/Onion">Tor <span class="badge-count" id="bc-tor">0</span></span>
-                    <span class="net-badge net-i2p" data-net="i2p" title="Click to filter by I2P">I2P <span class="badge-count" id="bc-i2p">0</span></span>
-                    <span class="net-badge net-cjdns" data-net="cjdns" title="Click to filter by CJDNS">CJDNS <span class="badge-count" id="bc-cjdns">0</span></span>
+                <div class="handle-nets" role="group" aria-label="Peer network filters">
+                    <button type="button" class="net-badge net-all active" data-net="all" title="Click to show all peers" aria-pressed="true">All <span class="badge-count" id="bc-all">0</span></button>
+                    <button type="button" class="net-badge net-ipv4" data-net="ipv4" title="Click to filter by IPv4" aria-pressed="true">IPv4 <span class="badge-count" id="bc-ipv4">0</span></button>
+                    <button type="button" class="net-badge net-ipv6" data-net="ipv6" title="Click to filter by IPv6" aria-pressed="true">IPv6 <span class="badge-count" id="bc-ipv6">0</span></button>
+                    <button type="button" class="net-badge net-tor" data-net="onion" title="Click to filter by Tor/Onion" aria-pressed="true">Tor <span class="badge-count" id="bc-tor">0</span></button>
+                    <button type="button" class="net-badge net-i2p" data-net="i2p" title="Click to filter by I2P" aria-pressed="true">I2P <span class="badge-count" id="bc-i2p">0</span></button>
+                    <button type="button" class="net-badge net-cjdns" data-net="cjdns" title="Click to filter by CJDNS" aria-pressed="true">CJDNS <span class="badge-count" id="bc-cjdns">0</span></button>
                 </div>
                 <div class="handle-spacer"></div>
                 <button class="handle-btn handle-btn-green" id="btn-connect-peer" title="Connect to a peer">Connect Peer</button>
@@ -209,12 +213,12 @@
                 <button class="handle-btn handle-btn-accent" id="btn-geoip-db-peer" title="GeoIP database info and updates">GEOIP-DB</button>
                 <button class="handle-btn handle-btn-accent" id="btn-chain-tips" title="View chain tips and fork status">CHAIN-TIPS</button>
                 <button class="handle-btn handle-btn-dim" id="btn-autofit" title="Automatic column size to fit">FIT</button>
-                <button class="handle-btn handle-btn-dim" id="btn-minimize" title="Toggle peer list table">&#9660;</button>
+                <button type="button" class="handle-btn handle-btn-dim" id="btn-minimize" aria-expanded="true" aria-controls="peer-panel-body" aria-label="Hide peer list table" title="Toggle peer list table">&#9660;</button>
                 <button class="handle-btn handle-btn-dim" id="btn-table-settings" title="Table settings: columns, transparency">&#9881;</button>
             </div>
         </div>
-        <div class="peer-panel-body">
-            <div class="peer-table-wrap" tabindex="0" aria-label="Connected peers">
+        <div class="peer-panel-body" id="peer-panel-body">
+            <div class="peer-table-wrap" tabindex="0" role="region" aria-label="Connected peers">
                 <table class="peer-table" id="peer-table">
                     <thead id="peer-thead"></thead>
                     <tbody id="peer-tbody"></tbody>
@@ -238,7 +242,7 @@
                     </div>
                 </div>
             </div>
-            <button class="as-detail-close" title="Close">&times;</button>
+            <button type="button" class="as-detail-close" title="Close" aria-label="Close distribution exploration">&times;</button>
         </div>
         <div class="as-detail-body"></div>
     </div>

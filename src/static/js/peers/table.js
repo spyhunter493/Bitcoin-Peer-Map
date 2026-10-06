@@ -5,6 +5,7 @@ import * as BPMFormat from '../core/format.js';
 import * as BPMPeerTableModel from './table-model.js';
 import * as TableWindow from './table-window.js';
 import { fmtPing } from '../core/ping.js';
+import { formatGeoAge, geoSourceLabel, geoFreshnessLabel } from '../core/geo.js';
 /** @param {import('../types').PeerTableOptions} options
  *  @returns {import('../types').PeerTableController} */
 function create(options) {
@@ -96,6 +97,9 @@ function create(options) {
         { key: 'offset', label: 'UTC', get: (p) => (p.offset != null ? p.offset : '—'), full: null, vis: false, w: 45 },
         { key: 'proxy', label: 'Proxy', get: (p) => (p.proxy ? 'Y' : 'N'), full: (p) => (p.proxy ? 'Yes' : 'No'), vis: false, w: 40 },
         { key: 'zip', label: 'ZIP', get: (p) => p.zip || '—', full: null, vis: false, w: 55 },
+        { key: 'geo_source', label: 'Source', get: (p) => geoSourceLabel(p.geo), full: null, vis: false, w: 100 },
+        { key: 'geo_age_seconds', label: 'Geo age', get: (p) => p.geo?.freshness === 'unavailable' ? 'Unavailable' : formatGeoAge(p.geo?.age_seconds), full: null, vis: false, w: 75 },
+        { key: 'geo_freshness', label: 'Freshness', get: (p) => geoFreshnessLabel(p.geo), full: null, vis: false, w: 80 },
     ];
 
     // Visible column keys (start with defaults, can be toggled later)
@@ -192,9 +196,22 @@ function create(options) {
     /** @type {HTMLTableSectionElement} */
     const tbodyEl = required('#peer-tbody');
 
+    function updateCollapseControl() {
+        const button = required('#btn-minimize');
+        const expanded = !panelEl.classList.contains('collapsed');
+        button.setAttribute('aria-expanded', String(expanded));
+        button.setAttribute('aria-controls', 'peer-panel-body');
+        button.setAttribute('aria-label', expanded ? 'Hide peer list table' : 'Show peer list table');
+        button.title = expanded ? 'Hide peer list table' : 'Show peer list table';
+        button.innerHTML = expanded ? '&#9660;' : '&#9650;';
+    }
+    updateCollapseControl();
+    new MutationObserver(updateCollapseControl).observe(panelEl, { attributes: true, attributeFilter: ['class'] });
+
     // Panel toggle (clicking the title bar)
     required('#peer-panel-handle').addEventListener('click', () => {
         panelEl.classList.toggle('collapsed');
+        updateCollapseControl();
         // [DISTRIBUTION] When expanding peer list, bring it on top of AS panel
         if (!panelEl.classList.contains('collapsed')) {
             document.body.classList.add('panel-focus-peers');
@@ -218,23 +235,41 @@ function create(options) {
     /** @type {number[]} */
     let naturalWidths = [];
     let layoutSignature = '';
+    let actionsWidth = 160;
+
+    function measureActionsWidth() {
+        const row = tbodyEl.querySelector('tr[data-id]');
+        const cell = row instanceof HTMLTableRowElement ? row.cells[row.cells.length - 1] : null;
+        if (!cell) return;
+        const buttons = queryAll('.peer-action-btn', cell);
+        if (!buttons.length || !buttons[0].getBoundingClientRect().width) return;
+        const cellStyle = getComputedStyle(cell);
+        const padding = parseFloat(cellStyle.paddingLeft) + parseFloat(cellStyle.paddingRight);
+        const contentWidth = buttons.reduce((width, button) => {
+            const style = getComputedStyle(button);
+            return width + button.getBoundingClientRect().width + parseFloat(style.marginLeft) + parseFloat(style.marginRight);
+        }, 0);
+        // Leave room for focus outlines and collapsed-border rounding. Font
+        // fallback or a user's larger text setting must not clip either action.
+        actionsWidth = Math.ceil(contentWidth + padding + 8);
+    }
 
     /** Fit from the full snapshot's 95th percentile, preserving manual widths.
      * Cached measurements are reused on resize; unchanged widths retain the colgroup. */
     function renderColgroup() {
         const table = required('#peer-table');
+        measureActionsWidth();
         const widths = [];
         if (autoFitColumns) {
             // ── Auto-fit: size columns to fit viewport based on data ──
             const charPx = 7; // approximate px per character at font-size 11px
             const headerPad = 28; // padding + sort arrow
             const colPad = 16; // cell padding (8px each side)
-            const actionsW = 80; // fixed actions column
+            const actionsW = actionsWidth;
 
             // Measure available width
             const tableWrap = table.closest('.peer-table-wrap');
-            const availW = (tableWrap ? tableWrap.clientWidth : mapView.width) - actionsW;
-            if (availW <= 0) return;
+            const availW = Math.max(0, (tableWrap ? tableWrap.clientWidth : mapView.width) - actionsW);
             const columnsSignature = visibleColumns.join('|');
             if (measuredPeers !== dashboard.peers || measuredColumns !== columnsSignature) {
                 naturalWidths = [];
@@ -280,7 +315,7 @@ function create(options) {
                 widths.push(userColumnWidths[key] || (col ? col.w : 80));
             }
         }
-        widths.push(80);
+        widths.push(actionsWidth);
         const signature = `${visibleColumns.join('|')}:${widths.join('|')}`;
         if (signature === layoutSignature) return;
         layoutSignature = signature;
@@ -309,9 +344,13 @@ function create(options) {
             if (autoFitColumns) renderColgroup();
         });
     }).observe(tableViewport);
+    document.fonts.ready.then(() => renderColgroup());
+    document.fonts.addEventListener('loadingdone', () => renderColgroup());
 
     /** Build table header row with resize handles */
     function renderPeerTableHead() {
+        const focused = document.activeElement instanceof HTMLElement && theadEl.contains(document.activeElement)
+            ? document.activeElement.closest('th')?.dataset.sort : undefined;
         let html = '<tr>';
         for (const key of visibleColumns) {
             const col = COLUMNS.find((c) => c.key === key);
@@ -320,11 +359,13 @@ function create(options) {
             // 3-state: no sortKey = unsorted (dim arrow), asc = ▲, desc = ▼
             const arrow = isActive ? (sortAsc ? '&#9650;' : '&#9660;') : '';
             const cls = isActive ? 'sort-arrow active' : 'sort-arrow';
-            html += `<th data-sort="${key}"><span class="th-text">${col.label} <span class="${cls}">${arrow}</span></span><span class="th-resize" data-col="${key}"></span></th>`;
+            const sort = isActive ? ` aria-sort="${sortAsc ? 'ascending' : 'descending'}"` : '';
+            html += `<th scope="col" data-sort="${key}"${sort}><button type="button" class="th-text" aria-label="Sort by ${col.label}">${col.label} <span class="${cls}" aria-hidden="true">${arrow}</span></button><span class="th-resize" data-col="${key}" aria-hidden="true"></span></th>`;
         }
-        html += '<th>Actions</th>';
+        html += '<th scope="col">Actions</th>';
         html += '</tr>';
         theadEl.innerHTML = html;
+        if (focused) query(`th[data-sort="${focused}"] button`, theadEl)?.focus({ preventScroll: true });
         renderColgroup();
     }
 
@@ -364,20 +405,25 @@ function create(options) {
             for (let i = 0; i < columns.length + 1; i++) {
                 row.appendChild(document.createElement('td'));
             }
-            const button = document.createElement('button');
-            button.className = 'peer-action-btn';
-            button.dataset.action = 'disconnect';
-            button.dataset.id = String(peer.id);
-            button.textContent = 'Disconnect';
-            row.cells[row.cells.length - 1].appendChild(button);
+            for (const action of ['details', 'disconnect']) {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'peer-action-btn';
+                button.dataset.action = action;
+                button.dataset.id = String(peer.id);
+                button.textContent = action === 'details' ? 'Details' : 'Disconnect';
+                button.setAttribute('aria-label', `${action === 'details' ? 'Details for' : 'Disconnect'} peer ${peer.id}`);
+                row.cells[row.cells.length - 1].appendChild(button);
+            }
         }
         for (let i = 0; i < columns.length; i++) {
             const column = columns[i];
             const value = column.get(peer);
             setCell(row.cells[i], value, column.full ? column.full(peer) : value);
         }
-        const button = required('button', row.cells[row.cells.length - 1]);
-        if (button.dataset.net !== net) button.dataset.net = net;
+        for (const button of queryAll('button', row.cells[row.cells.length - 1])) {
+            if (button.dataset.net !== net) button.dataset.net = net;
+        }
     }
 
     /** Build table body from lastPeers (filtered by active network filter) */
@@ -404,6 +450,9 @@ function create(options) {
         renderedColumns = visibleColumns.map((key) => COLUMNS.find((column) => column.key === key)).filter((column) => column !== undefined);
         if (highlightedRowId !== null && !dashboard.byId.has(highlightedRowId)) highlightedRowId = null;
         tableWindow.update(sorted, visibleColumns.join('|'), renderedColumns.length + 1);
+        // The initial snapshot mounts the controls after the first width pass.
+        // Measure their actual rendered font before exposing the finished table.
+        renderColgroup();
     }
 
     // Initial header render
@@ -623,11 +672,11 @@ function create(options) {
             '<div class="tsp-header"><span class="tsp-title" id="tsp-title">Table Settings</span><button class="tsp-defaults-btn" id="tsp-defaults">Defaults</button></div>';
 
         // ── Transparency slider ──
-        html += '<div class="tsp-section">Transparency</div>';
+        html += '<label class="tsp-section" for="tsp-opacity">Transparency</label>';
         html += `<div class="tsp-slider-row"><input type="range" class="tsp-slider" id="tsp-opacity" min="0" max="100" value="${panelOpacity}"><span class="tsp-slider-val" id="tsp-opacity-val">${panelOpacity}%</span></div>`;
 
         // ── Visible rows ──
-        html += '<div class="tsp-section">Visible Rows</div>';
+        html += '<label class="tsp-section" for="tsp-rows">Visible Rows</label>';
         html += `<div class="tsp-slider-row"><input type="range" class="tsp-slider" id="tsp-rows" min="3" max="40" value="${maxPeerRows}"><span class="tsp-slider-val" id="tsp-rows-val">${maxPeerRows}</span></div>`;
 
         // ── Column toggles ──

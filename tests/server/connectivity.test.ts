@@ -23,6 +23,7 @@ function clock(t: TestContext) {
 }
 for (const failure of ['transport', 'outage', 'malformed'] as const) {
     test(`GeoIP ${failure} leaves internet status alone and recovers independently`, async t => {
+        const advance = clock(t);
         let failing = true;
         const { connectivity, peers } = setup(t, async url => {
             assert.ok(String(url).includes('ip-api.com'), 'provider failures must not trigger Google probes');
@@ -36,6 +37,8 @@ for (const failure of ['transport', 'outage', 'malformed'] as const) {
         assert.equal(failed.api_down_prompt, true); assert.equal(failed.providers.geoip.consecutive_failures, 5);
         connectivity.acknowledgePrompt();
         failing = false;
+        assert.equal(await peers.fetchGeo('1.1.1.1'), null, 'outage recovery waits for the provider deadline');
+        advance(30_000);
         assert.ok(await peers.fetchGeo('1.1.1.1'));
         const recovered = connectivity.snapshot();
         assert.equal(recovered.providers.geoip.state, 'healthy'); assert.equal(recovered.api_available, true);
@@ -144,4 +147,49 @@ test('an HTTP outage on the probe host still proves internet reachability', asyn
     assert.equal(connectivity.snapshot().internet_state, 'green');
     assert.equal(connectivity.failureStartedAt, null);
     await connectivity.stop();
+});
+
+test('provider outage backoff starts after five failures, increases to five minutes, and permits recovery', async t => {
+    const advance = clock(t);
+    let calls = 0, failing = true;
+    const { connectivity, peers } = setup(t, async () => {
+        calls++;
+        if (failing) throw new Error('provider outage');
+        return location();
+    });
+    connectivity.internetState = 'red';
+    for (let i = 0; i < 4; i++) {
+        await peers.fetchGeo('8.8.8.8');
+        assert.equal(connectivity.providerReady('geoip'), true);
+    }
+    for (const delay of [30, 60, 120, 240, 300, 300]) {
+        await peers.fetchGeo('8.8.8.8');
+        const current = connectivity.snapshot();
+        assert.equal(current.providers.geoip.state, 'unavailable');
+        assert.equal(current.providers.geoip.retry_at, Date.now() / 1000 + delay);
+        assert.equal(current.api_down_prompt, true, 'a failed probe does not hide provider notices');
+        const before = calls;
+        advance(delay * 1000 - 1);
+        assert.equal(await peers.fetchGeo('1.1.1.1'), null);
+        assert.equal(calls, before);
+        advance(1); assert.equal(connectivity.providerReady('geoip'), true);
+    }
+    failing = false;
+    assert.ok(await peers.fetchGeo('1.1.1.1'));
+    assert.equal(connectivity.snapshot().providers.geoip.state, 'healthy');
+    assert.equal(connectivity.snapshot().providers.geoip.retry_at, null);
+    assert.equal(connectivity.snapshot().internet_state, 'red');
+});
+
+test('a concurrent success clears outage backoff while preserving a separate quota deadline', async t => {
+    const advance = clock(t);
+    const { connectivity } = setup(t, async () => location());
+    for (let i = 0; i < 5; i++) connectivity.providerFailure('geoip', new Error('outage'));
+    connectivity.providerFailure('geoip', new Error('quota'), new Response('', { status: 429, headers: { 'Retry-After': '120' } }));
+    connectivity.providerSuccess('geoip');
+    assert.equal(connectivity.snapshot().providers.geoip.consecutive_failures, 0);
+    assert.equal(connectivity.snapshot().providers.geoip.state, 'rate_limited');
+    advance(30_000); assert.equal(connectivity.providerReady('geoip'), false);
+    advance(90_000); assert.equal(connectivity.providerReady('geoip'), true);
+    assert.equal(connectivity.snapshot().providers.geoip.state, 'healthy');
 });

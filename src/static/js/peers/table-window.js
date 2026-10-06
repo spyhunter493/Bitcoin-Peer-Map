@@ -37,7 +37,20 @@ export function create({ tbody, thead, viewport, updateRow }) {
         cell.appendChild(document.createElement('div'));
         return row;
     }
-    const before = spacer(), after = spacer();
+    const before = spacer(), after = spacer(), focusGap = spacer();
+
+    function focusedAction() {
+        const active = document.activeElement;
+        if (!(active instanceof HTMLButtonElement) || !tbody.contains(active)) return null;
+        const row = active.closest('tr');
+        if (!row || !active.dataset.action) return null;
+        return { peerId: Number(row.dataset.id), action: active.dataset.action };
+    }
+
+    /** @param {number} peerId @param {string} action */
+    function actionButton(peerId, action) {
+        return tbody.querySelector(`tr[data-id="${peerId}"] button[data-action="${action}"]`);
+    }
 
     /** @param {HTMLTableRowElement} row @param {number} height */
     function sizeSpacer(row, height) {
@@ -51,38 +64,59 @@ export function create({ tbody, thead, viewport, updateRow }) {
 
     /** @param {boolean} [update] @param {boolean} [rebuildCells] */
     function render(update = false, rebuildCells = false) {
+        const focused = focusedAction();
         const height = Math.max(rowHeight, viewport.clientHeight - thead.offsetHeight);
         const range = rowRange(peers.length, viewport.scrollTop, height, rowHeight);
         if (!update && start === range.start && end === range.end) return;
         start = range.start; end = range.end;
-        const visible = peers.slice(start, end);
+        const visible = peers.slice(start, end).map((peer, offset) => ({ peer, index: start + offset }));
+        const focusIndex = focused ? peers.findIndex(peer => peer.id === focused.peerId) : -1;
+        const focusOutside = focusIndex >= 0 && (focusIndex < start || focusIndex >= end);
+        // Keep one focused row at its logical position while the viewport scrolls.
+        // An extra spacer retains geometry without mounting the intervening peers.
+        if (focusOutside) {
+            visible.push({ peer: peers[focusIndex], index: focusIndex });
+            visible.sort((a, b) => a.index - b.index);
+        }
         const rows = new Map(Array.from(tbody.rows)
             .filter(row => row.dataset.id !== undefined).map(row => [Number(row.dataset.id), row]));
-        const ids = new Set(visible.map(peer => peer.id));
+        const ids = new Set(visible.map(item => item.peer.id));
         for (const [id, row] of rows) if (!ids.has(id)) { row.remove(); rows.delete(id); }
 
         const virtual = peers.length > VIRTUAL_THRESHOLD;
         if (virtual) {
-            sizeSpacer(before, start * rowHeight);
-            sizeSpacer(after, (peers.length - end) * rowHeight);
-            if (before.parentNode !== tbody) tbody.prepend(before);
-            if (after.parentNode !== tbody) tbody.append(after);
+            sizeSpacer(before, Math.min(start, focusIndex >= 0 ? focusIndex : start) * rowHeight);
+            sizeSpacer(after, (peers.length - Math.max(end, focusIndex + 1)) * rowHeight);
+            if (focusOutside) sizeSpacer(focusGap, (focusIndex < start ? start - focusIndex - 1 : focusIndex - end) * rowHeight);
         } else { before.remove(); after.remove(); }
+        if (!focusOutside) focusGap.remove();
 
-        /** @type {HTMLTableRowElement | null} */
-        let next = virtual ? after : null;
-        for (let i = visible.length - 1; i >= 0; i--) {
-            const peer = visible[i];
+        /** @type {HTMLTableRowElement[]} */
+        const mounted = virtual ? [before] : [];
+        for (let i = 0; i < visible.length; i++) {
+            const { peer, index: logicalIndex } = visible[i];
+            if (focusOutside && i > 0 && logicalIndex !== visible[i - 1].index + 1) mounted.push(focusGap);
             let row = rows.get(peer.id);
             if (!row) {
                 row = document.createElement('tr');
                 row.dataset.id = String(peer.id);
             }
             updateRow(row, peer, rebuildCells);
-            const index = String(start + i + 2); // Header occupies row 1.
+            const index = String(logicalIndex + 2); // Header occupies row 1.
             if (row.getAttribute('aria-rowindex') !== index) row.setAttribute('aria-rowindex', index);
+            mounted.push(row);
+        }
+        if (virtual) mounted.push(after);
+        /** @type {HTMLTableRowElement | null} */
+        let next = null;
+        for (let i = mounted.length - 1; i >= 0; i--) {
+            const row = mounted[i];
             if (row.parentNode !== tbody || row.nextSibling !== next) tbody.insertBefore(row, next);
             next = row;
+        }
+        if (focused) {
+            const target = actionButton(focused.peerId, focused.action);
+            if (target instanceof HTMLElement && document.activeElement !== target) target.focus({ preventScroll: true });
         }
         // The first row shares a collapsed border with the spacer/header and
         // can be half a pixel shorter. Measure an interior row for the stride.
@@ -96,11 +130,56 @@ export function create({ tbody, thead, viewport, updateRow }) {
 
     viewport.addEventListener('scroll', () => render(), { passive: true });
     new ResizeObserver(() => render()).observe(viewport);
+    tbody.addEventListener('focusout', () => queueMicrotask(() => render(true)));
+
+    /** @param {number} peerId @param {boolean} smooth */
+    function reveal(peerId, smooth) {
+        const index = peers.findIndex(peer => peer.id === peerId);
+        if (index < 0) return;
+        const top = index * rowHeight;
+        const height = Math.max(rowHeight, viewport.clientHeight - thead.offsetHeight);
+        let target = viewport.scrollTop;
+        if (top < target) target = top;
+        else if (top + rowHeight > target + height) target = top + rowHeight - height;
+        viewport.scrollTo({ top: target, behavior: smooth ? 'smooth' : 'instant' });
+        render(true);
+        if (!smooth) {
+            const row = tbody.querySelector(`tr[data-id="${peerId}"]`);
+            const rect = row?.getBoundingClientRect();
+            const bounds = viewport.getBoundingClientRect();
+            if (rect && rect.bottom > bounds.bottom) viewport.scrollTop += rect.bottom - bounds.bottom;
+            else if (rect && rect.top < bounds.top + thead.offsetHeight) {
+                viewport.scrollTop -= bounds.top + thead.offsetHeight - rect.top;
+            }
+            render();
+        }
+    }
+
+    // Traverse the complete logical peer list, including unmounted rows.
+    tbody.addEventListener('keydown', event => {
+        if (event.key !== 'Tab' || event.altKey || event.ctrlKey || event.metaKey) return;
+        const focused = focusedAction();
+        if (!focused) return;
+        const index = peers.findIndex(peer => peer.id === focused.peerId);
+        const actions = ['details', 'disconnect'];
+        const offset = actions.indexOf(focused.action);
+        if (index < 0 || offset < 0) return;
+        const next = index * actions.length + offset + (event.shiftKey ? -1 : 1);
+        if (next < 0 || next >= peers.length * actions.length) return;
+        event.preventDefault();
+        const peer = peers[Math.floor(next / actions.length)];
+        reveal(peer.id, false);
+        const button = actionButton(peer.id, actions[next % actions.length]);
+        if (button instanceof HTMLElement) button.focus();
+        render(true);
+    });
 
     return Object.freeze({
         /** @param {readonly import('../types').Peer[]} sorted
          * @param {string} signature @param {number} count */
         update(sorted, signature, count) {
+            const focused = focusedAction();
+            const oldIndex = focused ? peers.findIndex(peer => peer.id === focused.peerId) : -1;
             const rebuild = columns !== signature;
             columns = signature; columnCount = count; peers = sorted;
             const total = String(peers.length);
@@ -112,30 +191,16 @@ export function create({ tbody, thead, viewport, updateRow }) {
             const maxScroll = Math.max(0, peers.length * rowHeight + thead.offsetHeight - viewport.clientHeight);
             if (viewport.scrollTop > maxScroll) viewport.scrollTop = maxScroll;
             render(true, rebuild);
-        },
-        /** @param {number} peerId @param {boolean} smooth */
-        reveal(peerId, smooth) {
-            const index = peers.findIndex(peer => peer.id === peerId);
-            if (index < 0) return;
-            const top = index * rowHeight;
-            const height = Math.max(rowHeight, viewport.clientHeight - thead.offsetHeight);
-            let target = viewport.scrollTop;
-            if (top < target) target = top;
-            else if (top + rowHeight > target + height) target = top + rowHeight - height;
-            viewport.scrollTo({ top: target, behavior: smooth ? 'smooth' : 'instant' });
-            render(true);
-            if (!smooth) {
-                // Collapsed table borders and fractional row heights can shift
-                // the estimated edge slightly. Finish using the mounted row.
-                const row = tbody.querySelector(`tr[data-id="${peerId}"]`);
-                const rect = row?.getBoundingClientRect();
-                const bounds = viewport.getBoundingClientRect();
-                if (rect && rect.bottom > bounds.bottom) viewport.scrollTop += rect.bottom - bounds.bottom;
-                else if (rect && rect.top < bounds.top + thead.offsetHeight) {
-                    viewport.scrollTop -= bounds.top + thead.offsetHeight - rect.top;
-                }
-                render();
+            if (focused && !peers.some(peer => peer.id === focused.peerId)) {
+                const fallback = peers[Math.min(Math.max(oldIndex, 0), peers.length - 1)];
+                if (fallback) {
+                    reveal(fallback.id, false);
+                    const button = actionButton(fallback.id, focused.action);
+                    if (button instanceof HTMLElement) button.focus({ preventScroll: true });
+                } else viewport.focus({ preventScroll: true });
             }
         },
+        /** @param {number} peerId @param {boolean} smooth */
+        reveal,
     });
 }

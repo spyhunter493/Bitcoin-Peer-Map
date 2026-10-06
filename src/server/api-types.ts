@@ -21,6 +21,7 @@ export interface DashboardDetails extends Data {
 export interface DashboardInfo extends DashboardDetails {
     bitcoin_network: BitcoinNetwork;
     internet_state: ConnectivityStatus['internet_state']; api_available: boolean; geo_db_only_mode: boolean;
+    providers: ConnectivityStatus['providers'];
     geo_db_stats: Data;
 }
 export interface RecentBlock extends Data {

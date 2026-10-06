@@ -343,7 +343,9 @@ function create() {
             return;
         }
 
-        const nextScale = Math.max(minScale, Math.min(1, availableHeight / unscaledHeight));
+        // Coverage and explicit controls increase the stack height. Fit the whole
+        // stack even when a larger table leaves less than the former minimum.
+        const nextScale = Math.min(1, availableHeight / unscaledHeight);
         applyDonutStackFitScale(container, nextScale.toFixed(3), immediate);
     }
 
@@ -739,6 +741,11 @@ function create() {
 
         const distribution = BPMDistribution;
         distribution.init();
+        const distributionContainer = document.getElementById('as-distribution-container');
+        if (distributionContainer) {
+            // Focus and hover reveal native legend controls, changing stack height.
+            new ResizeObserver(fitDonutStackToViewport).observe(distributionContainer);
+        }
 
         // Apply initial "Display Top ISP/Net" toggle state
         if (!advSettings.showDonutLegends) {

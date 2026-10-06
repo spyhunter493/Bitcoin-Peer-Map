@@ -63,6 +63,7 @@ function computeNetworkPanelData(peers, networkKey, segments) {
             providerCount: providers.length,
             peerIds: networkPeers.map((peer) => peer.id),
             providers,
+            coverage: distributionData.distributionCoverage(networkPeers),
         },
         hosting: distributionData.aggregateSummaryHosting(networkPeers, segments),
         countries: distributionData.aggregateSummaryCountries(networkPeers, segments),
@@ -85,7 +86,7 @@ function renderStatRow(label, value) {
 
 /** @param {string} label
  * @param {string | number} value
- * @param {Pick<import('../types').SummaryCategory, 'peerIds' | 'providers'> & {filter?: import('../types').PeerFilter}} category */
+ * @param {Pick<import('../types').SummaryCategory, 'peerIds' | 'providers'> & {filter?: import('../types').PeerFilter; coverage?: import('../types').SummaryCategory['coverage']}} category */
 function renderInteractiveRow(label, value, category) {
     const providers = (category.providers || []).map((provider) => ({
         a: provider.asNumber,
@@ -98,17 +99,20 @@ function renderInteractiveRow(label, value, category) {
     const peerData = escapeHtml(JSON.stringify(category.peerIds || []));
     const safeLabel = escapeHtml(label);
     const safeValue = escapeHtml(value);
+    const coverage = category.coverage;
+    const coverageText = coverage ? distributionData.coverageLabel(coverage) : '';
     return (
-        '<div class="as-detail-sub-row as-interactive-row as-summary-row" ' +
-        'role="button" tabindex="0" aria-label="' +
+        '<button type="button" class="as-detail-sub-row as-interactive-row as-summary-row" ' +
+        'aria-label="' +
         safeLabel +
         ': ' +
-        safeValue +
+        safeValue + (coverageText ? '. ' + escapeHtml(coverageText) : '') +
         '" ' +
         'data-peer-ids="' +
         peerData +
         '" data-providers="' +
         providerData +
+        '" data-coverage="' + escapeHtml(JSON.stringify(coverage || null)) +
         '" data-filter="' +
         escapeHtml(JSON.stringify(category.filter || null)) +
         '" data-cat-label="' +
@@ -118,8 +122,8 @@ function renderInteractiveRow(label, value, category) {
         safeLabel +
         '</span>' +
         '<span class="as-detail-sub-val">' +
-        safeValue +
-        '</span></div>'
+        safeValue + (coverageText ? '<span class="as-row-coverage">' + escapeHtml(coverageText) + '</span>' : '') +
+        '</span></button>'
     );
 }
 
@@ -142,6 +146,7 @@ function renderNetworkPanelBody(data) {
     }
 
     let html = '<div class="modal-section-title">Stats</div>';
+    html += renderStatRow('Coverage', distributionData.coverageLabel(distributionData.distributionCoverage(data.peers)));
     html += renderStatRow('Total Peers', data.peerCount);
     html += renderStatRow('Inbound', data.inboundCount);
     html += renderStatRow('Outbound', data.outboundCount);

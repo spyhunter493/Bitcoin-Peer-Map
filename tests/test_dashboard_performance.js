@@ -45,7 +45,7 @@ export default async function assertDashboardPerformance(browser) {
     page.on('pageerror', error => errors.push(error.message));
     await page.route('https://fonts.googleapis.com/**', route => route.abort());
     const seed = await (await page.request.get(`${baseUrl}/api/peers`)).json();
-    let peers = seed.peers.map(peer => ({ ...peer, network: peer.id % 2 ? 'ipv4' : 'ipv6', conntime: Math.floor(now / 1000) - 7200 }));
+    let peers = seed.peers.map(peer => ({ ...peer, network: peer.id % 2 ? 'ipv4' : 'ipv6', is_public: true, conntime: Math.floor(now / 1000) - 7200 }));
     await page.route('**/api/peers?include_status=true', route => route.fulfill({ json: { ...seed, peers } }));
     const ids = () => page.locator('#peer-tbody tr[data-id]').evaluateAll(rows => rows.map(row => Number(row.dataset.id)));
     const scroll = async fraction => {
@@ -69,6 +69,26 @@ export default async function assertDashboardPerformance(browser) {
         assert.equal((await ids())[0], 1);
         assert.equal(await page.locator('#peer-table').getAttribute('aria-rowcount'), '501');
         assert.ok(await page.locator('#peer-tbody .peer-table-spacer').count() === 2);
+        await page.locator('#peer-tbody tr[data-id="1"] button[data-action="details"]').focus();
+        // Traverse all 500 logical peers without scrolling or using the map.
+        for (let i = 0; i < 998; i++) await page.keyboard.press('Tab');
+        assert.deepEqual(await page.evaluate(() => ({
+            id: document.activeElement.dataset.id, action: document.activeElement.dataset.action,
+        })), { id: '500', action: 'details' });
+        assert.ok((await ids()).length < 40, 'keyboard traversal retains bounded mounted rows');
+        await poll();
+        assert.equal(await page.locator('#peer-tbody tr[data-id="500"] button[data-action="details"]').evaluate(button => button === document.activeElement), true,
+            'polling retains the focused peer action');
+        await page.keyboard.press('Shift+Tab');
+        assert.deepEqual(await page.evaluate(() => ({
+            id: document.activeElement.dataset.id, action: document.activeElement.dataset.action,
+        })), { id: '499', action: 'disconnect' });
+        await scroll(0);
+        assert.equal(await page.locator('#peer-tbody tr[data-id="499"] button[data-action="disconnect"]').evaluate(button => button === document.activeElement), true,
+            'scrolling preserves one focused row without mounting intervening rows');
+        assert.ok((await ids()).length < 40);
+        await page.locator('.peer-table-wrap').focus();
+        await scroll(0);
         assert.equal(await page.locator('#map-connections').isVisible(), false,
             'an empty connection surface does not add compositing work');
 
@@ -137,7 +157,7 @@ export default async function assertDashboardPerformance(browser) {
         assert.ok((await ids()).every(id => id % 2 === 1), 'network filtering applies to the entire data set');
         await scroll(0);
         assert.equal((await ids())[0], 499);
-        await page.locator('#peer-tbody tr[data-id="499"] .peer-action-btn').click();
+        await page.locator('#peer-tbody tr[data-id="499"] .peer-action-btn[data-action="disconnect"]').click();
         await page.waitForSelector('#disconnect-dialog');
         assert.match(await page.locator('#disconnect-dialog').textContent(), /499/,
             'virtual rows retain the correct disconnect target');

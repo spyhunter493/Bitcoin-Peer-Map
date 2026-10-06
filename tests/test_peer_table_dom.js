@@ -36,6 +36,19 @@ export default async function assertTableDom(browser, baseUrl) {
         const emptyColumns = await page.locator('#peer-table col').evaluateAll(columns => columns.map(column => column.style.width));
         releaseInitial();
         await page.waitForSelector('#peer-tbody tr[data-id="1"]');
+        const pingSort = page.locator('th[data-sort="ping_ms"] button');
+        await pingSort.focus();
+        await page.keyboard.press('Enter');
+        assert.equal(await page.locator('th[data-sort="ping_ms"]').getAttribute('aria-sort'), 'ascending');
+        assert.equal(await pingSort.evaluate(button => button === document.activeElement), true);
+        await page.keyboard.press('Space');
+        assert.equal(await page.locator('th[data-sort="ping_ms"]').getAttribute('aria-sort'), 'descending');
+        assert.deepEqual(await page.locator('#peer-tbody tr[data-id]').evaluateAll(rows => rows.map(row => Number(row.dataset.id))), [3, 2, 1]);
+        await page.keyboard.press('Enter');
+        assert.equal(await page.locator('th[data-sort="ping_ms"]').getAttribute('aria-sort'), null);
+        await page.locator('th[data-sort="id"] button').focus();
+        await page.keyboard.press('Enter');
+        assert.equal(await page.locator('th[data-sort="id"]').getAttribute('aria-sort'), 'ascending');
         assert.notDeepEqual(await page.locator('#peer-table col').evaluateAll(columns => columns.map(column => column.style.width)), emptyColumns,
             'the first peer snapshot replaces the initial empty-table width estimates');
         await page.evaluate(() => {
@@ -98,11 +111,18 @@ export default async function assertTableDom(browser, baseUrl) {
         assert.equal(await page.locator('#peer-tbody tr[data-id="4"] td').nth(12).textContent(), '0.4ms');
         await page.click('th[data-sort="ping_ms"]');
         assert.deepEqual(await page.locator('#peer-tbody tr[data-id]').evaluateAll(rows => rows.map(row => Number(row.dataset.id))), [2, 4, 3, 1]);
-        await page.locator('#peer-tbody tr[data-id="1"]').click();
+        const details = page.locator('#peer-tbody tr[data-id="1"] button[data-action="details"]');
+        await details.focus();
+        await page.keyboard.press('Enter');
         await page.waitForSelector('.peer-detail-popup.visible');
         assert.match(await page.locator('.peer-detail-popup').textContent(), /Ping—/);
-        await page.locator('.peer-popup-close').click();
+        assert.equal(await page.locator('#disconnect-dialog').count(), 0);
+        await page.keyboard.press('Escape');
         await page.waitForSelector('.peer-detail-popup', { state: 'detached' });
+        assert.equal(await details.evaluate(button => button === document.activeElement), true,
+            'Escape restores the invoking Details button; focused: ' + await page.evaluate(() => document.activeElement?.outerHTML.slice(0, 300)));
+        await page.locator('#as-focused-close').focus();
+        await page.keyboard.press('Enter');
         peers = [null, 0.4, 0].map((ping_ms, index) => ({ ...peers[0], id: index + 1,
             network: 'onion', location_status: 'private', lat: null, lon: null, as: '', ping_ms,
         }));
@@ -119,6 +139,33 @@ export default async function assertTableDom(browser, baseUrl) {
         assert.ok((await page.locator('#pn-detail-body').textContent()).includes('Avg Ping—'));
         await page.locator('#pn-detail-back').click();
         assert.equal(await page.locator('#pn-detail-body .pn-insight-row[data-insight-type="fastest"]').count(), 0);
+
+        await page.locator('#pn-exit-btn').click();
+        peers = [{ ...peers[0], id: 11, network: 'ipv4', location_status: 'pending', lat: null, lon: null }];
+        await poll();
+        await page.locator('#btn-table-settings').click();
+        await page.locator('#tsp-antarctica').uncheck();
+        await page.keyboard.press('Escape');
+        const unlocatedDetails = page.locator('#peer-tbody tr[data-id="11"] button[data-action="details"]');
+        await unlocatedDetails.focus();
+        await page.keyboard.press('Enter');
+        await page.waitForSelector('.peer-detail-popup.visible');
+        assert.match(await page.locator('.peer-detail-popup').textContent(), /Peer #11/);
+        await page.keyboard.press('Escape');
+        await page.waitForSelector('.peer-detail-popup', { state: 'detached' });
+
+        await unlocatedDetails.focus();
+        peers = [];
+        await poll();
+        assert.equal(await page.getByRole('region', { name: 'Connected peers' }).evaluate(region => region === document.activeElement), true,
+            'removing the last focused peer returns focus to the labelled table region');
+
+        const minimize = page.locator('#btn-minimize');
+        await minimize.focus();
+        await page.keyboard.press('Space');
+        assert.equal(await minimize.getAttribute('aria-expanded'), 'false');
+        await page.keyboard.press('Enter');
+        assert.equal(await minimize.getAttribute('aria-expanded'), 'true');
     } finally {
         releaseInitial();
         await context.close();

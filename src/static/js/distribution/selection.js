@@ -1,5 +1,6 @@
 import { query, queryAll } from '../core/dom.js';
 import * as BPMDistributionData from './data.js';
+import * as BPMDomState from '../core/dom-state.js';
 
 /** @typedef {Pick<import('../types').DistributionNavigationOptions, 'getContainer' | 'getDashboard' | 'getDonut'
  * | 'getGroups' | 'getNetworkPanel' | 'getPanel' | 'getPeerDetail' | 'getSegments' | 'getTooltips' |
@@ -18,6 +19,11 @@ import * as BPMDistributionData from './data.js';
  * @param {() => Transitions} getNavigation
  */
 export function create(options, getNavigation) {
+    function rememberExplorationFocus() {
+        const source = document.activeElement;
+        const container = options.getContainer();
+        if (container && source && source !== document.body) container.dataset.returnFocusKey = BPMDomState.key(source);
+    }
     function closeActiveInsight() {
         options.actions.hideInsightRect();
         options.state.insightActiveAsNum = null;
@@ -335,6 +341,7 @@ export function create(options, getNavigation) {
     /** Enter focused mode: move the donut to the top-center */
     function enterFocusedMode() {
         if (options.state.donutFocused) return;
+        rememberExplorationFocus();
         options.state.donutFocused = true;
         document.body.classList.add('donut-focused');
 
@@ -383,6 +390,10 @@ export function create(options, getNavigation) {
         options.actions.renderDonut();
         options.actions.renderCenter();
         options.actions.renderLegend();
+        const sourceKey = options.getContainer()?.dataset.returnFocusKey;
+        const source = sourceKey ? queryAll('*', document).find(element => BPMDomState.key(element) === sourceKey) : null;
+        const target = source && source.getClientRects().length ? source : document.getElementById('as-overview-trigger');
+        target?.focus({ preventScroll: true });
     }
 
     /** Check if focused mode is active */
@@ -479,18 +490,18 @@ export function create(options, getNavigation) {
      * @param {string} source
      * @param {number[]} [groupPeerIds] */
     function openPeerDetailPanel(peer, source, groupPeerIds) {
-        options.state.peerDetailActive = true;
-        options.state.selectedPeerId = peer.id;
-
         var asNum = BPMDistributionData.parseAsNumber(peer.as);
         var provColor = asNum ? options.actions.getColorForAsNum(asNum) : '#6e7681';
         if (!options.state.donutFocused) {
+            rememberExplorationFocus();
             options.state.donutFocused = true;
             document.body.classList.add('donut-focused');
             if (!options.state.summarySelected && !options.state.selectedProvider) selectSummary();
-            options.state.peerDetailActive = true;
-            options.state.selectedPeerId = peer.id;
         }
+        // Summary initialization may close an existing popup. Mark the new
+        // selection active only after that transition, preserving its source focus.
+        options.state.peerDetailActive = true;
+        options.state.selectedPeerId = peer.id;
 
         if (options.hooks.drawLinesForAs && asNum) options.hooks.drawLinesForAs(asNum, [peer.id], provColor);
         if (options.hooks.filterPeerTable) options.hooks.filterPeerTable([peer.id]);
@@ -558,6 +569,7 @@ export function create(options, getNavigation) {
 
         var isRefresh = options.state.activeNetwork === netKey;
         if (!options.state.donutFocused) {
+            rememberExplorationFocus();
             options.state.donutFocused = true;
             document.body.classList.add('donut-focused');
         }

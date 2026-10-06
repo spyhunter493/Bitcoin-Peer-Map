@@ -38,7 +38,7 @@ function render(options) {
         barFill.style.width = seg.percentage.toFixed(1) + '%';
         barFill.style.background = seg.color;
     }
-    if (pctEl) pctEl.textContent = seg.percentage.toFixed(1) + '% of geolocated peers';
+    if (pctEl) pctEl.textContent = seg.percentage.toFixed(1) + '% of public peers with known country';
 
     if (riskEl) {
         riskEl.className = 'as-detail-risk';
@@ -54,6 +54,8 @@ function render(options) {
     if (!bodyEl) return;
 
     var html = '';
+    if (options.coverage) html += view.row('Country coverage', BPMDistributionData.coverageLabel(options.coverage));
+    html += view.row('Provider coverage', BPMDistributionData.coverageLabel(BPMDistributionData.distributionCoverage(allPeers)));
     html += '<div class="modal-section-title">Summary</div>';
     html += view.row('Total Peers', seg.peerCount);
     html += view.row('Providers', providers.length);
