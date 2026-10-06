@@ -137,6 +137,8 @@ function create(options) {
         var peerIdsJson = BPMModal.escapeHtml(JSON.stringify(catData.peerIds));
         var safeLabel = BPMModal.escapeHtml(label);
         var safeValue = BPMModal.escapeHtml(value);
+        var coverage = catData.coverage;
+        var coverageText = coverage ? distributionData.coverageLabel(coverage) : '';
         return (
             '<div class="as-detail-sub-row as-interactive-row as-summary-row" ' +
             'role="button" tabindex="0" aria-label="' +
@@ -148,6 +150,7 @@ function create(options) {
             peerIdsJson +
             '" data-providers="' +
             providersJson +
+            '" data-coverage="' + escapeHtml(JSON.stringify(coverage || null)) +
             '" data-filter="' +
             escapeHtml(JSON.stringify(catData.filter || null)) +
             '" data-cat-label="' +
@@ -157,7 +160,7 @@ function create(options) {
             safeLabel +
             '</span>' +
             '<span class="as-detail-sub-val">' +
-            safeValue +
+            safeValue + (coverageText ? '<span class="as-row-coverage">' + escapeHtml(coverageText) + '</span>' : '') +
             '</span></div>'
         );
     }
@@ -202,11 +205,13 @@ function create(options) {
      * @param {import('../types').SummaryProviderRow[]} providers
      * @param {string} catLabel
      * @param {string} [navAsNum]
+     * @param {ReturnType<typeof distributionData.distributionCoverage>} [coverage]
      */
-    function buildProviderListHtml(providers, catLabel, navAsNum) {
+    function buildProviderListHtml(providers, catLabel, navAsNum, coverage) {
         /** @type {Record<string, string>} */
         var privateNetMap = { Tor: 'onion', I2P: 'i2p', CJDNS: 'cjdns' };
         var html = '';
+        if (coverage) html += '<div class="as-popover-coverage">' + escapeHtml(distributionData.coverageLabel(coverage)) + '</div>';
         html += '<div class="as-sub-tt-section" style="border-bottom:none; margin-bottom:2px">';
         html +=
             '<div class="as-sub-tt-flag" style="font-weight:700; color:var(--text-primary)">' +
@@ -489,7 +494,7 @@ function create(options) {
                         : 'var(--err)';
         }
         if (pctEl) {
-            pctEl.textContent = 'Score: ' + data.score.toFixed(1) + ' / 10';
+            pctEl.textContent = data.coverage.known ? 'Score: ' + data.score.toFixed(1) + ' / 10 (known providers)' : 'Score unavailable';
             pctEl.title = scoreTooltip;
         }
         if (riskEl) {
@@ -504,13 +509,14 @@ function create(options) {
         var html = '';
 
         // ── Section 1: Score + Insights ──
+        html += row('Coverage', distributionData.coverageLabel(data.coverage));
         html +=
             '<div class="modal-section-title" title="Distribution score based on Herfindahl\u2013Hirschman Index (HHI). Higher score = more evenly distributed peers across providers.">Score &amp; Insights</div>';
         html +=
             '<div class="modal-row"><span class="modal-label" title="' +
             BPMModal.escapeHtml(scoreTooltip) +
             '">Distribution Score</span><span class="modal-val">' +
-            data.score.toFixed(1) +
+            (data.coverage.known ? data.score.toFixed(1) : '\u2014') +
             ' / 10</span></div>';
         html +=
             '<div class="modal-row"><span class="modal-label" title="Quality rating based on the distribution score">Quality</span><span class="modal-val">' +
@@ -750,7 +756,7 @@ function create(options) {
                         : 'var(--err)';
         }
         if (pctEl) {
-            pctEl.textContent = 'Score: ' + data.score.toFixed(1) + ' / 10';
+            pctEl.textContent = data.coverage.known ? 'Score: ' + data.score.toFixed(1) + ' / 10 (known countries)' : 'Score unavailable';
             pctEl.title = actions.buildActiveScoreTooltip(data.score);
         }
         if (riskEl) {
@@ -764,7 +770,8 @@ function create(options) {
         var html = '';
         html +=
             '<div class="modal-section-title" title="Distribution score based on Herfindahl-Hirschman Index (HHI). Higher score = more evenly distributed peers across countries and territories.">Score &amp; Concentration</div>';
-        html += row('Jurisdiction Score', data.score.toFixed(1) + ' / 10');
+        html += row('Coverage', distributionData.coverageLabel(data.coverage));
+        html += row('Jurisdiction Score', data.coverage.known ? data.score.toFixed(1) + ' / 10' : '\u2014');
         html += row('Quality', data.quality.word);
         html += row('Geolocated Peers', data.totalPeers);
         html += row('Countries', data.uniqueCountries);

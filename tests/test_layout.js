@@ -21,6 +21,7 @@ import assertAdminAuthentication from './test_admin_auth.js';
 import assertManagementFeedback from './test_management_feedback.js';
 import assertNetworkExamples from './test_network_examples.js';
 import assertTableSettings from './test_table_settings.js';
+import assertDistributionCoverage from './test_distribution_coverage.js';
 
 const repoRoot = path.resolve(import.meta.dirname, '..');
 
@@ -887,6 +888,7 @@ const suites = [
     ['RPC node metrics', assertNodeMetrics],
     ['revisioned modules', assertModules],
     ['map groups', assertMapGroups],
+    ['distribution coverage', assertDistributionCoverage],
     ['map pan, zoom, touch, and canvas rendering', assertMapInput],
     ['large peer tables and static map rendering', assertDashboardPerformance],
     ['tooltip refresh and navigation', assertNavigation],

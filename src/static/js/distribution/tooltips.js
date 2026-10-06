@@ -1,6 +1,7 @@
 import { comparePing } from '../core/ping.js';
 import { query, queryAll } from '../core/dom.js';
 import * as BPMDomState from '../core/dom-state.js';
+import { distributionCoverage } from './data.js';
 /** @param {import('../types').DistributionTooltipsOptions} options */
 export function create(options) {
     /** @type {HTMLElement | null} */
@@ -160,7 +161,7 @@ export function create(options) {
             let html;
             if (category === 'summary' || category === 'conn-others') {
                 const providers = options.actions.aggregateProvidersForPeers(filtered);
-                html = options.getSummaryView().buildProviderListHtml(providers, label);
+                html = options.getSummaryView().buildProviderListHtml(providers, label, undefined, distributionCoverage(filtered));
             } else if (category === 'insight-fastest') html = options.actions.buildFastestProvHtml() || '';
             else if (category.startsWith('insight-data-'))
                 html = options.actions.buildDataProviderHtml(category.slice('insight-data-'.length))?.html || '';

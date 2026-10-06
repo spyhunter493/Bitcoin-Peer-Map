@@ -194,6 +194,20 @@ so the dashboard reports a successful ban and refreshes peers after one second.
 responses display an error; **No banned IPs** appears only after a successful
 empty list.
 
+## Distribution coverage
+
+Provider percentages and the HHI distribution score describe public peers with
+known AS information. The displayed X/Y coverage counts show how many public
+peers are identified, with inbound and outbound counts beside the combined view.
+Overview charts use the full connected-peer snapshot independently of table or
+map filters. A small identified sample does not establish the distribution of
+the whole node; a zero-sized sample has an unavailable score.
+
+Country coverage is independent of provider coverage. Summary categories include
+unidentified peers in their totals and show provider coverage for that category.
+Unknown provider information is labelled Unknown in the hosting summary. Usable
+stale records continue to count as known; peer details expose their freshness.
+
 ## GeoIP updates and privacy
 
 Open **GEOIP-DB** in the dashboard to manage the local database:

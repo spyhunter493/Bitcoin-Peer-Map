@@ -33,7 +33,7 @@ test('map tooltips and provider, Others, country, and network panels retain unkn
     for (const [ping_ms, expected] of [[null, '—'], [0, '0ms'], [0.4, '0.4ms'], [0.004, '<0.1ms'], [12000, '12000ms']]) {
         tooltip.showGroupHoverTooltip([{ peerId: 1, peer: { id: 1, network: 'ipv4', ping_ms } }], 100, 100);
         assert.ok(element.innerHTML.includes(`<span class="tt-label">Ping</span><span class="tt-val">${escapeHtml(expected)}</span>`));
-        const peers = [null, ping_ms].map((value, id) => ({ id, as: 'AS1 Provider', countryCode: 'NZ', country: 'New Zealand', network: 'ipv4', direction: 'OUT', ping_ms: value }));
+        const peers = [null, ping_ms].map((value, id) => ({ id, as: 'AS1 Provider', countryCode: 'NZ', country: 'New Zealand', network: 'ipv4', is_public: true, direction: 'OUT', ping_ms: value }));
         const group = aggregateProviders(peers).groups[0];
         for (const others of [false, true]) {
             const body = { innerHTML: '', scrollTop: 0 };
@@ -60,7 +60,7 @@ test('unknown pings sort last in both directions and never precede very slow mea
     assert.deepEqual(sortPeers(peers, column, true).map(peer => peer.id), [4, 2, 1, 0, 3]);
     assert.deepEqual(sortPeers(peers, column, false).map(peer => peer.id), [1, 2, 4, 0, 3]);
     assert.equal(comparePing(null, null), 0);
-    const known = { id: 1, as: 'AS1 A', direction: 'OUT', ping_ms: 12000 };
+    const known = { id: 1, is_public: true, as: 'AS1 A', direction: 'OUT', ping_ms: 12000 };
     const unknown = { ...known, id: 2, ping_ms: null };
     const zero = { ...known, id: 3, as: 'AS2 B', ping_ms: 0 };
     const allUnknown = { ...unknown, id: 4, as: 'AS3 C' };

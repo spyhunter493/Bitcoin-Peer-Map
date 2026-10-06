@@ -242,6 +242,7 @@ export class PeerService {
                 services, services_abbrev: services.map(name => serviceNames[name] || name.slice(0, 2)).join(' '),
                 in_addrman: this.knownAddresses.has(host), location, location_status: locationStatus, addr: address,
                 geo: metadata(geo?.status === 'ok' ? this.geoCache.get(host) : undefined),
+                is_public: isPublicAddress(network, host),
             };
             for (const [key, fallback] of Object.entries(emptyGeo(''))) if (key !== 'status') result[key] = geo?.[key] ?? fallback;
             for (const key of ['minping', 'lastsend', 'lastrecv', 'startingheight', 'synced_headers', 'synced_blocks', 'addr_relay_enabled', 'relaytxes', 'minfeefilter', 'mapped_as']) result[key] = peer[key] ?? null;

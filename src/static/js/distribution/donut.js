@@ -613,8 +613,9 @@ function create(options) {
 
     /** @param {number} peerCount
      * @param {string} label
-     * @param {number} totalPeers */
-    function renderFilterCenter(peerCount, label, totalPeers) {
+     * @param {number} totalPeers
+     * @param {string} [scopeLabel] */
+    function renderFilterCenter(peerCount, label, totalPeers, scopeLabel = 'peers') {
         const parts = centerParts();
         if (!parts) return;
         if (parts.distribution) parts.distribution.style.display = 'none';
@@ -631,7 +632,7 @@ function create(options) {
         }
         if (parts.quality) {
             const percentage = totalPeers > 0 ? (peerCount / totalPeers) * 100 : 0;
-            parts.quality.textContent = percentage.toFixed(1) + '% of peers';
+            parts.quality.textContent = percentage.toFixed(1) + '% of ' + scopeLabel;
             parts.quality.className = 'as-score-quality';
             parts.quality.style.color = 'var(--text-secondary)';
         }
@@ -640,11 +641,12 @@ function create(options) {
 
     /** @param {string} network
      * @param {number} peerCount
-     * @param {number} totalPeers */
-    function renderNetworkCenter(network, peerCount, totalPeers) {
+     * @param {number} totalPeers
+     * @param {string} [scopeLabel] */
+    function renderNetworkCenter(network, peerCount, totalPeers, scopeLabel = 'peers') {
         const label = network === 'ipv4' ? 'IPv4' : 'IPv6';
         const color = network === 'ipv4' ? 'var(--net-ipv4, #e3b341)' : 'var(--net-ipv6, #f07178)';
-        renderFilterCenter(peerCount, label, totalPeers);
+        renderFilterCenter(peerCount, label, totalPeers, scopeLabel);
         const parts = centerParts();
         if (!parts || !parts.value) return;
         parts.value.style.color = color;
@@ -783,13 +785,13 @@ function create(options) {
             if (parts.distribution) parts.distribution.style.display = 'none';
             if (parts.heading) parts.heading.textContent = '';
             if (parts.quality) {
-                parts.quality.textContent = '';
-                parts.quality.className = 'as-score-quality q-nodata';
+                parts.quality.textContent = 'Unavailable';
+                parts.quality.className = 'as-score-quality';
             }
             parts.value.textContent = '—';
             parts.value.title = opts.countryLens
                 ? 'No country data available for public peers'
-                : 'No AS data available — all peers are on private or anonymous networks';
+                : 'No provider data available for public peers';
             parts.label.textContent = 'NO DATA';
             parts.label.classList.remove('as-summary-link');
             return;

@@ -343,7 +343,9 @@ function create() {
             return;
         }
 
-        const nextScale = Math.max(minScale, Math.min(1, availableHeight / unscaledHeight));
+        // Coverage and explicit controls increase the stack height. Fit the whole
+        // stack even when a larger table leaves less than the former minimum.
+        const nextScale = Math.min(1, availableHeight / unscaledHeight);
         applyDonutStackFitScale(container, nextScale.toFixed(3), immediate);
     }
 

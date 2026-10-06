@@ -25,6 +25,7 @@ export interface GeoProviderHealth {
 export interface Peer {
     id: number;
     network: PeerNetwork;
+    is_public?: boolean;
     direction: PeerDirection;
     addr: string;
     ip: string;
@@ -619,6 +620,7 @@ export interface SummaryPanelOptions {
     };
 }
 export interface EntityPanelOptions {
+    coverage?: ReturnType<typeof import('./distribution/data.js').distributionCoverage>;
     panelEl: HTMLElement;
     segment: DistributionSegment;
     group: DistributionSegment;

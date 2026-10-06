@@ -1316,7 +1316,8 @@
         "type": "object",
         "required": [
           "ping_ms",
-          "geo"
+          "geo",
+          "is_public"
         ],
         "properties": {
           "ping_ms": {
@@ -1327,7 +1328,11 @@
             "minimum": 0,
             "description": "Measured ping in fractional milliseconds. Null means no valid measurement; measured zero is valid."
           },
-          "geo": { "$ref": "#/components/schemas/GeoMetadata" }
+          "geo": { "$ref": "#/components/schemas/GeoMetadata" },
+          "is_public": {
+            "type": "boolean",
+            "description": "Whether this peer has a public IPv4 or IPv6 address, using the same server classification as GeoIP lookup eligibility. Private, reserved, malformed, and overlay addresses are excluded. Independent of whether location or provider data is available."
+          }
         },
         "additionalProperties": true
       },

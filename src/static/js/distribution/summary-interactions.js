@@ -79,7 +79,7 @@ export function create(options) {
                     /** @type {Parameters<ReturnType<typeof import('./summary-panel.js').create>['buildProviderListHtml']>[0]} */
                     var providers = JSON.parse(rowEl.dataset.providers || '');
                     var catLabel = rowEl.dataset.catLabel || '';
-                    var html = options.getSummaryView().buildProviderListHtml(providers, catLabel);
+                    var html = options.getSummaryView().buildProviderListHtml(providers, catLabel, undefined, JSON.parse(rowEl.dataset.coverage || 'null'));
                     options.actions.tooltipShowSubTooltip(html, e);
                     // Preview lines/filter for hovered category
                     options.actions.summaryPreviewSummaryLines(peerIds);
@@ -119,7 +119,7 @@ export function create(options) {
                     options.actions.summaryRestoreDonutAfterPreview();
 
                     // Pin the sub-tooltip with provider list
-                    var html = options.getSummaryView().buildProviderListHtml(providers, catLabel);
+                    var html = options.getSummaryView().buildProviderListHtml(providers, catLabel, undefined, JSON.parse(rowEl.dataset.coverage || 'null'));
                     options.actions.tooltipShowSubTooltip(html, e);
                     options.actions.tooltipPinSubTooltip(rowEl);
                     summaryAttachProviderClickHandlers(required('#as-sub-tooltip'));

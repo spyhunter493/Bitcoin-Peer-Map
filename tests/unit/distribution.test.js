@@ -191,8 +191,8 @@ console.log('Distribution feature module tests passed');
 // Filter meaning survives snapshot replacement; no matches remain an empty set.
 const peerFilters = BPMPeerFilters;
 const filterPeers = [
-    { id: 0, as: 'AS1 First', network: 'ipv4', direction: 'IN', countryCode: 'NZ', subver: 'Core', services_abbrev: 'N', ping_ms: 10 },
-    { id: 2, as: 'AS2 Second', network: 'ipv6', direction: 'OUT', countryCode: 'US', subver: 'Other', services_abbrev: 'W', ping_ms: null },
+    { id: 0, is_public: true, as: 'AS1 First', network: 'ipv4', direction: 'IN', countryCode: 'NZ', subver: 'Core', services_abbrev: 'N', ping_ms: 10 },
+    { id: 2, is_public: true, as: 'AS2 Second', network: 'ipv6', direction: 'OUT', countryCode: 'US', subver: 'Other', services_abbrev: 'W', ping_ms: null },
 ];
 const filteredIds = (peers, descriptor, groups) => Array.from(peerFilters.resolve(peers, descriptor, groups), peer => peer.id);
 const inbound = peerFilters.forCategory('conn-in', 'AS1');

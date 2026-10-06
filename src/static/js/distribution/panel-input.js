@@ -520,7 +520,8 @@ export function create(options, getNavigation) {
         getNavigation().summaryRestoreDonutAfterPreview();
 
         // Pin the sub-tooltip with provider list + "Open Others panel" nav link
-        var html = options.getSummaryView().buildProviderListHtml(providers, 'Others', 'Others');
+        var html = options.getSummaryView().buildProviderListHtml(providers, 'Others', 'Others',
+            BPMDistributionData.distributionCoverage(options.getDashboard().peers.filter(peer => peerIds.includes(peer.id))));
         options.actions.tooltipShowSubTooltip(html, e);
         options.actions.tooltipPinSubTooltip(rowEl);
         const tipEl2 = required('#as-sub-tooltip');
@@ -721,7 +722,8 @@ export function create(options, getNavigation) {
                 peers: g.peers,
             };
         });
-        var html = options.getSummaryView().buildProviderListHtml(allProvs, 'All Providers (' + allProvs.length + ')');
+        var html = options.getSummaryView().buildProviderListHtml(allProvs, 'All Providers (' + allProvs.length + ')', undefined,
+            BPMDistributionData.distributionCoverage(options.getDashboard().peers));
         options.actions.tooltipShowSubTooltip(html, e);
         options.actions.tooltipPinSubTooltip(el);
         var tip = document.getElementById('as-sub-tooltip');
@@ -761,7 +763,8 @@ export function create(options, getNavigation) {
                 peers: g.peers,
             };
         });
-        var html = options.getSummaryView().buildProviderListHtml(allProvs, 'All Providers (' + allProvs.length + ')');
+        var html = options.getSummaryView().buildProviderListHtml(allProvs, 'All Providers (' + allProvs.length + ')', undefined,
+            BPMDistributionData.distributionCoverage(options.getDashboard().peers));
         options.actions.tooltipShowSubTooltip(html, e);
         options.actions.tooltipPinSubTooltip(el);
         var tip = document.getElementById('as-sub-tooltip');

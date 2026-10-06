@@ -1,7 +1,7 @@
 import { query, queryAll } from '../core/dom.js';
 
 /** @typedef {Pick<import('../types').DistributionNavigationOptions, 'getContainer' | 'getDonut' | 'getPanel' |
- * 'getSegments' | 'getTooltips' | 'hooks' | 'state'> & { actions:
+ * 'getSegments' | 'getTooltips' | 'getDashboard' | 'hooks' | 'state'> & { actions:
  * Pick<import('../types').DistributionNavigationOptions['actions'], 'animateDonutExpand' |
  * 'animateDonutRevert' | 'getActiveSegments' | 'getActiveTotalPeers' | 'getColorForActiveEntity' |
  * 'getColorForAsNum' | 'getPeerIdsForActiveEntity' | 'getPeerIdsForAnyAs' | 'isCountryLens' |
@@ -321,7 +321,7 @@ export function create(options, getNavigation) {
         if (!options.state.donutFocused) return;
         options.state.summaryPreviewPeerIds = peerIds;
         options.state.summaryPreviewLabel = label;
-        options.getDonut().renderFilterCenter(peerIds.length, label, options.actions.getActiveTotalPeers());
+        options.getDonut().renderFilterCenter(peerIds.length, label, options.getDashboard().peers.length, 'connected peers');
     }
 
     function summaryRestoreSummaryFromPreview() {

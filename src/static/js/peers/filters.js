@@ -1,14 +1,15 @@
 import { isMeasuredPing } from '../core/ping.js';
 import * as BPMFormat from '../core/format.js';
+import { hostingCategory, isPublicPeer, parseAsNumber } from '../distribution/data.js';
 /** @param {import('../types').Peer} peer */
-const provider = (peer) => (peer.as || '').match(/^AS\d+/)?.[0] || '';
+const provider = (peer) => isPublicPeer(peer) ? parseAsNumber(peer.as) || '' : '';
 /** @param {import('../types').Peer} peer */
-const hosting = (peer) => (peer.hosting ? 'cloud' : peer.proxy ? 'proxy' : peer.mobile ? 'mobile' : 'residential');
+const hosting = hostingCategory;
 /** @type {Record<string, (peer: import('../types').Peer) => string>} */
 const valueFor = {
     network: (peer) => peer.network || 'ipv4',
     provider,
-    country: (peer) => peer.countryCode || '',
+    country: (peer) => isPublicPeer(peer) ? (peer.countryCode || '').trim() : '',
     software: (peer) => peer.subver || 'Unknown',
     services: (peer) => peer.services_abbrev || '\u2014',
     conntype: (peer) => peer.connection_type || 'unknown',

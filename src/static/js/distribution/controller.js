@@ -283,7 +283,8 @@ function buildActiveScoreTooltip(score) {
         ')\n' +
         'Based on Herfindahl\u2013Hirschman Index (HHI)\n' +
         'Higher = more evenly distributed peers across ' +
-        noun
+        noun + '\nAmong public peers with known ' + (isCountryLens() ? 'country' : 'provider') + ' only.\n' +
+        distributionData.coverageLabel(distributionData.distributionCoverage(dashboard.peers, isCountryLens() ? 'country' : 'provider'))
     );
 }
 
@@ -318,12 +319,12 @@ function computeSummaryData() {
         peers: dashboard.peers,
         connectionTypeLabels: CONN_TYPE_LABELS,
     });
-    return { ...data, quality: getQuality(distributionScore) };
+    return { ...data, quality: data.coverage.known ? getQuality(distributionScore) : { word: 'Unavailable', cls: '' } };
 }
 
 function computeCountrySummaryData() {
-    const data = distributionData.computeCountrySummaryData(countryGroups, countryTotalPeers, countryDistributionScore);
-    return { ...data, quality: getQuality(countryDistributionScore) };
+    const data = distributionData.computeCountrySummaryData(countryGroups, countryTotalPeers, countryDistributionScore, dashboard.peers);
+    return { ...data, quality: data.coverage.known ? getQuality(countryDistributionScore) : { word: 'Unavailable', cls: '' } };
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -472,6 +473,9 @@ function closeActiveInsight(...args) {
 }
 
 function renderCenter() {
+    const coverage = distributionData.distributionCoverage(dashboard.peers, isCountryLens() ? 'country' : 'provider');
+    const coverageEl = document.getElementById('as-coverage');
+    if (coverageEl) coverageEl.textContent = distributionData.coverageLabel(coverage);
     var activePeerTotal = getActiveTotalPeers();
     donutController.clearLegendHover();
     if (distributionState.peerDetailActive) return;
@@ -517,7 +521,8 @@ function renderCenter() {
         donutController.renderFilterCenter(
             distributionState.filterPeerIds.length,
             distributionState.filterLabel,
-            activePeerTotal
+            dashboard.peers.length,
+            'connected peers'
         );
         return;
     }
@@ -536,7 +541,8 @@ function renderCenter() {
             donutController.renderFilterCenter(
                 distributionState.filterPeerIds.length,
                 distributionState.filterLabel,
-                activePeerTotal
+                dashboard.peers.length,
+                'connected peers'
             );
             return;
         }
@@ -544,7 +550,7 @@ function renderCenter() {
         var networkPeerCount = dashboard.peers.filter(function (peer) {
             return (peer.network || 'ipv4') === networkKey;
         }).length;
-        donutController.renderNetworkCenter(networkKey, networkPeerCount, activePeerTotal);
+        donutController.renderNetworkCenter(networkKey, networkPeerCount, dashboard.peers.length, 'connected peers');
         return;
     }
     if (distributionState.selectedProvider) {
@@ -622,6 +628,7 @@ function renderCountryPanel(countryId) {
             attachInteractiveRowHandlers: summaryAttachInteractiveRowHandlers,
             attachPanelBlankClickHandler: summaryAttachPanelBlankClickHandler,
             connectionTypeLabels: CONN_TYPE_LABELS,
+            coverage: distributionData.distributionCoverage(dashboard.peers, 'country'),
         })
     )
         return;
@@ -647,6 +654,7 @@ function renderPanel(asNum) {
             attachInteractiveRowHandlers: summaryAttachInteractiveRowHandlers,
             attachPanelBlankClickHandler: summaryAttachPanelBlankClickHandler,
             connectionTypeLabels: CONN_TYPE_LABELS,
+            coverage: distributionData.distributionCoverage(dashboard.peers),
         })
     )
         return;
