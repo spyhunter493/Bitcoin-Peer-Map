@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
-import { BitcoinRpcClient, RpcAuthenticationError, RpcError, RpcTransportError } from '../../src/server/rpc.ts';
-import { settings } from './helpers.ts';
+import { BitcoinRpcClient, RpcAuthenticationError, RpcBusyError, RpcError, RpcTransportError, RPC_CONCURRENCY, RPC_QUEUE_LIMIT } from '../../src/server/rpc.ts';
+import { settings, deferred } from './helpers.ts';
 import type { TestContext } from 'node:test';
-import type { RequestListener } from 'node:http';
+import type { RequestListener, ServerResponse } from 'node:http';
 import { configureLogging } from '../../src/server/logging.ts';
 
 async function rpcServer(t: TestContext, handler: RequestListener) {
@@ -58,4 +58,55 @@ test('RPC requests have an absolute timeout and can be cancelled during shutdown
     const controller = new AbortController(), cancellable = new BitcoinRpcClient(rpc.settings, controller.signal);
     const request = cancellable.call('test'); controller.abort();
     await assert.rejects(request, RpcTransportError);
+});
+
+test('RPC limits active work, queues FIFO, and rejects overflow before dispatch', async t => {
+    const responses: ServerResponse[] = [], received: number[] = [], full = deferred<void>(), next = deferred<void>();
+    let drain = false;
+    const rpc = await rpcServer(t, async (req, res) => {
+        const chunks = []; for await (const chunk of req) chunks.push(chunk);
+        received.push(JSON.parse(Buffer.concat(chunks).toString()).params[0]); responses.push(res);
+        if (received.length === RPC_CONCURRENCY) full.resolve();
+        if (received.length === RPC_CONCURRENCY + 1) next.resolve();
+        if (drain) res.end('{"result":null}');
+    });
+    const calls = Array.from({ length: RPC_CONCURRENCY + RPC_QUEUE_LIMIT }, (_, id) => rpc.call('read', [id]));
+    await full.promise;
+    await assert.rejects(rpc.call('overflow'), RpcBusyError);
+    assert.equal(received.length, RPC_CONCURRENCY);
+    responses[0].end('{"result":null}'); await next.promise;
+    assert.equal(received.at(-1), RPC_CONCURRENCY);
+    drain = true; for (const response of responses) if (!response.writableEnded) response.end('{"result":null}');
+    await Promise.all(calls);
+    assert.deepEqual(received, Array.from({ length: RPC_CONCURRENCY + RPC_QUEUE_LIMIT }, (_, id) => id));
+});
+
+test('queue time consumes the timeout and queued cancellations free capacity without dispatch', async t => {
+    const responses: ServerResponse[] = [], received: string[] = [], full = deferred<void>();
+    let drain = false;
+    const rpc = await rpcServer(t, async (req, res) => {
+        const chunks = []; for await (const chunk of req) chunks.push(chunk);
+        received.push(JSON.parse(Buffer.concat(chunks).toString()).method); responses.push(res);
+        if (received.length === RPC_CONCURRENCY) full.resolve();
+        if (drain) res.end('{"result":null}');
+    });
+    const active = Array.from({ length: RPC_CONCURRENCY }, () => rpc.call('active')); await full.promise;
+    const controller = new AbortController();
+    const cancelled = assert.rejects(rpc.call('cancelled', [], 30, controller.signal), RpcTransportError);
+    controller.abort(); await cancelled;
+    await assert.rejects(rpc.call('expired', [], 0.02), RpcTransportError);
+    drain = true; for (const response of responses) response.end('{"result":null}'); await Promise.all(active);
+    await rpc.call('recovered');
+    assert.equal(received.includes('cancelled'), false); assert.equal(received.includes('expired'), false);
+});
+
+test('shutdown rejects both active and queued RPC calls and releases the gate', async t => {
+    const full = deferred<void>(); let received = 0;
+    const serverRpc = await rpcServer(t, () => { if (++received === RPC_CONCURRENCY) full.resolve(); });
+    const controller = new AbortController(), rpc = new BitcoinRpcClient(serverRpc.settings, controller.signal);
+    const calls = Array.from({ length: RPC_CONCURRENCY + RPC_QUEUE_LIMIT }, () => rpc.call('read').catch(error => error));
+    await full.promise; controller.abort();
+    assert.ok((await Promise.all(calls)).every(error => error instanceof RpcTransportError));
+    assert.equal(received, RPC_CONCURRENCY);
+    await assert.rejects(rpc.call('after shutdown'), RpcTransportError);
 });

@@ -169,6 +169,9 @@ function renderChainTips(data) {
         const ageLookupLimit = summary.age_lookup_limit ?? 100;
         html += `<div style="color:var(--text-muted);padding:4px 0">Age lookup limited to the first ${modal.escapeHtml(ageLookupLimit)} prioritized tips</div>`;
     }
+    if (summary.age_lookup_timed_out) {
+        html += '<div style="color:var(--text-muted);padding:4px 0">Some tip ages are unavailable because the lookup timed out.</div>';
+    }
 
     html += '<div class="modal-table-wrap"><table class="modal-data-table chain-tip-table">';
     html +=
@@ -222,11 +225,19 @@ export function renderNodeDetails(info, refreshState) {
                 'Whether this node stores all blocks (Full) or only recent ones (Pruned)',
                 info.blockchain.pruned ? 'Pruned node \u2014 older blocks deleted to save space' : 'Full node \u2014 all blocks stored'
             );
+            const indexStatus = info.blockchain.txindex_status;
+            const indexLabel = indexStatus ? { disabled: 'Disabled', syncing: 'Syncing', ready: 'Ready', unknown: 'Unknown' }[indexStatus]
+                : info.blockchain.indexed ? 'Enabled' : 'Disabled';
+            const indexHeight = info.blockchain.txindex_height;
+            const indexTip = (indexStatus === 'unknown' ? 'Transaction index readiness unavailable'
+                : !indexStatus && info.blockchain.indexed ? 'Enabled; readiness unavailable'
+                : `Transaction index ${indexLabel.toLowerCase()}`)
+                + (indexHeight != null ? ` — indexed through block ${indexHeight.toLocaleString()}` : '');
             html += modal.row(
                 'TX Index',
-                info.blockchain.indexed ? 'Yes' : 'No',
+                indexLabel,
                 'Transaction index allows looking up any TX by its hash',
-                info.blockchain.indexed ? 'Enabled \u2014 all transactions are indexed' : 'Disabled'
+                indexTip
             );
         }
         const status = syncStatus(info.blockchain?.ibd, refreshState.stale);

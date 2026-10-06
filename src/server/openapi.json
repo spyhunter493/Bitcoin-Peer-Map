@@ -27,7 +27,34 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Peer"
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "peers",
+                        "status"
+                      ],
+                      "properties": {
+                        "peers": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Peer"
+                          }
+                        },
+                        "status": {
+                          "type": "object"
+                        }
+                      }
+                    }
+                  ]
+                }
               }
             }
           },
@@ -95,6 +122,9 @@
           },
           "429": {
             "$ref": "#/components/responses/AdminRateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/RpcBusy"
           }
         },
         "security": [
@@ -155,6 +185,9 @@
           },
           "429": {
             "$ref": "#/components/responses/AdminRateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/RpcBusy"
           }
         },
         "security": [
@@ -215,6 +248,9 @@
           },
           "429": {
             "$ref": "#/components/responses/AdminRateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/RpcBusy"
           }
         },
         "security": [
@@ -275,6 +311,9 @@
           },
           "429": {
             "$ref": "#/components/responses/AdminRateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/RpcBusy"
           }
         },
         "security": [
@@ -296,6 +335,9 @@
                 "schema": {}
               }
             }
+          },
+          "503": {
+            "$ref": "#/components/responses/RpcBusy"
           }
         }
       }
@@ -321,6 +363,9 @@
           },
           "429": {
             "$ref": "#/components/responses/AdminRateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/RpcBusy"
           }
         },
         "security": [
@@ -333,7 +378,7 @@
     "/api/info": {
       "get": {
         "summary": "Dashboard Info",
-        "description": "Includes node_metrics: Bitcoin Knots uptime, P2P totals, and average P2P rates between RPC samples. Unavailable metrics and rates without a valid baseline are null. Includes services: the P2P service names advertised by this node, from getnetworkinfo.localservicesnames. An empty array means no services are advertised; null means service information is unavailable. Includes updates: the cached application update status. Dashboard reads do not trigger GitHub requests; the server checks once every 24 hours. Updates compare stable release versions, never unreleased main commits. Development builds skip checks. Blockchain ibd is true during initial block download, false only when explicitly complete, and null when unavailable. Includes bitcoin_network: configured chain and default peer connection port. Explicit peer ports are preserved; I2P requires :0.",
+        "description": "Includes node_metrics: Bitcoin Knots uptime, P2P totals, and average P2P rates between RPC samples. Unavailable metrics and rates without a valid baseline are null. Includes services: the P2P service names advertised by this node, from getnetworkinfo.localservicesnames. An empty array means no services are advertised; null means service information is unavailable. Includes updates: the cached application update status. Dashboard reads do not trigger GitHub requests; the server checks once every 24 hours. Updates compare stable release versions, never unreleased main commits. Development builds skip checks. Blockchain ibd is true during initial block download, false only when explicitly complete, and null when unavailable. Includes bitcoin_network: configured chain and default peer connection port. Explicit peer ports are preserved; I2P requires :0. Blockchain txindex_status distinguishes disabled, syncing, ready, and unknown; txindex_height reports the indexed height. The legacy indexed boolean indicates index presence, not readiness.",
         "operationId": "dashboard_info_api_info_get",
         "responses": {
           "200": {
@@ -359,7 +404,8 @@
                           "type": "boolean"
                         },
                         "indexed": {
-                          "type": "boolean"
+                          "type": "boolean",
+                          "description": "Legacy presence indicator: true for a valid syncing or ready transaction index."
                         },
                         "ibd": {
                           "type": [
@@ -367,8 +413,35 @@
                             "null"
                           ],
                           "description": "Initial block download; null when unavailable."
+                        },
+                        "txindex_status": {
+                          "type": "string",
+                          "enum": [
+                            "disabled",
+                            "syncing",
+                            "ready",
+                            "unknown"
+                          ],
+                          "description": "Missing txindex in a successful index response means disabled. Failed or malformed readiness information means unknown."
+                        },
+                        "txindex_height": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "minimum": 0,
+                          "maximum": 9007199254740991,
+                          "description": "Last indexed block height when readiness information is valid; otherwise null."
                         }
-                      }
+                      },
+                      "required": [
+                        "size_gb",
+                        "pruned",
+                        "indexed",
+                        "ibd",
+                        "txindex_status",
+                        "txindex_height"
+                      ]
                     },
                     "bitcoin_network": {
                       "$ref": "#/components/schemas/BitcoinNetwork"
@@ -387,6 +460,9 @@
                 }
               }
             }
+          },
+          "503": {
+            "$ref": "#/components/responses/RpcBusy"
           }
         }
       }
@@ -403,6 +479,9 @@
                 "schema": {}
               }
             }
+          },
+          "503": {
+            "$ref": "#/components/responses/RpcBusy"
           }
         }
       }
@@ -419,6 +498,9 @@
                 "schema": {}
               }
             }
+          },
+          "503": {
+            "$ref": "#/components/responses/RpcBusy"
           }
         }
       }
@@ -459,6 +541,9 @@
                 }
               }
             }
+          },
+          "503": {
+            "$ref": "#/components/responses/RpcBusy"
           }
         }
       }
@@ -488,11 +573,72 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "error": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "tips": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "time": {
+                            "type": [
+                              "number",
+                              "null"
+                            ]
+                          },
+                          "age_seconds": {
+                            "type": [
+                              "number",
+                              "null"
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    "summary": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "age_lookup_limited": {
+                          "type": "boolean",
+                          "description": "More tips exist than the 100-tip age lookup cap."
+                        },
+                        "age_lookup_limit": {
+                          "type": "integer",
+                          "const": 100
+                        },
+                        "age_lookup_timed_out": {
+                          "type": "boolean",
+                          "description": "Header age enrichment exceeded its time budget; some ages may be unavailable."
+                        },
+                        "generated_at": {
+                          "type": "number",
+                          "description": "Unix timestamp in seconds for this returned copy."
+                        }
+                      }
+                    }
+                  }
+                }
               }
             }
+          },
+          "503": {
+            "$ref": "#/components/responses/RpcBusy"
           }
-        }
+        },
+        "description": "Loads tips within 15 seconds including RPC queue time. Required tips have up to 10 seconds; optional blockchain metadata has up to 5 seconds concurrently. Up to 100 header ages are enriched by 4 workers for at most 5 seconds within the overall deadline. Optional timeouts preserve valid tips with null ages. Completed partial results are shared for 5 seconds; ages and generated_at are refreshed on independent returned copies."
       }
     },
     "/api/connectivity": {
@@ -548,14 +694,6 @@
         "summary": "Toggle Geoip Api",
         "operationId": "toggle_geoip_api_api_geodb_toggle_db_only_post",
         "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
           "403": {
             "$ref": "#/components/responses/CrossOriginRequest"
           },
@@ -564,13 +702,25 @@
           },
           "429": {
             "$ref": "#/components/responses/AdminRateLimited"
+          },
+          "410": {
+            "description": "Retired endpoint. Response identifies the replacement and asks old dashboard tabs to reload.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
           {
             "AdminToken": []
           }
-        ]
+        ],
+        "deprecated": true,
+        "description": "Retired without side effects. Reload the dashboard or use POST /api/geodb/db-only with {\"enabled\": boolean}. Authentication and same-origin protection still apply."
       }
     },
     "/api/geodb/toggle-auto-update": {
@@ -578,14 +728,6 @@
         "summary": "Toggle Auto Update",
         "operationId": "toggle_auto_update_api_geodb_toggle_auto_update_post",
         "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
           "403": {
             "$ref": "#/components/responses/CrossOriginRequest"
           },
@@ -594,13 +736,25 @@
           },
           "429": {
             "$ref": "#/components/responses/AdminRateLimited"
+          },
+          "410": {
+            "description": "Retired endpoint. Response identifies the replacement and asks old dashboard tabs to reload.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
           {
             "AdminToken": []
           }
-        ]
+        ],
+        "deprecated": true,
+        "description": "Retired without side effects. Reload the dashboard or use POST /api/geodb/auto-update with {\"enabled\": boolean}. Authentication and same-origin protection still apply."
       }
     },
     "/api/geodb/update": {
@@ -612,7 +766,36 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "message"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "added_rows": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "Rows added during the completed import."
+                    },
+                    "updated_rows": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "Rows updated during the completed import."
+                    },
+                    "skipped_rows": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "Rows skipped as invalid during the completed import."
+                    }
+                  }
+                }
               }
             }
           },
@@ -630,7 +813,8 @@
           {
             "AdminToken": []
           }
-        ]
+        ],
+        "description": "Validates streamed IPv4/IPv6 location rows in a worker and merges valid rows transactionally using timestamp precedence. Invalid rows are skipped and cannot replace local records. If no valid rows remain, the import fails without changing local records."
       }
     },
     "/api/stats": {
@@ -743,6 +927,156 @@
           }
         ]
       }
+    },
+    "/api/geodb/db-only": {
+      "post": {
+        "summary": "Set Database-only Mode",
+        "operationId": "set_geodb_db_only",
+        "description": "Set enabled=true to disable external peer location lookups. The dashboard API Lookup checkbox uses the inverse of this setting. Settings are persisted before changing live state.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnabledRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminRequired"
+          },
+          "429": {
+            "$ref": "#/components/responses/AdminRateLimited"
+          },
+          "200": {
+            "description": "Authoritative saved setting. Identical requests do not rewrite settings or reset scheduling.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "geo_db_only_mode",
+                    "message"
+                  ],
+                  "properties": {
+                    "geo_db_only_mode": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Missing or non-boolean enabled value.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds 64 KiB.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ]
+      }
+    },
+    "/api/geodb/auto-update": {
+      "post": {
+        "summary": "Set Automatic GeoIP Updates",
+        "operationId": "set_geodb_auto_update",
+        "description": "Enabling schedules an immediate update. Disabling cancels future scheduling and lets an active import finish. Settings are persisted before changing live state.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnabledRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminRequired"
+          },
+          "429": {
+            "$ref": "#/components/responses/AdminRateLimited"
+          },
+          "200": {
+            "description": "Authoritative saved setting. Identical requests do not rewrite settings or reset scheduling.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "auto_update",
+                    "message"
+                  ],
+                  "properties": {
+                    "auto_update": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Missing or non-boolean enabled value.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request body exceeds 64 KiB.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -787,7 +1121,7 @@
           },
           "code": {
             "type": "string",
-            "description": "Optional machine-readable error code, including admin_required, management_disabled, or admin_rate_limited."
+            "description": "Optional machine-readable error code, including admin_required, management_disabled, admin_rate_limited, endpoint_retired, or rpc_busy."
           }
         }
       },
@@ -957,6 +1291,35 @@
             "description": "Default P2P connection port for the configured chain; independent of BITCOIN_RPC_PORT."
           }
         }
+      },
+      "EnabledRequest": {
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "Desired state; repeating the same value is a no-op."
+          }
+        }
+      },
+      "Peer": {
+        "type": "object",
+        "required": [
+          "ping_ms"
+        ],
+        "properties": {
+          "ping_ms": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "Measured ping in fractional milliseconds. Null means no valid measurement; measured zero is valid."
+          }
+        },
+        "additionalProperties": true
       }
     },
     "responses": {
@@ -1000,6 +1363,29 @@
           "application/json": {
             "schema": {
               "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "RpcBusy": {
+        "description": "RPC capacity exhausted (8 active calls and 32 queued calls). No RPC was dispatched for the rejected operation. Mutations are never retried automatically.",
+        "headers": {
+          "Retry-After": {
+            "description": "Retry delay in seconds.",
+            "schema": {
+              "type": "integer",
+              "const": 1
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "detail": "Bitcoin RPC is busy; try again shortly",
+              "code": "rpc_busy"
             }
           }
         }

@@ -83,3 +83,14 @@ export const parseMempoolInfo = (value: unknown) => shape({ size: optional(integ
 export const parseChainTips = (value: unknown) => array(shape({
     height: optional(integer), hash: optional(nonempty), branchlen: optional(integer), status: optional(nonempty),
 }))(value, 'getchaintips');
+
+export interface TxIndexDetails { status: 'disabled' | 'syncing' | 'ready' | 'unknown'; height: number | null }
+export function parseTxIndex(value: unknown): TxIndexDetails {
+    if (!object(value)) return { status: 'unknown', height: null };
+    if (!Object.hasOwn(value, 'txindex')) return { status: 'disabled', height: null };
+    const index = value.txindex;
+    if (!object(index) || typeof index.synced !== 'boolean') return { status: 'unknown', height: null };
+    const height = typeof index.best_block_height === 'number' && Number.isSafeInteger(index.best_block_height) && index.best_block_height >= 0 ? index.best_block_height : null;
+    if (Object.hasOwn(index, 'best_block_height') && height === null) return { status: 'unknown', height: null };
+    return { status: index.synced ? 'ready' : 'syncing', height };
+}

@@ -1,3 +1,4 @@
+import { fmtPing } from '../core/ping.js';
 import { query } from '../core/dom.js';
 import * as BPMDistributionData from './data.js';
 const fmtBytes = BPMDistributionData.fmtBytes;
@@ -101,7 +102,7 @@ function render(options) {
 
     html += '<div class="modal-section-title">Performance</div>';
     html += view.row('Avg Duration', fullGroup.avgDurationFmt || '\u2014');
-    html += view.row('Avg Ping', (fullGroup.avgPingMs || 0) > 0 ? Math.round(fullGroup.avgPingMs || 0) + 'ms' : '\u2014');
+    html += view.row('Avg Ping', fmtPing(fullGroup.avgPingMs));
     html += view.row('Data Sent', fullGroup.totalBytesSentFmt || fmtBytes(0));
     html += view.row('Data Recv', fullGroup.totalBytesRecvFmt || fmtBytes(0));
 

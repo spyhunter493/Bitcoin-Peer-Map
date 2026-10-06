@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
 export default async function assertTableDom(browser, baseUrl) {
-    const context = await browser.newContext({ viewport: { width: 1638, height: 900 } });
+    const context = await browser.newContext({ viewport: { width: 1400, height: 900 } });
     await context.addInitScript(() => {
         localStorage.setItem('bpm.antarcticaDisclaimerSeen', 'true');
         const original = window.setInterval.bind(window);
@@ -18,7 +18,13 @@ export default async function assertTableDom(browser, baseUrl) {
     let peers = seed.peers.filter(peer => peer.network === 'ipv4').slice(0, 3)
         .map((peer, index) => ({ ...peer, id: index + 1, ping_ms: 20 + index * 10 }));
     peers[0].addr = '<img src=x onerror=alert(1)>';
-    await page.route('**/api/peers?include_status=true', route => route.fulfill({ json: { ...seed, peers } }));
+    let releaseInitial;
+    const firstSnapshot = new Promise(resolve => { releaseInitial = resolve; });
+    let initialRequest = true;
+    await page.route('**/api/peers?include_status=true', async route => {
+        if (initialRequest) { initialRequest = false; await firstSnapshot; }
+        await route.fulfill({ json: { ...seed, peers } });
+    });
     async function poll() {
         const response = page.waitForResponse(response => response.url().includes('/api/peers?include_status=true'));
         await page.evaluate(() => window.testPeerPoll());
@@ -27,7 +33,11 @@ export default async function assertTableDom(browser, baseUrl) {
     }
     try {
         await page.goto(baseUrl);
+        const emptyColumns = await page.locator('#peer-table col').evaluateAll(columns => columns.map(column => column.style.width));
+        releaseInitial();
         await page.waitForSelector('#peer-tbody tr[data-id="1"]');
+        assert.notDeepEqual(await page.locator('#peer-table col').evaluateAll(columns => columns.map(column => column.style.width)), emptyColumns,
+            'the first peer snapshot replaces the initial empty-table width estimates');
         await page.evaluate(() => {
             const row = document.querySelector('#peer-tbody tr[data-id="1"]');
             window.testTableElements = { row, duration: row.cells[2], ping: row.cells[12] };
@@ -41,6 +51,36 @@ export default async function assertTableDom(browser, baseUrl) {
             return row === document.querySelector('#peer-tbody tr[data-id="1"]') &&
                 row.cells[2] === duration && row.cells[12] === ping && ping.textContent.includes('21');
         }), true, 'changed polls update cells in place');
+        const columnWidths = () => page.locator('#peer-table col').evaluateAll(columns => columns.map(column => column.style.width));
+        const wideColumns = await columnWidths();
+        const originalScroll = await page.locator('.peer-table-wrap').evaluate(viewport => viewport.scrollTop);
+        await page.setViewportSize({ width: 900, height: 900 });
+        await page.waitForFunction(previous => JSON.stringify([...document.querySelectorAll('#peer-table col')].map(column => column.style.width)) !== JSON.stringify(previous), wideColumns);
+        const fittedColumns = await columnWidths();
+        assert.equal(await page.locator('#btn-autofit').evaluate(button => button.classList.contains('active')), true);
+        assert.equal(await page.evaluate(() => window.testTableElements.row === document.querySelector('#peer-tbody tr[data-id="1"]')), true);
+        await page.setViewportSize({ width: 1400, height: 900 });
+        await page.waitForFunction(expected => JSON.stringify([...document.querySelectorAll('#peer-table col')].map(column => column.style.width)) === JSON.stringify(expected), wideColumns);
+        assert.deepEqual(await columnWidths(), wideColumns, 'auto-fit restores the original widths after a viewport round trip');
+        assert.equal(await page.locator('#btn-autofit').evaluate(button => button.classList.contains('active')), true);
+        assert.equal(await page.evaluate(() => window.testTableElements.row === document.querySelector('#peer-tbody tr[data-id="1"]')), true,
+            'viewport round trips retain peer row identity');
+        assert.equal(await page.locator('.peer-table-wrap').evaluate(viewport => viewport.scrollTop), originalScroll,
+            'viewport round trips retain the table scroll position');
+        await page.setViewportSize({ width: 900, height: 900 });
+        await page.waitForFunction(expected => JSON.stringify([...document.querySelectorAll('#peer-table col')].map(column => column.style.width)) === JSON.stringify(expected), fittedColumns);
+        await page.click('#btn-autofit');
+        const manualColumns = await columnWidths();
+        await page.setViewportSize({ width: 1400, height: 900 });
+        peers = peers.map(peer => ({ ...peer, isp: 'A much longer provider label to change the measured column widths' }));
+        await poll();
+        assert.deepEqual(await columnWidths(), manualColumns, 'manual columns survive resize and changed peer data');
+        await page.click('#btn-autofit');
+        const longColumns = await columnWidths();
+        assert.notDeepEqual(longColumns, fittedColumns, 're-enabling auto-fit uses current size and current data');
+        peers = peers.map(peer => ({ ...peer, isp: 'Short' }));
+        await poll();
+        assert.notDeepEqual(await columnWidths(), longColumns, 'data width changes re-fit without a header interaction');
         await page.click('th[data-sort="ping_ms"]');
         await page.click('th[data-sort="ping_ms"]');
         assert.deepEqual(await page.locator('#peer-tbody tr').evaluateAll(rows => rows.map(row => Number(row.dataset.id))), [3, 2, 1]);
@@ -48,7 +88,39 @@ export default async function assertTableDom(browser, baseUrl) {
         await poll();
         assert.deepEqual(await page.locator('#peer-tbody tr').evaluateAll(rows => rows.map(row => Number(row.dataset.id)).sort()), [1, 2, 4]);
         assert.equal(await page.evaluate(() => window.testTableElements.row === document.querySelector('#peer-tbody tr[data-id="1"]')), true);
+        peers = [null, 12000, 0, 0.4].map((ping_ms, index) => ({ ...peers[0], id: index + 1, ping_ms }));
+        await poll();
+        await page.click('th[data-sort="ping_ms"]'); // Descending -> unsorted.
+        await page.click('th[data-sort="ping_ms"]'); // Ascending.
+        assert.deepEqual(await page.locator('#peer-tbody tr[data-id]').evaluateAll(rows => rows.map(row => Number(row.dataset.id))), [3, 4, 2, 1]);
+        assert.equal(await page.locator('#peer-tbody tr[data-id="1"] td').nth(12).textContent(), '—');
+        assert.equal(await page.locator('#peer-tbody tr[data-id="3"] td').nth(12).textContent(), '0ms');
+        assert.equal(await page.locator('#peer-tbody tr[data-id="4"] td').nth(12).textContent(), '0.4ms');
+        await page.click('th[data-sort="ping_ms"]');
+        assert.deepEqual(await page.locator('#peer-tbody tr[data-id]').evaluateAll(rows => rows.map(row => Number(row.dataset.id))), [2, 4, 3, 1]);
+        await page.locator('#peer-tbody tr[data-id="1"]').click();
+        await page.waitForSelector('.peer-detail-popup.visible');
+        assert.match(await page.locator('.peer-detail-popup').textContent(), /Ping—/);
+        await page.locator('.peer-popup-close').click();
+        await page.waitForSelector('.peer-detail-popup', { state: 'detached' });
+        peers = [null, 0.4, 0].map((ping_ms, index) => ({ ...peers[0], id: index + 1,
+            network: 'onion', location_status: 'private', lat: null, lon: null, as: '', ping_ms,
+        }));
+        await poll();
+        await page.waitForSelector('#pn-detail-panel.visible');
+        assert.match(await page.locator('#pn-detail-body .pn-insight-row[data-insight-type="fastest"]').textContent(), /#3.*0ms/);
+        await page.locator('#pn-donut-svg .pn-donut-segment[data-net="onion"]').first().dispatchEvent('click');
+        await page.waitForFunction(() => [...document.querySelectorAll('#pn-detail-body .modal-row')].some(row => row.textContent === 'Avg Ping0.2ms'));
+        peers = peers.map(peer => peer.id === 2 ? { ...peer, ping_ms: 12000 } : peer);
+        await poll();
+        assert.ok((await page.locator('#pn-detail-body').textContent()).includes('Avg Ping6000ms'));
+        peers = peers.map(peer => ({ ...peer, ping_ms: null }));
+        await poll();
+        assert.ok((await page.locator('#pn-detail-body').textContent()).includes('Avg Ping—'));
+        await page.locator('#pn-detail-back').click();
+        assert.equal(await page.locator('#pn-detail-body .pn-insight-row[data-insight-type="fastest"]').count(), 0);
     } finally {
+        releaseInitial();
         await context.close();
     }
 }

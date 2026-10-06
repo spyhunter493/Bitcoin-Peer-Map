@@ -1,3 +1,4 @@
+import { fmtPing, isMeasuredPing } from '../core/ping.js';
 import { queryAll, query, required } from '../core/dom.js';
 import { dashboard as BPMDashboard } from '../core/dashboard-state.js';
 import * as BPMModal from '../core/modal.js';
@@ -126,7 +127,7 @@ function create(options) {
         for (const p of netPeers) {
             if (p.direction === 'IN') inbound++;
             else outbound++;
-            if (p.ping_ms > 0) {
+            if (isMeasuredPing(p.ping_ms)) {
                 totalPing += p.ping_ms;
                 pingCount++;
             }
@@ -143,7 +144,7 @@ function create(options) {
             connTypeMap[ct].push(p);
         }
 
-        const avgPing = pingCount > 0 ? Math.round(totalPing / pingCount) : null;
+        const avgPing = pingCount > 0 ? totalPing / pingCount : null;
 
         let html = '';
 
@@ -155,7 +156,7 @@ function create(options) {
 
         // ── Performance ──
         html += '<div class="modal-section-title">Performance</div>';
-        if (avgPing !== null) html += pnStaticRow('Avg Ping', avgPing + ' ms');
+        html += pnStaticRow('Avg Ping', fmtPing(avgPing));
         html += pnStaticRow('Bytes Sent', fmtBytesShort(totalBytesSent));
         html += pnStaticRow('Bytes Recv', fmtBytesShort(totalBytesRecv));
 
@@ -318,7 +319,7 @@ function create(options) {
         let bestPingPeer = null,
             bestPing = Infinity;
         for (const p of allPrivate) {
-            if (p.ping_ms > 0 && p.ping_ms < bestPing) {
+            if (isMeasuredPing(p.ping_ms) && p.ping_ms < bestPing) {
                 bestPing = p.ping_ms;
                 bestPingPeer = p;
             }
@@ -332,7 +333,7 @@ function create(options) {
                 '">';
             html += '<span class="pn-insight-icon">\u26a1</span>';
             html += '<span class="pn-insight-label">Fastest</span>';
-            html += '<span class="pn-insight-val">#' + bestPingPeer.id + ' \u2014 ' + bestPing.toFixed(1) + ' ms</span>';
+            html += '<span class="pn-insight-val">#' + bestPingPeer.id + ' \u2014 ' + escapeHtml(fmtPing(bestPing)) + '</span>';
             html += '</div>';
         }
 
@@ -830,7 +831,7 @@ function create(options) {
             var dur = peer.conntime > 0 ? nowSec - peer.conntime : 0;
             data.statText = fmtDuration(dur);
         } else if (type === 'fastest') {
-            data.statText = peer.ping_ms > 0 ? peer.ping_ms.toFixed(1) + ' ms' : '\u2014';
+            data.statText = fmtPing(peer.ping_ms);
         } else if (type === 'data-bytessent') {
             data.statText = fmtBytesShort(peer.bytessent || 0) + ' sent';
         } else if (type === 'data-bytesrecv') {

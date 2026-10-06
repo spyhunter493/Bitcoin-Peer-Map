@@ -110,11 +110,15 @@ export default async function assertDashboardPerformance(browser) {
             window.retainedCell = window.retainedRow.cells[12];
             window.retainedScroll = document.querySelector('.peer-table-wrap').scrollTop;
             window.tableMutations = 0;
+            window.columnMutations = 0;
             new MutationObserver(records => { window.tableMutations += records.length; })
                 .observe(document.getElementById('peer-tbody'), { subtree: true, childList: true, characterData: true, attributes: true });
+            new MutationObserver(records => { window.columnMutations += records.length; })
+                .observe(document.querySelector('#peer-table colgroup'), { subtree: true, childList: true, attributes: true });
         }, middleId);
         await poll();
         assert.equal(await page.evaluate(() => window.tableMutations), 0, 'unchanged polls retain zero table mutations');
+        assert.equal(await page.evaluate(() => window.columnMutations), 0, 'unchanged polls retain zero column mutations');
         peers = peers.map(peer => peer.id === middleId ? { ...peer, ping_ms: 999 } : peer);
         await poll();
         assert.equal(await page.evaluate(id => {

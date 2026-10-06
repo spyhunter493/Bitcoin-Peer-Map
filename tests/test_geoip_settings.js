@@ -9,6 +9,8 @@ export default async function assertGeoIPSettings(browser, baseUrl) {
     let rejectPrivacySave = true;
     let manualUpdates = 0;
     let manualGate = Promise.resolve();
+    let showApiDown = false;
+    const requestedSettings = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.addInitScript(() => {
         localStorage.setItem('bpm.antarcticaDisclaimerSeen', 'true');
@@ -26,18 +28,28 @@ export default async function assertGeoIPSettings(browser, baseUrl) {
         info.geo_db_stats.db_only_mode = dbOnly;
         info.geo_db_stats.db_path = '/var/lib/bitcoin-peer-map/geo.db';
         info.geo_db_only_mode = dbOnly;
+        info.api_available = !showApiDown;
         await route.fulfill({ json: info });
     });
-    await page.route('**/api/geodb/toggle-db-only', async route => {
+    await page.route('**/api/connectivity', route => route.fulfill({ json: {
+        api_down_prompt: showApiDown, geo_db_only_mode: dbOnly,
+    } }));
+    await page.route('**/api/geodb/db-only', async route => {
+        const body = route.request().postDataJSON();
+        assert.equal(typeof body.enabled, 'boolean');
+        requestedSettings.push(['db-only', body.enabled]);
         if (rejectPrivacySave) {
             await route.fulfill({ status: 500, body: 'Internal Server Error' });
             return;
         }
-        dbOnly = !dbOnly;
+        dbOnly = body.enabled;
         await route.fulfill({ json: { success: true, geo_db_only_mode: dbOnly } });
     });
-    await page.route('**/api/geodb/toggle-auto-update', async route => {
-        autoUpdate = !autoUpdate;
+    await page.route('**/api/geodb/auto-update', async route => {
+        const body = route.request().postDataJSON();
+        assert.equal(typeof body.enabled, 'boolean');
+        requestedSettings.push(['auto-update', body.enabled]);
+        autoUpdate = body.enabled;
         await route.fulfill({ json: { success: true, auto_update: autoUpdate } });
     });
     await page.route('**/api/geodb/update', async route => {
@@ -72,6 +84,7 @@ export default async function assertGeoIPSettings(browser, baseUrl) {
         await page.waitForFunction(() => document.getElementById('geodb-result')?.textContent?.includes('not saved'));
         assert.equal(await page.locator('#geodb-dbonly-toggle').isChecked(), true);
         rejectPrivacySave = false;
+        dbOnly = true; // Another tab already selected the desired privacy setting.
         await page.locator('#geodb-dbonly-toggle + .geodb-toggle-slider').click();
         await page.waitForFunction(() => {
             const input = document.getElementById('geodb-dbonly-toggle');
@@ -84,6 +97,7 @@ export default async function assertGeoIPSettings(browser, baseUrl) {
         assert.equal(await page.locator('#geodb-dbonly-toggle').isChecked(), false, 'later failures restore the most recently saved setting');
         rejectPrivacySave = false;
 
+        autoUpdate = false; // This switch also has an older view than the server.
         await page.locator('#geodb-autoupdate-toggle + .geodb-toggle-slider').click();
         await page.waitForFunction(() => {
             const input = document.getElementById('geodb-autoupdate-toggle');
@@ -117,6 +131,19 @@ export default async function assertGeoIPSettings(browser, baseUrl) {
         assert.equal(await page.locator('#geodb-dbonly-toggle').isChecked(), false);
         assert.equal(await page.locator('#geodb-autoupdate-toggle').isChecked(), true);
         assert.equal(await page.evaluate(() => window.testIntervals.includes(3600000)), false);
+        assert.deepEqual(requestedSettings, [['db-only', true], ['db-only', true], ['db-only', false], ['auto-update', false], ['auto-update', true]]);
+
+        // The recovery action sets database-only mode even if another tab changed it.
+        await page.locator('#geodb-modal-close').click();
+        dbOnly = false;
+        showApiDown = true;
+        await page.reload({ waitUntil: 'domcontentloaded' });
+        await page.waitForSelector('#api-down-dbonly');
+        dbOnly = true;
+        await page.locator('#api-down-dbonly').click();
+        await page.waitForSelector('#api-down-modal', { state: 'detached' });
+        assert.equal(dbOnly, true);
+        assert.deepEqual(requestedSettings.at(-1), ['db-only', true]);
         assert.deepEqual(errors, []);
     } finally {
         await context.close();

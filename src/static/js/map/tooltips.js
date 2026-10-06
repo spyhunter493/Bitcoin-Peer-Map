@@ -1,3 +1,4 @@
+import { fmtPing } from '../core/ping.js';
 import { query, queryAll } from '../core/dom.js';
 import { escapeHtml } from '../core/modal.js';
 import * as domState from '../core/dom-state.js';
@@ -137,7 +138,7 @@ export function create(options) {
 
         // ── Performance ──
         html += `<div class="tt-section">`;
-        html += ttRow('Ping', node.peer.ping_ms + 'ms');
+        html += ttRow('Ping', fmtPing(node.peer.ping_ms));
         if (node.peer.conntime_fmt) html += ttRow('Uptime', node.peer.conntime_fmt);
         html += `</div>`;
 

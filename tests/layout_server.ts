@@ -21,8 +21,8 @@ export class FixtureRuntime implements ApplicationRuntime {
     constructor(settings: Settings) { this.settings = settings; this.rpc = new BitcoinRpcClient(settings); }
     start() { this.started = true; }
     stop() { this.stopped = true; }
-    toggleGeoipApi() { return this.dbOnly = !this.dbOnly; }
-    toggleGeoipAutoUpdate() { return this.autoUpdate = !this.autoUpdate; }
+    setGeoipDbOnly(enabled: boolean) { return this.dbOnly = enabled; }
+    setGeoipAutoUpdate(enabled: boolean) { return this.autoUpdate = enabled; }
     peers = {
         listPeers: () => structuredClone(fixtures.peers),
         snapshot: () => ({ peers: this.peers.listPeers(), status: { connected: true, last_success_at: Date.now() / 1000, last_attempt_at: Date.now() / 1000, age_seconds: 0, error: null, stale_after_seconds: 30 } }),
@@ -39,7 +39,7 @@ export class FixtureRuntime implements ApplicationRuntime {
             providers: Object.fromEntries(['geoip'].map(provider => [provider, { state: 'healthy', consecutive_failures: 0, last_error: null, last_success_at: Date.now() / 1000, last_failure_at: null, retry_at: null }])) as ConnectivityStatus['providers'] }),
         acknowledgePrompt() {},
     };
-    geoDatabase = { update: async () => ({ success: true, message: 'DB already up to date' }) };
+    geoDatabase = { update: async () => ({ success: true, message: 'DB already up to date', added_rows: 0, updated_rows: 0, skipped_rows: 0 }) };
     node = {
         dashboardInfo: async (): Promise<DashboardInfo> => {
             const info = structuredClone(fixtures.info);

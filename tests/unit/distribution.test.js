@@ -192,7 +192,7 @@ console.log('Distribution feature module tests passed');
 const peerFilters = BPMPeerFilters;
 const filterPeers = [
     { id: 0, as: 'AS1 First', network: 'ipv4', direction: 'IN', countryCode: 'NZ', subver: 'Core', services_abbrev: 'N', ping_ms: 10 },
-    { id: 2, as: 'AS2 Second', network: 'ipv6', direction: 'OUT', countryCode: 'US', subver: 'Other', services_abbrev: 'W', ping_ms: 0 },
+    { id: 2, as: 'AS2 Second', network: 'ipv6', direction: 'OUT', countryCode: 'US', subver: 'Other', services_abbrev: 'W', ping_ms: null },
 ];
 const filteredIds = (peers, descriptor, groups) => Array.from(peerFilters.resolve(peers, descriptor, groups), peer => peer.id);
 const inbound = peerFilters.forCategory('conn-in', 'AS1');

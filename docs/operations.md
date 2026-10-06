@@ -204,6 +204,15 @@ Enabling auto-update starts a check immediately. Disabling it prevents future
 checks; an update already running finishes normally. Dataset imports add new IPs
 and replace records only when the downloaded `last_updated` timestamp is newer,
 preserving newer local API results.
+Invalid dataset rows are skipped and cannot replace local locations. The update
+result reports how many rows were added, updated, and skipped; a dataset with no
+valid rows is rejected without changes. Temporary SQLite writer contention is
+retried without blocking HTTP requests. Failed API location saves remain available
+for active peers and retry after 60 seconds without another provider lookup.
+
+Settings use explicit desired values, so repeated saves and database-only recovery
+are safe when the mode is already enabled. Older dashboard tabs using toggle
+endpoints receive a reload message and cannot change settings until refreshed.
 
 API Lookup sends the queried peer IP to ip-api.com over unencrypted HTTP; the
 provider's [free endpoint does not support HTTPS](https://ip-api.com/docs/api:json).
@@ -226,6 +235,13 @@ shows when the next refresh is due.
 **Node Info** includes a Services block explaining the P2P services advertised by
 your node. An empty list means no services are advertised; unavailable service
 information is shown separately.
+The transaction index shows **Disabled**, **Syncing**, **Ready**, or **Unknown**,
+with the indexed block height in its tooltip when available. An older server
+reporting only index presence shows **Enabled** without claiming readiness.
+Chain-tip age lookup timeouts preserve the tip list and identify unavailable ages.
+
+Missing ping measurements display **—** and do not affect averages or rankings.
+Measured zero remains valid, and positive pings below 0.1 ms display **<0.1ms**.
 
 **Blocks** and **Chain Tips** link recognized public-network block hashes to
 [mempool.guide](https://mempool.guide/). Testnet3 and local regtest hashes remain

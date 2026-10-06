@@ -7,6 +7,17 @@ export default async function assertMapInput(browser, baseUrl) {
     await context.addInitScript(now => {
         Date.now = () => now;
         localStorage.setItem('bpm.antarcticaDisclaimerSeen', 'true');
+        window.wrappedMapPoints = [];
+        const arc = CanvasRenderingContext2D.prototype.arc;
+        const clear = CanvasRenderingContext2D.prototype.clearRect;
+        CanvasRenderingContext2D.prototype.arc = function(x, y, ...args) {
+            if (this.canvas.id === 'worldmap') window.wrappedMapPoints.push({ x, y });
+            return arc.call(this, x, y, ...args);
+        };
+        CanvasRenderingContext2D.prototype.clearRect = function(...args) {
+            if (this.canvas.id === 'worldmap') window.wrappedMapPoints = [];
+            return clear.apply(this, args);
+        };
     }, Date.now());
     const page = await context.newPage();
     const errors = [];
@@ -96,6 +107,30 @@ export default async function assertMapInput(browser, baseUrl) {
         await page.locator('#zoom-reset').click();
         await page.mouse.move(10, 10);
         assert.deepEqual(await hashes(), initial, 'reset restores both original canvas layers');
+        async function panWorlds(direction) {
+            await page.locator('#peer-tbody').dispatchEvent('mouseleave');
+            for (let index = 0; index < 8; index++) {
+                await canvas.dispatchEvent('mousedown', { clientX: 100, clientY: 350 });
+                await page.evaluate(direction => {
+                    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 100 + direction * innerWidth, clientY: 350 }));
+                }, direction);
+                await page.evaluate(() => new Promise(requestAnimationFrame));
+                await page.evaluate(() => window.dispatchEvent(new MouseEvent('mouseup', { clientX: 100, clientY: 350 })));
+            }
+            const wrapped = await hashes();
+            assert.deepEqual(wrapped[0], initial[0], 'geography repeats after panning across eight complete worlds');
+            const point = await page.evaluate(() => window.wrappedMapPoints.find(point => point.x > 100 && point.x < 800 && point.y > 70 && point.y < 550));
+            assert.ok(point, 'wrapped copies still render peer dots');
+            await canvas.dispatchEvent('mousemove', { clientX: point.x, clientY: point.y });
+            await page.waitForSelector('#node-tooltip:not(.hidden)');
+            await page.locator('#peer-tbody tr.row-highlight').first().dispatchEvent('mouseover');
+            assert.notDeepEqual((await hashes())[1], wrapped[1], 'wrapped peer hover still draws highlight rings');
+            await page.mouse.move(10, 10);
+            await page.locator('#zoom-reset').click();
+            await hashes();
+        }
+        await panWorlds(1);
+        await panWorlds(-1);
         await page.setViewportSize({ width: 1100, height: 800 });
         await hashes();
         assert.deepEqual(await dimensions(), { width: 1650, height: 1200 });

@@ -1,3 +1,4 @@
+import { isMeasuredPing } from '../core/ping.js';
 import * as BPMFormat from '../core/format.js';
 /** @param {import('../types').Peer} peer */
 const provider = (peer) => (peer.as || '').match(/^AS\d+/)?.[0] || '';
@@ -31,7 +32,7 @@ function resolve(peers, descriptor, topGroups = {}) {
         return peers.filter((peer) => keyFor(peer) && !excluded.has(keyFor(peer)));
     }
     if (descriptor.kind === 'insight') {
-        if (descriptor.key === 'fastest') return peers.filter((peer) => (peer.ping_ms || 0) > 0);
+        if (descriptor.key === 'fastest') return peers.filter((peer) => isMeasuredPing(peer.ping_ms));
         return peers.filter(
             (peer) => (descriptor.key === 'bytessent' ? peer.bytessent || 0 : descriptor.key === 'bytesrecv' ? peer.bytesrecv || 0 : 0) > 0
         );

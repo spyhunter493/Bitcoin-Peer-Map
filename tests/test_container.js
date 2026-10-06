@@ -31,8 +31,8 @@ const probe = createServer(); probe.listen(0, '127.0.0.1'); await once(probe, 'l
 const port = probe.address().port; await new Promise(resolve => probe.close(resolve));
 const base = `http://127.0.0.1:${port}`;
 const adminToken = 'admin';
-const get = async (path, method = 'GET') => {
-    const response = await fetch(base + path, { method, ...(method === 'POST' ? { headers: { Authorization: `Bearer ${adminToken}` } } : {}), signal: AbortSignal.timeout(5000) });
+const get = async (path, method = 'GET', body) => {
+    const response = await fetch(base + path, { method, ...(method === 'POST' ? { headers: { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) } : {}), signal: AbortSignal.timeout(5000) });
     assert.equal(response.status, 200, path); return response.json();
 };
 async function start() {
@@ -91,11 +91,13 @@ try {
     assert.equal(await docker('exec', name, 'id', '-u'), '10001');
     await docker('exec', name, 'sh', '-c', 'test -z "$(command -v python)" && test -z "$(command -v python3)" && test ! -d /app/node_modules');
     assert.equal((await get('/api/connectivity')).geo_db_only_mode, true);
-    assert.equal((await fetch(base + '/api/geodb/toggle-db-only', { method: 'POST' })).status, 401);
+    assert.equal((await fetch(base + '/api/geodb/db-only', { method: 'POST', body: '{"enabled":false}' })).status, 401);
     assert.equal((await get('/api/connectivity')).geo_db_only_mode, true, 'unauthenticated request cannot change saved settings');
     const info = await get('/api/info');
     assert.deepEqual(info.bitcoin_network, { chain: 'main', default_peer_port: 8333 });
     assert.equal(info.blockchain.ibd, null, 'missing IBD never reports a synced node');
+    assert.equal(info.blockchain.txindex_status, 'disabled');
+    assert.equal(info.blockchain.txindex_height, null);
     assert.equal(info.connected, 1); assert.equal(info.geo_db_stats.entries, 1); assert.equal(info.geo_db_stats.auto_update, false);
     let peers;
     for (let i = 0; i < 20; i++) {
@@ -103,8 +105,13 @@ try {
         await delay(100);
     }
     assert.equal(peers[0].location, 'Auckland, NZ');
-    assert.equal((await get('/api/geodb/toggle-db-only', 'POST')).geo_db_only_mode, false);
-    assert.equal((await get('/api/geodb/toggle-db-only', 'POST')).geo_db_only_mode, true);
+    assert.equal(peers[0].ping_ms, null);
+    const retired = await fetch(base + '/api/geodb/toggle-db-only', { method: 'POST', headers: { Authorization: `Bearer ${adminToken}` } });
+    assert.equal(retired.status, 410);
+    assert.match((await retired.json()).detail, /Reload the dashboard/);
+    assert.equal((await get('/api/geodb/db-only', 'POST', { enabled: false })).geo_db_only_mode, false);
+    assert.equal((await get('/api/geodb/db-only', 'POST', { enabled: true })).geo_db_only_mode, true);
+    assert.equal((await get('/api/geodb/db-only', 'POST', { enabled: true })).geo_db_only_mode, true);
     const saved = JSON.parse(await docker('exec', name, 'cat', '/var/lib/bitcoin-peer-map/settings.json'));
     assert.deepEqual(saved, { geoip_auto_update: false, geoip_db_only: true });
     const health = JSON.parse(await docker('inspect', '--format', '{{json .Config.Healthcheck.Test}}', name));

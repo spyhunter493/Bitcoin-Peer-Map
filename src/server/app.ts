@@ -8,11 +8,12 @@ import { once } from 'node:events';
 import { AppRuntime } from './runtime.ts';
 import type { Settings } from './settings.ts';
 import { type Data, errorMessage, object } from './types.ts';
-import { HttpError, readJsonBody, parseAddress, parsePeerId, parseQueryBoolean, requireDashboardOrigin, sendResponse } from './http.ts';
+import { HttpError, readJsonBody, parseAddress, parseEnabled, parsePeerId, parseQueryBoolean, requireDashboardOrigin, sendResponse } from './http.ts';
 import { GITHUB_REPOSITORY, REPOSITORY_URL } from './build.ts';
 import { NODE_METRICS_INTERVAL_MS } from './services/node-metrics.ts';
 import { createAdminAuthentication } from './admin-auth.ts';
 import { createLogger } from './logging.ts';
+import { RpcBusyError } from './rpc.ts';
 
 const log = createLogger('http');
 
@@ -20,8 +21,8 @@ export interface ApplicationRuntime {
     settings: Settings;
     start(): void | Promise<void>;
     stop(): void | Promise<void>;
-    toggleGeoipApi(): boolean;
-    toggleGeoipAutoUpdate(): boolean;
+    setGeoipDbOnly(enabled: boolean): boolean;
+    setGeoipAutoUpdate(enabled: boolean): boolean;
     peers: Pick<AppRuntime['peers'], 'snapshot' | 'listPeers'>;
     node: Pick<AppRuntime['node'], 'dashboardInfo' | 'mempool' | 'blockchain' | 'recentBlocks' | 'chainTips' | 'connect' | 'disconnect' | 'ban' | 'unban' | 'bans' | 'clearBans'>;
     metrics: Pick<AppRuntime['metrics'], 'latest' | 'summary'>;
@@ -59,20 +60,20 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
     let closeTask: Promise<void> | null = null;
     const requireAdmin = createAdminAuthentication(settings.admin_token);
 
-    const routes: Record<string, (query: URLSearchParams, req: IncomingMessage, res: ServerResponse) => unknown> = {
+    const routes: Record<string, (query: URLSearchParams, req: IncomingMessage, res: ServerResponse, signal: AbortSignal) => unknown> = {
         'GET /healthz': () => ({ status: 'ok' }),
         'POST /api/admin/verify': () => ({ success: true }),
         'GET /api/peers': (query, _req, res) => { res.setHeader('Cache-Control', 'no-store'); return parseQueryBoolean(query, 'include_status', false) ? runtime.peers.snapshot() : runtime.peers.listPeers(); },
-        'GET /api/info': async () => ({ ...await runtime.node.dashboardInfo(), updates: runtime.updates.snapshot() }),
-        'GET /api/mempool': () => runtime.node.mempool(),
-        'GET /api/blockchain': () => runtime.node.blockchain(),
-        'GET /api/blocks/recent': query => {
+        'GET /api/info': async (_query, _req, _res, signal) => ({ ...await runtime.node.dashboardInfo(signal), updates: runtime.updates.snapshot() }),
+        'GET /api/mempool': (_query, _req, _res, signal) => runtime.node.mempool(signal),
+        'GET /api/blockchain': (_query, _req, _res, signal) => runtime.node.blockchain(signal),
+        'GET /api/blocks/recent': (query, _req, _res, signal) => {
             const limit = query.get('limit') ?? '25';
             if (!/^\d+$/.test(limit) || Number(limit) < 1 || Number(limit) > 100) throw new HttpError(422, 'limit must be between 1 and 100');
-            return runtime.node.recentBlocks(Number(limit));
+            return runtime.node.recentBlocks(Number(limit), signal);
         },
-        'GET /api/chain-tips': () => runtime.node.chainTips(),
-        'GET /api/bans': () => runtime.node.bans(),
+        'GET /api/chain-tips': (_query, _req, _res, signal) => runtime.node.chainTips(signal),
+        'GET /api/bans': (_query, _req, _res, signal) => runtime.node.bans(signal),
         'POST /api/peer/connect': async (_query, req) => runtime.node.connect(parseAddress(await readJsonBody(req))),
         'POST /api/peer/disconnect': async (_query, req) => runtime.node.disconnect(parsePeerId(await readJsonBody(req))),
         'POST /api/peer/ban': async (_query, req) => runtime.node.ban(parsePeerId(await readJsonBody(req))),
@@ -80,8 +81,10 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
         'POST /api/bans/clear': () => runtime.node.clearBans(),
         'GET /api/connectivity': () => runtime.connectivity.snapshot(),
         'POST /api/connectivity/api-prompt-ack': () => { runtime.connectivity.acknowledgePrompt(); return { success: true }; },
-        'POST /api/geodb/toggle-db-only': () => { const disabled = runtime.toggleGeoipApi(); return { success: true, geo_db_only_mode: disabled, message: disabled ? 'API lookup disabled. To re-enable, return to this menu.' : 'API lookup re-enabled.' }; },
-        'POST /api/geodb/toggle-auto-update': () => { const enabled = runtime.toggleGeoipAutoUpdate(); return { success: true, auto_update: enabled, message: enabled ? 'Auto-update enabled' : 'Auto-update disabled' }; },
+        'POST /api/geodb/db-only': async (_query, req) => { const disabled = runtime.setGeoipDbOnly(parseEnabled(await readJsonBody(req))); return { success: true, geo_db_only_mode: disabled, message: disabled ? 'API lookup disabled. To re-enable, return to this menu.' : 'API lookup re-enabled.' }; },
+        'POST /api/geodb/auto-update': async (_query, req) => { const enabled = runtime.setGeoipAutoUpdate(parseEnabled(await readJsonBody(req))); return { success: true, auto_update: enabled, message: enabled ? 'Auto-update enabled' : 'Auto-update disabled' }; },
+        'POST /api/geodb/toggle-db-only': () => { throw new HttpError(410, 'This toggle endpoint has been retired. Reload the dashboard or use POST /api/geodb/db-only with {"enabled": boolean}.', 'endpoint_retired'); },
+        'POST /api/geodb/toggle-auto-update': () => { throw new HttpError(410, 'This toggle endpoint has been retired. Reload the dashboard or use POST /api/geodb/auto-update with {"enabled": boolean}.', 'endpoint_retired'); },
         'POST /api/geodb/update': () => runtime.geoDatabase.update(),
         'GET /api/stats': async () => ({ system_stats: await runtime.metrics.summary() }),
         'GET /api/rpc-info': () => ({ ...runtime.rpc.connectionInfo, endpoint: settings.rpc_url }),
@@ -96,6 +99,9 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
         'GET /openapi.json': () => schema,
     };
     const server = createServer(async (req, res) => {
+        const controller = new AbortController();
+        const disconnected = () => { if (!res.writableFinished) controller.abort(new DOMException('Client disconnected', 'AbortError')); };
+        res.once('close', disconnected);
         try {
             const url = new URL(req.url || '/', 'http://localhost');
             const method = req.method === 'HEAD' ? 'GET' : req.method;
@@ -153,12 +159,18 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
                 throw new HttpError(404, 'Not found');
             }
             if (method === 'POST' && url.pathname.startsWith('/api/')) requireAdmin(req, res);
-            await sendResponse(req, res, await route(url.searchParams, req, res));
+            await sendResponse(req, res, await route(url.searchParams, req, res, controller.signal));
         } catch (error) {
+            if (res.destroyed || controller.signal.aborted) return;
             if (res.headersSent) { res.destroy(); return; }
+            if (error instanceof RpcBusyError) {
+                res.setHeader('Retry-After', '1');
+                await sendResponse(req, res, { detail: 'Bitcoin RPC is busy; try again shortly', code: 'rpc_busy' }, 503);
+                return;
+            }
             if (!(error instanceof HttpError)) log.error(`Request failed (${req.method} ${(req.url || '/').split('?')[0]}): ${errorMessage(error)}`);
             await sendResponse(req, res, { detail: error instanceof HttpError ? error.message : 'Internal server error', ...(error instanceof HttpError && error.code ? { code: error.code } : {}) }, error instanceof HttpError ? error.status : 500);
-        }
+        } finally { res.removeListener('close', disconnected); }
     });
     return {
         server, runtime, assetRevision: assets,

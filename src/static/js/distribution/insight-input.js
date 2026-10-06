@@ -1,3 +1,4 @@
+import { comparePing } from '../core/ping.js';
 import { query, queryAll, required } from '../core/dom.js';
 
 /** @typedef {Pick<import('../types').DistributionNavigationOptions, 'getDonut' | 'getGroups' | 'getPanel' |
@@ -428,7 +429,7 @@ export function create(options, getNavigation) {
 
         var matchedPeers = options.actions.peersByIds(peerIds);
         matchedPeers.sort(function (a, b) {
-            return (a.ping_ms || 9999) - (b.ping_ms || 9999);
+            return comparePing(a.ping_ms, b.ping_ms);
         });
 
         // Build sub-sub-tooltip with peers ranked by ping

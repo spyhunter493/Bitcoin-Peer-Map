@@ -1,3 +1,4 @@
+import { fmtPing } from '../core/ping.js';
 import { query } from '../core/dom.js';
 import * as BPMModal from '../core/modal.js';
 import * as BPMDistributionData from './data.js';
@@ -360,7 +361,7 @@ function create(options) {
                 escapeHtml(p.id) +
                 '</span>';
             html +=
-                '<span class="as-sub-tt-type">' + (p.ping_ms > 0 ? Math.round(p.ping_ms) + 'ms' : '\u2014') + '</span>';
+                '<span class="as-sub-tt-type">' + escapeHtml(fmtPing(p.ping_ms)) + '</span>';
             var ct = p.connection_type || 'unknown';
             html +=
                 '<span class="as-sub-tt-loc">' +
@@ -902,14 +903,14 @@ function create(options) {
                 '" data-rank="' +
                 (pi + 1) +
                 '" data-avg-ping="' +
-                prov.avgPing.toFixed(1) +
+                String(prov.avgPing) +
                 '">';
             html += '<span class="as-sub-tt-rank">#' + (pi + 1) + '</span>';
             html += '<span class="as-grid-dot" style="background:' + prov.color + '"></span>';
             var name = prov.provName.length > 14 ? prov.provName.substring(0, 13) + '\u2026' : prov.provName;
             html +=
                 '<span class="as-sub-tt-loc" title="' + escapeHtml(prov.provName) + '">' + escapeHtml(name) + '</span>';
-            html += '<span class="as-sub-tt-type">' + Math.round(prov.avgPing) + 'ms</span>';
+            html += '<span class="as-sub-tt-type">' + escapeHtml(fmtPing(prov.avgPing)) + '</span>';
             html += '</div>';
         }
         html += '</div>';

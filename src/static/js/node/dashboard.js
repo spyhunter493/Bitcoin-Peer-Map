@@ -7,6 +7,7 @@ import * as BPMFormat from '../core/format.js';
 import * as BPMNodeMonitor from './monitor.js';
 import { renderUpdateStatus } from '../core/version.js';
 import * as BPMGeoipSettings from '../settings/geoip.js';
+import { fmtPing, isMeasuredPing } from '../core/ping.js';
 /**
  * @param {{config: import('../types').DashboardConfig; onAction: (action: import('../types').NodeAction) => void | Promise<void>}} options
  */
@@ -677,9 +678,9 @@ function create({ config: CFG, onAction }) {
         databaseOnlyButton.addEventListener('click', async () => {
             databaseOnlyButton.disabled = true;
             try {
-                /** @type {{success: boolean}} */
-                const data = await postJson('/api/geodb/toggle-db-only', undefined, { signal: controller.signal });
-                if (!data.success) throw new Error('Could not save API lookup setting');
+                /** @type {{success: boolean; geo_db_only_mode?: boolean}} */
+                const data = await postJson('/api/geodb/db-only', { enabled: true }, { signal: controller.signal });
+                if (!data.success || data.geo_db_only_mode !== true) throw new Error('Could not save API lookup setting');
                 close();
                 fetchInfo();
             } catch (e) {
@@ -808,7 +809,7 @@ function create({ config: CFG, onAction }) {
             if (match) {
                 if (n.direction === 'IN') inbound++;
                 else outbound++;
-                if (n.ping_ms > 0) {
+                if (isMeasuredPing(n.ping_ms)) {
                     totalPing += n.ping_ms;
                     pingCount++;
                 }
@@ -820,14 +821,14 @@ function create({ config: CFG, onAction }) {
 
         if (total === 0 && net !== 'all' && !detailsForNet) return null;
 
-        const avgPing = pingCount > 0 ? Math.round(totalPing / pingCount) : '—';
+        const avgPing = pingCount > 0 ? totalPing / pingCount : null;
         const label = net === 'all' ? 'All Networks' : NET_DISPLAY[net] || net.toUpperCase();
 
         let html = `<div class="pop-title">${label}</div>`;
         html += `<div class="pop-row"><span class="pop-label">Peers</span><span class="pop-val">${total}</span></div>`;
         html += `<div class="pop-row"><span class="pop-label">Inbound</span><span class="pop-val">${inbound}</span></div>`;
         html += `<div class="pop-row"><span class="pop-label">Outbound</span><span class="pop-val">${outbound}</span></div>`;
-        html += `<div class="pop-row"><span class="pop-label">Avg Ping</span><span class="pop-val">${avgPing}${avgPing !== '—' ? 'ms' : ''}</span></div>`;
+        html += `<div class="pop-row"><span class="pop-label">Avg Ping</span><span class="pop-val">${fmtPing(avgPing)}</span></div>`;
         if (net !== 'all') {
             const details = detailsForNet;
             if (details) {

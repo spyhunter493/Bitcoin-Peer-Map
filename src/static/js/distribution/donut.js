@@ -1,3 +1,4 @@
+import { fmtPing, isMeasuredPing } from '../core/ping.js';
 import { queryAll, query } from '../core/dom.js';
 import * as BPMDistributionData from './data.js';
 import * as BPMModal from '../core/modal.js';
@@ -363,7 +364,7 @@ function insightPresentation(type, data) {
         presentation.icon = '⚡';
         presentation.title = 'Fastest Connection';
         presentation.metadata = peerIds.length + ' peer' + (peerIds.length !== 1 ? 's' : '') + ' · ' + (data.asNumber || '');
-        presentation.statistic = data.avgPing ? data.avgPing.toFixed(1) + ' ms avg' : '';
+        presentation.statistic = isMeasuredPing(data.avgPing) ? fmtPing(data.avgPing) + ' avg' : '';
     } else {
         presentation.icon = type === 'data-bytessent' ? '⬆️' : '⬇️';
         presentation.title = type === 'data-bytessent' ? 'Most Data Sent To' : 'Most Data Recv By';
@@ -886,7 +887,7 @@ function create(options) {
         }
         if (statistic) {
             if (type === 'fastest') {
-                statistic.textContent = peer.ping_ms > 0 ? Math.round(peer.ping_ms) + ' ms' : '—';
+                statistic.textContent = fmtPing(peer.ping_ms);
             } else if (type === 'data-bytessent') {
                 statistic.textContent = distributionData.fmtBytes(peer.bytessent || 0) + ' sent';
             } else if (type === 'data-bytesrecv') {

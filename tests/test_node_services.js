@@ -23,12 +23,16 @@ export default async function assertNodeServices(browser, baseUrl) {
 
         const unknown = '<img src=x onerror="throw Error(\'unescaped service\')">';
         let ibd = false;
+        let txindexStatus = 'ready', txindexHeight = 875000, indexed = true;
         let services = ['BLOOM', 'COMPACT_FILTERS', 'BLAKE2B?', unknown, 'constructor'];
         await page.route('**/api/info', async route => {
             const response = await route.fetch();
             const info = await response.json();
             info.services = services;
             info.blockchain.ibd = ibd;
+            info.blockchain.indexed = indexed;
+            info.blockchain.txindex_status = txindexStatus;
+            info.blockchain.txindex_height = txindexHeight;
             await route.fulfill({ json: info });
         });
         await page.reload({ waitUntil: 'domcontentloaded' });
@@ -62,6 +66,23 @@ export default async function assertNodeServices(browser, baseUrl) {
             const status = page.locator('#ni-blockchain-section .modal-row').filter({ has: page.locator('.modal-label', { hasText: /^IBD Status$/ }) });
             assert.equal(await status.locator('.modal-val').textContent(), label);
             assert.ok((await page.locator('#ni-node-section').textContent()).includes(label));
+        }
+        ibd = false;
+        for (const [value, height, enabled, label] of [
+            ['disabled', null, false, 'Disabled'],
+            ['syncing', 123, true, 'Syncing'],
+            ['ready', 875000, true, 'Ready'],
+            ['unknown', null, false, 'Unknown'],
+            [undefined, undefined, true, 'Enabled'],
+        ]) {
+            txindexStatus = value; txindexHeight = height; indexed = enabled;
+            await page.reload({ waitUntil: 'domcontentloaded' });
+            await openNodeInfo();
+            const row = page.locator('#ni-node-section .modal-row').filter({ has: page.locator('.modal-label', { hasText: /^TX Index$/ }) });
+            assert.equal(await row.locator('.modal-val').textContent(), label);
+            const title = await row.locator('.modal-val').getAttribute('title');
+            if (height != null) assert.ok(title.includes(`indexed through block ${height.toLocaleString()}`));
+            if (value === undefined || value === 'unknown') assert.match(title, /readiness unavailable/);
         }
         assert.deepEqual(errors, []);
     } finally {

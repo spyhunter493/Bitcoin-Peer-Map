@@ -7,42 +7,49 @@ import { Worker } from 'node:worker_threads';
 import { GEO_COLUMNS, GEO_SCHEMA, GEO_UPDATES } from './geoip-schema.ts';
 import { type Data, errorMessage, nowSeconds, object } from '../types.ts';
 import { createFailureReporter, createLogger } from '../logging.ts';
+import { sleep } from '../tasks.ts';
+import { isValidGeoData } from './geoip-validation.ts';
 
 export { GEO_COLUMNS } from './geoip-schema.ts';
+export { isValidGeoData } from './geoip-validation.ts';
 export const GEOIP_DATASET_URL = 'https://raw.githubusercontent.com/mbhillrn/Bitcoin-Node-GeoIP-Dataset/main/geo.db';
 export const MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024;
-export function isValidGeoData(data: unknown): data is Data {
-    if (!object(data) || typeof data.country !== 'string' || !data.country.trim()) return false;
-    if (![data.lat, data.lon].every(value => typeof value === 'number' || (typeof value === 'string' && value.trim().length > 0))) return false;
-    const lat = Number(data.lat), lon = Number(data.lon);
-    return Number.isFinite(lat) && Number.isFinite(lon) && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180;
-}
+export const GEO_SAVE_RETRY_BUDGET_MS = 65_000;
+export type GeoSaveResult = { status: 'saved' | 'superseded'; row: Data }
+    | { status: 'disabled' | 'cancelled' }
+    | { status: 'failed'; message: string };
+export interface GeoUpdateResult { success: boolean; message: string; skipped_rows: number; added_rows?: number; updated_rows?: number }
+const isBusy = (error: unknown) => object(error) && typeof error.errcode === 'number' && [5, 6].includes(error.errcode & 255);
 export class GeoDatabase {
     readonly enabled: boolean;
     readonly path: string;
     readonly tempDir: string;
-    readonly signal?: AbortSignal;
+    readonly signal: AbortSignal;
     generation = 0;
     private database: DatabaseSync | null = null;
     private cachedStats: Data | null = null;
     private updating = false;
+    private controller = new AbortController();
     private saveFailures = createFailureReporter(createLogger('geoip'));
     constructor(dataDir: string, enabled: boolean, signal?: AbortSignal) {
-        this.enabled = enabled; this.path = join(dataDir, 'geo.db'); this.tempDir = join(dataDir, 'tmp'); this.signal = signal;
+        this.enabled = enabled; this.path = join(dataDir, 'geo.db'); this.tempDir = join(dataDir, 'tmp');
+        this.signal = AbortSignal.any([this.controller.signal, ...(signal ? [signal] : [])]);
     }
     initialize() {
         if (!this.enabled) return;
+        this.signal.throwIfAborted();
         mkdirSync(this.tempDir, { recursive: true });
         for (const entry of readdirSync(this.tempDir, { withFileTypes: true })) if (entry.isFile()) rmSync(join(this.tempDir, entry.name));
         this.database = new DatabaseSync(this.path);
         this.database.exec(GEO_SCHEMA);
     }
-    close() { this.database?.close(); this.database = null; }
+    close() { this.controller.abort(); this.database?.close(); this.database = null; }
     datasetChanged() { this.generation++; this.cachedStats = null; }
     stats(): Data {
         if (this.cachedStats) return { ...this.cachedStats };
         const result: Data = { status: 'disabled', entries: 0, size_bytes: 0, last_updated: null, oldest_updated: null, db_path: this.path };
         if (!this.enabled) return result;
+        if (this.signal.aborted) return { ...result, status: 'closed' };
         if (!existsSync(this.path)) return { ...result, status: 'not_found' };
         try {
             if (!this.database) this.database = new DatabaseSync(this.path);
@@ -52,34 +59,60 @@ export class GeoDatabase {
         } catch (error) { return { ...result, status: 'error', error: errorMessage(error) }; }
     }
     get(ip: string): Data | null {
-        if (!this.enabled || !existsSync(this.path)) return null;
+        if (!this.enabled || this.signal.aborted || !existsSync(this.path)) return null;
         try {
             if (!this.database) this.database = new DatabaseSync(this.path);
             const row = this.database.prepare('SELECT * FROM geo_cache WHERE ip = ?').get(ip);
             return row ? { ...row } : null;
         } catch { return null; }
     }
-    save(ip: string, data: Data) {
-        if (!this.enabled || !this.database || !isValidGeoData(data)) return;
-        const record: Data = { ...data, ip, utc_offset: data.offset ?? 0, as_info: data.as ?? '', last_updated: Math.floor(nowSeconds()) };
+    async save(ip: string, data: Data, observedAt = Math.floor(nowSeconds()), signal?: AbortSignal): Promise<GeoSaveResult> {
+        if (!this.enabled) return { status: 'disabled' };
+        const cancellation = signal ? AbortSignal.any([this.signal, signal]) : this.signal;
+        if (cancellation.aborted) return { status: 'cancelled' };
+        if (!this.database || !isValidGeoData(data) || !Number.isSafeInteger(observedAt) || observedAt < 0) return { status: 'failed', message: 'Invalid geolocation data or database is not initialized' };
+        // Preserve the observation time across retries so a delayed write cannot replace newer data.
+        const record: Data = { ...data, ip, lat: Number(data.lat), lon: Number(data.lon), utc_offset: data.offset ?? 0, as_info: data.as ?? '', last_updated: observedAt };
         const values: SQLInputValue[] = GEO_COLUMNS.map(key => {
             if (['mobile', 'proxy', 'hosting'].includes(key)) return Number(Boolean(record[key]));
             const value = record[key];
             return typeof value === 'string' || (typeof value === 'number' && Number.isFinite(value)) ? value : '';
         });
-        try {
-            this.database.prepare(`INSERT INTO geo_cache (${GEO_COLUMNS.join(',')}) VALUES (${GEO_COLUMNS.map(() => '?').join(',')}) ON CONFLICT(ip) DO UPDATE SET ${GEO_UPDATES}`).run(...values);
-            this.cachedStats = null;
-            this.saveFailures.recovered('Geolocation database writes recovered');
-        } catch (error) { this.saveFailures.failure(`Could not save geolocation for ${ip}: ${errorMessage(error)}`, 'error'); }
+        const deadline = performance.now() + GEO_SAVE_RETRY_BUDGET_MS;
+        let delay = 50;
+        while (!cancellation.aborted && this.database) {
+            try {
+                const result = this.database.prepare(`INSERT INTO geo_cache (${GEO_COLUMNS.join(',')}) VALUES (${GEO_COLUMNS.map(() => '?').join(',')})
+                    ON CONFLICT(ip) DO UPDATE SET ${GEO_UPDATES}
+                    WHERE COALESCE(excluded.last_updated, 0) > COALESCE(geo_cache.last_updated, 0)`).run(...values);
+                const row = this.database.prepare('SELECT * FROM geo_cache WHERE ip = ?').get(ip);
+                if (!row) throw new Error('Geolocation write did not return a stored record');
+                if (!isValidGeoData(row)) throw new Error('Stored geolocation winner contains invalid location data');
+                if (Number(result.changes)) this.cachedStats = null;
+                this.saveFailures.recovered('Geolocation database writes recovered');
+                return { status: Number(result.changes) ? 'saved' : 'superseded', row: { ...row } };
+            } catch (error) {
+                const remaining = deadline - performance.now();
+                if (isBusy(error) && remaining > 0) {
+                    await sleep(Math.min(delay, remaining), cancellation);
+                    delay = Math.min(500, delay * 2);
+                    continue;
+                }
+                const message = errorMessage(error);
+                this.saveFailures.failure(`Could not save geolocation for ${ip}: ${message}`, 'error');
+                return { status: 'failed', message };
+            }
+        }
+        return { status: 'cancelled' };
     }
-    async update(fetcher: typeof fetch = fetch, maxBytes = MAX_DOWNLOAD_BYTES): Promise<{ success: boolean; message: string }> {
-        if (!this.enabled) return { success: false, message: 'Geo database is disabled' };
-        if (this.updating) return { success: false, message: 'Geo database update already in progress' };
+    async update(fetcher: typeof fetch = fetch, maxBytes = MAX_DOWNLOAD_BYTES): Promise<GeoUpdateResult> {
+        if (!this.enabled) return { success: false, message: 'Geo database is disabled', skipped_rows: 0 };
+        if (this.updating) return { success: false, message: 'Geo database update already in progress', skipped_rows: 0 };
         this.updating = true;
         const temporary = join(this.tempDir, `geo-download-${randomUUID()}.db`);
-        const signal = AbortSignal.any([AbortSignal.timeout(60_000), ...(this.signal ? [this.signal] : [])]);
+        const signal = AbortSignal.any([AbortSignal.timeout(60_000), this.signal]);
         try {
+            signal.throwIfAborted();
             mkdirSync(this.tempDir, { recursive: true });
             const response = await fetcher(GEOIP_DATASET_URL, { signal });
             try {
@@ -99,7 +132,7 @@ export class GeoDatabase {
             } finally { if (!response.bodyUsed) await response.body?.cancel(); }
             signal.throwIfAborted();
             // Dataset validation and its potentially large transaction run off the HTTP event loop.
-            const result = await new Promise<{ success: boolean; message: string }>((resolve, reject) => {
+            const result = await new Promise<GeoUpdateResult>((resolve, reject) => {
                 const worker = new Worker(new URL('./geoip-merge.ts', import.meta.url), { workerData: { path: this.path, downloaded: temporary } });
                 const abort = () => { void worker.terminate().then(() => reject(new Error('GeoIP update cancelled'))); };
                 signal.addEventListener('abort', abort, { once: true });
@@ -114,7 +147,12 @@ export class GeoDatabase {
             });
             if (result.success) this.datasetChanged();
             return result;
-        } catch (error) { return { success: false, message: errorMessage(error) }; }
-        finally { try { await rm(temporary, { force: true }); } finally { this.updating = false; } }
+        } catch (error) { return { success: false, message: errorMessage(error), skipped_rows: 0 }; }
+        finally {
+            try {
+                // Reading a WAL-mode download can create sidecars even through a read-only connection.
+                await Promise.all([temporary, `${temporary}-wal`, `${temporary}-shm`].map(path => rm(path, { force: true })));
+            } finally { this.updating = false; }
+        }
     }
 }

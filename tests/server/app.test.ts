@@ -10,6 +10,7 @@ import { NodeService } from '../../src/server/services/node.ts';
 import { PeerService } from '../../src/server/services/peers.ts';
 import { ConnectivityService } from '../../src/server/services/connectivity.ts';
 import { GeoDatabase } from '../../src/server/services/geoip.ts';
+import { RpcBusyError } from '../../src/server/rpc.ts';
 import type { TestContext } from 'node:test';
 
 async function application(t: TestContext, version = 'dev') {
@@ -175,8 +176,8 @@ test('all documented JSON endpoints are wired and removed endpoints stay absent'
     for (const [path, methods] of Object.entries(schema.paths)) {
         if (!path.startsWith('/api/') || path === '/api/stream/system') continue;
         for (const method of Object.keys(methods as object)) {
-            const response = await get(path, { method: method.toUpperCase(), ...(method === 'post' ? { body: '{"address":"8.8.8.8","peer_id":1}', headers: { 'Content-Type': 'application/json' } } : {}) });
-            assert.equal(response.status, 200, `${method} ${path}`); assert.ok(await response.json());
+            const response = await get(path, { method: method.toUpperCase(), ...(method === 'post' ? { body: '{"address":"8.8.8.8","peer_id":1,"enabled":true}', headers: { 'Content-Type': 'application/json' } } : {}) });
+            assert.equal(response.status, (methods as Record<string, {deprecated?: boolean}>)[method].deprecated ? 410 : 200, `${method} ${path}`); assert.ok(await response.json());
         }
     }
     for (const path of ['/api/changes', '/api/netspeed', '/api/update-check']) assert.equal((await get(path)).status, 404);
@@ -202,19 +203,65 @@ test('cross-origin browser requests cannot change settings or manage peers', asy
         const response = await get('/api/bans/clear', { method: 'POST', headers: { Origin: origin } });
         assert.equal(response.status, 403, origin);
     }
-    const sameOrigin = await get('/api/geodb/toggle-auto-update', { method: 'POST', headers: { Origin: base } });
+    const body = '{"enabled":true}';
+    const sameOrigin = await get('/api/geodb/auto-update', { method: 'POST', body, headers: { Origin: base } });
     assert.equal(sameOrigin.status, 200);
-    const proxied = await get('/api/geodb/toggle-auto-update', { method: 'POST', headers: { Origin: base.replace('http:', 'https:') } });
+    const proxied = await get('/api/geodb/auto-update', { method: 'POST', body, headers: { Origin: base.replace('http:', 'https:') } });
     assert.equal(proxied.status, 200, 'TLS termination can preserve the external Host header');
     const defaultPort = await new Promise<number | undefined>((resolve, reject) => {
-        const req = request(`${base}/api/geodb/toggle-auto-update`, {
+        const req = request(`${base}/api/geodb/auto-update`, {
             method: 'POST', headers: { Host: 'bpm.example:443', Origin: 'https://bpm.example', Authorization: `Bearer ${FIXTURE_ADMIN_TOKEN}` },
         }, res => { res.resume(); resolve(res.statusCode); });
         req.on('error', reject);
-        req.end();
+        req.end(body);
     });
     assert.equal(defaultPort, 200, 'default ports are normalized using the external protocol');
-    assert.equal((await get('/api/geodb/toggle-auto-update', { method: 'POST' })).status, 200, 'CLI clients need no Origin header');
+    assert.equal((await get('/api/geodb/auto-update', { method: 'POST', body })).status, 200, 'CLI clients need no Origin header');
+});
+test('GeoIP setters require explicit booleans and return authoritative values', async t => {
+    const { runtime, get } = await application(t);
+    for (const [path, field] of [['db-only', 'geo_db_only_mode'], ['auto-update', 'auto_update']]) {
+        for (const body of ['{}', '{"enabled":null}', '{"enabled":1}', '{"enabled":"true"}', '[]']) {
+            assert.equal((await get(`/api/geodb/${path}`, { method: 'POST', body })).status, 422, body);
+        }
+        for (const enabled of [true, true, false, false]) {
+            const response = await get(`/api/geodb/${path}`, { method: 'POST', body: JSON.stringify({ enabled }) });
+            assert.equal(response.status, 200);
+            assert.equal((await response.json())[field], enabled);
+        }
+    }
+    t.mock.method(runtime, 'setGeoipDbOnly', () => { throw new Error('Settings disk is full'); });
+    assert.equal((await get('/api/geodb/db-only', { method: 'POST', body: '{"enabled":true}' })).status, 500);
+    assert.equal(runtime.connectivity.snapshot().geo_db_only_mode, false);
+});
+test('RPC overload returns a retry hint without retrying a mutation', async t => {
+    const { runtime, get } = await application(t);
+    let attempts = 0;
+    t.mock.method(runtime.node, 'connect', () => { attempts++; throw new RpcBusyError(); });
+    const response = await get('/api/peer/connect', { method: 'POST', body: '{"address":"8.8.8.8"}' });
+    assert.equal(response.status, 503);
+    assert.equal(response.headers.get('retry-after'), '1');
+    assert.equal((await response.json()).code, 'rpc_busy');
+    assert.equal(attempts, 1);
+});
+test('response disconnection cancels a pending read without mistaking a finished request body for disconnection', async t => {
+    const { runtime, base } = await application(t);
+    const started = deferred<AbortSignal>(), cancelled = deferred<void>();
+    t.mock.method(runtime.node, 'chainTips', (signal?: AbortSignal) => {
+        assert.ok(signal); started.resolve(signal);
+        return new Promise((_resolve, reject) => signal.addEventListener('abort', () => {
+            cancelled.resolve(undefined); reject(signal.reason);
+        }, { once: true }));
+    });
+    const req = request(`${base}/api/chain-tips`);
+    req.on('error', () => {});
+    req.end();
+    const signal = await started.promise;
+    await flush();
+    assert.equal(signal.aborted, false, 'request completion leaves the response subscriber active');
+    req.destroy();
+    await cancelled.promise;
+    assert.equal(signal.aborted, true);
 });
 test('SSE emits metrics without blocking HTTP and closes with the application', async t => {
     const { app, runtime, get } = await application(t);

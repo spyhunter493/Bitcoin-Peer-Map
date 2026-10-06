@@ -151,18 +151,7 @@ export function create(options) {
  * @param {import('../types').Camera} viewState
  * @param {number} margin */
     function getWrapOffsetsFor(viewState, margin) {
-        const worldWidthPx = mapView.width * viewState.zoom;
-        const copiesNeeded = Math.ceil(mapView.width / worldWidthPx) + 2;
-        const centerX = mapView.width / 2 - viewState.x * viewState.zoom;
-        const offsets = [];
-        for (let i = -copiesNeeded; i <= copiesNeeded; i++) {
-            const leftPx = centerX - worldWidthPx / 2 + i * worldWidthPx;
-            const rightPx = leftPx + worldWidthPx;
-            if (rightPx > -margin && leftPx < mapView.width + margin) {
-                offsets.push(i * 360);
-            }
-        }
-        return offsets.length > 0 ? offsets : [0];
+        return geometry.worldWrapOffsets(mapView.width, viewState, margin);
     }
 
     function getWrapOffsets() {
@@ -320,7 +309,7 @@ export function create(options) {
 
             // [PRIVATE-NET] Draw "PRIVATE NETWORKS" text across Antarctica
             if (privateState.privateNetMode) {
-                connections.drawPrivateNetworksText();
+                connections.drawPrivateNetworksText(wrapOffsets);
                 hasConnections = options.showAntarcticaPeers();
             }
 
