@@ -60,6 +60,10 @@ async function stop() {
     await docker('rm', name);
 }
 try {
+    const productionNodeVersion = await docker('run', '--rm', '--network', 'none', image,
+        'node', '-p', 'process.versions.node');
+    assert.equal(productionNodeVersion.split('.')[0], process.versions.node.split('.')[0],
+        `Production Node.js ${productionNodeVersion} must match test runner Node.js ${process.versions.node}`);
     const imageConfig = JSON.parse(await docker('image', 'inspect', '--format', '{{json .Config}}', image));
     const buildEnvironment = Object.fromEntries(imageConfig.Env.map(value => {
         const split = value.indexOf('='); return [value.slice(0, split), value.slice(split + 1)];

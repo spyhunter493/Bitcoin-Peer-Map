@@ -9,11 +9,18 @@ export default async function assertNodeMetrics(browser, baseUrl) {
     let unavailable = false, ibd = false, blockchainUnavailable = false, invalidJson = false, stalled = false, infoRequests = 0;
     let releaseStall;
     const stallGate = new Promise(resolve => { releaseStall = resolve; });
+    let markStallStarted;
+    const stallStarted = new Promise(resolve => { markStallStarted = resolve; });
     page.on('pageerror', error => errors.push(error.message));
     page.on('request', request => requests.push(new URL(request.url()).pathname));
     await page.route('**/api/info', async route => {
         infoRequests++;
-        if (stalled) { await stallGate; await route.abort().catch(() => {}); return; }
+        if (stalled) {
+            markStallStarted();
+            await stallGate;
+            await route.abort().catch(() => {});
+            return;
+        }
         if (invalidJson) { await route.fulfill({ body: 'invalid JSON' }); return; }
         if (unavailable) { await route.fulfill({ status: 502, body: '{}' }); return; }
         const response = await route.fetch();
@@ -170,8 +177,11 @@ export default async function assertNodeMetrics(browser, baseUrl) {
 
         await page.clock.install();
         stalled = true;
-        const stallStarted = page.waitForRequest(request => request.url().endsWith('/api/info'));
+        const stallRequested = page.waitForRequest(request => request.url().endsWith('/api/info'));
         await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+        await stallRequested;
+        // The request event precedes its route handler; wait for the counter to
+        // include the stalled request before checking for overlapping polls.
         await stallStarted;
         const countAtStall = infoRequests;
         await page.clock.fastForward(34_000);

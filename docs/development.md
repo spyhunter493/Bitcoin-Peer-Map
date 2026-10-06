@@ -2,9 +2,13 @@
 
 [README](../README.md) · [Configuration](configuration.md) · [Operations](operations.md)
 
-Use **Node.js 24.18 or later in the 24.x release line** and npm. The server runs
+Use **Node.js 26.x** and npm. The server runs
 TypeScript directly with Node.js built-in APIs. Only development tools, including
 TypeScript and Playwright, require npm dependencies; Python is not required.
+
+The repository's `.nvmrc` selects Node.js 26, and CI reads that file for every
+check, including the full backend suite. Production and the Docker browser-test
+fixture use `node:26-alpine`.
 
 ## Run the server locally
 
@@ -80,7 +84,8 @@ npx playwright install --with-deps --only-shell chromium
 
 CI runs syntax checks, type checks, backend tests, and frontend unit tests before
 installing the browser. It then runs browser regressions, Compose checks, and
-container validation. The Ubuntu VM runner supports both Chromium and Docker.
+container validation, which verifies that the image and test runner use the same
+Node.js major version. The Ubuntu VM runner supports both Chromium and Docker.
 Tests use local fixtures and mock RPC servers, without a live Bitcoin node or
 external GeoIP services.
 
@@ -148,6 +153,20 @@ summary and insight modules bind distribution interactions through explicit
 callbacks. Controllers supply current-data getters and connect presentation and
 navigation effects. Snapshot reconciliation preserves active filters, tooltip
 geometry, focus, and scroll without applying user-navigation cleanup.
+
+The map controller connects polling, peer snapshots, settings, and navigation.
+`map/renderer.js` coordinates the camera and canvas surfaces; `basemap.js` owns
+geography loading and cached paths, `peer-renderer.js` owns peer animation and
+hit testing, and `connection-renderer.js` draws lines from distribution and
+private-network views. `input.js` binds pointer, touch, table, and badge input;
+`controls.js` binds dashboard buttons.
+
+`distribution/navigation.js` composes the existing navigation API from
+`selection.js` (selection transitions), `selection-filters.js` (persistent filters
+and snapshot reconciliation), `navigation-view.js` (navigation visuals and
+temporary previews), and the donut, panel, and insight input modules. Each module
+declares the options and transition methods it uses in JSDoc. Transition getters
+resolve handlers after composition, so the modules do not import each other.
 
 Modules are served under `/static/v/<asset_revision>/`, so a new revision
 invalidates every relative dependency. Existing static URLs remain available.
