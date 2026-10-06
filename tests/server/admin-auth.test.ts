@@ -6,7 +6,7 @@ import { createApplication } from '../../src/server/app.ts';
 import { FixtureRuntime, fixtureSettings, FIXTURE_ADMIN_TOKEN } from '../layout_server.ts';
 import { temporaryDirectory } from './helpers.ts';
 
-const actions = ['/api/peer/connect', '/api/peer/disconnect', '/api/peer/ban', '/api/peer/unban', '/api/bans/clear', '/api/geodb/toggle-db-only', '/api/geodb/toggle-auto-update', '/api/geodb/update', '/api/connectivity/api-prompt-ack'];
+const actions = ['/api/peer/connect', '/api/peer/disconnect', '/api/peer/ban', '/api/peer/unban', '/api/bans/clear', '/api/geodb/db-only', '/api/geodb/auto-update', '/api/geodb/update', '/api/connectivity/api-prompt-ack'];
 async function application(t: TestContext, token = FIXTURE_ADMIN_TOKEN) {
     const settings = fixtureSettings(temporaryDirectory(t), token), runtime = new FixtureRuntime(settings);
     const calls: string[] = [];
@@ -14,15 +14,15 @@ async function application(t: TestContext, token = FIXTURE_ADMIN_TOKEN) {
         const original = runtime.node[name];
         t.mock.method(runtime.node, name, (...args: never[]) => { calls.push(name); return Reflect.apply(original, runtime.node, args); });
     }
-    t.mock.method(runtime, 'toggleGeoipApi', () => { calls.push('geoip-api'); return true; });
-    t.mock.method(runtime, 'toggleGeoipAutoUpdate', () => { calls.push('geoip-update'); return true; });
+    t.mock.method(runtime, 'setGeoipDbOnly', () => { calls.push('geoip-api'); return true; });
+    t.mock.method(runtime, 'setGeoipAutoUpdate', () => { calls.push('geoip-update'); return true; });
     t.mock.method(runtime.geoDatabase, 'update', async () => { calls.push('geodb'); return { success: true, message: 'done' }; });
     t.mock.method(runtime.connectivity, 'acknowledgePrompt', () => { calls.push('ack'); });
     const app = createApplication(settings, runtime);
     const address = await app.listen(0, '127.0.0.1'); assert.ok(address && typeof address !== 'string');
     t.after(() => app.close());
     const base = `http://127.0.0.1:${address.port}`;
-    const post = (path: string, headers: Record<string, string> = {}) => fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: '{"peer_id":1,"address":"8.8.8.8"}' });
+    const post = (path: string, headers: Record<string, string> = {}) => fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: '{"peer_id":1,"address":"8.8.8.8","enabled":true}' });
     return { base, post, calls };
 }
 
@@ -63,6 +63,18 @@ test('unset tokens disable every management route and leave dashboard reads avai
     assert.deepEqual(calls, []);
     for (const path of ['/', '/healthz', '/api/peers', '/api/info', '/api/bans', '/api/config']) assert.equal((await fetch(base + path)).status, 200, path);
     assert.deepEqual((await (await fetch(base + '/api/config')).json()).management, { enabled: false });
+});
+
+test('retired toggles retain authentication and origin guards without executing a setter', async t => {
+    const { post, calls } = await application(t);
+    for (const path of ['/api/geodb/toggle-db-only', '/api/geodb/toggle-auto-update']) {
+        assert.equal((await post(path)).status, 401);
+        assert.equal((await post(path, { Authorization: `Bearer ${FIXTURE_ADMIN_TOKEN}`, Origin: 'https://other.example' })).status, 403);
+        const retired = await post(path, { Authorization: `Bearer ${FIXTURE_ADMIN_TOKEN}` });
+        assert.equal(retired.status, 410);
+        assert.equal((await retired.json()).code, 'endpoint_retired');
+    }
+    assert.deepEqual(calls, []);
 });
 
 test('token never appears in public responses and OpenAPI describes authentication on every POST', async t => {

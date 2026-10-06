@@ -236,7 +236,7 @@ test('GeoIP misses retry after 60 seconds and cached records invalidate after a 
     assert.equal(peers.listPeers()[0].location, 'Auckland, NZ'); assert.equal(peers.listPeers()[0].as, 'AS1');
     geo.datasetChanged(); assert.equal(peers.cachedGeo('8.8.8.8'), null);
 });
-test('private and departed peers do not trigger API requests and stale in-flight results are discarded', async t => {
+test('private and departed peers do not trigger API requests and fresh in-flight results survive dataset generation changes', async t => {
     const { rpc, geo, connectivity } = services(t), gate = deferred<Response>(); let calls = 0;
     const peers = new PeerService(rpc, geo, connectivity, undefined, async () => { calls++; return gate.promise; });
     rpc.values.getpeerinfo = [{ id: 1, addr: '10.0.0.1:8333' }, { id: 2, addr: '8.8.8.8:8333' }];
@@ -246,7 +246,7 @@ test('private and departed peers do not trigger API requests and stale in-flight
     const lookup = peers.resolveGeo('8.8.8.8', 'ipv4'); geo.datasetChanged();
     gate.resolve(new Response('{"status":"success","lat":1,"lon":2,"country":"NZ"}'));
     await lookup;
-    assert.equal(calls, 1); assert.equal(peers.cachedGeo('8.8.8.8'), null); assert.equal(geo.get('8.8.8.8'), null);
+    assert.equal(calls, 1); assert.equal(peers.cachedGeo('8.8.8.8')?.status, 'ok'); assert.equal(geo.get('8.8.8.8')?.country, 'NZ');
 });
 test('malformed nested peer fields cannot replace a good snapshot or reach a ban RPC', async t => {
     const { rpc, geo, connectivity, node } = services(t);

@@ -32,22 +32,22 @@ test('live disabling lets the current import finish; re-enabling triggers an imm
     t.mock.timers.enable({ apis: ['setTimeout'] });
     t.mock.method(app.geoDatabase, 'update', () => { calls++; return calls === 1 ? gate.promise : Promise.resolve({ success: true, message: 'OK' }); });
     await app.start(); t.mock.timers.tick(GEOIP_UPDATE_INTERVAL_MS); await flush(); assert.equal(calls, 0);
-    app.toggleGeoipAutoUpdate(); t.mock.timers.tick(1); await flush(); assert.equal(calls, 1);
-    app.toggleGeoipAutoUpdate(); gate.resolve({ success: true, message: 'OK' }); await flush();
+    app.setGeoipAutoUpdate(true); t.mock.timers.tick(1); await flush(); assert.equal(calls, 1);
+    app.setGeoipAutoUpdate(false); gate.resolve({ success: true, message: 'OK' }); await flush();
     t.mock.timers.tick(GEOIP_UPDATE_INTERVAL_MS); await flush(); assert.equal(calls, 1);
-    app.toggleGeoipAutoUpdate(); t.mock.timers.tick(1); await flush(); assert.equal(calls, 2);
+    app.setGeoipAutoUpdate(true); t.mock.timers.tick(1); await flush(); assert.equal(calls, 2);
 });
 test('a disabled database never schedules downloads', async t => {
     const app = runtime(t, { BPM_GEOIP_ENABLED: 'false' });
     t.mock.timers.enable({ apis: ['setTimeout'] });
     t.mock.method(app.geoDatabase, 'update', () => assert.fail('Database is disabled'));
-    await app.start(); app.toggleGeoipAutoUpdate(); app.toggleGeoipAutoUpdate();
+    await app.start(); app.setGeoipAutoUpdate(false); app.setGeoipAutoUpdate(true);
     t.mock.timers.tick(GEOIP_UPDATE_INTERVAL_MS); await flush();
 });
 for (const enabled of ['true', 'false']) {
     test(`saved privacy is restored before peer workers start (database ${enabled})`, async t => {
         const dir = temporaryDirectory(t), config = settings({ BPM_DATA_DIR: dir, BPM_GEOIP_ENABLED: enabled, BPM_GEOIP_AUTO_UPDATE: 'false' });
-        const first = new AppRuntime(config); first.toggleGeoipApi(); await first.stop();
+        const first = new AppRuntime(config); first.setGeoipDbOnly(true); await first.stop();
         const restored = new AppRuntime(config); t.after(() => restored.stop());
         assert.equal(restored.connectivity.snapshot().geo_db_only_mode, true);
         t.mock.method(restored.connectivity, 'ensureChecker', () => {});
@@ -56,21 +56,33 @@ for (const enabled of ['true', 'false']) {
         t.mock.method(restored.peers, 'start', async () => {
             await restored.peers.refreshOnce(); assert.equal(await restored.peers.resolveGeo('8.8.8.8', 'ipv4'), false);
         });
-        await restored.start(); restored.toggleGeoipApi();
+        await restored.start(); restored.setGeoipDbOnly(false);
         assert.equal(new PreferenceStore(join(dir, 'settings.json')).load().geoip_db_only, false);
     });
 }
-for (const method of ['toggleGeoipApi', 'toggleGeoipAutoUpdate'] as const) {
+for (const [method, key] of [['setGeoipDbOnly', 'geoip_db_only'], ['setGeoipAutoUpdate', 'geoip_auto_update']] as const) {
     test(`failed preference writes leave live settings unchanged: ${method}`, t => {
         const app = runtime(t), before = { ...app.preferences };
         t.mock.method(app.preferencesStore, 'save', () => { throw new Error('Disk full'); });
-        assert.throws(() => app[method](), /Disk full/);
+        assert.throws(() => app[method](!before[key]), /Disk full/);
         assert.deepEqual(app.preferences, before); assert.equal(app.connectivity.geoipApiDisabled, false);
     });
 }
 test('simultaneous preference changes preserve both flags', async t => {
     const app = runtime(t);
-    await Promise.all([Promise.resolve().then(() => app.toggleGeoipApi()), Promise.resolve().then(() => app.toggleGeoipAutoUpdate())]);
+    await Promise.all([Promise.resolve().then(() => app.setGeoipDbOnly(true)), Promise.resolve().then(() => app.setGeoipAutoUpdate(false))]);
+    assert.deepEqual(app.preferencesStore.load(), { geoip_auto_update: false, geoip_db_only: true });
+});
+test('explicit preferences are idempotent and do not rewrite already saved values', t => {
+    const app = runtime(t), save = t.mock.method(app.preferencesStore, 'save');
+    assert.equal(app.setGeoipDbOnly(false), false);
+    assert.equal(app.setGeoipAutoUpdate(true), true);
+    assert.equal(save.mock.callCount(), 0);
+    assert.equal(app.setGeoipDbOnly(true), true);
+    assert.equal(app.setGeoipDbOnly(true), true);
+    assert.equal(app.setGeoipAutoUpdate(false), false);
+    assert.equal(app.setGeoipAutoUpdate(false), false);
+    assert.equal(save.mock.callCount(), 2);
     assert.deepEqual(app.preferencesStore.load(), { geoip_auto_update: false, geoip_db_only: true });
 });
 test('startup validates the chain and fails immediately on authentication errors', async t => {

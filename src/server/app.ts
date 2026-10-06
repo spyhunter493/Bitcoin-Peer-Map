@@ -8,7 +8,7 @@ import { once } from 'node:events';
 import { AppRuntime } from './runtime.ts';
 import type { Settings } from './settings.ts';
 import { type Data, errorMessage, object } from './types.ts';
-import { HttpError, readJsonBody, parseAddress, parsePeerId, parseQueryBoolean, requireDashboardOrigin, sendResponse } from './http.ts';
+import { HttpError, readJsonBody, parseAddress, parseEnabled, parsePeerId, parseQueryBoolean, requireDashboardOrigin, sendResponse } from './http.ts';
 import { GITHUB_REPOSITORY, REPOSITORY_URL } from './build.ts';
 import { NODE_METRICS_INTERVAL_MS } from './services/node-metrics.ts';
 import { createAdminAuthentication } from './admin-auth.ts';
@@ -21,8 +21,8 @@ export interface ApplicationRuntime {
     settings: Settings;
     start(): void | Promise<void>;
     stop(): void | Promise<void>;
-    toggleGeoipApi(): boolean;
-    toggleGeoipAutoUpdate(): boolean;
+    setGeoipDbOnly(enabled: boolean): boolean;
+    setGeoipAutoUpdate(enabled: boolean): boolean;
     peers: Pick<AppRuntime['peers'], 'snapshot' | 'listPeers'>;
     node: Pick<AppRuntime['node'], 'dashboardInfo' | 'mempool' | 'blockchain' | 'recentBlocks' | 'chainTips' | 'connect' | 'disconnect' | 'ban' | 'unban' | 'bans' | 'clearBans'>;
     metrics: Pick<AppRuntime['metrics'], 'latest' | 'summary'>;
@@ -81,8 +81,10 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
         'POST /api/bans/clear': () => runtime.node.clearBans(),
         'GET /api/connectivity': () => runtime.connectivity.snapshot(),
         'POST /api/connectivity/api-prompt-ack': () => { runtime.connectivity.acknowledgePrompt(); return { success: true }; },
-        'POST /api/geodb/toggle-db-only': () => { const disabled = runtime.toggleGeoipApi(); return { success: true, geo_db_only_mode: disabled, message: disabled ? 'API lookup disabled. To re-enable, return to this menu.' : 'API lookup re-enabled.' }; },
-        'POST /api/geodb/toggle-auto-update': () => { const enabled = runtime.toggleGeoipAutoUpdate(); return { success: true, auto_update: enabled, message: enabled ? 'Auto-update enabled' : 'Auto-update disabled' }; },
+        'POST /api/geodb/db-only': async (_query, req) => { const disabled = runtime.setGeoipDbOnly(parseEnabled(await readJsonBody(req))); return { success: true, geo_db_only_mode: disabled, message: disabled ? 'API lookup disabled. To re-enable, return to this menu.' : 'API lookup re-enabled.' }; },
+        'POST /api/geodb/auto-update': async (_query, req) => { const enabled = runtime.setGeoipAutoUpdate(parseEnabled(await readJsonBody(req))); return { success: true, auto_update: enabled, message: enabled ? 'Auto-update enabled' : 'Auto-update disabled' }; },
+        'POST /api/geodb/toggle-db-only': () => { throw new HttpError(410, 'This toggle endpoint has been retired. Reload the dashboard or use POST /api/geodb/db-only with {"enabled": boolean}.', 'endpoint_retired'); },
+        'POST /api/geodb/toggle-auto-update': () => { throw new HttpError(410, 'This toggle endpoint has been retired. Reload the dashboard or use POST /api/geodb/auto-update with {"enabled": boolean}.', 'endpoint_retired'); },
         'POST /api/geodb/update': () => runtime.geoDatabase.update(),
         'GET /api/stats': async () => ({ system_stats: await runtime.metrics.summary() }),
         'GET /api/rpc-info': () => ({ ...runtime.rpc.connectionInfo, endpoint: settings.rpc_url }),

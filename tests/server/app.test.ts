@@ -176,8 +176,8 @@ test('all documented JSON endpoints are wired and removed endpoints stay absent'
     for (const [path, methods] of Object.entries(schema.paths)) {
         if (!path.startsWith('/api/') || path === '/api/stream/system') continue;
         for (const method of Object.keys(methods as object)) {
-            const response = await get(path, { method: method.toUpperCase(), ...(method === 'post' ? { body: '{"address":"8.8.8.8","peer_id":1}', headers: { 'Content-Type': 'application/json' } } : {}) });
-            assert.equal(response.status, 200, `${method} ${path}`); assert.ok(await response.json());
+            const response = await get(path, { method: method.toUpperCase(), ...(method === 'post' ? { body: '{"address":"8.8.8.8","peer_id":1,"enabled":true}', headers: { 'Content-Type': 'application/json' } } : {}) });
+            assert.equal(response.status, (methods as Record<string, {deprecated?: boolean}>)[method].deprecated ? 410 : 200, `${method} ${path}`); assert.ok(await response.json());
         }
     }
     for (const path of ['/api/changes', '/api/netspeed', '/api/update-check']) assert.equal((await get(path)).status, 404);
@@ -203,19 +203,36 @@ test('cross-origin browser requests cannot change settings or manage peers', asy
         const response = await get('/api/bans/clear', { method: 'POST', headers: { Origin: origin } });
         assert.equal(response.status, 403, origin);
     }
-    const sameOrigin = await get('/api/geodb/toggle-auto-update', { method: 'POST', headers: { Origin: base } });
+    const body = '{"enabled":true}';
+    const sameOrigin = await get('/api/geodb/auto-update', { method: 'POST', body, headers: { Origin: base } });
     assert.equal(sameOrigin.status, 200);
-    const proxied = await get('/api/geodb/toggle-auto-update', { method: 'POST', headers: { Origin: base.replace('http:', 'https:') } });
+    const proxied = await get('/api/geodb/auto-update', { method: 'POST', body, headers: { Origin: base.replace('http:', 'https:') } });
     assert.equal(proxied.status, 200, 'TLS termination can preserve the external Host header');
     const defaultPort = await new Promise<number | undefined>((resolve, reject) => {
-        const req = request(`${base}/api/geodb/toggle-auto-update`, {
+        const req = request(`${base}/api/geodb/auto-update`, {
             method: 'POST', headers: { Host: 'bpm.example:443', Origin: 'https://bpm.example', Authorization: `Bearer ${FIXTURE_ADMIN_TOKEN}` },
         }, res => { res.resume(); resolve(res.statusCode); });
         req.on('error', reject);
-        req.end();
+        req.end(body);
     });
     assert.equal(defaultPort, 200, 'default ports are normalized using the external protocol');
-    assert.equal((await get('/api/geodb/toggle-auto-update', { method: 'POST' })).status, 200, 'CLI clients need no Origin header');
+    assert.equal((await get('/api/geodb/auto-update', { method: 'POST', body })).status, 200, 'CLI clients need no Origin header');
+});
+test('GeoIP setters require explicit booleans and return authoritative values', async t => {
+    const { runtime, get } = await application(t);
+    for (const [path, field] of [['db-only', 'geo_db_only_mode'], ['auto-update', 'auto_update']]) {
+        for (const body of ['{}', '{"enabled":null}', '{"enabled":1}', '{"enabled":"true"}', '[]']) {
+            assert.equal((await get(`/api/geodb/${path}`, { method: 'POST', body })).status, 422, body);
+        }
+        for (const enabled of [true, true, false, false]) {
+            const response = await get(`/api/geodb/${path}`, { method: 'POST', body: JSON.stringify({ enabled }) });
+            assert.equal(response.status, 200);
+            assert.equal((await response.json())[field], enabled);
+        }
+    }
+    t.mock.method(runtime, 'setGeoipDbOnly', () => { throw new Error('Settings disk is full'); });
+    assert.equal((await get('/api/geodb/db-only', { method: 'POST', body: '{"enabled":true}' })).status, 500);
+    assert.equal(runtime.connectivity.snapshot().geo_db_only_mode, false);
 });
 test('RPC overload returns a retry hint without retrying a mutation', async t => {
     const { runtime, get } = await application(t);

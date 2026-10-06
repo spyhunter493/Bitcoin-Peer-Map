@@ -68,8 +68,9 @@ export function create({ getNodeInfo, refreshInfo }) {
                 input.disabled = true;
                 result.textContent = '';
                 try {
+                    const enabled = setting === 'auto-update' ? input.checked : !input.checked;
                     /** @type {{success: boolean; auto_update?: boolean; geo_db_only_mode?: boolean}} */
-                    const data = await postJson(`/api/geodb/toggle-${setting}`, undefined, { signal: dialog.signal });
+                    const data = await postJson(`/api/geodb/${setting}`, { enabled }, { signal: dialog.signal });
                     const value = setting === 'auto-update' ? data.auto_update : data.geo_db_only_mode;
                     if (!data.success || typeof value !== 'boolean') throw new Error('Could not save setting');
                     saved = setting === 'auto-update' ? value : !value;

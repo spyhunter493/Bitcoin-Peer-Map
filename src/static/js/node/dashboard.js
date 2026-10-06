@@ -677,9 +677,9 @@ function create({ config: CFG, onAction }) {
         databaseOnlyButton.addEventListener('click', async () => {
             databaseOnlyButton.disabled = true;
             try {
-                /** @type {{success: boolean}} */
-                const data = await postJson('/api/geodb/toggle-db-only', undefined, { signal: controller.signal });
-                if (!data.success) throw new Error('Could not save API lookup setting');
+                /** @type {{success: boolean; geo_db_only_mode?: boolean}} */
+                const data = await postJson('/api/geodb/db-only', { enabled: true }, { signal: controller.signal });
+                if (!data.success || data.geo_db_only_mode !== true) throw new Error('Could not save API lookup setting');
                 close();
                 fetchInfo();
             } catch (e) {

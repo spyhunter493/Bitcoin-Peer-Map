@@ -63,16 +63,18 @@ export class AppRuntime {
         await Promise.allSettled([this.peers.stop(), this.connectivity.stop(), this.updates.stop(), this.updateTask]);
         this.geoDatabase.close();
     }
-    toggleGeoipAutoUpdate() {
+    setGeoipAutoUpdate(enabled: boolean) {
+        if (this.preferences.geoip_auto_update === enabled) return enabled;
         // Synchronous atomic writes make each read-modify-write indivisible on this event loop.
-        const preferences = { ...this.preferences, geoip_auto_update: !this.preferences.geoip_auto_update };
+        const preferences = { ...this.preferences, geoip_auto_update: enabled };
         this.preferencesStore.save(preferences);
         this.preferences = preferences;
         this.scheduleUpdate(0);
         return preferences.geoip_auto_update;
     }
-    toggleGeoipApi() {
-        const preferences = { ...this.preferences, geoip_db_only: !this.preferences.geoip_db_only };
+    setGeoipDbOnly(enabled: boolean) {
+        if (this.preferences.geoip_db_only === enabled) return enabled;
+        const preferences = { ...this.preferences, geoip_db_only: enabled };
         this.preferencesStore.save(preferences);
         this.preferences = preferences;
         this.connectivity.setGeoipApiDisabled(preferences.geoip_db_only);

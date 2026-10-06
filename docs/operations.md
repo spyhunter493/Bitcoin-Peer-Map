@@ -204,6 +204,15 @@ Enabling auto-update starts a check immediately. Disabling it prevents future
 checks; an update already running finishes normally. Dataset imports add new IPs
 and replace records only when the downloaded `last_updated` timestamp is newer,
 preserving newer local API results.
+Invalid dataset rows are skipped and cannot replace local locations. The update
+result reports how many rows were added, updated, and skipped; a dataset with no
+valid rows is rejected without changes. Temporary SQLite writer contention is
+retried without blocking HTTP requests. Failed API location saves remain available
+for active peers and retry after 60 seconds without another provider lookup.
+
+Settings use explicit desired values, so repeated saves and database-only recovery
+are safe when the mode is already enabled. Older dashboard tabs using toggle
+endpoints receive a reload message and cannot change settings until refreshed.
 
 API Lookup sends the queried peer IP to ip-api.com over unencrypted HTTP; the
 provider's [free endpoint does not support HTTPS](https://ip-api.com/docs/api:json).

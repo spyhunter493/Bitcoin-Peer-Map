@@ -162,6 +162,12 @@ bans, GeoIP changes/updates, and the server's connectivity acknowledgement all
 require authentication. Merely viewing a connectivity notice is handled locally.
 
 API clients send `Authorization: Bearer <token>` on each management request.
+GeoIP preferences use `POST /api/geodb/db-only` and
+`POST /api/geodb/auto-update`, each with a JSON `{ "enabled": boolean }` body.
+Database-only `enabled: true` disables external peer location lookups. Repeated
+values succeed without rewriting preferences. The old `/api/geodb/toggle-db-only`
+and `/api/geodb/toggle-auto-update` endpoints return authenticated HTTP 410 with
+a replacement endpoint and reload instruction; they perform no mutation.
 Missing or incorrect tokens return HTTP 401 before any action executes. After ten
 failed attempts within 60 seconds of the first failure from a connection address,
 all subsequent management requests return HTTP 429 with `Retry-After`, including

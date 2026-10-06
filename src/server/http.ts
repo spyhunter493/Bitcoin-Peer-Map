@@ -60,6 +60,11 @@ export function parseAddress(payload: Data) {
     return value;
 }
 
+export function parseEnabled(payload: Data): boolean {
+    if (typeof payload.enabled !== 'boolean') throw new HttpError(422, 'enabled must be a boolean');
+    return payload.enabled;
+}
+
 export function parsePeerId(payload: Data): number | null {
     if (payload.peer_id == null) return null;
     const value = payload.peer_id;
