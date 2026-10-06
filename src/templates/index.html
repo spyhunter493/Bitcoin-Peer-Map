@@ -179,8 +179,9 @@
         </div>
     </div>
 
-    <!-- Cached basemap and interactive peer overlay -->
+    <!-- Geography, static connections, and animated peers -->
     <canvas id="basemap" aria-hidden="true"></canvas>
+    <canvas id="map-connections" aria-hidden="true"></canvas>
     <canvas id="worldmap"></canvas>
 
     <!-- Tooltip for hovering over map nodes -->
@@ -213,7 +214,7 @@
             </div>
         </div>
         <div class="peer-panel-body">
-            <div class="peer-table-wrap">
+            <div class="peer-table-wrap" tabindex="0" aria-label="Connected peers">
                 <table class="peer-table" id="peer-table">
                     <thead id="peer-thead"></thead>
                     <tbody id="peer-tbody"></tbody>

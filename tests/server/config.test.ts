@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { ConfigurationError, loadSettings } from '../../src/server/settings.ts';
 import { PreferenceStore } from '../../src/server/preferences.ts';
@@ -80,16 +80,39 @@ test('preferences survive atomic replacement with restricted permissions', t => 
     assert.deepEqual(readdirSync(dir), ['settings.json']);
     assert.equal(JSON.parse(readFileSync(path, 'utf8')).geoip_db_only, true);
 });
-for (const raw of ['not-json', 'null', '[]', '42', '{"geoip_auto_update":"false","geoip_db_only":1}']) {
-    test(`invalid saved preferences fall back safely: ${raw}`, t => {
+for (const raw of ['not-json', 'null', '[]', '42', 'true', '{"geoip_auto_update":"false","geoip_db_only":1}', '{"geoip_db_only":null}', '{"geoip_auto_update":0}']) {
+    test(`invalid saved preferences stop startup and preserve the file: ${raw}`, t => {
         const path = join(temporaryDirectory(t), 'settings.json'); writeFileSync(path, raw);
-        assert.deepEqual(new PreferenceStore(path).load(), { geoip_auto_update: true, geoip_db_only: false });
+        assert.throws(() => new PreferenceStore(path).load(), error => {
+            assert.ok(error instanceof ConfigurationError);
+            assert.ok(error.message.includes(path));
+            assert.match(error.message, /Repair.*preserving your privacy choices/);
+            return true;
+        });
+        assert.equal(readFileSync(path, 'utf8'), raw);
     });
 }
+test('unreadable saved settings are not treated as a first installation', t => {
+    const path = join(temporaryDirectory(t), 'settings.json');
+    mkdirSync(path);
+    assert.throws(() => new PreferenceStore(path).load(), /file is not readable/);
+    assert.ok(statSync(path).isDirectory());
+});
+test('settings errors never disclose file contents', t => {
+    const path = join(temporaryDirectory(t), 'settings.json'), raw = '{SECRET-PRIVATE-CONTENTS';
+    writeFileSync(path, raw);
+    assert.throws(() => new PreferenceStore(path).load(), error => {
+        assert.ok(error instanceof Error);
+        assert.equal(error.message.includes(raw), false);
+        return true;
+    });
+});
 test('older saved preferences remain compatible', t => {
     const path = join(temporaryDirectory(t), 'settings.json');
     writeFileSync(path, '{"geoip_auto_update":false}');
     assert.deepEqual(new PreferenceStore(path).load(), { geoip_auto_update: false, geoip_db_only: false });
+    writeFileSync(path, '{"geoip_db_only":true}');
+    assert.deepEqual(new PreferenceStore(path).load(), { geoip_auto_update: true, geoip_db_only: true });
 });
 test('peer address parsing and normalization preserve supported networks', () => {
     for (const [input, host, port, normalized] of [
@@ -117,4 +140,15 @@ test('display formatting stays compatible', () => {
     assert.equal(formatBytes(2048), '2.0KB'); assert.equal(formatBytes(1024 ** 3), '1.00GB');
     assert.equal(formatDuration(90061), '1d1h'); assert.equal(formatDuration(-2), '0s');
     assert.equal(abbreviateConnectionType('outbound-full-relay'), 'OFR');
+});
+
+
+test('all five configured networks retain the independent RPC default and reject aliases', () => {
+    for (const chain of ['main', 'test', 'testnet4', 'signet', 'regtest']) {
+        const value = settings({ BITCOIN_NETWORK: chain });
+        assert.equal(value.bitcoin_network, chain);
+        assert.equal(value.rpc_port, 8332);
+        assert.equal(settings({ BITCOIN_NETWORK: chain, BITCOIN_RPC_PORT: '12345' }).rpc_port, 12345);
+    }
+    for (const chain of ['testnet', 'testnet3', 'mainnet', 'toString', '__proto__']) assert.throws(() => settings({ BITCOIN_NETWORK: chain }), ConfigurationError);
 });

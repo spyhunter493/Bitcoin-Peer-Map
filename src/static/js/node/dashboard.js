@@ -1,4 +1,4 @@
-import { errorMessage, postJson } from '../core/api.js';
+import { errorMessage, postJson, getJson } from '../core/api.js';
 import { query, queryAll, required } from '../core/dom.js';
 import { dashboard as BPMDashboard } from '../core/dashboard-state.js';
 import * as BPMModal from '../core/modal.js';
@@ -322,16 +322,19 @@ function create({ config: CFG, onAction }) {
     // ═══════════════════════════════════════════════════════════
 
     function openConnectPeerModal() {
+        const port = lastNodeInfo?.bitcoin_network?.default_peer_port;
+        const suffix = typeof port === 'number' && Number.isInteger(port) && port > 0 && port <= 65535 ? `:${port}` : '';
         const dialog = BPMModal.open({
             id: 'connect-peer-modal', title: 'Connect Peer', closeId: 'connect-close', maxWidth: 520,
             initialFocusSelector: '#connect-addr-input',
             initialHtml: `
             <div class="connect-instructions">Enter a peer address to connect. Your node will attempt a one-time (onetry) connection.</div>
-            <div class="connect-example">IPv4: 1.2.3.4:8333</div>
-            <div class="connect-example">IPv6: [2001:db8::1]:8333</div>
-            <div class="connect-example">Tor: abc...xyz.onion:8333</div>
+            <div class="connect-example">IPv4: 1.2.3.4${suffix}</div>
+            <div class="connect-example">IPv6: [2001:db8::1]${suffix}</div>
+            <div class="connect-example">Tor: abc...xyz.onion${suffix}</div>
             <div class="connect-example">I2P: abc...xyz.b32.i2p:0</div>
-            <div class="connect-example">CJDNS: [fc00::1]:8333</div>
+            <div class="connect-example">CJDNS: [fc00::1]${suffix}</div>
+            ${suffix ? '' : '<div class="connect-instructions">Network metadata is unavailable. For addresses without a port, the server selects its configured network default. I2P requires :0.</div>'}
             <div class="connect-input-row">
                 <input type="text" class="connect-input" id="connect-addr-input" placeholder="Enter peer address...">
                 <button class="connect-btn" id="connect-go-btn">Connect</button>
@@ -415,6 +418,8 @@ function create({ config: CFG, onAction }) {
 
     /** @type {import('../types').NodeInfo | null} */
     let lastNodeInfo = null; // Full /api/info response for Node Info card
+    /** @type {import('../types').NodeRefreshState} */
+    const nodeRefreshState = { stale: false, lastSuccessfulRefresh: null };
 
     // Track previous internet state for toast notifications
     let _prevInternetState = 'green';
@@ -446,12 +451,13 @@ function create({ config: CFG, onAction }) {
 
     async function refreshNodeInfo() {
         try {
-            const resp = await fetch('/api/info');
-            if (!resp.ok) throw new Error(`Node info request failed: HTTP ${resp.status}`);
             /** @type {import('../types').NodeInfo} */
-            const info = await resp.json();
+            const info = await getJson('/api/info', undefined, 35_000);
+            if (!info || typeof info !== 'object' || Array.isArray(info)) throw new Error('Invalid node info response');
 
             lastNodeInfo = info;
+            nodeRefreshState.lastSuccessfulRefresh = Date.now();
+            nodeRefreshState.stale = false;
             renderUpdateStatus(info.updates);
 
             // Update internet connectivity indicator
@@ -485,17 +491,22 @@ function create({ config: CFG, onAction }) {
             fdCachedNetworkDetails = info.network_details || {};
 
             updateHUD();
+            nodeMonitor.refreshNodeInfo();
         } catch (err) {
+            nodeRefreshState.stale = nodeRefreshState.lastSuccessfulRefresh !== null;
             if (lastNodeInfo) lastNodeInfo = { ...lastNodeInfo, node_traffic: null, node_metrics: undefined };
             updateNodeTrafficTotals(null);
             updateTrafficRates();
             renderNodeMetricsValues();
+            updateHUD();
+            nodeMonitor.refreshNodeInfo();
             console.error('[Bitcoin Peer Map] Failed to fetch info:', err);
         }
     }
 
     const nodeMonitor = BPMNodeMonitor.create({
         getNodeInfo: () => lastNodeInfo,
+        getRefreshState: () => nodeRefreshState,
         formatBytes: BPMFormat.fmtBytesShort,
     });
 
@@ -705,16 +716,11 @@ function create({ config: CFG, onAction }) {
 
         // Map overlay — status
         const moStatus = document.getElementById('mo-status');
-        if (moStatus && lastNodeInfo) {
-            if (lastNodeInfo.blockchain && lastNodeInfo.blockchain.ibd) {
-                moStatus.textContent = 'Syncing (IBD)';
-                moStatus.style.color = 'var(--warn)';
-                moStatus.title = 'Initial Block Download in progress — node is still catching up to the network';
-            } else {
-                moStatus.textContent = 'Synced';
-                moStatus.style.color = 'var(--ok)';
-                moStatus.title = 'IBD Completed — node is fully synced with the network';
-            }
+        if (moStatus) {
+            const status = BPMNodeMonitor.syncStatus(lastNodeInfo?.blockchain?.ibd, nodeRefreshState.stale);
+            moStatus.textContent = status.label;
+            moStatus.style.color = status.color;
+            moStatus.title = status.title;
         }
 
         // Map overlay — status message (like original: "Map Loaded!" / "Locating X peers...")

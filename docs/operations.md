@@ -126,6 +126,13 @@ To stop the dashboard while retaining its data volume:
 docker compose down
 ```
 
+The header and **Node Info** show **Synced** only when the node explicitly reports
+that initial block download is complete, **Syncing (IBD)** while it is active,
+and **Unknown** when that status is unavailable. Failed node-info refreshes show
+**Stale** and retain useful cached details; Node Info identifies the last
+successful refresh time. Traffic values clear until a successful refresh.
+Requests time out after 35 seconds, allowing later polls to recover.
+
 ## Saved data
 
 The named volume `bitcoin-peer-map-data` is mounted at
@@ -143,6 +150,41 @@ themes and visible statistics, are stored in your browser under `bpm.*` keys.
 
 Existing GeoIP databases and server preferences from earlier releases can be
 reused. Keep the volume when upgrading to preserve them.
+
+### Repair saved preferences
+
+A missing `settings.json` starts a first installation with defaults. An existing
+file that cannot be read, is malformed JSON, is not an object, or supplies a
+non-boolean preference stops startup before RPC checks, workers, HTTP listening,
+or preference writes. The error identifies its path without logging its contents;
+the file remains untouched. Environment overrides do not bypass validation.
+
+Stop the service, back up the file, and repair its JSON or ownership/read
+permissions in the data volume. Keep your previous privacy choices. For example,
+this valid file disables both external API lookups and automatic dataset downloads:
+
+```json
+{
+  "geoip_auto_update": false,
+  "geoip_db_only": true
+}
+```
+
+Use JSON `true`/`false`, without quotes. Legacy files may omit fields:
+`geoip_auto_update` defaults to `true` and `geoip_db_only` to `false` when absent.
+Deleting the file restores those first-install defaults; repair it instead when
+you want to retain privacy restrictions. Ensure the container user can read it,
+then restart the service. `BPM_GEOIP_AUTO_UPDATE` applies only after the saved
+file has passed validation.
+
+### Peer management results
+
+**Disconnect + Ban 24h** sends the ban request. Bitcoin Knots requests the peer's
+disconnection as part of [`setban`](https://github.com/bitcoinknots/bitcoin/blob/29.x-knots/src/rpc/net.cpp#L794-L817),
+so the dashboard reports a successful ban and refreshes peers after one second.
+**Disconnect Only** remains a separate action. Failed or malformed ban-list
+responses display an error; **No banned IPs** appears only after a successful
+empty list.
 
 ## GeoIP updates and privacy
 
@@ -165,7 +207,10 @@ preserving newer local API results.
 
 API Lookup sends the queried peer IP to ip-api.com over unencrypted HTTP; the
 provider's [free endpoint does not support HTTPS](https://ip-api.com/docs/api:json).
-Turn it off for database-only peer lookups. Dataset downloads, application update
+Turn it off for database-only peer lookups. Valid coordinates map to their real
+location even when no city is supplied. Labels use city and country, then region
+and country, then country alone; unresolved locations retain their pending or
+unavailable states. Dataset downloads, application update
 checks, and internet reachability probes operate separately and still use the
 network.
 `BPM_GEOIP_ENABLED=false` disables the persistent database, rather than disabling

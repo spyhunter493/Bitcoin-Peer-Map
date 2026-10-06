@@ -190,12 +190,74 @@ function renderChainTips(data) {
     return html + '</tbody></table></div>';
 }
 
+/** @param {boolean | null | undefined} ibd @param {boolean} [stale] */
+export function syncStatus(ibd, stale = false) {
+    if (stale) return { label: 'Stale', color: 'var(--warn)', className: 'modal-val-warn', title: 'The latest node-info refresh failed; showing cached information.' };
+    if (ibd === true) return { label: 'Syncing (IBD)', color: 'var(--warn)', className: 'modal-val-warn', title: 'Initial Block Download in progress — node is still catching up to the network' };
+    if (ibd === false) return { label: 'Synced', color: 'var(--ok)', className: 'modal-val-ok', title: 'IBD Completed — node is fully synced with the network' };
+    return { label: 'Unknown', color: 'var(--text-muted)', className: '', title: 'Node sync status is unavailable' };
+}
+
+/** @param {import('../types').NodeInfo | null} info @param {import('../types').NodeRefreshState} refreshState */
+export function renderNodeDetails(info, refreshState) {
+    let html = '<div class="modal-section-title">Node</div>';
+    if (refreshState.stale) {
+        html += '<div class="modal-val-warn">Cached node information; the latest refresh failed.</div>';
+        html += modal.row('Last successful refresh', refreshState.lastSuccessfulRefresh === null ? 'Unknown' : new Date(refreshState.lastSuccessfulRefresh).toLocaleString());
+    }
+    if (info) {
+        const version = info.subversion || '\u2014';
+        html += modal.row('Version', version, 'Node-reported user agent string', version);
+        html += modal.row(
+            'Peers',
+            info.connected != null ? info.connected : '\u2014',
+            'Total number of connected peers',
+            info.connected != null ? `${info.connected} peers connected` : ''
+        );
+        if (info.blockchain) {
+            html += modal.row('Size (Disk)', `${info.blockchain.size_gb} GB`, 'Total blockchain data stored on disk');
+            html += modal.row(
+                'Node Type',
+                info.blockchain.pruned ? 'Pruned' : 'Full',
+                'Whether this node stores all blocks (Full) or only recent ones (Pruned)',
+                info.blockchain.pruned ? 'Pruned node \u2014 older blocks deleted to save space' : 'Full node \u2014 all blocks stored'
+            );
+            html += modal.row(
+                'TX Index',
+                info.blockchain.indexed ? 'Yes' : 'No',
+                'Transaction index allows looking up any TX by its hash',
+                info.blockchain.indexed ? 'Enabled \u2014 all transactions are indexed' : 'Disabled'
+            );
+        }
+        const status = syncStatus(info.blockchain?.ibd, refreshState.stale);
+        html += modal.row('Status', status.label, status.title, status.title, status.className);
+        if (info.last_block) {
+            const time = info.last_block.time ? new Date(info.last_block.time * 1000).toLocaleTimeString() : '';
+            const height = info.last_block.height ? info.last_block.height.toLocaleString() : '\u2014';
+            const display = height + (time ? ` (${time})` : '');
+            html += modal.row('Block Height', display, 'Latest block height seen by this node');
+        }
+        if (info.mempool_size != null) {
+            html += modal.row(
+                'Mempool Size',
+                `${info.mempool_size.toLocaleString()} tx`,
+                'Number of unconfirmed transactions in the mempool',
+                `${info.mempool_size.toLocaleString()} transactions`
+            );
+        }
+    } else {
+        html += '<div style="color:var(--text-muted);padding:4px 0">No node data yet</div>';
+    }
+    return html;
+}
+
 /**
- * @param {{getNodeInfo: () => import('../types').NodeInfo | null; formatBytes: (bytes: number) => string}} options
+ * @param {{getNodeInfo: () => import('../types').NodeInfo | null; getRefreshState: () => import('../types').NodeRefreshState; formatBytes: (bytes: number) => string}} options
  */
 function create(options) {
     const getNodeInfo = options.getNodeInfo;
     const formatBytes = options.formatBytes;
+    const getRefreshState = options.getRefreshState;
 
     function openRecentBlocks() {
         return modal.openFetched({
@@ -232,56 +294,7 @@ function create(options) {
             maxWidth: 640,
         });
         const info = getNodeInfo();
-        let html = '<div class="modal-section-title">Node</div>';
-        if (info) {
-            const version = info.subversion || '\u2014';
-            html += modal.row('Version', version, 'Node-reported user agent string', version);
-            html += modal.row(
-                'Peers',
-                info.connected != null ? info.connected : '\u2014',
-                'Total number of connected peers',
-                info.connected != null ? `${info.connected} peers connected` : ''
-            );
-            if (info.blockchain) {
-                html += modal.row('Size (Disk)', `${info.blockchain.size_gb} GB`, 'Total blockchain data stored on disk');
-                html += modal.row(
-                    'Node Type',
-                    info.blockchain.pruned ? 'Pruned' : 'Full',
-                    'Whether this node stores all blocks (Full) or only recent ones (Pruned)',
-                    info.blockchain.pruned ? 'Pruned node \u2014 older blocks deleted to save space' : 'Full node \u2014 all blocks stored'
-                );
-                html += modal.row(
-                    'TX Index',
-                    info.blockchain.indexed ? 'Yes' : 'No',
-                    'Transaction index allows looking up any TX by its hash',
-                    info.blockchain.indexed ? 'Enabled \u2014 all transactions are indexed' : 'Disabled'
-                );
-                const syncValue = info.blockchain.ibd ? 'Syncing (IBD)' : 'Synced';
-                html += modal.row(
-                    'Status',
-                    syncValue,
-                    'Whether the node has finished initial block download',
-                    syncValue,
-                    info.blockchain.ibd ? 'modal-val-warn' : 'modal-val-ok'
-                );
-            }
-            if (info.last_block) {
-                const time = info.last_block.time ? new Date(info.last_block.time * 1000).toLocaleTimeString() : '';
-                const height = info.last_block.height ? info.last_block.height.toLocaleString() : '\u2014';
-                const display = height + (time ? ` (${time})` : '');
-                html += modal.row('Block Height', display, 'Latest block height seen by this node');
-            }
-            if (info.mempool_size != null) {
-                html += modal.row(
-                    'Mempool Size',
-                    `${info.mempool_size.toLocaleString()} tx`,
-                    'Number of unconfirmed transactions in the mempool',
-                    `${info.mempool_size.toLocaleString()} transactions`
-                );
-            }
-        } else {
-            html += '<div style="color:var(--text-muted);padding:4px 0">No node data yet</div>';
-        }
+        let html = `<div id="ni-node-section">${renderNodeDetails(info, getRefreshState())}</div>`;
         html += '<div class="modal-section-title" title="Services advertised by this node to the Bitcoin network">Services</div>';
         html += '<div id="ni-services-section">';
         if (info?.services == null) {
@@ -421,12 +434,13 @@ function create(options) {
                         'Median timestamp of the last 11 blocks \u2014 used for time-locked transactions'
                     );
                 }
+                const ibdStatus = syncStatus(blockchain.initialblockdownload);
                 content += modal.row(
                     'IBD Status',
-                    blockchain.initialblockdownload ? 'Yes' : 'No',
+                    ibdStatus.label,
                     'Initial Block Download \u2014 whether the node is still catching up to the network',
                     null,
-                    blockchain.initialblockdownload ? 'modal-val-warn' : 'modal-val-ok'
+                    ibdStatus.className
                 );
                 if (blockchain.size_on_disk) {
                     content += modal.row(
@@ -460,7 +474,11 @@ function create(options) {
         return dialog;
     }
 
-    return Object.freeze({ openNodeInfo, openRecentBlocks, openChainTips });
+    function refreshNodeInfo() {
+        const section = query('#ni-node-section');
+        if (section) section.innerHTML = renderNodeDetails(getNodeInfo(), getRefreshState());
+    }
+    return Object.freeze({ openNodeInfo, openRecentBlocks, openChainTips, refreshNodeInfo });
 }
 
 /**

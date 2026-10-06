@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { parseReleaseVersion } from './build.ts';
 import { LOG_LEVELS, type LogLevel } from './logging.ts';
+import { BITCOIN_NETWORKS, isBitcoinChain } from './network.ts';
 
 export class ConfigurationError extends Error {}
 type Environment = Record<string, string | undefined>;
@@ -74,7 +75,7 @@ export function loadSettings(env: Environment = process.env) {
     const scheme = (env.BITCOIN_RPC_SCHEME || 'http').trim().toLowerCase();
     if (!['http', 'https'].includes(scheme)) throw new ConfigurationError('BITCOIN_RPC_SCHEME must be http or https');
     const network = (env.BITCOIN_NETWORK || 'main').trim().toLowerCase();
-    if (!['main', 'test', 'signet', 'regtest'].includes(network)) throw new ConfigurationError('BITCOIN_NETWORK must be main, test, signet, or regtest');
+    if (!isBitcoinChain(network)) throw new ConfigurationError(`BITCOIN_NETWORK must be ${Object.keys(BITCOIN_NETWORKS).join(', ')}`);
     const listenAddress = (env.BPM_LISTEN_ADDRESS ?? '0.0.0.0').trim();
     if (!listenAddress || /[\r\n]/.test(listenAddress)) throw new ConfigurationError('BPM_LISTEN_ADDRESS must be a single-line address');
     const host = required(env, 'BITCOIN_RPC_HOST');

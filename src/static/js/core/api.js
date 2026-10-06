@@ -1,10 +1,11 @@
 class HttpError extends Error {
-    /** @param {string} message @param {number} status @param {unknown} data */
-    constructor(message, status, data) {
+    /** @param {string} message @param {number} status @param {unknown} data @param {number | null} [retryAfterSeconds] */
+    constructor(message, status, data, retryAfterSeconds = null) {
         super(message);
         this.name = 'HttpError';
         this.status = status;
         this.data = data;
+        this.retryAfterSeconds = retryAfterSeconds;
     }
 }
 
@@ -20,34 +21,50 @@ export function configureAdminAuthentication(authentication) {
  * @template T
  * @param {string} url
  * @param {RequestInit} [options]
+ * @param {number} [timeoutMs]
  * @returns {Promise<T>}
  */
-async function requestJson(url, options) {
-    const response = await globalThis.fetch(url, options);
-    let data = null;
+async function requestJson(url, options, timeoutMs) {
+    const controller = new AbortController();
+    const timer = timeoutMs === undefined ? null : setTimeout(() => controller.abort(new DOMException('Request timed out', 'TimeoutError')), timeoutMs);
+    const requestOptions = timeoutMs === undefined ? options : { ...options, signal: options?.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal };
     try {
-        data = await response.json();
-    } catch (error) {
-        if (response.ok) {
-            throw new HttpError('The server returned an invalid JSON response', response.status, null);
+        const response = await globalThis.fetch(url, requestOptions);
+        let data = null;
+        try {
+            data = await response.json();
+        } catch (error) {
+            requestOptions?.signal?.throwIfAborted();
+            if (response.ok) {
+                throw new HttpError('The server returned an invalid JSON response', response.status, null);
+            }
         }
-    }
 
-    if (!response.ok) {
-        const detail = data && (data.detail || data.error || data.message);
-        throw new HttpError(detail || `Request failed (${response.status})`, response.status, data);
+        if (!response.ok) {
+            const detail = data && (data.detail || data.error || data.message);
+            const retryAfter = response.headers.get('Retry-After');
+            const seconds = retryAfter && /^\d+$/.test(retryAfter) ? Number(retryAfter)
+                : retryAfter ? Math.ceil((Date.parse(retryAfter) - Date.now()) / 1000) : NaN;
+            const retryAfterSeconds = Number.isFinite(seconds) ? Math.max(0, seconds) : null;
+            const cooldown = response.status === 429 && data?.code === 'admin_rate_limited';
+            const message = detail || `Request failed (${response.status})`;
+            throw new HttpError(cooldown ? `${message} Try again in ${retryAfterSeconds ?? 60} seconds.` : message, response.status, data, retryAfterSeconds);
+        }
+        return /** @type {T} */ (data);
+    } finally {
+        if (timer !== null) clearTimeout(timer);
     }
-    return /** @type {T} */ (data);
 }
 
 /**
  * @template T
  * @param {string} url
  * @param {RequestInit} [options]
+ * @param {number} [timeoutMs]
  * @returns {Promise<T>}
  */
-function getJson(url, options) {
-    return requestJson(url, Object.assign({}, options, { method: 'GET' }));
+function getJson(url, options, timeoutMs) {
+    return requestJson(url, Object.assign({}, options, { method: 'GET' }), timeoutMs);
 }
 
 /**
@@ -73,8 +90,7 @@ async function postJson(url, body, options) {
         return await requestJson(url, requestOptions);
     } catch (error) {
         if (!(error instanceof HttpError) || !authentication) throw error;
-        const rateLimited = error.status === 429 && error.data && typeof error.data === 'object' && 'code' in error.data && error.data.code === 'admin_rate_limited';
-        if (error.status !== 401 && !rateLimited) throw error;
+        if (error.status !== 401) throw error;
         if (authentication.getToken() === previousToken) authentication.clearToken();
         const token = await authentication.requestToken(options?.signal || undefined);
         options?.signal?.throwIfAborted();

@@ -38,7 +38,7 @@ export class AppRuntime {
         this.geoDatabase = new GeoDatabase(settings.data_dir, settings.geoip_enabled, this.controller.signal);
         this.connectivity = new ConnectivityService(this.preferences.geoip_db_only, this.controller.signal);
         this.peers = new PeerService(this.rpc, this.geoDatabase, this.connectivity, this.controller.signal);
-        this.node = new NodeService(this.rpc, this.connectivity, this.geoDatabase, () => this.preferences.geoip_auto_update);
+        this.node = new NodeService(this.rpc, this.connectivity, this.geoDatabase, () => this.preferences.geoip_auto_update, settings.bitcoin_network);
         this.metrics = this.node.metrics;
         this.updates = new UpdateService(settings, this.controller.signal);
     }

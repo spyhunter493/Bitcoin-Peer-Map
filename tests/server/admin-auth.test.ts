@@ -1,5 +1,7 @@
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import { createAdminAuthentication } from '../../src/server/admin-auth.ts';
 import { createApplication } from '../../src/server/app.ts';
 import { FixtureRuntime, fixtureSettings, FIXTURE_ADMIN_TOKEN } from '../layout_server.ts';
 import { temporaryDirectory } from './helpers.ts';
@@ -85,7 +87,7 @@ test('the Origin guard remains enforced with valid tokens and tokens in URLs are
     assert.equal((await post('/api/peer/connect', { Authorization: `Bearer ${FIXTURE_ADMIN_TOKEN}`, Origin: base })).status, 200);
 });
 
-test('failed authentication is rate limited, ignores spoofed forwarding headers, expires, and accepts valid tokens', async t => {
+test('authentication cooldown rejects correct tokens, ignores forwarding headers, and never extends the first-failure window', async t => {
     let time = 1000;
     t.mock.method(Date, 'now', () => time);
     const { post, calls } = await application(t);
@@ -93,10 +95,18 @@ test('failed authentication is rate limited, ignores spoofed forwarding headers,
     const limited = await post('/api/admin/verify', { 'X-Forwarded-For': '192.0.2.100' });
     assert.equal(limited.status, 429); assert.equal(limited.headers.get('retry-after'), '60');
     assert.equal((await limited.json()).code, 'admin_rate_limited');
-    time += 60_000;
-    assert.equal((await post('/api/admin/verify')).status, 401);
-    for (let i = 0; i < 10; i++) await post('/api/admin/verify');
-    assert.equal((await post('/api/peer/connect', { Authorization: `Bearer ${FIXTURE_ADMIN_TOKEN}` })).status, 200, 'a shared proxy address cannot lock out a valid credential');
+    time += 15_000;
+    const validBlocked = await post('/api/peer/connect', { Authorization: `Bearer ${FIXTURE_ADMIN_TOKEN}` });
+    assert.equal(validBlocked.status, 429);
+    assert.equal(validBlocked.headers.get('retry-after'), '45');
+    assert.deepEqual(calls, []);
+    time += 45_000;
+    assert.equal((await post('/api/peer/connect', { Authorization: `Bearer ${FIXTURE_ADMIN_TOKEN}` })).status, 200);
+    // A success below the threshold resets history and starts a fresh window.
+    for (let i = 0; i < 9; i++) assert.equal((await post('/api/admin/verify')).status, 401);
+    assert.equal((await post('/api/admin/verify', { Authorization: `Bearer ${FIXTURE_ADMIN_TOKEN}` })).status, 200);
+    for (let i = 0; i < 10; i++) assert.equal((await post('/api/admin/verify')).status, 401);
+    assert.equal((await post('/api/admin/verify', { Authorization: `Bearer ${FIXTURE_ADMIN_TOKEN}` })).status, 429);
     assert.deepEqual(calls, ['connect']);
 });
 
@@ -105,4 +115,32 @@ test('replacing the server token rejects the previous credential', async t => {
     assert.equal((await post('/api/peer/connect', { Authorization: `Bearer ${FIXTURE_ADMIN_TOKEN}` })).status, 401);
     assert.deepEqual(calls, []);
     assert.equal((await post('/api/peer/connect', { Authorization: `Bearer ${'replacement-token-'.padEnd(64, 'y')}` })).status, 200);
+});
+
+
+test('full authentication storage rejects untracked clients without evicting or comparing tokens', t => {
+    let time = 1000, comparisons = 0;
+    t.mock.method(Date, 'now', () => time);
+    const authenticate = createAdminAuthentication(FIXTURE_ADMIN_TOKEN);
+    const headers = new Map<string, string>();
+    const response = { setHeader: (name: string, value: string) => headers.set(name, value) } as unknown as ServerResponse;
+    function request(address: string, valid = false) {
+        return { socket: { remoteAddress: address }, headers: { get authorization() { comparisons++; return valid ? `Bearer ${FIXTURE_ADMIN_TOKEN}` : ''; } } } as IncomingMessage;
+    }
+    for (let i = 0; i < 1024; i++) {
+        time = 1000 + i;
+        assert.throws(() => authenticate(request(`client-${i}`), response), { status: 401 });
+    }
+    const before = comparisons;
+    for (let i = 0; i < 100; i++) assert.throws(() => authenticate(request(`overflow-${i}`, true), response), { status: 429 });
+    assert.equal(comparisons, before, 'full storage is checked before credentials');
+    assert.equal(headers.get('Retry-After'), '59');
+    // The first active window survives overflow and reaches its threshold.
+    for (let i = 0; i < 9; i++) assert.throws(() => authenticate(request('client-0'), response), { status: 401 });
+    assert.throws(() => authenticate(request('client-0', true), response), { status: 429 });
+    assert.equal(comparisons, before + 9);
+    time = 61_000;
+    assert.doesNotThrow(() => authenticate(request('overflow', true), response));
+    assert.throws(() => authenticate(request('overflow'), response), { status: 401 });
+    assert.throws(() => authenticate(request('another'), response), { status: 429 }, 'only one expired slot is available');
 });

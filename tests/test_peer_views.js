@@ -24,6 +24,7 @@ export default async function assertPeerViews(browser, baseUrl) {
         country: '<b>Country</b>', connection_type: hostile, transport_protocol_type: hostile,
         permissions: [hostile], session_id: hostile,
     }));
+    peers[0] = { ...peers[0], city: '', regionName: 'Cityless Region', location: 'Cityless Region, XX', location_status: 'ok' };
     peers[0].services = [...peers[0].services, 'BLAKE2B?'];
     peers[0].services_abbrev += ' BL';
     const privatePeers = peers.filter(peer => ['onion', 'i2p', 'cjdns'].includes(peer.network));
@@ -50,6 +51,8 @@ export default async function assertPeerViews(browser, baseUrl) {
         const servicesCell = page.locator('#peer-tbody tr[data-id="1"] td').nth(6);
         assert.match(await servicesCell.textContent(), /\bBL\b/);
         assert.match(await servicesCell.getAttribute('title'), /BL = BLAKE2b \(NODE_BLAKE2B\)/);
+        assert.equal(await page.locator('#peer-tbody tr[data-id="1"] td').nth(7).textContent(), '—');
+        assert.equal(await page.locator('#peer-tbody tr[data-id="1"] td').nth(8).textContent(), 'Cityless Region');
         await safe();
 
         await page.click('#as-donut-center');

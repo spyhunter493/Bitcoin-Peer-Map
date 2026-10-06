@@ -55,16 +55,29 @@ test('read-only, server failure, and revoked retry do not cause repeated mutatio
     assert.equal(prompts, 1); assert.equal(requests, 5); assert.equal(clears, 2);
 });
 
-test('an authentication rate limit still allows the user to enter a valid token', async t => {
-    let requests = 0, prompts = 0;
-    configureAdminAuthentication({ getToken: () => '', clearToken() {}, requestToken: async () => { prompts++; return 'valid'; } });
+test('authentication cooldown exposes Retry-After and preserves the token without prompting or retrying', async t => {
+    let requests = 0, prompts = 0, clears = 0;
+    configureAdminAuthentication({ getToken: () => 'stored', clearToken() { clears++; }, requestToken: async () => { prompts++; return 'valid'; } });
     t.after(() => configureAdminAuthentication(null));
-    t.mock.method(globalThis, 'fetch', async (_url, options) => {
+    t.mock.method(globalThis, 'fetch', async () => {
         requests++;
-        return new Headers(options.headers).get('authorization') === 'Bearer valid'
-            ? Response.json({ success: true })
-            : Response.json({ detail: 'Too many attempts', code: 'admin_rate_limited' }, { status: 429 });
+        return Response.json({ detail: 'Authentication cooldown active.', code: 'admin_rate_limited' }, { status: 429, headers: { 'Retry-After': '42' } });
     });
-    assert.deepEqual(await postJson('/api/peer/connect', { address: '8.8.8.8' }), { success: true });
-    assert.equal(prompts, 1); assert.equal(requests, 2);
+    await assert.rejects(postJson('/api/peer/connect', { address: '8.8.8.8' }), error => {
+        assert.equal(error.retryAfterSeconds, 42);
+        assert.match(error.message, /42 seconds/);
+        return error instanceof HttpError;
+    });
+    assert.equal(prompts, 0); assert.equal(requests, 1); assert.equal(clears, 0);
+});
+
+test('a cooldown on the authenticated retry preserves the newly verified token', async t => {
+    let token = 'old', requests = 0, prompts = 0;
+    configureAdminAuthentication({ getToken: () => token, clearToken() { token = ''; }, requestToken: async () => { prompts++; return token = 'new'; } });
+    t.after(() => configureAdminAuthentication(null));
+    t.mock.method(globalThis, 'fetch', async () => ++requests === 1
+        ? Response.json({ code: 'admin_required' }, { status: 401 })
+        : Response.json({ code: 'admin_rate_limited' }, { status: 429, headers: { 'Retry-After': '5' } }));
+    await assert.rejects(postJson('/api/peer/connect'), { status: 429, retryAfterSeconds: 5 });
+    assert.equal(token, 'new'); assert.equal(prompts, 1); assert.equal(requests, 2);
 });

@@ -17,7 +17,7 @@ docker run --rm \
     -w /app \
     -e BPM_LAYOUT_TEST_HOST=0.0.0.0 \
     -e BPM_LAYOUT_TEST_PORT="${port}" \
-    node:24-alpine \
+    node:26-alpine \
     node tests/layout_server.ts &
 server_pid="$!"
 

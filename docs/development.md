@@ -2,9 +2,13 @@
 
 [README](../README.md) · [Configuration](configuration.md) · [Operations](operations.md)
 
-Use **Node.js 24.18 or later in the 24.x release line** and npm. The server runs
+Use **Node.js 26.x** and npm. The server runs
 TypeScript directly with Node.js built-in APIs. Only development tools, including
 TypeScript and Playwright, require npm dependencies; Python is not required.
+
+The repository's `.nvmrc` selects Node.js 26, and CI reads that file for every
+check, including the full backend suite. Production and the Docker browser-test
+fixture use `node:26-alpine`.
 
 ## Run the server locally
 
@@ -80,7 +84,8 @@ npx playwright install --with-deps --only-shell chromium
 
 CI runs syntax checks, type checks, backend tests, and frontend unit tests before
 installing the browser. It then runs browser regressions, Compose checks, and
-container validation. The Ubuntu VM runner supports both Chromium and Docker.
+container validation, which verifies that the image and test runner use the same
+Node.js major version. The Ubuntu VM runner supports both Chromium and Docker.
 Tests use local fixtures and mock RPC servers, without a live Bitcoin node or
 external GeoIP services.
 
@@ -112,10 +117,11 @@ container and volume.
 npm run benchmark:dashboard
 ```
 
-The benchmark profiles 14, 125, and 500 synthetic peers in Chromium. It reports
-main-thread task time over three idle seconds, DOM size, JavaScript heap use, and
-table mutations during an unchanged peer poll. Compare runs on the same machine
-and browser; absolute timings vary by environment.
+The benchmark profiles 14, 125, and 500 synthetic peers in Chromium with normal
+and reduced motion. It reports main-thread task time over three idle seconds,
+DOM size, mounted table rows, JavaScript heap use, peer-canvas redraws, and table
+mutations during an unchanged peer poll. Compare runs on the same machine and
+browser; absolute timings vary by environment.
 
 ## Architecture
 
@@ -149,6 +155,32 @@ callbacks. Controllers supply current-data getters and connect presentation and
 navigation effects. Snapshot reconciliation preserves active filters, tooltip
 geometry, focus, and scroll without applying user-navigation cleanup.
 
+The map controller connects polling, peer snapshots, settings, and navigation.
+`map/renderer.js` coordinates the camera and canvas surfaces; `basemap.js` owns
+geography loading and cached paths, `peer-renderer.js` owns peer animation and
+hit testing, and `connection-renderer.js` draws lines from distribution and
+private-network views. `input.js` binds pointer, touch, table, and badge input;
+`controls.js` binds dashboard buttons.
+
+Geography and static connections have separate cached canvas layers. Peer
+animations continue at the existing frame rate; reduced-motion scenes redraw on
+state changes and once per second while connection-age brightness is changing.
+Large settled peer sets reuse a bounded cache of glow sprites.
+
+`peers/table-window.js` mounts the viewport plus six buffer rows on each side for
+tables above 80 peers. Smaller tables retain every row. Sorting and filtering use
+the full snapshot, while scroll and resize update only the mounted window.
+Spacer rows preserve the full scroll height, and cross-highlighting can reveal
+an unmounted peer. Logical row indices and counts describe the full table to
+assistive technology.
+
+`distribution/navigation.js` composes the existing navigation API from
+`selection.js` (selection transitions), `selection-filters.js` (persistent filters
+and snapshot reconciliation), `navigation-view.js` (navigation visuals and
+temporary previews), and the donut, panel, and insight input modules. Each module
+declares the options and transition methods it uses in JSDoc. Transition getters
+resolve handlers after composition, so the modules do not import each other.
+
 Modules are served under `/static/v/<asset_revision>/`, so a new revision
 invalidates every relative dependency. Existing static URLs remain available.
 `types.d.ts` defines shared API and controller interfaces; `tsconfig.json` checks
@@ -169,7 +201,14 @@ alongside API contract changes.
 
 Node details and RPC metrics use five-second caches shared across clients.
 Independent dashboard RPC reads run concurrently. The dashboard uses one node-info
-poll for node details and metrics.
+poll for node details and metrics, with a 35-second abort deadline to accommodate
+three sequential ten-second blockchain reads. All completion paths release the
+pending request so polling can resume. Failed browser refreshes retain cached
+node details, mark the header and Node Info as **Stale**, and show the last
+successful refresh time. Traffic values are cleared. A successful refresh
+restores normal presentation: **Synced** requires explicit `blockchain.ibd:false`,
+**Syncing (IBD)** requires `true`, and unavailable blockchain or IBD data shows
+**Unknown**.
 The `services` field in `/api/info` comes from
 [`getnetworkinfo.localservicesnames`](https://bitcoincore.org/en/doc/30.0.0/rpc/network/getnetworkinfo/):
 an empty list means no services are advertised, while `null` means unavailable.

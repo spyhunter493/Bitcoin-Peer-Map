@@ -1,6 +1,7 @@
 import type { Data } from './types.ts';
 import type { ConnectivityStatus } from './services/connectivity.ts';
 import type { NodeMetricsSnapshot } from './services/node-metrics.ts';
+import type { BitcoinNetwork } from './network.ts';
 
 export type NetworkFamily = 'ipv4' | 'ipv6' | 'onion' | 'i2p' | 'cjdns';
 export type NetworkSummary = Record<NetworkFamily, {
@@ -9,7 +10,7 @@ export type NetworkSummary = Record<NetworkFamily, {
 }>;
 export type NetworkScores = { ipv4: number | null; ipv6: number | null };
 export interface DashboardDetails extends Data {
-    blockchain: { size_gb: number; pruned: boolean; indexed: boolean; ibd: boolean } | null;
+    blockchain: { size_gb: number; pruned: boolean; indexed: boolean; ibd: boolean | null } | null;
     last_block: { height: number; time: number } | null;
     subversion: string | null; connected: number | null; services: string[] | null;
     network_details: NetworkSummary | null; network_scores: NetworkScores | null;
@@ -18,6 +19,7 @@ export interface DashboardDetails extends Data {
     mempool_size: number | null;
 }
 export interface DashboardInfo extends DashboardDetails {
+    bitcoin_network: BitcoinNetwork;
     internet_state: ConnectivityStatus['internet_state']; api_available: boolean; geo_db_only_mode: boolean;
     geo_db_stats: Data;
 }

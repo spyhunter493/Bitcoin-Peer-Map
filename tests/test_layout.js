@@ -11,11 +11,15 @@ import assertPeerLifecycle from './test_peer_lifecycle.js';
 import assertTableDom from './test_peer_table_dom.js';
 import assertModules from './test_modules.js';
 import assertMapGroups from './test_map_groups.js';
+import assertMapInput from './test_map_input.js';
+import assertDashboardPerformance from './test_dashboard_performance.js';
 import assertGeoIPSettings from './test_geoip_settings.js';
 import assertNodeServices from './test_node_services.js';
 import assertNodeMetrics from './test_node_metrics.js';
 import assertNavigation from './test_navigation.js';
 import assertAdminAuthentication from './test_admin_auth.js';
+import assertManagementFeedback from './test_management_feedback.js';
+import assertNetworkExamples from './test_network_examples.js';
 import assertTableSettings from './test_table_settings.js';
 
 const repoRoot = path.resolve(import.meta.dirname, '..');
@@ -325,7 +329,7 @@ async function assertPeerActionInteractions(page) {
     const bansRoute = '**/api/bans';
     await page.route(bansRoute, route => route.fulfill({
         contentType: 'application/json',
-        body: JSON.stringify({ bans: [] }),
+        body: JSON.stringify({ success: true, bans: [] }),
     }));
     await page.click('#btn-bans');
     await page.waitForSelector('#ban-modal .ban-list-empty');
@@ -883,8 +887,12 @@ const suites = [
     ['RPC node metrics', assertNodeMetrics],
     ['revisioned modules', assertModules],
     ['map groups', assertMapGroups],
+    ['map pan, zoom, touch, and canvas rendering', assertMapInput],
+    ['large peer tables and static map rendering', assertDashboardPerformance],
     ['tooltip refresh and navigation', assertNavigation],
     ['admin authentication', assertAdminAuthentication],
+    ['management feedback', assertManagementFeedback],
+    ['network connection examples', assertNetworkExamples],
 ];
 
 await test('browser layout regressions', { concurrency: workers }, async t => {

@@ -328,3 +328,86 @@ test('null and malformed RPC objects produce explicit nulls without masking succ
     rpc.values.getblockchaininfo = null;
     assert.equal((await node.blockchain()).blockchain, null);
 });
+
+
+for (const [ibd, expected] of [[true, true], [false, false], [undefined, null], [null, null]] as const) {
+    test(`dashboard preserves explicit IBD ${ibd} as ${expected}`, async t => {
+        const { rpc, node } = services(t);
+        rpc.record('getblockchaininfo').initialblockdownload = ibd;
+        assert.equal((await node.dashboardInfo()).blockchain?.ibd, expected);
+        const raw = await node.blockchain();
+        assert.equal((raw.blockchain as Data).initialblockdownload, expected);
+    });
+}
+
+
+test('bans request disconnection through setban and retain genuine RPC errors', async t => {
+    const { rpc, node } = services(t);
+    rpc.values.getpeerinfo = [{ id: 1, addr: '8.8.8.8:8333', network: 'ipv4' }];
+    assert.deepEqual(await node.ban(1), { success: true, banned_ip: '8.8.8.8', network: 'ipv4' });
+    assert.equal(rpc.count('disconnectnode'), 0);
+    assert.deepEqual(rpc.calls.find(call => call.method === 'setban')?.params, ['8.8.8.8', 'add', 86400]);
+    rpc.failed.add('setban');
+    assert.deepEqual(await node.ban(1), { success: false, error: 'setban failed' });
+    rpc.failed.add('listbanned');
+    assert.deepEqual(await node.bans(), { success: false, bans: [], error: 'listbanned failed' });
+});
+
+for (const source of ['database', 'api']) {
+    for (const [fields, location] of [
+        [{ city: 'Auckland', regionName: 'Auckland Region', countryCode: 'NZ' }, 'Auckland, NZ'],
+        [{ city: '', regionName: 'Auckland Region', countryCode: 'NZ' }, 'Auckland Region, NZ'],
+        [{ city: '', regionName: '', region: 'AUK', countryCode: 'NZ' }, 'AUK, NZ'],
+        [{ city: '', regionName: '', countryCode: 'NZ' }, 'NZ'],
+        [{ city: '', regionName: 'Auckland Region', countryCode: '' }, 'Auckland Region, New Zealand'],
+        [{ city: '', regionName: '', countryCode: '' }, 'New Zealand'],
+    ] as const) {
+        test(`${source} geolocation maps ${location} without requiring a city and serializes numeric coordinates`, async t => {
+            const { rpc, geo, connectivity } = services(t);
+            const data = { ...fields, status: 'success', country: 'New Zealand', lat: '-36.85', lon: '174.76' };
+            if (source === 'database') { geo.save('8.8.8.8', data); connectivity.setGeoipApiDisabled(true); }
+            let requests = 0;
+            const peers = new PeerService(rpc, geo, connectivity, undefined, async () => { requests++; return Response.json(data); });
+            t.after(() => peers.stop());
+            rpc.values.getpeerinfo = [{ id: 1, addr: '8.8.8.8:8333', network: 'ipv4' }, { id: 2, addr: '10.0.0.1:8333', network: 'ipv4' }];
+            await peers.refreshOnce();
+            assert.equal(peers.listPeers()[0].location_status, 'pending');
+            await peers.resolveGeo('8.8.8.8', 'ipv4');
+            const [peer, privatePeer] = JSON.parse(JSON.stringify(peers.listPeers()));
+            assert.equal(peer.location_status, 'ok');
+            assert.equal(peer.location, location);
+            assert.equal(peer.lat, -36.85); assert.equal(peer.lon, 174.76);
+            assert.equal(privatePeer.location_status, 'private'); assert.equal(privatePeer.location, 'PRIVATE');
+            assert.equal(requests, source === 'api' ? 1 : 0);
+        });
+    }
+}
+
+
+for (const [chain, port] of [['main', 8333], ['test', 18333], ['testnet4', 48333], ['signet', 38333], ['regtest', 18444]] as const) {
+    test(`${chain} uses peer port ${port} for IPv4, IPv6, Tor and CJDNS while retaining explicit ports and I2P :0`, async t => {
+        const { rpc, connectivity, geo } = services(t);
+        const node = new NodeService(rpc, connectivity, geo, () => false, chain);
+        const expected = [
+            ['8.8.8.8', `8.8.8.8:${port}`],
+            ['8.8.8.8:12345', '8.8.8.8:12345'],
+            ['2001:4860::1', `[2001:4860::1]:${port}`],
+            ['[2001:4860::1]', `[2001:4860::1]:${port}`],
+            ['[2001:4860::1]:12345', '[2001:4860::1]:12345'],
+            ['example.onion', `example.onion:${port}`],
+            ['example.onion:12345', 'example.onion:12345'],
+            ['[fc00::1]', `[fc00::1]:${port}`],
+            ['fc00::1', `[fc00::1]:${port}`],
+            ['[fc00::1]:12345', '[fc00::1]:12345'],
+            ['example.b32.i2p:0', 'example.b32.i2p:0'],
+        ];
+        for (const [address, normalized] of expected) {
+            assert.deepEqual(await node.connect(address), { success: true, address: normalized });
+            assert.deepEqual(rpc.calls.at(-1)?.params, [normalized, 'onetry']);
+        }
+        for (const address of ['example.b32.i2p', 'example.b32.i2p:12345']) {
+            assert.deepEqual(await node.connect(address), { success: false, error: 'I2P addresses must end with :0' });
+        }
+        assert.deepEqual((await node.dashboardInfo()).bitcoin_network, { chain, default_peer_port: port });
+    });
+}

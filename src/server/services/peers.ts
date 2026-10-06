@@ -117,6 +117,8 @@ export class PeerService {
                 const normalized = emptyGeo(data ? 'ok' : 'unavailable');
                 if (data) {
                     for (const key of Object.keys(normalized)) if (key !== 'status' && key in data) normalized[key] = data[key];
+                    normalized.lat = Number(data.lat);
+                    normalized.lon = Number(data.lon);
                     if (fromDatabase) { normalized.offset = data.utc_offset ?? 0; normalized.as = data.as_info ?? ''; }
                 }
                 this.geoCache.set(host, { data: normalized, generation, retryAt: data ? null : performance.now() + 60_000 });
@@ -150,7 +152,12 @@ export class PeerService {
             const [host, port] = splitPeerAddress(address), geo = this.cachedGeo(host);
             let locationStatus = 'pending', location = 'Stalking...';
             if (['onion', 'i2p', 'cjdns'].includes(network) || isPrivateAddress(host)) { locationStatus = 'private'; location = 'PRIVATE'; }
-            else if (geo?.status === 'ok' && geo.city) { locationStatus = 'ok'; location = `${geo.city}, ${geo.countryCode || ''}`; }
+            else if (geo?.status === 'ok') {
+                const text = (value: unknown) => typeof value === 'string' ? value.trim() : '';
+                const country = text(geo.countryCode) || text(geo.country);
+                const locality = text(geo.city) || text(geo.regionName) || text(geo.region);
+                locationStatus = 'ok'; location = [locality, country].filter(Boolean).join(', ');
+            }
             else if (geo?.status === 'unavailable') { locationStatus = 'unavailable'; location = 'UNAVAILABLE'; }
             const services: string[] = peer.servicesnames || [];
             const result: Data = {

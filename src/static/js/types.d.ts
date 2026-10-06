@@ -659,12 +659,17 @@ export interface UpdateStatus {
     checked_at: number | null;
     check_failed: boolean;
 }
+export interface NodeRefreshState {
+    stale: boolean;
+    lastSuccessfulRefresh: number | null;
+}
 export interface NodeInfo {
+    bitcoin_network?: { chain: 'main' | 'test' | 'testnet4' | 'signet' | 'regtest'; default_peer_port: number };
     updates?: UpdateStatus;
     connected: number | null;
     subversion: string | null;
     services: string[] | null;
-    blockchain: { size_gb: number; pruned: boolean; indexed: boolean; ibd: boolean } | null;
+    blockchain: { size_gb: number; pruned: boolean; indexed: boolean; ibd: boolean | null } | null;
     last_block: { height: number; time: number } | null;
     mempool_size: number | null;
     internet_state: string;
@@ -760,7 +765,7 @@ export interface BlockchainResponse {
         bestblockhash: string;
         difficulty: number;
         mediantime: number;
-        initialblockdownload: boolean;
+        initialblockdownload: boolean | null;
         size_on_disk: number;
         pruned: boolean;
         softforks?: Record<string, { active: boolean; type: string }>;

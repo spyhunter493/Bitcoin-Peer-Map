@@ -30,7 +30,7 @@ export default async function assertMapGroups(browser, baseUrl) {
     page.on('pageerror', error => errors.push(error.message));
     try {
         const seed = await (await page.request.get(baseUrl + '/api/peers?include_status=true')).json();
-        const initial = seed.peers.slice(0, 2).map(peer => ({ ...peer, lat: 20, lon: 0 }));
+        const initial = seed.peers.slice(0, 2).map(peer => ({ ...peer, lat: 20, lon: 0, city: '', regionName: '', country: 'New Zealand', countryCode: 'NZ', location: 'NZ', location_status: 'ok' }));
         let peers = initial;
         await page.route('**/api/peers?include_status=true', route => route.fulfill({ json: { ...seed, peers } }));
         const poll = async () => {
@@ -56,6 +56,8 @@ export default async function assertMapGroups(browser, baseUrl) {
         await page.locator('#node-tooltip [data-peer-id="2"]').click();
         await page.waitForSelector('.peer-detail-popup.visible');
         assert.equal(await page.locator('.peer-popup-back').count(), 1);
+        assert.match(await page.locator('.peer-detail-popup').textContent(), /CountryNew Zealand/);
+        assert.match(await page.locator('.peer-detail-popup').textContent(), /City—/);
         const listeners = () => page.evaluate(() => window.testPointerListeners.size);
         const before = await listeners();
         await page.locator('.peer-popup-header').dispatchEvent('mousedown', { clientX: 100, clientY: 100 });

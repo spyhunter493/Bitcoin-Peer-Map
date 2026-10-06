@@ -3,6 +3,7 @@ import * as BPMGeometry from '../map/geometry.js';
 import { query, queryAll, required, closest } from '../core/dom.js';
 import * as BPMFormat from '../core/format.js';
 import * as BPMPeerTableModel from './table-model.js';
+import * as TableWindow from './table-window.js';
 /** @param {import('../types').PeerTableOptions} options
  *  @returns {import('../types').PeerTableController} */
 function create(options) {
@@ -313,8 +314,14 @@ function create(options) {
         renderColgroup();
     }
 
-    /** Keep peer rows and unchanged cells in place across snapshots. */
-    let renderedColumns = '';
+    const tableWindow = TableWindow.create({
+        tbody: tbodyEl, thead: theadEl, viewport: required('.peer-table-wrap', panelEl),
+        updateRow: (row, peer, rebuild) => updatePeerRow(row, peer, renderedColumns, rebuild),
+    });
+    /** @type {typeof COLUMNS} */
+    let renderedColumns = [];
+    /** @type {number | null} */
+    let highlightedRowId = null;
 
     /**
      * @param {HTMLTableCellElement} cell
@@ -337,7 +344,7 @@ function create(options) {
     function updatePeerRow(row, peer, columns, rebuildCells) {
         const net = peer.network || 'ipv4';
         if (row.dataset.net !== net) row.dataset.net = net;
-        row.classList.toggle('row-highlight', dashboard.interaction.highlightedPeerId === peer.id);
+        row.classList.toggle('row-highlight', (dashboard.interaction.highlightedPeerId ?? highlightedRowId) === peer.id);
         if (rebuildCells || row.cells.length !== columns.length + 1) {
             row.replaceChildren();
             for (let i = 0; i < columns.length + 1; i++) {
@@ -379,33 +386,9 @@ function create(options) {
             sortAsc
         );
 
-        const signature = visibleColumns.join('|');
-        const rebuildCells = signature !== renderedColumns;
-        const columns = visibleColumns.map((key) => COLUMNS.find((column) => column.key === key)).filter((column) => column !== undefined);
-        const rowsById = new Map(Array.from(tbodyEl.rows, (row) => [Number(row.dataset.id), row]));
-        const activeIds = new Set(sorted.map((peer) => peer.id));
-        for (const [id, row] of rowsById) {
-            if (!activeIds.has(id)) {
-                row.remove();
-                rowsById.delete(id);
-            }
-        }
-        // Walk backward so only rows whose order changed need to move.
-        let nextRow = null;
-        for (let i = sorted.length - 1; i >= 0; i--) {
-            const peer = sorted[i];
-            let row = rowsById.get(peer.id);
-            if (!row) {
-                row = document.createElement('tr');
-                row.dataset.id = String(peer.id);
-            }
-            updatePeerRow(row, peer, columns, rebuildCells);
-            if (row.parentNode !== tbodyEl || row.nextSibling !== nextRow) {
-                tbodyEl.insertBefore(row, nextRow);
-            }
-            nextRow = row;
-        }
-        renderedColumns = signature;
+        renderedColumns = visibleColumns.map((key) => COLUMNS.find((column) => column.key === key)).filter((column) => column !== undefined);
+        if (highlightedRowId !== null && !dashboard.byId.has(highlightedRowId)) highlightedRowId = null;
+        tableWindow.update(sorted, visibleColumns.join('|'), renderedColumns.length + 1);
     }
 
     // Initial header render
@@ -834,19 +817,20 @@ function create(options) {
      * @param {boolean} [scrollIntoView]
      */
     function highlightTableRow(peerId, scrollIntoView) {
+        highlightedRowId = peerId;
         // Remove previous highlight
         const prev = query('.row-highlight', tbodyEl);
         if (prev) prev.classList.remove('row-highlight');
 
         if (peerId === null) return;
 
+        if (scrollIntoView && !panelEl.classList.contains('collapsed')) {
+            tableWindow.reveal(peerId, !window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+        }
+
         const row = query(`tr[data-id="${peerId}"]`, tbodyEl);
         if (row) {
             row.classList.add('row-highlight');
-            if (scrollIntoView && !panelEl.classList.contains('collapsed')) {
-                const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-                row.scrollIntoView({ block: 'nearest', behavior: reduceMotion ? 'auto' : 'smooth' });
-            }
         }
     }
 

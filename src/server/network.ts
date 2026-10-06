@@ -1,5 +1,16 @@
 import { BlockList, isIP } from 'node:net';
 
+export const BITCOIN_NETWORKS = Object.freeze({
+    main: Object.freeze({ default_peer_port: 8333 }),
+    test: Object.freeze({ default_peer_port: 18333 }),
+    testnet4: Object.freeze({ default_peer_port: 48333 }),
+    signet: Object.freeze({ default_peer_port: 38333 }),
+    regtest: Object.freeze({ default_peer_port: 18444 }),
+});
+export type BitcoinChain = keyof typeof BITCOIN_NETWORKS;
+export interface BitcoinNetwork { chain: BitcoinChain; default_peer_port: number }
+export function isBitcoinChain(value: string): value is BitcoinChain { return Object.hasOwn(BITCOIN_NETWORKS, value); }
+
 const nonGlobal = new BlockList();
 const exceptions = new BlockList();
 for (const cidr of ['0.0.0.0/8', '10.0.0.0/8', '100.64.0.0/10', '127.0.0.0/8', '169.254.0.0/16', '172.16.0.0/12', '192.0.0.0/24', '192.0.2.0/24', '192.168.0.0/16', '198.18.0.0/15', '198.51.100.0/24', '203.0.113.0/24', '224.0.0.0/4', '240.0.0.0/4']) {
@@ -38,7 +49,7 @@ export function isPrivateAddress(host: string) {
 export function isPublicAddress(network: string, host: string) {
     return ['ipv4', 'ipv6'].includes(network) && isIP(host) !== 0 && !isPrivateAddress(host);
 }
-export function normalizePeerAddress(address: string, port = 8333) {
+export function normalizePeerAddress(address: string, port: number = BITCOIN_NETWORKS.main.default_peer_port) {
     const value = address.trim();
     if (!value) throw new Error('address is required');
     if (value.toLowerCase().includes('.b32.i2p')) {
