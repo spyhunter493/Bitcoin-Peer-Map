@@ -5,6 +5,7 @@ import * as BPMFormat from '../core/format.js';
 import * as BPMPeerTableModel from './table-model.js';
 import * as TableWindow from './table-window.js';
 import { fmtPing } from '../core/ping.js';
+import { formatGeoAge, geoSourceLabel, geoFreshnessLabel } from '../core/geo.js';
 /** @param {import('../types').PeerTableOptions} options
  *  @returns {import('../types').PeerTableController} */
 function create(options) {
@@ -96,6 +97,9 @@ function create(options) {
         { key: 'offset', label: 'UTC', get: (p) => (p.offset != null ? p.offset : '—'), full: null, vis: false, w: 45 },
         { key: 'proxy', label: 'Proxy', get: (p) => (p.proxy ? 'Y' : 'N'), full: (p) => (p.proxy ? 'Yes' : 'No'), vis: false, w: 40 },
         { key: 'zip', label: 'ZIP', get: (p) => p.zip || '—', full: null, vis: false, w: 55 },
+        { key: 'geo_source', label: 'Source', get: (p) => geoSourceLabel(p.geo), full: null, vis: false, w: 100 },
+        { key: 'geo_age_seconds', label: 'Geo age', get: (p) => p.geo?.freshness === 'unavailable' ? 'Unavailable' : formatGeoAge(p.geo?.age_seconds), full: null, vis: false, w: 75 },
+        { key: 'geo_freshness', label: 'Freshness', get: (p) => geoFreshnessLabel(p.geo), full: null, vis: false, w: 80 },
     ];
 
     // Visible column keys (start with defaults, can be toggled later)

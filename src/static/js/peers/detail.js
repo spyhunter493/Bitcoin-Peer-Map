@@ -3,6 +3,7 @@ import { query, required } from '../core/dom.js';
 import * as BPMModal from '../core/modal.js';
 import * as BPMDistributionData from '../distribution/data.js';
 import * as BPMFormat from '../core/format.js';
+import { formatGeoAge, geoSourceLabel, geoFreshnessLabel } from '../core/geo.js';
 const escapeHtml = BPMModal.escapeHtml;
 const distributionData = BPMDistributionData;
 /** @type {Readonly<Record<string, string>>} */
@@ -196,6 +197,12 @@ function renderPeerDetails(peer, options) {
         html += peerDetailRow('City', peer.city || '\u2014');
         html += peerDetailRow('ISP', peer.isp || '\u2014');
         html += peerDetailRow('AS', presentation.asNumber ? presentation.asNumber + ' ' + asName : '\u2014');
+        html += peerDetailRow('GeoIP source', geoSourceLabel(peer.geo));
+        html += peerDetailRow('GeoIP age', peer.geo?.freshness === 'unavailable' ? 'Unavailable' : formatGeoAge(peer.geo?.age_seconds));
+        html += peerDetailRow('GeoIP freshness', geoFreshnessLabel(peer.geo));
+        if (peer.geo?.observed_at && peer.geo.age_seconds !== null) {
+            html += peerDetailRow('Observed', new Date(peer.geo.observed_at * 1000).toLocaleString());
+        }
         if (peer.mapped_as) html += peerDetailRow('Mapped AS', 'AS' + peer.mapped_as);
         html += '</div>';
 

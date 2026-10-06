@@ -1,13 +1,11 @@
 import { errorMessage, postJson } from '../core/api.js';
 import { required } from '../core/dom.js';
 import * as modal from '../core/modal.js';
+import { formatGeoAge } from '../core/geo.js';
 
 /** @param {number} seconds */
 function formatAge(seconds) {
-    if (seconds >= 86400) return `${Math.floor(seconds / 86400)} days`;
-    if (seconds >= 3600) return `${Math.floor(seconds / 3600)}h ${Math.floor(seconds % 3600 / 60)}m`;
-    if (seconds >= 60) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
-    return `${seconds}s`;
+    return formatGeoAge(seconds);
 }
 
 /** @param {import('../types').GeoStats} stats */
@@ -27,8 +25,9 @@ function renderStats(stats) {
     if (stats.db_path) html += modal.row('Path', stats.db_path, 'File system path to the database');
     html += modal.row('Local database', stats.auto_lookup ? 'On' : 'Off', 'Use the persistent GeoIP database. External API lookups are controlled separately.', undefined, stats.auto_lookup ? 'modal-val-ok' : 'modal-val-warn');
     html += toggleRow('Auto-update', 'geodb-autoupdate-toggle', stats.auto_update, 'Update the geolocation database at startup and hourly, even when the dashboard is closed');
-    html += toggleRow('API Lookup', 'geodb-dbonly-toggle', !stats.db_only_mode, 'Look up public IPs missing from the local database through ip-api.com');
-    html += '<p style="color:var(--text-secondary);font-size:11px;line-height:1.5">API Lookup sends public peer IPs missing from this database to ip-api.com over unencrypted HTTP. Turn it off to keep peer lookups local. This choice survives restarts.</p>';
+    html += toggleRow('API Lookup', 'geodb-dbonly-toggle', !stats.db_only_mode, 'Look up missing, stale, or unknown-age public IPs through ip-api.com');
+    html += '<p style="color:var(--text-secondary);font-size:11px;line-height:1.5">Locations become stale after 30 days from their record timestamp. Cached locations stay visible during refresh. API Lookup sends missing, stale, or unknown-age public peer IPs to ip-api.com over unencrypted HTTP. Turn it off to keep peer lookups local. This choice survives restarts.</p>';
+    html += '<div id="geodb-provider-health"></div>';
     html += '<button class="geodb-update-btn" id="geodb-update-btn">Update Database</button><div class="geodb-result" id="geodb-result" role="status"></div>';
     return html;
 }
@@ -50,6 +49,21 @@ export function create({ getNodeInfo, refreshInfo }) {
             return;
         }
         dialog.body.innerHTML = renderStats(stats);
+        const providerHealth = required('#geodb-provider-health', dialog.body);
+        function renderProviderHealth() {
+            const info = getNodeInfo();
+            const provider = info?.providers?.geoip;
+            const now = Date.now() / 1000;
+            let html = modal.row('GeoIP provider', provider?.state || 'Unknown', 'Health of ip-api.com, independent of the Google reachability probe');
+            if (info?.geo_db_only_mode) html += modal.row('External lookups', 'Off', 'Cached locations are used without contacting ip-api.com');
+            if (provider?.last_success_at != null) html += modal.row('Last success', formatGeoAge(Math.max(0, now - provider.last_success_at)) + ' ago');
+            if (provider?.retry_at != null && provider.retry_at > now) html += modal.row('Retry in', formatGeoAge(provider.retry_at - now));
+            if (provider?.last_error) html += modal.row('Last error', provider.last_error);
+            if (providerHealth.innerHTML !== html) providerHealth.innerHTML = html;
+        }
+        renderProviderHealth();
+        const healthTimer = setInterval(renderProviderHealth, 1000);
+        dialog.signal?.addEventListener('abort', () => clearInterval(healthTimer), { once: true });
         const result = required('#geodb-result', dialog.body);
 
         /** @param {string} message @param {boolean} success */

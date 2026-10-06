@@ -476,7 +476,7 @@ function create({ config: CFG, onAction }) {
             }
 
             // Check if we should show the API-down prompt
-            if (info.internet_state === 'green' && info.api_available === false && !info.geo_db_only_mode) {
+            if (info.api_available === false && !info.geo_db_only_mode) {
                 checkApiDownPrompt();
             }
 
@@ -570,11 +570,11 @@ function create({ config: CFG, onAction }) {
         dot.classList.add(state);
         let tip;
         if (state === 'green') {
-            tip = 'Internet connection is active';
+            tip = 'Google reachability probe succeeded; GeoIP provider health is tracked separately';
         } else if (state === 'yellow') {
-            tip = 'Detecting connection issues, retrying...';
+            tip = 'Google reachability probe failed; retrying. GeoIP lookups use their own provider health.';
         } else {
-            tip = 'No internet connection detected';
+            tip = 'Google reachability probe unavailable; GeoIP lookups use their own provider health';
         }
         dot.title = tip;
     }
@@ -586,7 +586,7 @@ function create({ config: CFG, onAction }) {
 
         const el = document.createElement('div');
         el.id = 'conn-restored-toast';
-        el.textContent = 'Connection restored';
+        el.textContent = 'Reachability probe recovered';
         el.style.cssText = `
         position:fixed;top:50px;left:50%;transform:translateX(-50%);z-index:400;
         padding:8px 16px;border-radius:6px;font-size:11px;font-weight:600;
@@ -613,7 +613,7 @@ function create({ config: CFG, onAction }) {
         }, 5000);
     }
 
-    // API-down modal: shown when internet is up but geo API is failing
+    // Provider failures are independent of the reachability probe.
     let _apiDownModalVisible = false;
     let _apiDownPromptAcknowledged = false;
 
@@ -648,7 +648,7 @@ function create({ config: CFG, onAction }) {
             </div>
             <div class="modal-body" style="padding:16px">
                 <p style="color:var(--text-secondary);margin:0 0 12px;font-size:12px">
-                    The geolocation API is not responding, but your internet connection appears to be working.
+                    The geolocation provider is not responding. Cached locations remain available while BPM retries.
                 </p>
                 <p style="color:var(--text-muted);margin:0 0 16px;font-size:11px">
                     You can switch to database-only mode (uses cached locations only) or keep trying the API.
@@ -727,20 +727,21 @@ function create({ config: CFG, onAction }) {
         // Map overlay — status message (like original: "Map Loaded!" / "Locating X peers...")
         const moMsg = document.getElementById('mo-status-msg');
         if (moMsg) {
-            const inetState = lastNodeInfo ? lastNodeInfo.internet_state : 'green';
             const apiAvail = lastNodeInfo ? lastNodeInfo.api_available : true;
             const dbOnly = lastNodeInfo ? lastNodeInfo.geo_db_only_mode : false;
+            const provider = lastNodeInfo?.providers?.geoip;
+            const retryIn = provider?.retry_at == null ? 0 : Math.max(0, Math.ceil(provider.retry_at - Date.now() / 1000));
 
-            if (inetState === 'red') {
-                moMsg.textContent = 'Offline';
-                moMsg.classList.remove('loaded');
-                moMsg.style.color = 'var(--err)';
-            } else if (inetState === 'yellow') {
-                moMsg.textContent = 'Connection issues...';
+            if (dbOnly) {
+                moMsg.textContent = 'API lookup off';
                 moMsg.classList.remove('loaded');
                 moMsg.style.color = 'var(--warn)';
-            } else if (dbOnly || apiAvail === false) {
-                moMsg.textContent = 'Geo service unavailable';
+            } else if (retryIn > 0) {
+                moMsg.textContent = `${provider?.state === 'rate_limited' ? 'GeoIP rate limited' : 'GeoIP retry'} (${retryIn}s)`;
+                moMsg.classList.remove('loaded');
+                moMsg.style.color = 'var(--warn)';
+            } else if (provider?.state === 'unavailable' || apiAvail === false) {
+                moMsg.textContent = 'GeoIP provider unavailable';
                 moMsg.classList.remove('loaded');
                 moMsg.style.color = 'var(--warn)';
             } else {

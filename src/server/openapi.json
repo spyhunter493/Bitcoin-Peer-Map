@@ -445,6 +445,14 @@
                     },
                     "bitcoin_network": {
                       "$ref": "#/components/schemas/BitcoinNetwork"
+                    },
+                    "providers": {
+                      "type": "object",
+                      "required": ["geoip"],
+                      "properties": {
+                        "geoip": { "$ref": "#/components/schemas/ProviderHealth" }
+                      },
+                      "description": "GeoIP provider health, independent of the internet reachability probe."
                     }
                   }
                 }
@@ -1215,7 +1223,7 @@
               "number",
               "null"
             ],
-            "description": "Provider requests resume at or after this Unix timestamp. Null means no cooldown."
+            "description": "Provider requests resume at or after this Unix timestamp. Null means no cooldown. Quota headers and provider outage backoff govern attempts independently of the reachability probe. After five consecutive failures, outage backoff starts at 30 seconds and doubles to a five-minute maximum."
           }
         }
       },
@@ -1307,7 +1315,8 @@
       "Peer": {
         "type": "object",
         "required": [
-          "ping_ms"
+          "ping_ms",
+          "geo"
         ],
         "properties": {
           "ping_ms": {
@@ -1317,9 +1326,34 @@
             ],
             "minimum": 0,
             "description": "Measured ping in fractional milliseconds. Null means no valid measurement; measured zero is valid."
-          }
+          },
+          "geo": { "$ref": "#/components/schemas/GeoMetadata" }
         },
         "additionalProperties": true
+      },
+      "GeoMetadata": {
+        "type": "object",
+        "required": ["source", "observed_at", "age_seconds", "freshness", "stale_after_seconds"],
+        "properties": {
+          "source": {
+            "type": ["string", "null"],
+            "enum": ["dataset", "ip_api", "unknown", null],
+            "description": "Provenance of the winning location record. Legacy records report unknown; absent locations report null."
+          },
+          "observed_at": {
+            "type": ["integer", "null"],
+            "description": "Location observation Unix timestamp, not dataset download time."
+          },
+          "age_seconds": {
+            "type": ["integer", "null"], "minimum": 0,
+            "description": "Seconds since observation; null for missing, zero, or future timestamps."
+          },
+          "freshness": {
+            "type": "string", "enum": ["fresh", "stale", "unknown", "unavailable"],
+            "description": "Usable locations become stale at 30 days. Stale and unknown-age public locations refresh when API lookup is enabled; existing coordinates remain usable. Failed refreshes retry after one hour, and missing locations retry after one minute."
+          },
+          "stale_after_seconds": { "type": "integer", "const": 2592000 }
+        }
       }
     },
     "responses": {

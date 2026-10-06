@@ -1,6 +1,6 @@
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import { isMainThread, parentPort, workerData } from 'node:worker_threads';
-import { GEO_COLUMNS, GEO_SCHEMA, GEO_UPDATES } from './geoip-schema.ts';
+import { GEO_COLUMNS, GEO_SCHEMA, GEO_UPDATES, GEO_PROVENANCE_SCHEMA, GEO_PROVENANCE_WRITE } from './geoip-schema.ts';
 import { normalizeDatasetRow } from './geoip-validation.ts';
 import { errorMessage } from '../types.ts';
 import type { GeoUpdateResult } from './geoip.ts';
@@ -18,6 +18,7 @@ export function mergeDataset(path: string, downloaded: string): GeoUpdateResult 
         const local = new DatabaseSync(path, { timeout: 5000 });
         try {
             local.exec(GEO_SCHEMA);
+            local.exec(GEO_PROVENANCE_SCHEMA);
             local.exec('BEGIN IMMEDIATE');
             try {
                 const before = Number(local.prepare('SELECT COUNT(*) AS count FROM geo_cache').get()!.count);
@@ -25,6 +26,7 @@ export function mergeDataset(path: string, downloaded: string): GeoUpdateResult 
                     ON CONFLICT(ip) DO UPDATE SET ${GEO_UPDATES}
                     WHERE COALESCE(excluded.last_updated, 0) > COALESCE(geo_cache.last_updated, 0)`);
                 const rows = remote.prepare('SELECT * FROM geo_cache');
+                const provenance = local.prepare(GEO_PROVENANCE_WRITE);
                 // Read every SQLite integer so an unsafe value can be rejected per row.
                 rows.setReadBigInts(true);
                 let skipped = 0, valid = 0, changed = 0;
@@ -33,7 +35,9 @@ export function mergeDataset(path: string, downloaded: string): GeoUpdateResult 
                     const normalized = normalizeDatasetRow(numericRow);
                     if (!normalized) { skipped++; continue; }
                     valid++;
-                    changed += Number(insert.run(...GEO_COLUMNS.map(key => normalized[key] as SQLInputValue)).changes);
+                    const changes = Number(insert.run(...GEO_COLUMNS.map(key => normalized[key] as SQLInputValue)).changes);
+                    if (changes) provenance.run(normalized.ip as string, 'dataset', normalized.last_updated as SQLInputValue);
+                    changed += changes;
                 }
                 if (!valid) {
                     local.exec('ROLLBACK');

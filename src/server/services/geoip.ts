@@ -4,7 +4,7 @@ import { open, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Worker } from 'node:worker_threads';
-import { GEO_COLUMNS, GEO_SCHEMA, GEO_UPDATES } from './geoip-schema.ts';
+import { GEO_COLUMNS, GEO_SCHEMA, GEO_UPDATES, GEO_PROVENANCE_SCHEMA, GEO_RECORD_QUERY, GEO_PROVENANCE_WRITE } from './geoip-schema.ts';
 import { type Data, errorMessage, nowSeconds, object } from '../types.ts';
 import { createFailureReporter, createLogger } from '../logging.ts';
 import { sleep } from '../tasks.ts';
@@ -42,6 +42,7 @@ export class GeoDatabase {
         for (const entry of readdirSync(this.tempDir, { withFileTypes: true })) if (entry.isFile()) rmSync(join(this.tempDir, entry.name));
         this.database = new DatabaseSync(this.path);
         this.database.exec(GEO_SCHEMA);
+        this.database.exec(GEO_PROVENANCE_SCHEMA);
     }
     close() { this.controller.abort(); this.database?.close(); this.database = null; }
     datasetChanged() { this.generation++; this.cachedStats = null; }
@@ -52,7 +53,10 @@ export class GeoDatabase {
         if (this.signal.aborted) return { ...result, status: 'closed' };
         if (!existsSync(this.path)) return { ...result, status: 'not_found' };
         try {
-            if (!this.database) this.database = new DatabaseSync(this.path);
+            if (!this.database) {
+                this.database = new DatabaseSync(this.path);
+                this.database.exec(GEO_PROVENANCE_SCHEMA);
+            }
             const stats = this.database.prepare('SELECT COUNT(*) AS entries, MAX(last_updated) AS last_updated, MIN(CASE WHEN last_updated > 0 THEN last_updated END) AS oldest_updated FROM geo_cache').get();
             this.cachedStats = { ...result, ...stats, status: 'ok', size_bytes: statSync(this.path).size };
             return { ...this.cachedStats };
@@ -61,8 +65,11 @@ export class GeoDatabase {
     get(ip: string): Data | null {
         if (!this.enabled || this.signal.aborted || !existsSync(this.path)) return null;
         try {
-            if (!this.database) this.database = new DatabaseSync(this.path);
-            const row = this.database.prepare('SELECT * FROM geo_cache WHERE ip = ?').get(ip);
+            if (!this.database) {
+                this.database = new DatabaseSync(this.path);
+                this.database.exec(GEO_PROVENANCE_SCHEMA);
+            }
+            const row = this.database.prepare(GEO_RECORD_QUERY).get(ip);
             return row ? { ...row } : null;
         } catch { return null; }
     }
@@ -82,15 +89,20 @@ export class GeoDatabase {
         let delay = 50;
         while (!cancellation.aborted && this.database) {
             try {
-                const result = this.database.prepare(`INSERT INTO geo_cache (${GEO_COLUMNS.join(',')}) VALUES (${GEO_COLUMNS.map(() => '?').join(',')})
-                    ON CONFLICT(ip) DO UPDATE SET ${GEO_UPDATES}
-                    WHERE COALESCE(excluded.last_updated, 0) > COALESCE(geo_cache.last_updated, 0)`).run(...values);
-                const row = this.database.prepare('SELECT * FROM geo_cache WHERE ip = ?').get(ip);
-                if (!row) throw new Error('Geolocation write did not return a stored record');
-                if (!isValidGeoData(row)) throw new Error('Stored geolocation winner contains invalid location data');
-                if (Number(result.changes)) this.cachedStats = null;
-                this.saveFailures.recovered('Geolocation database writes recovered');
-                return { status: Number(result.changes) ? 'saved' : 'superseded', row: { ...row } };
+                this.database.exec('BEGIN IMMEDIATE');
+                try {
+                    const result = this.database.prepare(`INSERT INTO geo_cache (${GEO_COLUMNS.join(',')}) VALUES (${GEO_COLUMNS.map(() => '?').join(',')})
+                        ON CONFLICT(ip) DO UPDATE SET ${GEO_UPDATES}
+                        WHERE COALESCE(excluded.last_updated, 0) > COALESCE(geo_cache.last_updated, 0)`).run(...values);
+                    if (Number(result.changes)) this.database.prepare(GEO_PROVENANCE_WRITE).run(ip, 'ip_api', observedAt);
+                    const row = this.database.prepare(GEO_RECORD_QUERY).get(ip);
+                    if (!row) throw new Error('Geolocation write did not return a stored record');
+                    if (!isValidGeoData(row)) throw new Error('Stored geolocation winner contains invalid location data');
+                    this.database.exec('COMMIT');
+                    if (Number(result.changes)) this.cachedStats = null;
+                    this.saveFailures.recovered('Geolocation database writes recovered');
+                    return { status: Number(result.changes) ? 'saved' : 'superseded', row: { ...row } };
+                } catch (error) { this.database.exec('ROLLBACK'); throw error; }
             } catch (error) {
                 const remaining = deadline - performance.now();
                 if (isBusy(error) && remaining > 0) {

@@ -10,9 +10,31 @@ const log = createLogger('peers');
 
 export const REFRESH_INTERVAL_MS = 10_000;
 export const GEO_PERSISTENCE_RETRY_MS = 60_000;
+export const GEO_STALE_AFTER_SECONDS = 30 * 86400;
+export const GEO_REFRESH_RETRY_MS = 60 * 60 * 1000;
+export interface GeoMetadata {
+    source: 'dataset' | 'ip_api' | 'unknown' | null;
+    observed_at: number | null;
+    age_seconds: number | null;
+    freshness: 'fresh' | 'stale' | 'unknown' | 'unavailable';
+    stale_after_seconds: number;
+}
 const GEO_API_FIELDS = 'status,message,continent,continentCode,country,countryCode,region,regionName,city,district,zip,lat,lon,timezone,offset,currency,isp,org,as,asname,mobile,proxy,hosting';
 interface PendingGeoSave { data: Data; observedAt: number }
-interface GeoEntry { data: Data; generation: number; retryAt: number | null; pendingSave?: PendingGeoSave; saveRetryAt?: number }
+interface GeoEntry {
+    data: Data; source: GeoMetadata['source']; observedAt: number | null;
+    generation: number; retryAt: number | null; refreshRetryAt: number | null;
+    pendingSave?: PendingGeoSave; saveRetryAt?: number;
+}
+function metadata(entry?: GeoEntry): GeoMetadata {
+    const available = entry?.data.status === 'ok';
+    const now = nowSeconds();
+    const observed = available && typeof entry.observedAt === 'number' && Number.isSafeInteger(entry.observedAt) && entry.observedAt > 0 ? entry.observedAt : null;
+    const age = observed !== null && observed <= now ? Math.floor(now - observed) : null;
+    return { source: available ? entry.source : null, observed_at: observed, age_seconds: age,
+        freshness: !available ? 'unavailable' : age === null ? 'unknown' : age >= GEO_STALE_AFTER_SECONDS ? 'stale' : 'fresh',
+        stale_after_seconds: GEO_STALE_AFTER_SECONDS };
+}
 export class PeerService {
     readonly rpc: Rpc;
     readonly geoDatabase: GeoDatabase;
@@ -64,10 +86,18 @@ export class PeerService {
             const address = peer.addr || '', network = peer.network ?? networkType(address);
             const [host] = splitPeerAddress(address);
             const entry = this.geoCache.get(host);
-            if (entry?.pendingSave && performance.now() >= (entry.saveRetryAt ?? Infinity)) this.queueGeoLookup(host, network);
+            if (entry?.pendingSave) {
+                if (performance.now() >= (entry.saveRetryAt ?? Infinity)) this.queueGeoLookup(host, network);
+                continue;
+            }
             if (!this.cachedGeo(host)) {
                 if (isPublicAddress(network, host)) this.queueGeoLookup(host, network);
-                else this.geoCache.set(host, { data: emptyGeo('private'), generation: this.geoDatabase.generation, retryAt: null });
+                else this.geoCache.set(host, { data: emptyGeo('private'), source: null, observedAt: null,
+                    generation: this.geoDatabase.generation, retryAt: null, refreshRetryAt: null });
+            } else if (isPublicAddress(network, host) && (entry?.generation !== this.geoDatabase.generation ||
+                (entry?.data.status === 'ok' && !this.connectivity.geoipApiDisabled && metadata(entry).freshness !== 'fresh' &&
+                performance.now() >= (entry?.refreshRetryAt ?? 0) && this.connectivity.providerReady('geoip')))) {
+                this.queueGeoLookup(host, network);
             }
         }
         return true;
@@ -80,7 +110,8 @@ export class PeerService {
     }
     cachedGeo(host: string): Data | null {
         const entry = this.geoCache.get(host);
-        if (!entry || (!entry.pendingSave && entry.generation !== this.geoDatabase.generation) || (entry.retryAt !== null && performance.now() >= entry.retryAt)) return null;
+        if (!entry || (entry.data.status !== 'ok' && !entry.pendingSave &&
+            (entry.generation !== this.geoDatabase.generation || (entry.retryAt !== null && performance.now() >= entry.retryAt)))) return null;
         return entry.data;
     }
     queueGeoLookup(host: string, network: string) {
@@ -109,9 +140,12 @@ export class PeerService {
             const retained = this.geoCache.get(host)?.pendingSave;
             if (retained) { await this.persistGeo(host, retained); return false; }
             let data = this.geoDatabase.get(host);
-            if (!isValidGeoData(data)) data = null;
+            if (isValidGeoData(data)) this.cacheGeo(host, data, true);
+            else data = null;
+            const entry = this.geoCache.get(host);
+            const needsLookup = entry?.data.status !== 'ok' || (metadata(entry).freshness !== 'fresh' && performance.now() >= (entry.refreshRetryAt ?? 0));
             const state = this.connectivity.snapshot();
-            const usedApi = !data && !state.geo_db_only_mode && this.connectivity.providerReady('geoip') && !['yellow', 'red'].includes(state.internet_state) && isPublicAddress(network, host);
+            const usedApi = needsLookup && !state.geo_db_only_mode && this.connectivity.providerReady('geoip') && isPublicAddress(network, host);
             if (usedApi) {
                 data = await this.fetchGeo(host);
                 if (isValidGeoData(data)) {
@@ -122,13 +156,17 @@ export class PeerService {
                 }
                 // An import may have supplied a location while the provider request was pending.
                 data = this.geoDatabase.get(host);
-                if (!isValidGeoData(data)) data = null;
+                if (isValidGeoData(data)) this.cacheGeo(host, data, true);
             }
-            this.cacheGeo(host, data, true);
+            const retainedEntry = this.geoCache.get(host);
+            if (retainedEntry?.data.status === 'ok') {
+                retainedEntry.generation = this.geoDatabase.generation;
+                if (usedApi && metadata(retainedEntry).freshness !== 'fresh') retainedEntry.refreshRetryAt = performance.now() + GEO_REFRESH_RETRY_MS;
+            } else this.cacheGeo(host, null, true);
             return usedApi;
         } finally { this.pending.delete(host); }
     }
-    private cacheGeo(host: string, data: Data | null, fromDatabase: boolean, pendingSave?: PendingGeoSave, saveRetryAt?: number) {
+    private cacheGeo(host: string, data: Data | null, fromDatabase: boolean, pendingSave?: PendingGeoSave, saveRetryAt?: number, observedAt?: number) {
         if (this.signal.aborted || !this.activeHosts.has(host)) return;
         const normalized = emptyGeo(data ? 'ok' : 'unavailable');
         if (data) {
@@ -136,14 +174,27 @@ export class PeerService {
             normalized.lat = Number(data.lat); normalized.lon = Number(data.lon);
             if (fromDatabase) { normalized.offset = data.utc_offset ?? 0; normalized.as = data.as_info ?? ''; }
         }
-        this.geoCache.set(host, { data: normalized, generation: this.geoDatabase.generation, retryAt: data ? null : performance.now() + 60_000, pendingSave, saveRetryAt });
+        const previous = this.geoCache.get(host);
+        const source: GeoMetadata['source'] = !data ? null : !fromDatabase ? 'ip_api' :
+            data.geo_source === 'dataset' || data.geo_source === 'ip_api' ? data.geo_source : 'unknown';
+        const timestamp = !data ? null : fromDatabase ? (typeof data.last_updated === 'number' ? data.last_updated : null) :
+            pendingSave?.observedAt ?? observedAt ?? previous?.observedAt ?? null;
+        const unchanged = previous?.source === source && previous?.observedAt === timestamp;
+        this.geoCache.set(host, { data: normalized, source, observedAt: timestamp, generation: this.geoDatabase.generation,
+            retryAt: data ? null : performance.now() + 60_000, refreshRetryAt: unchanged ? previous.refreshRetryAt : null, pendingSave, saveRetryAt });
     }
     private async persistGeo(host: string, pendingSave: PendingGeoSave) {
         const result = await this.geoDatabase.save(host, pendingSave.data, pendingSave.observedAt, this.signal);
         if (result.status === 'cancelled' || this.signal.aborted) return;
         if (result.status === 'saved' || result.status === 'superseded') this.cacheGeo(host, result.row, true);
-        else if (result.status === 'disabled') this.cacheGeo(host, pendingSave.data, false);
+        else if (result.status === 'disabled') this.cacheGeo(host, pendingSave.data, false, undefined, undefined, pendingSave.observedAt);
         else this.cacheGeo(host, pendingSave.data, false, pendingSave, performance.now() + GEO_PERSISTENCE_RETRY_MS);
+        const entry = this.geoCache.get(host);
+        // A successful request can still lose to a stored record with an unknown age.
+        // Throttle that outcome just like a failed refresh, including delayed saves.
+        if (entry?.data.status === 'ok' && !entry.pendingSave && metadata(entry).freshness !== 'fresh') {
+            entry.refreshRetryAt = performance.now() + GEO_REFRESH_RETRY_MS;
+        }
     }
     private async geoLoop() {
         while (!this.signal.aborted) {
@@ -190,6 +241,7 @@ export class PeerService {
                 connection_type_abbrev: abbreviateConnectionType(peer.connection_type || ''),
                 services, services_abbrev: services.map(name => serviceNames[name] || name.slice(0, 2)).join(' '),
                 in_addrman: this.knownAddresses.has(host), location, location_status: locationStatus, addr: address,
+                geo: metadata(geo?.status === 'ok' ? this.geoCache.get(host) : undefined),
             };
             for (const [key, fallback] of Object.entries(emptyGeo(''))) if (key !== 'status') result[key] = geo?.[key] ?? fallback;
             for (const key of ['minping', 'lastsend', 'lastrecv', 'startingheight', 'synced_headers', 'synced_blocks', 'addr_relay_enabled', 'relaytxes', 'minfeefilter', 'mapped_as']) result[key] = peer[key] ?? null;

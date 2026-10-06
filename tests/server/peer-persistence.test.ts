@@ -30,6 +30,8 @@ test('failed busy persistence retains a visible location and retries its origina
     const pending = peers.resolveGeo('8.8.8.8', 'ipv4');
     await flush();
     assert.equal(peers.listPeers()[0].location, 'API, NZ', 'a writer lock must not hide a known location');
+    assert.equal((peers.listPeers()[0].geo as { source: string }).source, 'ip_api');
+    assert.equal((peers.listPeers()[0].geo as { observed_at: number }).observed_at, 1_700_000_000);
     time = GEO_SAVE_RETRY_BUDGET_MS; t.mock.timers.tick(50); await pending;
     assert.equal(calls, 1); assert.equal(geo.get('8.8.8.8'), null);
     assert.ok(peers.geoCache.get('8.8.8.8')?.pendingSave);
@@ -39,6 +41,7 @@ test('failed busy persistence retains a visible location and retries its origina
     writer.exec('COMMIT');
     await peers.resolveGeo('8.8.8.8', 'ipv4');
     assert.equal(calls, 1); assert.equal(geo.get('8.8.8.8')?.last_updated, 1_700_000_000);
+    assert.equal(geo.get('8.8.8.8')?.geo_source, 'ip_api');
     assert.equal(peers.geoCache.get('8.8.8.8')?.pendingSave, undefined);
 });
 

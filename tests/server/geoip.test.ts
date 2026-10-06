@@ -94,6 +94,61 @@ test('saved SQLite records reopen with unchanged schema and statistics are indep
     assert.equal(reopened.get('8.8.8.8')?.utc_offset, 3600);
     assert.equal(reopened.get('8.8.8.8')?.as_info, 'AS123');
     assert.equal(reopened.get('8.8.8.8')?.mobile, 1);
+    assert.equal(reopened.get('8.8.8.8')?.geo_source, 'ip_api');
+});
+
+test('legacy provenance stays unknown while imports and API writes preserve the winning record source', async t => {
+    const dir = temporaryDirectory(t), path = join(dir, 'geo.db');
+    const legacy = new DatabaseSync(path);
+    legacy.exec(GEO_SCHEMA);
+    legacy.prepare('INSERT INTO geo_cache (ip, country, lat, lon, last_updated) VALUES (?, ?, ?, ?, ?)').run('8.8.8.8', 'NZ', 1, 2, 100);
+    legacy.close();
+    const geo = new GeoDatabase(dir, true); geo.initialize(); t.after(() => geo.close());
+    assert.equal(geo.get('8.8.8.8')?.geo_source, 'unknown');
+    const importRecord = (timestamp: number, name: string) => geo.update(dataset(join(dir, name),
+        [{ ip: '8.8.8.8', country: 'NZ', lat: 1, lon: 2, last_updated: timestamp }]));
+    assert.equal((await importRecord(200, 'first.db')).success, true);
+    assert.equal(geo.get('8.8.8.8')?.geo_source, 'dataset');
+    for (const timestamp of [150, 200]) {
+        const result = await geo.save('8.8.8.8', { country: 'NZ', lat: 3, lon: 4 }, timestamp);
+        assert.equal(result.status, 'superseded');
+        if (result.status === 'superseded') assert.equal(result.row.geo_source, 'dataset');
+    }
+    await geo.save('8.8.8.8', { country: 'NZ', lat: 3, lon: 4 }, 300);
+    assert.equal(geo.get('8.8.8.8')?.geo_source, 'ip_api');
+    await importRecord(250, 'older.db');
+    assert.equal(geo.get('8.8.8.8')?.geo_source, 'ip_api');
+    await importRecord(300, 'tied.db');
+    assert.equal(geo.get('8.8.8.8')?.geo_source, 'ip_api');
+    await importRecord(400, 'newer.db');
+    assert.equal(geo.get('8.8.8.8')?.geo_source, 'dataset');
+    geo.close();
+    const reopened = new GeoDatabase(dir, true); reopened.initialize(); t.after(() => reopened.close());
+    assert.equal(reopened.get('8.8.8.8')?.geo_source, 'dataset');
+    const inspect = new DatabaseSync(path);
+    assert.deepEqual(inspect.prepare('PRAGMA table_info(geo_cache)').all().map(column => column.name), GEO_COLUMNS);
+    inspect.prepare('UPDATE geo_cache SET last_updated = 500 WHERE ip = ?').run('8.8.8.8');
+    assert.equal(reopened.get('8.8.8.8')?.geo_source, 'unknown', 'metadata never attributes an unrelated row version');
+    inspect.close();
+});
+
+test('dataset provenance supports a nullable legacy observation time', async t => {
+    const { dir, geo } = database(t);
+    await geo.update(dataset(join(dir, 'nullable.db'), [{ ip: '8.8.8.8', country: 'NZ', lat: 1, lon: 2, last_updated: null }]));
+    assert.equal(geo.get('8.8.8.8')?.geo_source, 'dataset');
+    assert.equal(geo.get('8.8.8.8')?.last_updated, null);
+});
+
+test('provenance failures roll back both API writes and dataset imports', async t => {
+    const { dir, geo } = database(t);
+    const writer = new DatabaseSync(geo.path); t.after(() => writer.close());
+    writer.exec("CREATE TRIGGER reject_provenance BEFORE INSERT ON geo_provenance BEGIN SELECT RAISE(ABORT, 'provenance unavailable'); END");
+    t.mock.method(console, 'error', () => {});
+    assert.equal((await geo.save('8.8.8.8', { country: 'NZ', lat: 1, lon: 2 }, 100)).status, 'failed');
+    assert.equal(geo.get('8.8.8.8'), null);
+    const imported = await geo.update(dataset(join(dir, 'atomic.db'), [{ ip: '1.1.1.1', country: 'NZ', lat: 1, lon: 2, last_updated: 200 }]));
+    assert.equal(imported.success, false);
+    assert.equal(geo.get('1.1.1.1'), null); assert.equal(geo.generation, 0);
 });
 
 test('imports skip malformed newer rows while preserving valid records and nullable legacy metadata', async t => {
