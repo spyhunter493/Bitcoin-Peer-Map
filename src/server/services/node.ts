@@ -1,9 +1,11 @@
 import { BITCOIN_NETWORKS, type BitcoinChain, formatBytes, normalizePeerAddress, splitPeerAddress, networkType } from '../network.ts';
-import { type Data, type Rpc, object, errorMessage, nowSeconds, round } from '../types.ts';
-import { CachedRequest, Lru } from '../tasks.ts';
+import { type Data, type Rpc, errorMessage, nowSeconds, round } from '../types.ts';
+import { Lru } from '../tasks.ts';
+import { SharedRead, readDeadline } from '../shared-read.ts';
+import { RpcBusyError } from '../rpc.ts';
 import type { ConnectivityService } from './connectivity.ts';
 import type { GeoDatabase } from './geoip.ts';
-import { parsePeerInfo, parseNetworkInfo, parseBlockchainInfo, parseBlockHeader, parseBlock, parseMempoolInfo, parseChainTips, type NetworkInfo, type BlockchainInfo, type BlockHeader } from '../rpc-types.ts';
+import { parsePeerInfo, parseNetworkInfo, parseBlockchainInfo, parseBlockHeader, parseBlock, parseMempoolInfo, parseChainTips, parseTxIndex, RpcValidationError, type TxIndexDetails, type NetworkInfo, type BlockchainInfo, type BlockHeader } from '../rpc-types.ts';
 import { NodeMetrics } from './node-metrics.ts';
 import type { DashboardDetails, DashboardInfo, RecentBlock, RecentBlocks, ChainTip, ChainTips, NetworkSummary, NetworkScores } from '../api-types.ts';
 import { createFailureReporter, createLogger } from '../logging.ts';
@@ -11,6 +13,9 @@ import { createFailureReporter, createLogger } from '../logging.ts';
 const log = createLogger('node');
 
 export const CHAIN_TIP_HEADER_LIMIT = 100;
+export const CHAIN_TIP_TIMEOUT_MS = 15_000;
+export const CHAIN_TIP_AGE_TIMEOUT_MS = 5000;
+export const CHAIN_TIP_WORKERS = 4;
 export class NodeService {
     readonly rpc: Rpc;
     readonly connectivity: Pick<ConnectivityService, 'snapshot'>;
@@ -18,11 +23,17 @@ export class NodeService {
     readonly autoUpdateEnabled: () => boolean;
     readonly metrics: NodeMetrics;
     readonly chain: BitcoinChain;
-    private dashboardCache = new CachedRequest<DashboardDetails>(5000);
+    private dashboardCache = new SharedRead<DashboardDetails>(5000);
+    private blockchainCache = new SharedRead<BlockchainInfo>(5000);
+    private mempoolCache = new SharedRead<ReturnType<typeof parseMempoolInfo>>(5000);
+    private bansCache = new SharedRead<unknown>(5000);
+    private tipCache = new SharedRead<ReturnType<typeof parseChainTips>>(5000);
+    private indexCache = new SharedRead<TxIndexDetails>(5000);
+    private chainTipsCache = new SharedRead<ChainTips>(5000, 1000, { fromCompletion: true });
     private headers = new Lru<BlockHeader>(256);
     private blocks = new Lru<RecentBlock & { previous_hash: string }>(256);
-    private pendingHeaders = new Map<string, Promise<BlockHeader>>();
-    private pendingBlocks = new Map<string, Promise<RecentBlock & { previous_hash: string }>>();
+    private pendingHeaders = new Map<string, SharedRead<BlockHeader>>();
+    private pendingBlocks = new Map<string, SharedRead<RecentBlock & { previous_hash: string }>>();
     private blockchainFailures = createFailureReporter(log);
     private blockFailures = createFailureReporter(log);
     private networkFailures = createFailureReporter(log);
@@ -32,8 +43,8 @@ export class NodeService {
         this.metrics = new NodeMetrics(rpc);
         this.chain = chain;
     }
-    async dashboardInfo(): Promise<DashboardInfo> {
-        const cached = structuredClone(await this.dashboardCache.get(() => this.refreshDashboard()));
+    async dashboardInfo(signal?: AbortSignal): Promise<DashboardInfo> {
+        const cached = await this.dashboardCache.get(signal => this.refreshDashboard(signal), signal);
         const connectivity = this.connectivity.snapshot();
         const stats = this.geoDatabase.stats();
         if (stats.entries) {
@@ -45,24 +56,36 @@ export class NodeService {
         return { ...cached, bitcoin_network: { chain: this.chain, ...BITCOIN_NETWORKS[this.chain] }, internet_state: connectivity.internet_state, api_available: connectivity.api_available, geo_db_only_mode: connectivity.geo_db_only_mode,
             geo_db_stats: { ...stats, auto_lookup: this.geoDatabase.enabled, auto_update: this.autoUpdateEnabled(), db_only_mode: connectivity.geo_db_only_mode } };
     }
-    private async header(hash: string) {
+    private readBlockchain(signal?: AbortSignal) {
+        return this.blockchainCache.get(signal => this.rpc.call('getblockchaininfo', [], 10, signal).then(parseBlockchainInfo), signal);
+    }
+    private readMempool(signal?: AbortSignal) {
+        return this.mempoolCache.get(signal => this.rpc.call('getmempoolinfo', [], 10, signal).then(parseMempoolInfo), signal);
+    }
+    private async header(hash: string, signal?: AbortSignal) {
+        signal?.throwIfAborted();
         const cached = this.headers.get(hash);
         if (cached) return cached;
         let pending = this.pendingHeaders.get(hash);
         if (!pending) {
-            pending = this.rpc.call('getblockheader', [hash], 10).then(value => {
-                return this.headers.set(hash, parseBlockHeader(value));
-            }).finally(() => this.pendingHeaders.delete(hash));
+            const read = new SharedRead<BlockHeader>(Infinity, 1000, { onIdle: () => {
+                if (!read.loading && this.pendingHeaders.get(hash) === read) this.pendingHeaders.delete(hash);
+            } });
+            pending = read;
             this.pendingHeaders.set(hash, pending);
         }
-        return pending;
+        return pending.get(signal => this.rpc.call('getblockheader', [hash], 10, signal).then(value => {
+            const header = parseBlockHeader(value);
+            if (!signal.aborted) this.headers.set(hash, header);
+            return header;
+        }), signal);
     }
-    private async refreshDashboard(): Promise<DashboardDetails> {
+    private async refreshDashboard(signal: AbortSignal): Promise<DashboardDetails> {
         const [blockchain, network, metrics, mempoolSize] = await Promise.all([
-            this.blockchainDetails(),
-            this.networkDetails(),
+            this.blockchainDetails(signal),
+            this.networkDetails(signal),
             this.metrics.summary(),
-            this.mempoolSize(),
+            this.mempoolSize(signal),
         ]);
         const traffic = metrics.download_bytes === null || metrics.upload_bytes === null ? null : {
             download_bytes: metrics.download_bytes, upload_bytes: metrics.upload_bytes,
@@ -70,29 +93,35 @@ export class NodeService {
         };
         return { ...blockchain, ...network, node_traffic: traffic, node_metrics: metrics, mempool_size: mempoolSize };
     }
-    private async blockchainDetails(): Promise<Pick<DashboardDetails, 'blockchain' | 'last_block'>> {
+    private async blockchainDetails(signal: AbortSignal): Promise<Pick<DashboardDetails, 'blockchain' | 'last_block'>> {
         const result: Pick<DashboardDetails, 'blockchain' | 'last_block'> = { blockchain: null, last_block: null };
         let blockchain: BlockchainInfo | null = null;
         try {
-            blockchain = parseBlockchainInfo(await this.rpc.call('getblockchaininfo', [], 10));
-            let indexed = false;
-            try { const indexes = await this.rpc.call('getindexinfo', [], 10); indexed = object(indexes) && 'txindex' in indexes; } catch { /* Optional RPC. */ }
-            result.blockchain = { size_gb: round((blockchain.size_on_disk || 0) / 1e9, 1), pruned: blockchain.pruned ?? false, indexed, ibd: blockchain.initialblockdownload ?? null };
+            blockchain = await this.readBlockchain(signal);
+            let index: TxIndexDetails = { status: 'unknown', height: null };
+            try { index = await this.indexCache.get(signal => this.rpc.call('getindexinfo', [], 10, signal).then(value => {
+                const index = parseTxIndex(value);
+                if (index.status === 'unknown') throw new RpcValidationError('getindexinfo returned an unexpected response');
+                return index;
+            }), signal); }
+            catch (error) { if (error instanceof RpcBusyError || signal.aborted) throw error; }
+            result.blockchain = { size_gb: round((blockchain.size_on_disk || 0) / 1e9, 1), pruned: blockchain.pruned ?? false,
+                indexed: ['ready', 'syncing'].includes(index.status), ibd: blockchain.initialblockdownload ?? null, txindex_status: index.status, txindex_height: index.height };
             this.blockchainFailures.recovered('Blockchain details recovered');
-        } catch (error) { this.blockchainFailures.failure(`Could not load blockchain details: ${errorMessage(error)}`); }
+        } catch (error) { if (error instanceof RpcBusyError || signal.aborted) throw error; this.blockchainFailures.failure(`Could not load blockchain details: ${errorMessage(error)}`); }
         try {
-            const hash = blockchain?.bestblockhash || await this.rpc.call('getbestblockhash', [], 10);
+            const hash = blockchain?.bestblockhash || await this.rpc.call('getbestblockhash', [], 10, signal);
             if (typeof hash !== 'string' || !hash) throw new Error('getbestblockhash returned an unexpected response');
-            const header = await this.header(hash);
+            const header = await this.header(hash, signal);
             result.last_block = { height: blockchain?.blocks ?? header.height ?? 0, time: header.time ?? 0 };
             this.blockFailures.recovered('Last block details recovered');
-        } catch (error) { this.blockFailures.failure(`Could not load last block: ${errorMessage(error)}`); }
+        } catch (error) { if (error instanceof RpcBusyError || signal.aborted) throw error; this.blockFailures.failure(`Could not load last block: ${errorMessage(error)}`); }
         return result;
     }
-    private async networkDetails(): Promise<Pick<DashboardDetails, 'subversion' | 'connected' | 'services' | 'network_details' | 'network_scores'>> {
+    private async networkDetails(signal: AbortSignal): Promise<Pick<DashboardDetails, 'subversion' | 'connected' | 'services' | 'network_details' | 'network_scores'>> {
         const result: Pick<DashboardDetails, 'subversion' | 'connected' | 'services' | 'network_details' | 'network_scores'> = { subversion: null, connected: null, services: null, network_details: null, network_scores: null };
         try {
-            const network = parseNetworkInfo(await this.rpc.call('getnetworkinfo', [], 10));
+            const network = parseNetworkInfo(await this.rpc.call('getnetworkinfo', [], 10, signal));
             result.subversion = network.subversion;
             result.connected = network.connections;
             result.services = network.localservicesnames;
@@ -106,54 +135,62 @@ export class NodeService {
             }
             result.network_scores = network.localaddresses === null ? null : scores;
             this.networkFailures.recovered('Network details recovered');
-        } catch (error) { this.networkFailures.failure(`Could not load network details: ${errorMessage(error)}`); }
+        } catch (error) { if (error instanceof RpcBusyError || signal.aborted) throw error; this.networkFailures.failure(`Could not load network details: ${errorMessage(error)}`); }
         return result;
     }
-    private async mempoolSize(): Promise<number | null> {
+    private async mempoolSize(signal: AbortSignal): Promise<number | null> {
         try {
-            const size = parseMempoolInfo(await this.rpc.call('getmempoolinfo', [], 10)).size ?? 0;
+            const size = (await this.readMempool(signal)).size ?? 0;
             this.mempoolFailures.recovered('Mempool details recovered');
             return size;
         } catch (error) {
+            if (error instanceof RpcBusyError || signal.aborted) throw error;
             this.mempoolFailures.failure(`Could not load mempool details: ${errorMessage(error)}`);
             return null;
         }
     }
-    async mempool(): Promise<Data> {
+    async mempool(signal?: AbortSignal): Promise<Data> {
         const result: Data = { mempool: null, error: null };
-        try { result.mempool = parseMempoolInfo(await this.rpc.call('getmempoolinfo')); } catch (error) { result.error = errorMessage(error); }
+        try { result.mempool = await this.readMempool(signal); } catch (error) { if (error instanceof RpcBusyError || signal?.aborted) throw error; result.error = errorMessage(error); }
         return result;
     }
-    async blockchain(): Promise<Data> {
-        try { return { blockchain: parseBlockchainInfo(await this.rpc.call('getblockchaininfo')), error: null }; }
-        catch (error) { return { blockchain: null, error: errorMessage(error) }; }
+    async blockchain(signal?: AbortSignal): Promise<Data> {
+        try { return { blockchain: await this.readBlockchain(signal), error: null }; }
+        catch (error) { if (error instanceof RpcBusyError || signal?.aborted) throw error; return { blockchain: null, error: errorMessage(error) }; }
     }
-    private async recentBlock(hash: string, expectedHeight: number): Promise<RecentBlock & { previous_hash: string }> {
+    private async recentBlock(hash: string, expectedHeight: number, signal?: AbortSignal): Promise<RecentBlock & { previous_hash: string }> {
+        signal?.throwIfAborted();
         const cached = this.blocks.get(hash);
         if (cached) return cached;
         let pending = this.pendingBlocks.get(hash);
         if (!pending) {
-            pending = this.rpc.call('getblock', [hash, 1], 10).then(value => {
-                const block = parseBlock(value);
-                const height = Number(block.height ?? expectedHeight);
-                if (height !== expectedHeight) throw new Error(`getblock returned height ${height} while traversing height ${expectedHeight}`);
-                const size = Number(block.size || 0);
-                return this.blocks.set(hash, { height, hash, time: Number(block.time || 0), size, size_mb: round(size / 1e6, 3), weight: Number(block.weight || 0), tx_count: Number(block.nTx ?? (Array.isArray(block.tx) ? block.tx.length : 0)), version: block.version ?? null, difficulty: block.difficulty ?? null, previous_hash: String(block.previousblockhash || '') });
-            }).finally(() => this.pendingBlocks.delete(hash));
+            const read = new SharedRead<RecentBlock & { previous_hash: string }>(Infinity, 1000, { onIdle: () => {
+                if (!read.loading && this.pendingBlocks.get(hash) === read) this.pendingBlocks.delete(hash);
+            } });
+            pending = read;
             this.pendingBlocks.set(hash, pending);
         }
-        return pending;
+        return pending.get(signal => this.rpc.call('getblock', [hash, 1], 10, signal).then(value => {
+            const block = parseBlock(value);
+            const height = Number(block.height ?? expectedHeight);
+            if (height !== expectedHeight) throw new Error(`getblock returned height ${height} while traversing height ${expectedHeight}`);
+            const size = Number(block.size || 0);
+            const result = { height, hash, time: Number(block.time || 0), size, size_mb: round(size / 1e6, 3), weight: Number(block.weight || 0), tx_count: Number(block.nTx ?? (Array.isArray(block.tx) ? block.tx.length : 0)), version: block.version ?? null, difficulty: block.difficulty ?? null, previous_hash: String(block.previousblockhash || '') };
+            if (!signal.aborted) this.blocks.set(hash, result);
+            return result;
+        }), signal);
     }
-    async recentBlocks(limit = 25): Promise<RecentBlocks> {
+    async recentBlocks(limit = 25, signal?: AbortSignal): Promise<RecentBlocks> {
         limit = Number.isFinite(limit) ? Math.max(1, Math.min(Math.trunc(limit), 100)) : 25;
         try {
-            const blockchain = parseBlockchainInfo(await this.rpc.call('getblockchaininfo', [], 10));
+            const blockchain = await this.readBlockchain(signal);
             const height = Number(blockchain.blocks || 0);
             let hash = blockchain.bestblockhash;
             if (typeof hash !== 'string' || !hash) throw new Error('getblockchaininfo did not return bestblockhash');
             const cached: (RecentBlock & { previous_hash: string })[] = [];
             for (let offset = 0; offset < Math.min(limit, height + 1); offset++) {
-                const block = await this.recentBlock(hash, height - offset);
+                signal?.throwIfAborted();
+                const block = await this.recentBlock(hash, height - offset, signal);
                 cached.push(block);
                 if (height - offset > 0) {
                     hash = block.previous_hash;
@@ -165,13 +202,30 @@ export class NodeService {
             const count = blocks.length;
             const totalSize = blocks.reduce((sum, block) => sum + block.size, 0), transactions = blocks.reduce((sum, block) => sum + block.tx_count, 0);
             return { success: true, blocks, error: null, summary: { chain: blockchain.chain ?? null, tip_height: height, count, latest_time: blocks[0]?.time ?? null, total_size: totalSize, avg_size_mb: count ? round(totalSize / count / 1e6, 3) : 0, total_transactions: transactions, avg_transactions: count ? round(transactions / count, 1) : 0, generated_at: generatedAt } };
-        } catch (error) { return { success: false, summary: null, blocks: [], error: errorMessage(error) }; }
+        } catch (error) { if (error instanceof RpcBusyError || signal?.aborted) throw error; return { success: false, summary: null, blocks: [], error: errorMessage(error) }; }
     }
-    async chainTips(): Promise<ChainTips> {
+    async chainTips(signal?: AbortSignal): Promise<ChainTips> {
         try {
-            const tips = parseChainTips(await this.rpc.call('getchaintips', [], 10));
-            let blockchain: BlockchainInfo | null = null;
-            try { blockchain = parseBlockchainInfo(await this.rpc.call('getblockchaininfo', [], 10)); } catch { /* Tip data remains usable. */ }
+            const result = await this.chainTipsCache.get(signal => this.loadChainTips(signal), signal);
+            const generatedAt = Math.floor(nowSeconds());
+            if (result.summary) result.summary.generated_at = generatedAt;
+            for (const tip of result.tips) tip.age_seconds = tip.time ? Math.max(0, generatedAt - tip.time) : null;
+            return result;
+        } catch (error) { if (error instanceof RpcBusyError || signal?.aborted) throw error; return { success: false, summary: null, tips: [], error: errorMessage(error) }; }
+    }
+    private async loadChainTips(signal: AbortSignal): Promise<ChainTips> {
+        const end = performance.now() + CHAIN_TIP_TIMEOUT_MS;
+        const total = readDeadline(CHAIN_TIP_TIMEOUT_MS, signal);
+        const source = readDeadline(10_000, total.signal);
+        const metadata = readDeadline(5000, total.signal);
+        try {
+            const [tips, blockchain] = await Promise.all([
+                this.tipCache.get(signal => this.rpc.call('getchaintips', [], 10, signal).then(parseChainTips), source.signal),
+                this.readBlockchain(metadata.signal).catch(error => {
+                    if (error instanceof RpcBusyError || signal.aborted) throw error;
+                    return null;
+                }),
+            ]);
             const counts: Record<string, number> = {};
             const normalized: ChainTip[] = tips.map(tip => {
                 const status = String(tip.status || 'unknown').toLowerCase(); counts[status] = (counts[status] || 0) + 1;
@@ -180,9 +234,21 @@ export class NodeService {
             const priorities: Record<string, number> = { active: 0, 'valid-fork': 1, 'valid-headers': 2, 'headers-only': 3, invalid: 4 };
             normalized.sort((a, b) => (priorities[a.status] ?? 5) - (priorities[b.status] ?? 5) || b.height - a.height || b.branch_length - a.branch_length);
             const candidates = normalized.filter(tip => tip.hash);
-            for (const tip of candidates.slice(0, CHAIN_TIP_HEADER_LIMIT)) {
-                try { tip.time = Number((this.blocks.get(tip.hash) || await this.header(tip.hash)).time || 0); } catch { /* Unknown ages are explicitly null. */ }
-            }
+            const selected = candidates.slice(0, CHAIN_TIP_HEADER_LIMIT);
+            const ages = readDeadline(Math.min(CHAIN_TIP_AGE_TIMEOUT_MS, Math.max(0, end - performance.now())), total.signal);
+            let next = 0, timedOut = false;
+            try {
+                await Promise.all(Array.from({ length: Math.min(CHAIN_TIP_WORKERS, selected.length) }, async () => {
+                    while (next < selected.length && !ages.signal.aborted) {
+                        signal.throwIfAborted();
+                        const tip = selected[next++];
+                        try { tip.time = Number((this.blocks.get(tip.hash) || await this.header(tip.hash, ages.signal)).time || 0); }
+                        catch (error) { if (error instanceof RpcBusyError || signal.aborted) throw error; }
+                    }
+                }));
+                timedOut = ages.signal.aborted;
+                signal.throwIfAborted();
+            } finally { ages.cancel(); ages.dispose(); }
             const generatedAt = Math.floor(nowSeconds());
             for (const tip of normalized) tip.age_seconds = tip.time ? Math.max(0, generatedAt - tip.time) : null;
             const active = normalized.find(tip => tip.is_active);
@@ -195,18 +261,18 @@ export class NodeService {
                 fork_count: counts['valid-fork'] || 0, headers_only_count: counts['headers-only'] || 0,
                 latest_non_active_height: latest?.height ?? null, latest_non_active_status: latest?.status ?? null,
                 counts_by_status: counts, age_lookup_limited: candidates.length > CHAIN_TIP_HEADER_LIMIT,
-                age_lookup_limit: CHAIN_TIP_HEADER_LIMIT, generated_at: generatedAt,
+                age_lookup_limit: CHAIN_TIP_HEADER_LIMIT, age_lookup_timed_out: timedOut, generated_at: generatedAt,
             } };
-        } catch (error) { return { success: false, summary: null, tips: [], error: errorMessage(error) }; }
+        } finally { source.cancel(); source.dispose(); metadata.cancel(); metadata.dispose(); total.cancel(); total.dispose(); }
     }
     async connect(address: string): Promise<Data> {
-        try { const normalized = normalizePeerAddress(address, BITCOIN_NETWORKS[this.chain].default_peer_port); await this.rpc.call('addnode', [normalized, 'onetry']); return { success: true, address: normalized }; }
-        catch (error) { return { success: false, error: errorMessage(error) }; }
+        try { const normalized = normalizePeerAddress(address, BITCOIN_NETWORKS[this.chain].default_peer_port); await this.rpc.call('addnode', [normalized, 'onetry']); this.dashboardCache.invalidate(); return { success: true, address: normalized }; }
+        catch (error) { if (error instanceof RpcBusyError) throw error; return { success: false, error: errorMessage(error) }; }
     }
     async disconnect(id: number | null): Promise<Data> {
         if (id === null) return { success: false, error: 'peer_id is required' };
-        try { await this.rpc.call('disconnectnode', ['', id]); return { success: true }; }
-        catch (error) { return { success: false, error: errorMessage(error) }; }
+        try { await this.rpc.call('disconnectnode', ['', id]); this.dashboardCache.invalidate(); return { success: true }; }
+        catch (error) { if (error instanceof RpcBusyError) throw error; return { success: false, error: errorMessage(error) }; }
     }
     async ban(id: number | null): Promise<Data> {
         if (id === null) return { success: false, error: 'peer_id is required' };
@@ -218,21 +284,22 @@ export class NodeService {
             if (!['ipv4', 'ipv6'].includes(network)) return { success: false, error: `Cannot ban ${network.toUpperCase()} peers; only IPv4 and IPv6 addresses can be banned` };
             const [host] = splitPeerAddress(peer.addr || '');
             await this.rpc.call('setban', [host, 'add', 86400]);
+            this.bansCache.invalidate(); this.dashboardCache.invalidate();
             return { success: true, banned_ip: host, network };
-        } catch (error) { return { success: false, error: errorMessage(error) }; }
+        } catch (error) { if (error instanceof RpcBusyError) throw error; return { success: false, error: errorMessage(error) }; }
     }
     async unban(address: string): Promise<Data> {
         if (!address) return { success: false, error: 'address is required' };
-        try { await this.rpc.call('setban', [address, 'remove']); return { success: true }; }
-        catch (error) { return { success: false, error: errorMessage(error) }; }
+        try { await this.rpc.call('setban', [address, 'remove']); this.bansCache.invalidate(); return { success: true }; }
+        catch (error) { if (error instanceof RpcBusyError) throw error; return { success: false, error: errorMessage(error) }; }
     }
-    async bans(): Promise<Data> {
-        try { return { success: true, bans: await this.rpc.call('listbanned') }; }
-        catch (error) { return { success: false, bans: [], error: errorMessage(error) }; }
+    async bans(signal?: AbortSignal): Promise<Data> {
+        try { return { success: true, bans: await this.bansCache.get(signal => this.rpc.call('listbanned', [], 10, signal), signal) }; }
+        catch (error) { if (error instanceof RpcBusyError || signal?.aborted) throw error; return { success: false, bans: [], error: errorMessage(error) }; }
     }
     async clearBans(): Promise<Data> {
-        try { await this.rpc.call('clearbanned'); return { success: true }; }
-        catch (error) { return { success: false, error: errorMessage(error) }; }
+        try { await this.rpc.call('clearbanned'); this.bansCache.invalidate(); return { success: true }; }
+        catch (error) { if (error instanceof RpcBusyError) throw error; return { success: false, error: errorMessage(error) }; }
     }
 }
 

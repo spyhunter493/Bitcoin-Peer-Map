@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { NodeService, networkSummary } from '../../src/server/services/node.ts';
+import { NodeService, networkSummary, CHAIN_TIP_AGE_TIMEOUT_MS, CHAIN_TIP_WORKERS } from '../../src/server/services/node.ts';
 import { ConnectivityService } from '../../src/server/services/connectivity.ts';
 import { GeoDatabase } from '../../src/server/services/geoip.ts';
 import { PeerService } from '../../src/server/services/peers.ts';
@@ -8,6 +8,7 @@ import { FakeRpc, deferred, flush, temporaryDirectory } from './helpers.ts';
 import type { TestContext } from 'node:test';
 import type { Data } from '../../src/server/types.ts';
 import { parseNetworkInfo } from '../../src/server/rpc-types.ts';
+import { RpcBusyError } from '../../src/server/rpc.ts';
 
 function services(t: TestContext, fetcher: typeof fetch = async () => { throw new Error('Unexpected external request'); }) {
     const rpc = new FakeRpc(), geo = new GeoDatabase(temporaryDirectory(t), true);
@@ -153,6 +154,7 @@ test('node traffic follows node counters through dashboard restarts and node cou
     assert.equal((await restarted.dashboardInfo()).node_traffic?.download_bytes, 10);
 });
 test('recent blocks follow parent hashes across reorganizations and reuse immutable blocks', async t => {
+    let time = 0; t.mock.method(performance, 'now', () => time);
     const { node, rpc } = services(t);
     rpc.values.getblock = ([hash]: string[]) => {
         const height = Number(hash.split('-')[1]);
@@ -165,9 +167,11 @@ test('recent blocks follow parent hashes across reorganizations and reuse immuta
     result.blocks[0].height = -1;
     assert.equal((await node.recentBlocks(3)).blocks[0].height, 100); assert.equal(rpc.count('getblock'), 3);
     rpc.record('getblockchaininfo').bestblockhash = 'reorg-100';
+    time = 5000;
     result = await node.recentBlocks(3);
     assert.equal(result.blocks[0].hash, 'reorg-100'); assert.equal(rpc.count('getblock'), 4);
     rpc.failed.add('getblockchaininfo');
+    time = 10_000;
     assert.deepEqual((await node.recentBlocks()).blocks, []);
 });
 test('recent blocks reject malformed traversal rather than mixing chain heights', async t => {
@@ -177,6 +181,7 @@ test('recent blocks reject malformed traversal rather than mixing chain heights'
     assert.match(result.error, /height 99/);
 });
 test('chain tips sort, count, cache header ages, and cap header work at 100', async t => {
+    let time = 0; t.mock.method(performance, 'now', () => time);
     const { node, rpc } = services(t);
     rpc.values.getchaintips = Array.from({ length: 105 }, (_, i) => ({ hash: `hash-${i}`, height: i, branchlen: 1, status: i === 0 ? 'active' : i === 1 ? 'valid-fork' : 'headers-only' }));
     let result = await node.chainTips();
@@ -186,7 +191,7 @@ test('chain tips sort, count, cache header ages, and cap header work at 100', as
     assert.equal(result.summary.age_lookup_limited, true); assert.equal(rpc.count('getblockheader'), 100);
     assert.equal(result.tips.filter((tip: Data) => tip.time === null).length, 5);
     result = await node.chainTips(); assert.equal(rpc.count('getblockheader'), 100);
-    rpc.failed.add('getchaintips'); assert.equal((await node.chainTips()).success, false);
+    time = 5000; rpc.failed.add('getchaintips'); assert.equal((await node.chainTips()).success, false);
 });
 test('peer actions send the expected RPC parameters and reject bans for private networks', async t => {
     const { node, rpc } = services(t);
@@ -226,7 +231,7 @@ test('GeoIP misses retry after 60 seconds and cached records invalidate after a 
     assert.equal(peers.listPeers()[0].location_status, 'unavailable');
     time = 59999; assert.ok(peers.cachedGeo('8.8.8.8'));
     time = 60000; assert.equal(peers.cachedGeo('8.8.8.8'), null);
-    geo.save('8.8.8.8', { lat: 1, lon: 2, city: 'Auckland', country: 'New Zealand', countryCode: 'NZ', as: 'AS1', offset: 43200 });
+    await geo.save('8.8.8.8', { lat: 1, lon: 2, city: 'Auckland', country: 'New Zealand', countryCode: 'NZ', as: 'AS1', offset: 43200 });
     await peers.resolveGeo('8.8.8.8', 'ipv4');
     assert.equal(peers.listPeers()[0].location, 'Auckland, NZ'); assert.equal(peers.listPeers()[0].as, 'AS1');
     geo.datasetChanged(); assert.equal(peers.cachedGeo('8.8.8.8'), null);
@@ -326,6 +331,7 @@ test('null and malformed RPC objects produce explicit nulls without masking succ
     assert.equal(info.last_block?.height, 100);
     assert.equal((await node.mempool()).mempool, null);
     rpc.values.getblockchaininfo = null;
+    time += 5000;
     assert.equal((await node.blockchain()).blockchain, null);
 });
 
@@ -339,6 +345,159 @@ for (const [ibd, expected] of [[true, true], [false, false], [undefined, null], 
         assert.equal((raw.blockchain as Data).initialblockdownload, expected);
     });
 }
+
+test('public node readers share RPC samples across bursts and related endpoints', async t => {
+    const { rpc, node } = services(t);
+    rpc.values.getchaintips = [{ hash: 'block-100', height: 100, status: 'active' }];
+    rpc.values.getblock = { height: 100, previousblockhash: 'block-99', time: 1000, size: 100, nTx: 2 };
+    rpc.values.listbanned = [{ address: '8.8.8.8/32' }];
+    const reads = Array.from({ length: 30 }, () => node.mempool());
+    const [mempools] = await Promise.all([Promise.all(reads), node.dashboardInfo(), node.blockchain(), node.recentBlocks(1), node.chainTips(), Promise.all(Array.from({ length: 30 }, () => node.bans()))]);
+    for (const method of ['getmempoolinfo', 'getblockchaininfo', 'getindexinfo', 'getchaintips', 'listbanned']) assert.equal(rpc.count(method), 1, method);
+    (mempools[0].mempool as Data).size = -1;
+    assert.equal((mempools[1].mempool as Data).size, 5);
+    assert.equal(((await node.mempool()).mempool as Data).size, 5);
+});
+
+test('public read failures share a short cooldown and replace expired successful samples', async t => {
+    let time = 0; t.mock.method(performance, 'now', () => time);
+    const { rpc, node } = services(t);
+    assert.equal(((await node.mempool()).mempool as Data).size, 5);
+    time = 5000; rpc.failed.add('getmempoolinfo');
+    const failed = await Promise.all(Array.from({ length: 30 }, () => node.mempool()));
+    assert.ok(failed.every(result => result.mempool === null && result.error === 'getmempoolinfo failed'));
+    time = 5999; assert.equal((await node.mempool()).mempool, null); assert.equal(rpc.count('getmempoolinfo'), 2);
+    time = 6000; rpc.failed.delete('getmempoolinfo'); rpc.values.getmempoolinfo = { size: 8 };
+    assert.equal(((await node.mempool()).mempool as Data).size, 8);
+});
+
+test('successful peer and ban mutations invalidate their affected public samples', async t => {
+    const { rpc, node } = services(t);
+    rpc.values.listbanned = [{ address: '8.8.8.8/32' }];
+    await node.bans(); rpc.values.listbanned = [];
+    assert.equal((await node.bans()).bans instanceof Array, true); assert.equal(rpc.count('listbanned'), 1);
+    await node.clearBans(); assert.deepEqual((await node.bans()).bans, []); assert.equal(rpc.count('listbanned'), 2);
+    await node.unban('8.8.8.8'); await node.bans(); assert.equal(rpc.count('listbanned'), 3);
+    rpc.values.getpeerinfo = [{ id: 9, addr: '8.8.8.8:8333', network: 'ipv4' }];
+    await node.dashboardInfo();
+    for (const action of [() => node.connect('8.8.8.8'), () => node.disconnect(9), () => node.ban(9)]) {
+        const before = rpc.count('getnetworkinfo');
+        assert.equal((await action()).success, true);
+        await node.dashboardInfo(); assert.equal(rpc.count('getnetworkinfo'), before + 1);
+    }
+    await node.bans(); assert.equal(rpc.count('listbanned'), 4);
+});
+
+test('RPC overload propagates through public readers and mutations for HTTP handling', async t => {
+    const { rpc, node } = services(t);
+    t.mock.method(rpc, 'call', async () => { throw new RpcBusyError(); });
+    for (const read of [() => node.mempool(), () => node.blockchain(), () => node.bans(), () => node.dashboardInfo(), () => node.recentBlocks(1), () => node.chainTips(), () => node.connect('8.8.8.8'), () => node.disconnect(1), () => node.ban(1), () => node.unban('8.8.8.8'), () => node.clearBans()]) {
+        await assert.rejects(read(), RpcBusyError);
+    }
+});
+
+test('chain-tip enrichment stops at its budget with four workers and caches the partial result', async t => {
+    let time = 0; t.mock.method(performance, 'now', () => time);
+    const { rpc, node } = services(t);
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    rpc.values.getchaintips = Array.from({ length: 100 }, (_, height) => ({ hash: `slow-${height}`, height, status: 'headers-only' }));
+    const original = rpc.call.bind(rpc), signals: AbortSignal[] = [];
+    t.mock.method(rpc, 'call', (method: string, params: unknown[] = [], _timeout?: number, signal?: AbortSignal) => {
+        if (method !== 'getblockheader') return original(method, params);
+        rpc.calls.push({ method, params }); signals.push(signal!);
+        return new Promise((_resolve, reject) => signal!.addEventListener('abort', () => reject(signal!.reason), { once: true }));
+    });
+    const pending = node.chainTips(); await flush(); await flush();
+    assert.equal(signals.length, CHAIN_TIP_WORKERS); assert.ok(signals.every(signal => !signal.aborted));
+    time = CHAIN_TIP_AGE_TIMEOUT_MS; t.mock.timers.tick(CHAIN_TIP_AGE_TIMEOUT_MS);
+    const result = await pending;
+    assert.equal(result.success, true); assert.equal(result.summary?.age_lookup_timed_out, true);
+    assert.equal(result.tips.length, 100); assert.ok(result.tips.every(tip => tip.time === null));
+    assert.ok(signals.every(signal => signal.aborted)); assert.equal(signals.length, CHAIN_TIP_WORKERS);
+    assert.equal((await node.chainTips()).summary?.age_lookup_timed_out, true); assert.equal(signals.length, CHAIN_TIP_WORKERS);
+});
+
+test('closing one chain-tip reader preserves a shared reader and closing the last cancels headers', async t => {
+    const { rpc, node } = services(t);
+    rpc.values.getchaintips = Array.from({ length: 10 }, (_, height) => ({ hash: `waiting-${height}`, height, status: 'headers-only' }));
+    const original = rpc.call.bind(rpc), signals: AbortSignal[] = [];
+    t.mock.method(rpc, 'call', (method: string, params: unknown[] = [], _timeout?: number, signal?: AbortSignal) => {
+        if (method !== 'getblockheader') return original(method, params);
+        rpc.calls.push({ method, params }); signals.push(signal!);
+        return new Promise((_resolve, reject) => signal!.addEventListener('abort', () => reject(signal!.reason), { once: true }));
+    });
+    const first = new AbortController(), second = new AbortController();
+    const a = node.chainTips(first.signal), b = node.chainTips(second.signal);
+    const rejectedA = assert.rejects(a, { name: 'AbortError' }), rejectedB = assert.rejects(b, { name: 'AbortError' });
+    await flush(); await flush(); assert.equal(signals.length, CHAIN_TIP_WORKERS);
+    first.abort(); await rejectedA; assert.ok(signals.every(signal => !signal.aborted));
+    second.abort(); await rejectedB; await flush();
+    assert.ok(signals.every(signal => signal.aborted)); assert.equal(signals.length, CHAIN_TIP_WORKERS);
+});
+
+test('closing chain tips leaves a header still needed by the dashboard running', async t => {
+    const { rpc, node } = services(t), gate = deferred<unknown>();
+    rpc.values.getchaintips = [{ hash: 'block-100', height: 100, status: 'active' }];
+    const original = rpc.call.bind(rpc); let headerSignal: AbortSignal | undefined;
+    t.mock.method(rpc, 'call', (method: string, params: unknown[] = [], _timeout?: number, signal?: AbortSignal) => {
+        if (method !== 'getblockheader') return original(method, params);
+        rpc.calls.push({ method, params }); headerSignal = signal; return gate.promise;
+    });
+    const controller = new AbortController(), tips = node.chainTips(controller.signal), dashboard = node.dashboardInfo();
+    const rejected = assert.rejects(tips, { name: 'AbortError' });
+    await flush(); await flush(); assert.equal(rpc.count('getblockheader'), 1);
+    controller.abort(); await rejected; assert.equal(headerSignal!.aborted, false);
+    gate.resolve({ height: 100, time: 1000 }); assert.equal((await dashboard).last_block?.time, 1000);
+});
+
+test('chain tips stop waiting for optional metadata after five seconds', async t => {
+    const { rpc, node } = services(t), metadata = deferred<unknown>();
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    rpc.values.getchaintips = [{ hash: 'block-100', height: 100, status: 'active' }];
+    rpc.values.getblockchaininfo = () => metadata.promise;
+    const pending = node.chainTips(); await flush();
+    t.mock.timers.tick(5000); await flush();
+    const result = await pending;
+    assert.equal(result.success, true); assert.equal(result.summary?.chain, null);
+    assert.equal(result.summary?.age_lookup_timed_out, false); assert.equal(result.tips[0].time, 1000);
+    metadata.resolve({ chain: 'main', blocks: 100 });
+});
+
+for (const [value, status, height] of [
+    [{}, 'disabled', null], [{ txindex: { synced: false, best_block_height: 1 } }, 'syncing', 1],
+    [{ txindex: { synced: true, best_block_height: 100 } }, 'ready', 100],
+    [{ txindex: { synced: true } }, 'ready', null],
+    [{ txindex: { synced: false, best_block_height: 0 } }, 'syncing', 0],
+    [{ txindex: { synced: true, best_block_height: Number.MAX_SAFE_INTEGER } }, 'ready', Number.MAX_SAFE_INTEGER],
+    ...[-1, 1.5, Number.MAX_SAFE_INTEGER + 1, '100', null].map(best_block_height => [{ txindex: { synced: true, best_block_height } }, 'unknown', null] as const),
+    [{ txindex: { synced: 'true' } }, 'unknown', null], [{ txindex: null }, 'unknown', null],
+    [null, 'unknown', null], ['unavailable', 'unknown', null],
+] as const) {
+    test(`transaction index reports ${status} for ${JSON.stringify(value)}`, async t => {
+        const { rpc, node } = services(t); rpc.values.getindexinfo = value;
+        const blockchain = (await node.dashboardInfo()).blockchain!;
+        assert.equal(blockchain.txindex_status, status); assert.equal(blockchain.txindex_height, height);
+        assert.equal(blockchain.indexed, status === 'ready' || status === 'syncing');
+    });
+}
+
+test('a denied transaction-index RPC reports unknown without discarding blockchain data', async t => {
+    const { rpc, node } = services(t); rpc.failed.add('getindexinfo');
+    const blockchain = (await node.dashboardInfo()).blockchain!;
+    assert.equal(blockchain.txindex_status, 'unknown'); assert.equal(blockchain.txindex_height, null);
+    assert.equal(blockchain.size_gb, 1); assert.equal(blockchain.indexed, false);
+});
+
+test('malformed transaction-index reads recover after their one-second failure cooldown', async t => {
+    let time = 0; t.mock.method(performance, 'now', () => time);
+    const { rpc, node } = services(t); rpc.values.getindexinfo = { txindex: { synced: true, best_block_height: -1 } };
+    assert.equal((await node.dashboardInfo()).blockchain?.txindex_status, 'unknown');
+    rpc.values.getindexinfo = { txindex: { synced: true, best_block_height: 100 } };
+    time = 999; await node.connect('8.8.8.8');
+    assert.equal((await node.dashboardInfo()).blockchain?.txindex_status, 'unknown'); assert.equal(rpc.count('getindexinfo'), 1);
+    time = 1000; await node.connect('8.8.8.8');
+    assert.equal((await node.dashboardInfo()).blockchain?.txindex_status, 'ready'); assert.equal(rpc.count('getindexinfo'), 2);
+});
 
 
 test('bans request disconnection through setban and retain genuine RPC errors', async t => {
@@ -365,7 +524,7 @@ for (const source of ['database', 'api']) {
         test(`${source} geolocation maps ${location} without requiring a city and serializes numeric coordinates`, async t => {
             const { rpc, geo, connectivity } = services(t);
             const data = { ...fields, status: 'success', country: 'New Zealand', lat: '-36.85', lon: '174.76' };
-            if (source === 'database') { geo.save('8.8.8.8', data); connectivity.setGeoipApiDisabled(true); }
+            if (source === 'database') { await geo.save('8.8.8.8', data); connectivity.setGeoipApiDisabled(true); }
             let requests = 0;
             const peers = new PeerService(rpc, geo, connectivity, undefined, async () => { requests++; return Response.json(data); });
             t.after(() => peers.stop());

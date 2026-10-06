@@ -1,7 +1,7 @@
 // Untrusted objects require field validation before use.
 export type Data = Record<string, unknown>;
 export interface Rpc {
-    call(method: string, params?: unknown[], timeoutSeconds?: number): Promise<unknown>;
+    call(method: string, params?: unknown[], timeoutSeconds?: number, signal?: AbortSignal): Promise<unknown>;
 }
 export function object(value: unknown): value is Data {
     return value !== null && typeof value === 'object' && !Array.isArray(value);

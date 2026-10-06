@@ -10,6 +10,7 @@ import { NodeService } from '../../src/server/services/node.ts';
 import { PeerService } from '../../src/server/services/peers.ts';
 import { ConnectivityService } from '../../src/server/services/connectivity.ts';
 import { GeoDatabase } from '../../src/server/services/geoip.ts';
+import { RpcBusyError } from '../../src/server/rpc.ts';
 import type { TestContext } from 'node:test';
 
 async function application(t: TestContext, version = 'dev') {
@@ -215,6 +216,35 @@ test('cross-origin browser requests cannot change settings or manage peers', asy
     });
     assert.equal(defaultPort, 200, 'default ports are normalized using the external protocol');
     assert.equal((await get('/api/geodb/toggle-auto-update', { method: 'POST' })).status, 200, 'CLI clients need no Origin header');
+});
+test('RPC overload returns a retry hint without retrying a mutation', async t => {
+    const { runtime, get } = await application(t);
+    let attempts = 0;
+    t.mock.method(runtime.node, 'connect', () => { attempts++; throw new RpcBusyError(); });
+    const response = await get('/api/peer/connect', { method: 'POST', body: '{"address":"8.8.8.8"}' });
+    assert.equal(response.status, 503);
+    assert.equal(response.headers.get('retry-after'), '1');
+    assert.equal((await response.json()).code, 'rpc_busy');
+    assert.equal(attempts, 1);
+});
+test('response disconnection cancels a pending read without mistaking a finished request body for disconnection', async t => {
+    const { runtime, base } = await application(t);
+    const started = deferred<AbortSignal>(), cancelled = deferred<void>();
+    t.mock.method(runtime.node, 'chainTips', (signal?: AbortSignal) => {
+        assert.ok(signal); started.resolve(signal);
+        return new Promise((_resolve, reject) => signal.addEventListener('abort', () => {
+            cancelled.resolve(undefined); reject(signal.reason);
+        }, { once: true }));
+    });
+    const req = request(`${base}/api/chain-tips`);
+    req.on('error', () => {});
+    req.end();
+    const signal = await started.promise;
+    await flush();
+    assert.equal(signal.aborted, false, 'request completion leaves the response subscriber active');
+    req.destroy();
+    await cancelled.promise;
+    assert.equal(signal.aborted, true);
 });
 test('SSE emits metrics without blocking HTTP and closes with the application', async t => {
     const { app, runtime, get } = await application(t);
