@@ -12,7 +12,11 @@ docker compose pull bpm
 docker compose up -d bpm
 ```
 
-The `latest` image follows intentional stable GitHub Releases. Merges into `main`
+The `latest` image follows successfully tested stable GitHub Releases in
+increasing semantic-version order. Older maintenance releases do not move it
+backward. Release images are built once and smoke-tested on AMD64 and ARM64
+before upload; version and SHA tags identify the tested multi-platform index.
+Registry failures stop `latest` promotion. Merges into `main`
 do not publish images. Published images support Linux AMD64 and ARM64. Keep the
 existing data volume when recreating the service.
 

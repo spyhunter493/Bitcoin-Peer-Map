@@ -9,6 +9,9 @@ import { setTimeout as delay } from 'node:timers/promises';
 const execute = promisify(execFile);
 const docker = async (...args) => (await execute('docker', args, { timeout: 60000 })).stdout.trim();
 const image = process.env.BPM_TEST_IMAGE || 'bitcoin-peer-map:test';
+const platform = process.env.BPM_TEST_PLATFORM;
+if (platform && !['linux/amd64', 'linux/arm64'].includes(platform)) throw new Error('BPM_TEST_PLATFORM must be linux/amd64 or linux/arm64');
+const platformArgs = platform ? ['--platform', platform] : [];
 const name = `bpm-runtime-test-${process.pid}`;
 const volume = `${name}-data`;
 const values = {
@@ -36,13 +39,14 @@ const get = async (path, method = 'GET', body) => {
     assert.equal(response.status, 200, path); return response.json();
 };
 async function start() {
-    await docker('run', '-d', '--name', name, '--network', 'host', '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
+    await docker('run', ...platformArgs, '-d', '--name', name, '--network', 'host', '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
         '--tmpfs', '/tmp:rw,noexec,nosuid,size=64m', '-v', `${volume}:/var/lib/bitcoin-peer-map`,
         '-e', 'BITCOIN_RPC_HOST=127.0.0.1', '-e', `BITCOIN_RPC_PORT=${rpcPort}`, '-e', 'BITCOIN_RPC_USER=test', '-e', 'BITCOIN_RPC_PASSWORD=test',
         '-e', `BPM_ADMIN_TOKEN=${adminToken}`,
         '-e', 'BPM_LOG_LEVEL=info',
-        '-e', `BPM_LISTEN_PORT=${port}`, '-e', 'BPM_LISTEN_ADDRESS=127.0.0.1', '-e', 'BPM_BUILD_VERSION=dev', '-e', 'BPM_BUILD_REVISION=unknown', image);
-    for (let attempt = 0; attempt < 100; attempt++) {
+        '-e', `BPM_LISTEN_PORT=${port}`, '-e', 'BPM_LISTEN_ADDRESS=127.0.0.1', image);
+    const deadline = Date.now() + 30000;
+    while (Date.now() < deadline) {
         try { if ((await get('/healthz')).status === 'ok') return; } catch { /* Wait for startup. */ }
         await delay(100);
     }
@@ -60,34 +64,43 @@ async function stop() {
     await docker('rm', name);
 }
 try {
-    const productionNodeVersion = await docker('run', '--rm', '--network', 'none', image,
+    const productionNodeVersion = await docker('run', ...platformArgs, '--rm', '--network', 'none', image,
         'node', '-p', 'process.versions.node');
     assert.equal(productionNodeVersion.split('.')[0], process.versions.node.split('.')[0],
         `Production Node.js ${productionNodeVersion} must match test runner Node.js ${process.versions.node}`);
-    const imageConfig = JSON.parse(await docker('image', 'inspect', '--format', '{{json .Config}}', image));
+    if (platform) assert.equal(await docker('run', ...platformArgs, '--rm', '--network', 'none', image, 'node', '-p', 'process.arch'), platform === 'linux/amd64' ? 'x64' : 'arm64', 'Smoke test must execute the requested architecture');
+    const imageConfig = JSON.parse(await docker('image', 'inspect', ...platformArgs, '--format', '{{json .Config}}', image));
     const buildEnvironment = Object.fromEntries(imageConfig.Env.map(value => {
         const split = value.indexOf('='); return [value.slice(0, split), value.slice(split + 1)];
     }));
     assert.equal(imageConfig.Labels['org.opencontainers.image.source'], 'https://github.com/spyhunter493/Bitcoin-Peer-Map');
     assert.equal(imageConfig.Labels['org.opencontainers.image.version'], buildEnvironment.BPM_BUILD_VERSION);
     assert.equal(imageConfig.Labels['org.opencontainers.image.revision'], buildEnvironment.BPM_BUILD_REVISION);
+    if (process.env.BPM_TEST_EXPECT_VERSION) assert.equal(buildEnvironment.BPM_BUILD_VERSION, process.env.BPM_TEST_EXPECT_VERSION);
+    if (process.env.BPM_TEST_EXPECT_REVISION) assert.equal(buildEnvironment.BPM_BUILD_REVISION, process.env.BPM_TEST_EXPECT_REVISION);
     assert.match(buildEnvironment.BPM_BUILD_VERSION, /^(dev|v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))$/);
     // Prepare the existing on-disk formats with SQLite, without running the server.
-    await docker('run', '--rm', '--network', 'none', '-v', `${volume}:/var/lib/bitcoin-peer-map`, image, 'node', '--input-type=module', '-e', `
+    await docker('run', ...platformArgs, '--rm', '--network', 'none', '-v', `${volume}:/var/lib/bitcoin-peer-map`, image, 'node', '--input-type=module', '-e', `
         import { DatabaseSync } from 'node:sqlite';
         import { writeFileSync } from 'node:fs';
         import { GEO_SCHEMA } from './src/server/services/geoip-schema.ts';
         const db = new DatabaseSync('/var/lib/bitcoin-peer-map/geo.db'); db.exec(GEO_SCHEMA);
         db.prepare('INSERT INTO geo_cache (ip, city, country, countryCode, lat, lon, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?)').run('8.8.8.8', 'Auckland', 'New Zealand', 'NZ', -36.85, 174.76, 100);
         db.close(); writeFileSync('/var/lib/bitcoin-peer-map/settings.json', JSON.stringify({geoip_auto_update:false, geoip_db_only:true}), {mode:0o600});
+        if (process.env.BPM_BUILD_VERSION !== 'dev') writeFileSync('/var/lib/bitcoin-peer-map/update-check.json', JSON.stringify({repository:'spyhunter493/Bitcoin-Peer-Map', version:process.env.BPM_BUILD_VERSION, checked_at:Date.now()/1000, latest_version:process.env.BPM_BUILD_VERSION, check_failed:false}), {mode:0o600});
     `);
     await start();
     const config = await get('/api/config'), build = config.build;
     assert.equal(config.server.log_level, 'info');
-    assert.equal(build.version, 'dev');
-    assert.equal(build.revision, 'unknown');
+    assert.equal(build.version, buildEnvironment.BPM_BUILD_VERSION);
+    assert.equal(build.revision, buildEnvironment.BPM_BUILD_REVISION);
     assert.equal(build.updates.update_available, false);
-    assert.equal(build.updates.checked_at, null);
+    if (build.version === 'dev') assert.equal(build.updates.checked_at, null);
+    else {
+        assert.ok(build.updates.checked_at > 0);
+        assert.equal(build.updates.latest_version, build.version);
+        assert.equal(build.updates.check_failed, false);
+    }
     assert.equal(await docker('exec', name, 'id', '-u'), '10001');
     await docker('exec', name, 'sh', '-c', 'test -z "$(command -v python)" && test -z "$(command -v python3)" && test ! -d /app/node_modules');
     assert.equal((await get('/api/connectivity')).geo_db_only_mode, true);
