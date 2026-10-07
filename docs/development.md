@@ -387,9 +387,12 @@ their final widths change; manual sizing and virtualized row identity are retain
 feature branch → pull request → CI/tests → merge to main
 ```
 
-The [CI workflow](../.github/workflows/ci.yml) runs on pull requests and retains
-all syntax/type, backend, JavaScript, browser/layout, Compose, Docker build, and
-container checks. It has a read-only token and no registry login or publish job.
+The [CI workflow](../.github/workflows/ci.yml) runs when a pull request is opened
+or marked ready for review, and on new commits or reopening while it is ready.
+Draft pull requests skip the test job until they are marked ready for review.
+CI retains all syntax/type, backend, JavaScript, browser/layout, Compose, Docker
+build, and container checks. It has a read-only token and no registry login or
+publish job.
 Merging integrates changes into `main`; it neither repeats the full CI suite on
 the push nor publishes a production image. Pushing a tag alone also does not
 publish an image.
