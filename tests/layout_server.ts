@@ -3,14 +3,13 @@ import { pathToFileURL } from 'node:url';
 import { createApplication, type ApplicationRuntime } from '../src/server/app.ts';
 import { loadSettings, type Settings } from '../src/server/settings.ts';
 import { BitcoinRpcClient } from '../src/server/rpc.ts';
-import type { Data } from '../src/server/types.ts';
 import type { NodeMetricsSnapshot } from '../src/server/services/node-metrics.ts';
-import type { DashboardInfo, RecentBlocks, ChainTips } from '../src/server/api-types.ts';
+import type { DashboardInfo, RecentBlocks, ChainTips, Peer, MempoolResponse, BlockchainResponse } from '../src/server/api-types.ts';
 import type { ConnectivityStatus } from '../src/server/services/connectivity.ts';
 import { BITCOIN_NETWORKS } from '../src/server/network.ts';
 
 // Captured API fixtures keep browser regressions independent of external services.
-const fixtures: { peers: Data[]; metrics: NodeMetricsSnapshot; info: DashboardInfo; mempool: Data; blockchain: Data; blocks: RecentBlocks; tips: ChainTips } = JSON.parse(readFileSync(new URL('./fixtures/dashboard.json', import.meta.url), 'utf8'));
+const fixtures: { peers: Peer[]; metrics: NodeMetricsSnapshot; info: DashboardInfo; mempool: MempoolResponse; blockchain: BlockchainResponse; blocks: RecentBlocks; tips: ChainTips } = JSON.parse(readFileSync(new URL('./fixtures/dashboard.json', import.meta.url), 'utf8'));
 export class FixtureRuntime implements ApplicationRuntime {
     readonly settings: Settings;
     readonly rpc: BitcoinRpcClient;

@@ -2,7 +2,9 @@ import { isIP } from 'node:net';
 import { type Data, object } from '../types.ts';
 import { GEO_COLUMNS } from './geoip-schema.ts';
 
-export function isValidGeoData(data: unknown): data is Data {
+/** Fields actually established by isValidGeoData; other provider metadata remains unknown. */
+export type ValidGeoData = Data & { country: string; lat: number | string; lon: number | string };
+export function isValidGeoData(data: unknown): data is ValidGeoData {
     if (!object(data) || typeof data.country !== 'string' || !data.country.trim()) return false;
     if (![data.lat, data.lon].every(value => typeof value === 'number' || (typeof value === 'string' && value.trim().length > 0))) return false;
     const lat = Number(data.lat), lon = Number(data.lon);

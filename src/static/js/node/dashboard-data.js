@@ -49,7 +49,7 @@ export function formatBps(bps) {
     return `${(bps / (1024 * 1024)).toFixed(1)} MB/s`;
 }
 /** Decide display text from a snapshot and an explicit observation time.
- * @param {import('../types').Peer[]} peers @param {import('../types').NodeInfo | null} info @param {number} nowSeconds */
+ * @param {import('../types').Peer[]} peers @param {import('../types').NodeDisplayInfo | null} info @param {number} nowSeconds */
 export function locationStatus(peers, info, nowSeconds) {
     const provider = info?.providers?.geoip;
     const retryIn = provider?.retry_at == null ? 0 : Math.max(0, Math.ceil(provider.retry_at - nowSeconds));

@@ -5,103 +5,38 @@ export interface AdminAuthentication {
     requestToken(signal?: AbortSignal): Promise<string>;
 }
 
-export type PeerDirection = 'IN' | 'OUT';
-export type PeerNetwork = 'ipv4' | 'ipv6' | 'onion' | 'i2p' | 'cjdns';
-export interface PeerGeo {
-    source: 'dataset' | 'ip_api' | 'unknown' | null;
-    observed_at: number | null;
-    age_seconds: number | null;
-    freshness: 'fresh' | 'stale' | 'unknown' | 'unavailable';
-    stale_after_seconds: number;
-}
-export interface GeoProviderHealth {
-    state: 'unknown' | 'healthy' | 'unavailable' | 'rate_limited';
-    consecutive_failures: number;
-    last_error: string | null;
-    last_success_at: number | null;
-    last_failure_at: number | null;
-    retry_at: number | null;
-}
-export interface Peer {
-    id: number;
-    network: PeerNetwork;
-    is_public?: boolean;
-    direction: PeerDirection;
-    addr: string;
-    ip: string;
-    subver: string;
-    city: string;
-    region: string;
-    regionName: string;
-    country: string;
-    countryCode: string;
+/** Wire contracts are generated; these projections describe browser-only display state. */
+import type { Peer as ApiPeer, DashboardInfo, PeerSnapshot, PeerDirection } from '../../shared/api.generated.d.ts';
+export type {
+    PeerDirection, GeoMetadata as PeerGeo, ProviderHealth as GeoProviderHealth,
+    PeerSnapshot, NodeAddress, NetworkDetails, GeoStats, NodeTraffic, UpdateStatus,
+    NodeMetrics, RecentBlocksResponse, ChainTipsResponse, MempoolResponse,
+    BlockchainResponse, BanEntry, ActionResponse, ErrorResponse,
+} from '../../shared/api.generated.d.ts';
+export type PeerNetwork = ApiPeer['network'];
+export interface PeerDisplayMetadata {
     continent: string;
     continentCode: string;
-    bytessent_fmt: string;
-    bytesrecv_fmt: string;
-    conntime_fmt: string;
-    connection_type: string;
-    connection_type_abbrev: string;
-    services_abbrev: string;
-    isp: string;
+    countryCode: string;
+    region: string;
+    regionName: string;
+    city: string;
     district: string;
     zip: string;
     timezone: string;
     currency: string;
+    isp: string;
     org: string;
     as: string;
     asname: string;
-    location: string;
-    location_status: string;
-    geo?: PeerGeo;
-    transport_protocol_type: string;
-    session_id: string;
-    addrlocal: string;
-    port: number | null;
-    bytessent: number;
-    bytesrecv: number;
-    ping_ms: number | null;
-    conntime: number;
-    version: number;
-    lat?: number | null;
-    lon?: number | null;
-    offset?: number | null;
-    minping?: number | null;
-    lastsend?: number | null;
-    lastrecv?: number | null;
-    startingheight?: number | null;
-    synced_headers?: number | null;
-    synced_blocks?: number | null;
-    last_transaction: number;
-    last_block: number;
-    timeoffset: number;
-    minfeefilter?: number | null;
-    addr_processed: number;
-    addr_rate_limited: number;
-    mapped_as?: number | null;
-    mobile?: boolean | null;
-    proxy?: boolean | null;
-    hosting?: boolean | null;
-    in_addrman?: boolean | null;
-    addr_relay_enabled?: boolean | null;
-    bip152_hb_from?: boolean | null;
-    bip152_hb_to?: boolean | null;
-    relaytxes?: boolean | null;
-    services: string[];
-    permissions: string[];
+    offset: number;
+    mobile: boolean;
+    proxy: boolean;
+    hosting: boolean;
 }
+type KnownProperties<T> = { [Key in keyof T as string extends Key ? never : number extends Key ? never : Key]: T[Key] };
+export type Peer = Omit<KnownProperties<ApiPeer>, keyof PeerDisplayMetadata> & PeerDisplayMetadata;
 
-export interface PeerSnapshot {
-    peers: Peer[];
-    status: {
-        connected: boolean | null;
-        last_success_at: number | null;
-        last_attempt_at?: number | null;
-        age_seconds: number | null;
-        stale_after_seconds: number;
-        error?: string | null;
-    };
-}
 export interface PeerDataStatus {
     state: 'live' | 'connecting' | 'node-unavailable' | 'dashboard-unavailable' | 'delayed';
     ageSeconds: number | null;
@@ -641,168 +576,14 @@ export type PrivateNetworkAction =
     | { type: 'disconnect'; peerId: number; network: string }
     | { type: 'hide-tooltip' | 'clear-filter' | 'badges' | 'table' | 'layout' };
 
-export interface NodeAddress {
-    address: string;
-    port: number | null;
-    score?: number;
-}
-export interface NetworkDetails {
-    reachable: boolean;
-    limited: boolean;
-    proxy: string;
-    localaddresses: NodeAddress[];
-}
-export interface GeoStats {
-    status: string;
-    entries?: number;
-    size_bytes?: number;
-    db_path?: string;
-    newest_age_seconds?: number | null;
-    newest_age_days?: number | null;
-    oldest_age_days?: number | null;
-    auto_lookup: boolean;
-    auto_update: boolean;
-    db_only_mode: boolean;
-}
-export interface NodeTraffic {
-    download_bytes: number;
-    upload_bytes: number;
-    download_fmt: string;
-    upload_fmt: string;
-}
-export interface UpdateStatus {
-    update_available: boolean;
-    latest_version: string | null;
-    changes_url: string | null;
-    checked_at: number | null;
-    check_failed: boolean;
-}
 export interface NodeRefreshState {
     stale: boolean;
     lastSuccessfulRefresh: number | null;
 }
-export interface NodeInfo {
-    bitcoin_network?: { chain: 'main' | 'test' | 'testnet4' | 'signet' | 'regtest'; default_peer_port: number };
-    updates?: UpdateStatus;
-    connected: number | null;
-    subversion: string | null;
-    services: string[] | null;
-    blockchain: { size_gb: number; pruned: boolean; indexed: boolean; ibd: boolean | null;
-        txindex_status?: 'disabled' | 'syncing' | 'ready' | 'unknown'; txindex_height?: number | null } | null;
-    last_block: { height: number; time: number } | null;
-    mempool_size: number | null;
-    internet_state: string;
-    api_available: boolean;
-    geo_db_only_mode: boolean;
-    providers?: { geoip: GeoProviderHealth };
-    node_traffic: NodeTraffic | null;
-    node_metrics?: NodeMetrics;
-    geo_db_stats: GeoStats;
-    network_scores: Record<string, number | null> | null;
-    network_details: Record<string, NetworkDetails> | null;
-}
+export type NodeInfo = DashboardInfo;
+/** A failed refresh clears displayed metrics while retaining cached node details. */
+export type NodeDisplayInfo = Omit<NodeInfo, 'node_metrics'> & Partial<Pick<NodeInfo, 'node_metrics'>>;
 export type NodeAction = { type: 'refresh-peers' | 'intervals' } | { type: 'network'; network: string };
-export interface NodeMetrics {
-    uptime: string | null;
-    uptime_sec: number | null;
-    download_bytes: number | null;
-    upload_bytes: number | null;
-    rx_bps: number | null;
-    tx_bps: number | null;
-    ts: number;
-}
-export interface RecentBlocksResponse {
-    success: boolean;
-    error?: string;
-    detail?: string;
-    summary?: {
-        chain?: string;
-        tip_height?: number;
-        count?: number;
-        avg_size_mb?: number;
-        avg_transactions?: number;
-        total_transactions?: number;
-        latest_time?: number;
-    };
-    blocks?: {
-        height: number;
-        hash: string;
-        time: number;
-        age_seconds: number | null;
-        size: number;
-        tx_count: number;
-        version: number;
-        difficulty: number;
-    }[];
-}
-export interface ChainTipsResponse {
-    success: boolean;
-    error?: string;
-    detail?: string;
-    summary?: {
-        chain?: string;
-        best_height?: number;
-        total?: number;
-        active_count?: number;
-        non_active_count?: number;
-        fork_count?: number;
-        latest_non_active_height?: number | null;
-        latest_non_active_status?: string;
-        best_hash?: string;
-        age_lookup_limited?: boolean;
-        age_lookup_limit?: number;
-        age_lookup_timed_out?: boolean;
-    };
-    tips?: {
-        status: string;
-        status_label: string;
-        height: number;
-        branch_length: number;
-        hash: string;
-        time: number | null;
-        age_seconds: number | null;
-    }[];
-}
-export interface MempoolResponse {
-    error?: string;
-    mempool?: {
-        size: number;
-        bytes: number;
-        usage: number;
-        total_fee: number;
-        maxmempool: number;
-        mempoolminfee?: number;
-        minrelaytxfee?: number;
-        fullrbf?: boolean;
-        unbroadcastcount?: number;
-    };
-}
-export interface BlockchainResponse {
-    error?: string;
-    blockchain?: {
-        chain: string;
-        blocks: number;
-        headers: number;
-        bestblockhash: string;
-        difficulty: number;
-        mediantime: number;
-        initialblockdownload: boolean | null;
-        size_on_disk: number;
-        pruned: boolean;
-        softforks?: Record<string, { active: boolean; type: string }>;
-    };
-}
-
-export interface BanEntry {
-    address: string;
-    ban_created: number;
-    banned_until: number;
-}
-export interface ActionResponse {
-    success: boolean;
-    error?: string;
-    banned_ip?: string;
-}
 
 export type DistributionSummaryData = ReturnType<typeof import('./distribution/data.js').computeSummaryData> & {
     quality: { word: string; cls: string };

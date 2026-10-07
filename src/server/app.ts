@@ -1,4 +1,4 @@
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { createServer, type ServerResponse } from 'node:http';
 import { readFile, realpath, stat } from 'node:fs/promises';
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, resolve, join, sep, extname } from 'node:path';
@@ -14,6 +14,7 @@ import { NODE_METRICS_INTERVAL_MS } from './services/node-metrics.ts';
 import { createAdminAuthentication } from './admin-auth.ts';
 import { createLogger } from './logging.ts';
 import { RpcBusyError } from './rpc.ts';
+import type { ApiRoutes, RouteHandler } from './api-routes.ts';
 
 const log = createLogger('http');
 
@@ -60,7 +61,7 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
     let closeTask: Promise<void> | null = null;
     const requireAdmin = createAdminAuthentication(settings.admin_token);
 
-    const routes: Record<string, (query: URLSearchParams, req: IncomingMessage, res: ServerResponse, signal: AbortSignal) => unknown> = {
+    const routes: Record<string, RouteHandler> = {
         'GET /healthz': () => ({ status: 'ok' }),
         'POST /api/admin/verify': () => ({ success: true }),
         'GET /api/peers': (query, _req, res) => { res.setHeader('Cache-Control', 'no-store'); return parseQueryBoolean(query, 'include_status', false) ? runtime.peers.snapshot() : runtime.peers.listPeers(); },
@@ -97,7 +98,7 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
             repository: { github: GITHUB_REPOSITORY, url: repositoryUrl }, data: { data_dir: settings.data_dir },
         }),
         'GET /openapi.json': () => schema,
-    };
+    } satisfies ApiRoutes;
     const server = createServer(async (req, res) => {
         const controller = new AbortController();
         const disconnected = () => { if (!res.writableFinished) controller.abort(new DOMException('Client disconnected', 'AbortError')); };

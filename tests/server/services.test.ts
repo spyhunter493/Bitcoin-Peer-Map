@@ -324,7 +324,7 @@ test('null and malformed RPC objects produce explicit nulls without masking succ
     for (const value of [null, [], 'invalid']) {
         rpc.values.getnetworkinfo = value; time += 5000;
         const info = await node.dashboardInfo();
-        for (const key of ['subversion', 'connected', 'services', 'network_details', 'network_scores']) assert.equal(info[key], null);
+        for (const key of ['subversion', 'connected', 'services', 'network_details', 'network_scores'] as const) assert.equal(info[key], null);
         assert.equal(info.last_block?.height, 100); assert.equal(info.mempool_size, 5);
     }
     rpc.values.getnettotals = { totalbytesrecv: [] }; rpc.values.getmempoolinfo = { size: {} }; time += 5000;

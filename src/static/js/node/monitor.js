@@ -2,6 +2,7 @@ import { query } from '../core/dom.js';
 import * as BPMModal from '../core/modal.js';
 import * as BPMApi from '../core/api.js';
 import serviceFlags from '../peers/service-flags.js';
+import { mempoolView, blockchainView } from './rpc-view.js';
 const modal = BPMModal;
 const api = BPMApi;
 
@@ -46,7 +47,7 @@ function shortHash(hash) {
 
 /**
  * @param {string} hash
- * @param {string | undefined} chain
+ * @param {string | null | undefined} chain
  */
 function blockExplorerUrl(hash, chain) {
     if (!hash) return null;
@@ -63,7 +64,7 @@ function blockExplorerUrl(hash, chain) {
 
 /**
  * @param {string} hash
- * @param {string | undefined} chain
+ * @param {string | null | undefined} chain
  */
 function blockHashCell(hash, chain) {
     const title = modal.escapeHtml(hash);
@@ -75,14 +76,15 @@ function blockHashCell(hash, chain) {
 }
 
 /**
- * @param {import('../types').RecentBlocksResponse} data
+ * @param {import('../types').RecentBlocksResponse | import('../types').ErrorResponse} data
  * @param {(bytes: number) => string} formatBytes
  */
 function renderRecentBlocks(data, formatBytes) {
-    if (!data || data.success !== true) {
-        return `<div style="color:var(--err)">${modal.escapeHtml((data && (data.error || data.detail)) || 'Could not load recent blocks')}</div>`;
+    if (!data || !('success' in data) || data.success !== true) {
+        return `<div style="color:var(--err)">${modal.escapeHtml((data && ('error' in data ? data.error : data.detail)) || 'Could not load recent blocks')}</div>`;
     }
 
+    /** @type {Partial<NonNullable<import('../types').RecentBlocksResponse['summary']>>} */
     const summary = data.summary || {};
     const blocks = Array.isArray(data.blocks) ? data.blocks : [];
     let html = '<div class="modal-section-title">Summary</div>';
@@ -131,13 +133,14 @@ function chainTipStatusClass(status) {
 }
 
 /**
- * @param {import('../types').ChainTipsResponse} data
+ * @param {import('../types').ChainTipsResponse | import('../types').ErrorResponse} data
  */
 function renderChainTips(data) {
-    if (!data || data.success !== true) {
-        return `<div style="color:var(--err)">${modal.escapeHtml((data && (data.error || data.detail)) || 'Could not load chain tips')}</div>`;
+    if (!data || !('success' in data) || data.success !== true) {
+        return `<div style="color:var(--err)">${modal.escapeHtml((data && ('error' in data ? data.error : data.detail)) || 'Could not load chain tips')}</div>`;
     }
 
+    /** @type {Partial<NonNullable<import('../types').ChainTipsResponse['summary']>>} */
     const summary = data.summary || {};
     const tips = Array.isArray(data.tips) ? data.tips : [];
     let html = '<div class="modal-section-title">Summary</div>';
@@ -201,7 +204,7 @@ export function syncStatus(ibd, stale = false) {
     return { label: 'Unknown', color: 'var(--text-muted)', className: '', title: 'Node sync status is unavailable' };
 }
 
-/** @param {import('../types').NodeInfo | null} info @param {import('../types').NodeRefreshState} refreshState */
+/** @param {import('../types').NodeDisplayInfo | null} info @param {import('../types').NodeRefreshState} refreshState */
 export function renderNodeDetails(info, refreshState) {
     let html = '<div class="modal-section-title">Node</div>';
     if (refreshState.stale) {
@@ -263,7 +266,7 @@ export function renderNodeDetails(info, refreshState) {
 }
 
 /**
- * @param {{getNodeInfo: () => import('../types').NodeInfo | null; getRefreshState: () => import('../types').NodeRefreshState; formatBytes: (bytes: number) => string; document?: Document; api?: typeof BPMApi}} options
+ * @param {{getNodeInfo: () => import('../types').NodeDisplayInfo | null; getRefreshState: () => import('../types').NodeRefreshState; formatBytes: (bytes: number) => string; document?: Document; api?: typeof BPMApi}} options
  */
 function create(options) {
     const document = options.document || globalThis.document;
@@ -299,7 +302,7 @@ function create(options) {
             title: 'Recent Blocks',
             maxWidth: 900,
             url: '/api/blocks/recent?limit=25',
-            render: /** @param {import('../types').RecentBlocksResponse} data */ (data) => renderRecentBlocks(data, formatBytes),
+            render: /** @param {import('../types').RecentBlocksResponse | import('../types').ErrorResponse} data */ (data) => renderRecentBlocks(data, formatBytes),
         });
     }
 
@@ -354,7 +357,7 @@ function create(options) {
                     section.innerHTML = `<div style="color:var(--err)">${modal.escapeHtml(data.error)}</div>`;
                     return;
                 }
-                const mempool = data.mempool;
+                const mempool = mempoolView(data.mempool);
                 if (!mempool) {
                     section.innerHTML = '<div style="color:var(--text-muted)">No data</div>';
                     return;
@@ -420,7 +423,7 @@ function create(options) {
                     section.innerHTML = `<div style="color:var(--err)">${modal.escapeHtml(data.error)}</div>`;
                     return;
                 }
-                const blockchain = data.blockchain;
+                const blockchain = blockchainView(data.blockchain);
                 if (!blockchain) {
                     section.innerHTML = '<div style="color:var(--text-muted)">No data</div>';
                     return;
@@ -437,7 +440,7 @@ function create(options) {
                         blockchain.blocks && blockchain.headers ? ((blockchain.blocks / blockchain.headers) * 100).toFixed(2) : '100';
                     content += modal.row(
                         'Sync Progress',
-                        `${blockchain.blocks.toLocaleString()} / ${blockchain.headers.toLocaleString()} (${percent}%)`,
+                        `${(blockchain.blocks || 0).toLocaleString()} / ${blockchain.headers.toLocaleString()} (${percent}%)`,
                         'Validated blocks vs known block headers \u2014 100% means fully synced'
                     );
                 }

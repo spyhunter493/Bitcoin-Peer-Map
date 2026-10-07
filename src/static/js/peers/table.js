@@ -12,6 +12,7 @@ function create(options) {
     const dashboard = options.dashboard;
     const privateState = dashboard.privateNetwork;
     const { mapView, preferences, onAction } = options;
+    /** @type {Record<string, string>} */
     const NET_DISPLAY = { ipv4: 'IPv4', ipv6: 'IPv6', onion: 'Tor', i2p: 'I2P', cjdns: 'CJDNS' };
     const clamp = BPMGeometry.clamp;
     /** @param {string} network */

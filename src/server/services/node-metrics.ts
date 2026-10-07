@@ -1,17 +1,10 @@
 import { CachedRequest } from '../tasks.ts';
 import { parseNetTotals, parseUptime } from '../rpc-types.ts';
-import { type Data, type Rpc, nowSeconds, round } from '../types.ts';
+import { type Rpc, nowSeconds, round } from '../types.ts';
 
 export const NODE_METRICS_INTERVAL_MS = 5000;
-export interface NodeMetricsSnapshot extends Data {
-    uptime: string | null;
-    uptime_sec: number | null;
-    download_bytes: number | null;
-    upload_bytes: number | null;
-    rx_bps: number | null;
-    tx_bps: number | null;
-    ts: number;
-}
+export type { NodeMetrics as NodeMetricsSnapshot } from '../../shared/api.generated.d.ts';
+import type { NodeMetrics as NodeMetricsSnapshot } from '../../shared/api.generated.d.ts';
 
 /** Share RPC reads across dashboard, stats, and legacy stream consumers. */
 export class NodeMetrics {

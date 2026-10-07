@@ -38,7 +38,7 @@ function toggleRow(label, id, enabled, title) {
 }
 
 /**
- * @param {{getNodeInfo: () => import('../types').NodeInfo | null; refreshInfo: () => Promise<void>; document?: Document; clock?: Pick<Window, 'setInterval' | 'clearInterval'>; nowSeconds?: () => number}} options
+ * @param {{getNodeInfo: () => import('../types').NodeDisplayInfo | null; refreshInfo: () => Promise<void>; document?: Document; clock?: Pick<Window, 'setInterval' | 'clearInterval'>; nowSeconds?: () => number}} options
  */
 export function create({ getNodeInfo, refreshInfo, document = globalThis.document, clock = document.defaultView || globalThis, nowSeconds = () => Date.now() / 1000 }) {
     /** @type {import('../types').ModalController | null} */

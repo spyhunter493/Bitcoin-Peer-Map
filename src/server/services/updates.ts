@@ -8,13 +8,8 @@ import { createFailureReporter, createLogger } from '../logging.ts';
 const log = createLogger('updates');
 
 export const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
-export interface UpdateStatus {
-    update_available: boolean;
-    latest_version: string | null;
-    changes_url: string | null;
-    checked_at: number | null;
-    check_failed: boolean;
-}
+export type { UpdateStatus } from '../../shared/api.generated.d.ts';
+import type { UpdateStatus } from '../../shared/api.generated.d.ts';
 
 export class UpdateService {
     private status: UpdateStatus = { update_available: false, latest_version: null, changes_url: null, checked_at: null, check_failed: false };

@@ -8,17 +8,18 @@ import { GEO_COLUMNS, GEO_SCHEMA, GEO_UPDATES, GEO_PROVENANCE_SCHEMA, GEO_RECORD
 import { type Data, errorMessage, nowSeconds, object } from '../types.ts';
 import { createFailureReporter, createLogger } from '../logging.ts';
 import { sleep } from '../tasks.ts';
-import { isValidGeoData } from './geoip-validation.ts';
+import { isValidGeoData, type ValidGeoData } from './geoip-validation.ts';
 
 export { GEO_COLUMNS } from './geoip-schema.ts';
 export { isValidGeoData } from './geoip-validation.ts';
 export const GEOIP_DATASET_URL = 'https://raw.githubusercontent.com/mbhillrn/Bitcoin-Node-GeoIP-Dataset/main/geo.db';
 export const MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024;
 export const GEO_SAVE_RETRY_BUDGET_MS = 65_000;
-export type GeoSaveResult = { status: 'saved' | 'superseded'; row: Data }
+export type GeoSaveResult = { status: 'saved' | 'superseded'; row: ValidGeoData }
     | { status: 'disabled' | 'cancelled' }
     | { status: 'failed'; message: string };
-export interface GeoUpdateResult { success: boolean; message: string; skipped_rows: number; added_rows?: number; updated_rows?: number }
+export type { GeoUpdateResponse as GeoUpdateResult } from '../api-types.ts';
+import type { GeoUpdateResponse as GeoUpdateResult, GeoDatabaseStats } from '../api-types.ts';
 const isBusy = (error: unknown) => object(error) && typeof error.errcode === 'number' && [5, 6].includes(error.errcode & 255);
 export class GeoDatabase {
     readonly enabled: boolean;
@@ -27,7 +28,7 @@ export class GeoDatabase {
     readonly signal: AbortSignal;
     generation = 0;
     private database: DatabaseSync | null = null;
-    private cachedStats: Data | null = null;
+    private cachedStats: GeoDatabaseStats | null = null;
     private updating = false;
     private controller = new AbortController();
     private saveFailures = createFailureReporter(createLogger('geoip'));
@@ -46,9 +47,9 @@ export class GeoDatabase {
     }
     close() { this.controller.abort(); this.database?.close(); this.database = null; }
     datasetChanged() { this.generation++; this.cachedStats = null; }
-    stats(): Data {
+    stats(): GeoDatabaseStats {
         if (this.cachedStats) return { ...this.cachedStats };
-        const result: Data = { status: 'disabled', entries: 0, size_bytes: 0, last_updated: null, oldest_updated: null, db_path: this.path };
+        const result: GeoDatabaseStats = { status: 'disabled', entries: 0, size_bytes: 0, last_updated: null, oldest_updated: null, db_path: this.path };
         if (!this.enabled) return result;
         if (this.signal.aborted) return { ...result, status: 'closed' };
         if (!existsSync(this.path)) return { ...result, status: 'not_found' };
@@ -57,7 +58,8 @@ export class GeoDatabase {
                 this.database = new DatabaseSync(this.path);
                 this.database.exec(GEO_PROVENANCE_SCHEMA);
             }
-            const stats = this.database.prepare('SELECT COUNT(*) AS entries, MAX(last_updated) AS last_updated, MIN(CASE WHEN last_updated > 0 THEN last_updated END) AS oldest_updated FROM geo_cache').get();
+            // SQLite COUNT is numeric and these two integer timestamp aggregates are nullable.
+            const stats = this.database.prepare('SELECT COUNT(*) AS entries, MAX(last_updated) AS last_updated, MIN(CASE WHEN last_updated > 0 THEN last_updated END) AS oldest_updated FROM geo_cache').get() as Pick<GeoDatabaseStats, 'entries' | 'last_updated' | 'oldest_updated'>;
             this.cachedStats = { ...result, ...stats, status: 'ok', size_bytes: statSync(this.path).size };
             return { ...this.cachedStats };
         } catch (error) { return { ...result, status: 'error', error: errorMessage(error) }; }
