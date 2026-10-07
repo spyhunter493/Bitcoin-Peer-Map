@@ -13,7 +13,7 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -24,9 +24,10 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
       - name: Install JavaScript test dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
       - name: Check JavaScript and TypeScript
         run: |
+          npm run check:assets
           npm run check:js
           npm run check:api
           npm run check:types
@@ -35,9 +36,11 @@ jobs:
       - name: Run JavaScript unit tests
         run: npm run test:js
       - name: Install headless browser dependencies
-        run: npx playwright install --with-deps --only-shell chromium
+        run: npx playwright install --with-deps chromium firefox webkit
       - name: Run browser tests
-        run: npm run test:layout
+        run: |
+          npm run test:layout
+          npm run test:browser-security
       - name: Validate container
         env:
           BITCOIN_RPC_USER: test

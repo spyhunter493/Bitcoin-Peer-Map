@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "packages": [
+    {
+      "name": "swagger-ui-dist",
+      "version": "5.33.1",
+      "license": "Apache-2.0",
+      "npm_integrity": "sha512-H872wWkA53bFIsGgi7OWgmq+CRWw3nFQGdJWRqOB9wNwTm6e5ol34+qPDkV4AJlK+gglM2EsJiOOzsGsEGbluA==",
+      "files": [
+        {
+          "path": "swagger-ui/LICENSE",
+          "source": "LICENSE",
+          "bytes": 11358,
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+        },
+        {
+          "path": "swagger-ui/NOTICE",
+          "source": "NOTICE",
+          "bytes": 55,
+          "sha256": "0d20d1adef18aee3f40dd258172155521ce702ac445cb5f7b7d60ed32dad2fb2"
+        },
+        {
+          "path": "swagger-ui/swagger-ui-bundle.js.LICENSE.txt",
+          "source": "swagger-ui-bundle.js.LICENSE.txt",
+          "bytes": 4442,
+          "sha256": "63818894e4b04cd0e3180d9cb20761e227a939121e7484f8e1d528227c756f89"
+        },
+        {
+          "path": "swagger-ui/swagger-ui-bundle.js",
+          "source": "swagger-ui-bundle.js",
+          "bytes": 1586002,
+          "sha256": "050bc415ee7048dcd881682678f720264e7da5e373f7461d7c58c755305255f7"
+        },
+        {
+          "path": "swagger-ui/swagger-ui.css",
+          "source": "swagger-ui.css",
+          "bytes": 186154,
+          "sha256": "1ac324f7dcd27e4b9386b4bd6421271ec147e922a22c05ba24b11515e9aa6321"
+        }
+      ]
+    },
+    {
+      "name": "@fontsource-variable/cinzel",
+      "version": "5.3.0",
+      "license": "OFL-1.1",
+      "npm_integrity": "sha512-eFcU0TwaAP5QESF2pV8VoOPJJXJ6sSGm/6mXMwqTdMBPAJMaLhfa6oISHuOtFeddsoHP9RYm4Io0j1j3mNEz2Q==",
+      "files": [
+        {
+          "path": "cinzel/LICENSE",
+          "source": "LICENSE",
+          "bytes": 4382,
+          "sha256": "f5a242cf68ad6ebd0603b3359a74c593ca080318a681035be5296ba2c6b04ae6"
+        },
+        {
+          "path": "cinzel/index.css",
+          "source": "index.css",
+          "bytes": 830,
+          "sha256": "423123de5a8d6e3ebb448789bc6697f1e5b7ed06a1a7e0887243156cdbb1da71"
+        },
+        {
+          "path": "cinzel/files/cinzel-latin-ext-wght-normal.woff2",
+          "source": "files/cinzel-latin-ext-wght-normal.woff2",
+          "bytes": 14540,
+          "sha256": "8fc2606f8ae6c569f444e138dba052d9a6e3f0657f9031796503bbb94eced600"
+        },
+        {
+          "path": "cinzel/files/cinzel-latin-wght-normal.woff2",
+          "source": "files/cinzel-latin-wght-normal.woff2",
+          "bytes": 25904,
+          "sha256": "09941fb1c169c38fd414536b37690057fc01b3117a5c63dd6571186540c8f370"
+        }
+      ]
+    }
+  ]
+}
