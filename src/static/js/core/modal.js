@@ -2,6 +2,8 @@ import * as BPMApi from './api.js';
 import { query, queryAll, required } from './dom.js';
 /** @type {import('../types').ModalController[]} */
 const modalStack = [];
+/** @type {WeakMap<import('../types').ModalController, HTMLElement>} */
+const lastDialogFocus = new WeakMap();
 const FOCUSABLE_SELECTOR = [
     'a[href]',
     'button:not([disabled])',
@@ -122,7 +124,10 @@ function open(options) {
         else existing.remove();
     }
 
-    const returnFocus = document.activeElement;
+    const parent = modalStack[modalStack.length - 1];
+    const active = document.activeElement;
+    // Disabling a source button can blur it before its authentication dialog opens.
+    const returnFocus = parent && !parent.overlay.contains(active) ? lastDialogFocus.get(parent) || active : active;
     const overlay = document.createElement('div');
     const titleId = `${id}-title`;
     const widthStyle = ` style="width:calc(100vw - 32px)${maxWidth ? `;max-width:${Number(maxWidth)}px` : ''}"`;
@@ -167,17 +172,24 @@ function open(options) {
         if (restoreFocus && wasTop && returnFocus instanceof HTMLElement && returnFocus.isConnected &&
             (!top || top.overlay.contains(returnFocus)) && !canFocus(returnFocus)) {
             const fallbackFocus = document.activeElement;
-            requestAnimationFrame(() => {
+            const restore = () => {
                 if (modalStack[modalStack.length - 1] === top && document.activeElement === fallbackFocus && canFocus(returnFocus)) {
                     returnFocus.focus({ preventScroll: true });
                 }
-            });
+            };
+            const observer = new MutationObserver(restore);
+            observer.observe(returnFocus, { attributes: true, attributeFilter: ['disabled', 'aria-disabled', 'hidden', 'style', 'class'] });
+            requestAnimationFrame(() => { restore(); observer.disconnect(); });
         }
     }
 
     /** @param {FocusEvent} event */
     function handleFocusin(event) {
-        if (modalStack[modalStack.length - 1] !== controller || dialogBox.contains(/** @type {Node} */ (event.target))) return;
+        if (modalStack[modalStack.length - 1] !== controller) return;
+        if (event.target instanceof HTMLElement && dialogBox.contains(event.target)) {
+            lastDialogFocus.set(controller, event.target);
+            return;
+        }
         focusDialog(dialogBox);
     }
 
