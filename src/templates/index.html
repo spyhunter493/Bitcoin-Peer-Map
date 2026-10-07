@@ -74,23 +74,23 @@
     <!-- Left map HUD — controls follow the visible stats -->
     <div class="map-hud">
       <div id="map-overlay" class="map-overlay">
-        <div class="mo-row mo-sys-row" id="mo-row-peers"><span class="mo-label">Peers</span> <span class="mo-value" id="mo-peers" title="Total connected peers">0</span></div>
-        <div class="mo-row mo-sys-row mo-traffic-row" id="mo-row-netin" title="Bitcoin node P2P download rate — click for node metrics">
+        <button type="button" aria-haspopup="dialog" aria-controls="system-info-modal" class="mo-row mo-sys-row" id="mo-row-peers"><span class="mo-label">Peers</span> <span class="mo-value" id="mo-peers" title="Total connected peers">0</span></button>
+        <button type="button" aria-haspopup="dialog" aria-controls="system-info-modal" class="mo-row mo-sys-row mo-traffic-row" id="mo-row-netin" title="Bitcoin node P2P download rate — click for node metrics">
             <span class="mo-label">P2P &#8595;</span>
             <span class="mo-value mo-traffic-value" id="ro-rate-in">&mdash;</span>
-        </div>
-        <div class="mo-row mo-sys-row mo-traffic-row" id="mo-row-netout" title="Bitcoin node P2P upload rate — click for node metrics">
+        </button>
+        <button type="button" aria-haspopup="dialog" aria-controls="system-info-modal" class="mo-row mo-sys-row mo-traffic-row" id="mo-row-netout" title="Bitcoin node P2P upload rate — click for node metrics">
             <span class="mo-label">P2P &#8593;</span>
             <span class="mo-value mo-traffic-value" id="ro-rate-out">&mdash;</span>
-        </div>
-        <div class="mo-row mo-sys-row mo-traffic-row" id="mo-row-p2p-in" title="Bitcoin node P2P download total since the Bitcoin node started — click for node metrics">
+        </button>
+        <button type="button" aria-haspopup="dialog" aria-controls="system-info-modal" class="mo-row mo-sys-row mo-traffic-row" id="mo-row-p2p-in" title="Bitcoin node P2P download total since the Bitcoin node started — click for node metrics">
             <span class="mo-label">P2P &#8595;</span>
             <span class="mo-value mo-traffic-value" id="mo-p2p-in">&mdash;</span>
-        </div>
-        <div class="mo-row mo-sys-row mo-traffic-row" id="mo-row-p2p-out" title="Bitcoin node P2P upload total since the Bitcoin node started — click for node metrics">
+        </button>
+        <button type="button" aria-haspopup="dialog" aria-controls="system-info-modal" class="mo-row mo-sys-row mo-traffic-row" id="mo-row-p2p-out" title="Bitcoin node P2P upload total since the Bitcoin node started — click for node metrics">
             <span class="mo-label">P2P &#8593;</span>
             <span class="mo-value mo-traffic-value" id="mo-p2p-out">&mdash;</span>
-        </div>
+        </button>
       </div>
       <div id="map-controls" class="map-controls" role="group" aria-label="Map controls">
         <button id="zoom-in" class="zoom-btn" title="Zoom in" aria-label="Zoom in">+</button>
@@ -171,17 +171,15 @@
     </div>
 
     <!-- Antarctica disclaimer (shown once per browser profile) -->
-    <div id="antarctica-modal-overlay" class="ant-modal-overlay hidden">
-        <div id="antarctica-note" class="ant-modal">
+    <template id="antarctica-disclaimer-template">
             <span class="ant-modal-icon">&#9432;</span>
             <div class="ant-modal-body">
                 <div class="ant-modal-text">Public IPv4 and IPv6 peers are automatically geolocated and displayed with their corresponding service providers.</div>
                 <div class="ant-modal-text" style="margin-top:8px"><strong>Disclaimer:</strong> Peers connected via privacy overlays such as Tor, I2P, and CJDNS do not expose geographic information by design. To preserve visual consistency on the map, they are placed at Antarctic research stations as placeholders. Metrics for these peers are limited to data retrieved from getpeerinfo.</div>
                 <div class="ant-modal-community">Have ideas or found a bug? <a href="{{ repository_discussions_url }}" target="_blank" rel="noopener">Join the discussion</a> &mdash; click the logo anytime to visit the repo.</div>
             </div>
-            <button id="ant-close" class="ant-modal-btn">Got it</button>
-        </div>
-    </div>
+            <button type="button" id="ant-close" class="ant-modal-btn">Got it</button>
+    </template>
 
     <!-- Geography, static connections, and animated peers -->
     <canvas id="basemap" aria-hidden="true"></canvas>

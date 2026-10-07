@@ -29,7 +29,6 @@ export function create() {
 
     function openPrompt() {
         if (dialog) return;
-        const returnFocus = document.activeElement;
         let cooldownDeadline = 0;
         /** @type {ReturnType<typeof setInterval> | null} */
         let countdown = null;
@@ -42,10 +41,6 @@ export function create() {
                 dialog = null;
                 for (const waiter of waiters) { waiter.cleanup(); waiter.reject(cancelled()); }
                 waiters.clear();
-                // Source controls are re-enabled by their cancelled request handlers.
-                requestAnimationFrame(() => {
-                    if (document.activeElement === document.body && returnFocus instanceof HTMLElement && returnFocus.isConnected) returnFocus.focus({ preventScroll: true });
-                });
             },
         });
         dialog = current;
