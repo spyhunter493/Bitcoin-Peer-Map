@@ -5,6 +5,7 @@ import { once } from 'node:events';
 import { chromium, firefox, webkit } from 'playwright';
 import { createApplication } from '../../src/server/app.ts';
 import { FixtureRuntime, fixtureSettings, FIXTURE_ADMIN_TOKEN } from '../layout_server.ts';
+import assertSharedDialogs from '../test_shared_dialogs.js';
 
 for (const engine of [chromium, firefox, webkit]) {
     test(`${engine.name()}: local assets, strict CSP, documentation, management dialogs, and framing`, { timeout: 120_000 }, async t => {
@@ -15,6 +16,7 @@ for (const engine of [chromium, firefox, webkit]) {
         t.after(() => app.close());
         const browser = await engine.launch({ headless: true });
         t.after(() => browser.close());
+        await assertSharedDialogs(browser, base);
         const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
         t.after(() => context.close());
         const external = [], requests = [], errors = [];

@@ -99,27 +99,35 @@ Choose checks that match the change:
 | --- | --- |
 | `npm run check:js` | JavaScript and TypeScript syntax |
 | `npm run check:api` | OpenAPI declarations match the checked-in generated types |
+| `npm run check:assets` | Vendored browser assets match their pinned development packages |
+| `npm run sync:assets` | Copy pinned browser assets, licenses, and checksum manifest |
 | `npm run check:types` | Strict type checks for production code and backend tests |
 | `npm run test:server` | Backend behavior using Node's test runner |
 | `npm run test:js` | Frontend unit tests |
 | `npm test` | Backend and frontend unit tests |
 | `npm run test:layout` | Browser regressions using the local fixture server |
+| `npm run test:browser-security` | Dialogs, local assets, CSP, Swagger, and frame protection in Chromium, Firefox, and WebKit |
 | `npm run test:layout:docker` | Browser regressions with the fixture server in Docker |
 | `npm run test:container` | Production image smoke test |
 | `npm run test:compose` | Published/local Compose merges, secrets, host binding, volume names, and build helper behavior |
 
-Before running browser tests, install Chromium's headless shell:
+Before running browser tests, install the three browser engines:
 
 ```bash
-npx playwright install --with-deps --only-shell chromium
+npx playwright install --with-deps chromium firefox webkit
 ```
 
 CI runs syntax checks, type checks, backend tests, and frontend unit tests before
-installing the browser. It then runs browser regressions, Compose checks, and
+installing the browsers. It then runs browser regressions, security smoke tests, Compose checks, and
 container validation, which verifies that the image and test runner use the same
 Node.js major version. The Ubuntu VM runner supports both Chromium and Docker.
 Tests use local fixtures and mock RPC servers, without a live Bitcoin node or
 external GeoIP services.
+
+See [browser security](browser-security.md) for the enforced response policy and
+the workflow for reproducing or updating Swagger and font assets. Checked-in
+declarations and assets ship with the source; production startup needs neither
+package installation nor generation.
 
 `test:layout` starts its fixture server automatically and runs two independent
 browser suites at a time, each in its own browser context. Node's test runner
