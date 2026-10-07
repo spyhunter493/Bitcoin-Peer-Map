@@ -20,6 +20,7 @@ import assertNodeMetrics from './test_node_metrics.js';
 import assertSharedDialogs from './test_shared_dialogs.js';
 import assertPrivateNodeComponents from './test_private_node_components.js';
 import assertNavigation from './test_navigation.js';
+import assertPrivateViewNavigation from './test_private_view_navigation.js';
 import assertAdminAuthentication from './test_admin_auth.js';
 import assertManagementFeedback from './test_management_feedback.js';
 import assertNetworkExamples from './test_network_examples.js';
@@ -913,6 +914,7 @@ const suites = [
     ['map pan, zoom, touch, and canvas rendering', assertMapInput],
     ['large peer tables and static map rendering', assertDashboardPerformance],
     ['tooltip refresh and navigation', assertNavigation],
+    ['private view navigation', assertPrivateViewNavigation],
     ['keyboard exploration', assertKeyboardNavigation],
     ['admin authentication', assertAdminAuthentication],
     ['management feedback', assertManagementFeedback],
