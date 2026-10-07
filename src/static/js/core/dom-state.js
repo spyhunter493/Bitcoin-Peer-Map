@@ -28,6 +28,7 @@ function capture(element) {
     const nodes = [element, ...queryAll('*', element)];
     /** @type {[string, number, number][]} */
     const scroll = nodes.filter((node) => node.scrollTop || node.scrollLeft).map((node) => [key(node), node.scrollTop, node.scrollLeft]);
+    const document = element.ownerDocument || globalThis.document;
     const focused = document.activeElement && element.contains(document.activeElement) ? key(document.activeElement) : null;
     const expanded = !!query('.as-sub-tt-expanded', element);
     return () => {

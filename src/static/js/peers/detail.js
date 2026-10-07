@@ -284,9 +284,13 @@ function renderPeerGroup(peers) {
 }
 
 /**
- * @param {import('../types').PeerDetailControllerOptions} options
+ * @param {import('../types').PeerDetailControllerOptions & {document?: Document; clock?: Pick<Window, 'setTimeout' | 'clearTimeout' | 'requestAnimationFrame' | 'cancelAnimationFrame'>; getNowSeconds?: () => number}} options
  */
 function create(options) {
+    const document = options.document || globalThis.document;
+    const clock = options.clock || document?.defaultView || globalThis;
+    const HTMLElement = document?.defaultView?.HTMLElement || globalThis.HTMLElement;
+    const Element = document?.defaultView?.Element || globalThis.Element;
     /** @type {HTMLElement | null} */
     let popup = null;
     /** @type {number | null} */
@@ -327,15 +331,15 @@ function create(options) {
 
     function removeClosingPopups() {
         for (const [element, timer] of closingPopups) {
-            globalThis.clearTimeout(timer);
+            clock.clearTimeout(timer);
             element.remove();
         }
         closingPopups.clear();
     }
 
     function cancelPending() {
-        if (openTimer !== null) globalThis.clearTimeout(openTimer);
-        if (animationFrame !== null) globalThis.cancelAnimationFrame(animationFrame);
+        if (openTimer !== null) clock.clearTimeout(openTimer);
+        if (animationFrame !== null) clock.cancelAnimationFrame(animationFrame);
         openTimer = animationFrame = null;
     }
 
@@ -369,7 +373,7 @@ function create(options) {
         popup.innerHTML = html;
         document.body.appendChild(popup);
         const mounted = popup;
-        animationFrame = globalThis.requestAnimationFrame(() => {
+        animationFrame = clock.requestAnimationFrame(() => {
             animationFrame = null;
             if (mounted.isConnected) mounted.classList.add('visible');
         });
@@ -405,6 +409,7 @@ function create(options) {
             showBack: source === 'map-group' && !!groupPeerIds,
             connectionTypeLabels: options.connectionTypeLabels,
             serviceFlags: options.serviceFlags,
+            nowSeconds: options.getNowSeconds?.() ?? options.nowSeconds,
         });
     }
 
@@ -444,7 +449,7 @@ function create(options) {
         };
         if (delayMs) {
             if (popup) removeCurrent();
-            openTimer = globalThis.setTimeout(show, delayMs);
+            openTimer = clock.setTimeout(show, delayMs);
             return null;
         }
         return show();
@@ -526,7 +531,7 @@ function create(options) {
         groupLocations = null;
         if (closing) {
             closing.classList.remove('visible');
-            const timer = globalThis.setTimeout(() => {
+            const timer = clock.setTimeout(() => {
                 closing.remove();
                 closingPopups.delete(closing);
             }, 200);
@@ -565,6 +570,8 @@ function create(options) {
  * @param {HTMLElement} popup
  */
 function bindPointerInteractions(popup) {
+    const document = popup.ownerDocument;
+    const Element = document.defaultView?.Element || globalThis.Element;
     const header = query('.peer-popup-header', popup);
     const handle = query('.peer-popup-resize-handle', popup);
     /** @type {(() => void) | null} */

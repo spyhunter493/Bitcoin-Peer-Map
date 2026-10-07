@@ -181,6 +181,7 @@ function create() {
     // ═══════════════════════════════════════════════════════════
 
     const nodeDashboard = BPMNodeDashboard.create({
+        dashboard,
         config: CFG,
         onAction(action) {
             switch (action.type) {
@@ -235,6 +236,7 @@ function create() {
     // ═══════════════════════════════════════════════════════════
 
     const privateNetwork = BPMPrivateNetwork.create({
+        dashboard,
         distribution: BPMDistribution,
         mapView,
         settings: advSettings,
@@ -799,7 +801,24 @@ function create() {
     // INIT — Start everything
     // ═══════════════════════════════════════════════════════════
 
+    /** Release feature-owned requests, timers and listeners when leaving the page.
+     * BFCache suspension retains the dashboard so returning preserves its view.
+     * @param {PageTransitionEvent} event */
+    function handlePageHide(event) {
+        if (event.persisted) return;
+        peerPolling.stop();
+        nodeDashboard.dispose();
+        privateNetwork.dispose();
+        BPMDistribution.dispose();
+        antDialog?.close(false);
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+        window.removeEventListener('pagehide', handlePageHide);
+    }
+
+    let started = false;
     function init() {
+        if (started) return;
+        started = true;
         // Capture dark theme CSS defaults before any overrides
         preferences.init();
 
@@ -829,6 +848,7 @@ function create() {
         infoPolling.start();
 
         document.addEventListener('visibilitychange', handleVisibilityChange);
+        window.addEventListener('pagehide', handlePageHide);
 
         showAntarcticaDisclaimerOnce();
 

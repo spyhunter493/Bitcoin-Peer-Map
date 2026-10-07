@@ -1,9 +1,8 @@
 import * as BPMApi from './api.js';
 import { query, queryAll, required } from './dom.js';
-/** @type {import('../types').ModalController[]} */
-const modalStack = [];
-/** @type {WeakMap<import('../types').ModalController, HTMLElement>} */
-const lastDialogFocus = new WeakMap();
+/** Modal order and remembered focus belong to the owning document.
+ * @type {WeakMap<Document, {stack: import('../types').ModalController[]; focus: WeakMap<import('../types').ModalController, HTMLElement>}>} */
+const documentStates = new WeakMap();
 const FOCUSABLE_SELECTOR = [
     'a[href]',
     'button:not([disabled])',
@@ -18,10 +17,11 @@ function canFocus(element) {
     return !element.closest('[hidden], [inert], [aria-hidden="true"]') &&
         element.getAttribute('aria-disabled') !== 'true' &&
         !element.matches(':disabled') && element.getClientRects().length > 0 &&
-        getComputedStyle(element).visibility !== 'hidden';
+        element.ownerDocument.defaultView?.getComputedStyle(element).visibility !== 'hidden';
 }
 
-function updateStack() {
+/** @param {import('../types').ModalController[]} modalStack */
+function updateStack(modalStack) {
     modalStack.forEach((modal, index) => {
         const top = index === modalStack.length - 1;
         modal.overlay.style.zIndex = String(10000 + index);
@@ -94,9 +94,19 @@ function summaryItem(label, value, title) {
 }
 
 /**
- * @param {import('../types').ModalOptions} options
+ * @param {import('../types').ModalOptions & {document?: Document}} options
  */
 function open(options) {
+    const document = options.document || globalThis.document;
+    const clock = document.defaultView || globalThis;
+    let state = documentStates.get(document);
+    if (!state) {
+        state = { stack: [], focus: new WeakMap() };
+        documentStates.set(document, state);
+    }
+    const { stack: modalStack, focus: lastDialogFocus } = state;
+    const HTMLElement = document.defaultView?.HTMLElement || globalThis.HTMLElement;
+    const MutationObserver = document.defaultView?.MutationObserver || globalThis.MutationObserver;
     const {
         id,
         title,
@@ -158,7 +168,7 @@ function open(options) {
         document.removeEventListener('keydown', handleKeydown, true);
         document.removeEventListener('focusin', handleFocusin);
         overlay.remove();
-        updateStack();
+        updateStack(modalStack);
         if (typeof onClose === 'function') onClose();
         const top = modalStack[modalStack.length - 1];
         if (restoreFocus && wasTop && returnFocus instanceof HTMLElement && returnFocus.isConnected && canFocus(returnFocus) &&
@@ -179,7 +189,7 @@ function open(options) {
             };
             const observer = new MutationObserver(restore);
             observer.observe(returnFocus, { attributes: true, attributeFilter: ['disabled', 'aria-disabled', 'hidden', 'style', 'class'] });
-            requestAnimationFrame(() => { restore(); observer.disconnect(); });
+            clock.requestAnimationFrame(() => { restore(); observer.disconnect(); });
         }
     }
 
@@ -231,7 +241,7 @@ function open(options) {
         isOpen: () => !closed && overlay.isConnected,
     };
     modalStack.push(controller);
-    updateStack();
+    updateStack(modalStack);
     document.addEventListener('keydown', handleKeydown, true);
     document.addEventListener('focusin', handleFocusin);
     overlay.addEventListener('click', (event) => {
@@ -249,7 +259,7 @@ function open(options) {
 
 /**
  * @template T
- * @param {import('../types').ModalOptions & {url: string; render: (data: T) => string; api?: {getJson(url: string, options: RequestInit): Promise<T>}}} options
+ * @param {import('../types').ModalOptions & {document?: Document; url: string; render: (data: T) => string; api?: {getJson(url: string, options: RequestInit): Promise<T>}}} options
  */
 function openFetched(options) {
     const modal = open(options);
