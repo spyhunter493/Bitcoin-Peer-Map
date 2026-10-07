@@ -1,24 +1,12 @@
 import { sleep } from '../tasks.ts';
-import { type Data, errorMessage, nowSeconds } from '../types.ts';
+import { errorMessage, nowSeconds } from '../types.ts';
 import { createFailureReporter, createLogger } from '../logging.ts';
 
 const log = createLogger('connectivity');
 
 export type Provider = 'geoip';
-export interface ProviderHealth {
-    state: 'unknown' | 'healthy' | 'unavailable' | 'rate_limited';
-    consecutive_failures: number;
-    last_error: string | null;
-    last_success_at: number | null;
-    last_failure_at: number | null;
-    retry_at: number | null;
-}
-export interface ConnectivityStatus extends Data {
-    internet_state: 'green' | 'yellow' | 'red';
-    api_available: boolean; api_consecutive_failures: number;
-    geo_db_only_mode: boolean; api_down_prompt: boolean;
-    providers: Record<Provider, ProviderHealth>;
-}
+export type { ProviderHealth, ConnectivityStatus } from '../../shared/api.generated.d.ts';
+import type { ProviderHealth, ConnectivityStatus } from '../../shared/api.generated.d.ts';
 const health = (): ProviderHealth => ({ state: 'unknown', consecutive_failures: 0, last_error: null, last_success_at: null, last_failure_at: null, retry_at: null });
 
 function retryDelay(response: Response): number | null {

@@ -1,4 +1,4 @@
-import type { NodeInfo, NodeRefreshState, NodeAction, NetworkDetails } from '../types';
+import type { NodeDisplayInfo, NodeRefreshState, NodeAction, NetworkDetails } from '../types';
 import type { create as createDashboard } from '../core/dashboard-state.js';
 import type { create as createLifecycle } from '../core/lifecycle.js';
 import type * as API from '../core/api.js';
@@ -7,7 +7,7 @@ export interface ViewOptions {
     document: Document;
     lifecycle: ReturnType<typeof createLifecycle>;
     nowSeconds: () => number;
-    getNodeInfo(): NodeInfo | null;
+    getNodeInfo(): NodeDisplayInfo | null;
     getRefreshState(): NodeRefreshState;
     ui: {
         counts: Record<string, {in: number; out: number}>;
@@ -18,7 +18,7 @@ export interface ViewOptions {
 export interface ControlsOptions {
     document: Document;
     lifecycle: ReturnType<typeof createLifecycle>;
-    getNodeInfo(): NodeInfo | null;
+    getNodeInfo(): NodeDisplayInfo | null;
     view: ReturnType<typeof import('./dashboard-view.js').create>;
     api: typeof API;
     storage: Pick<Storage, 'getItem' | 'setItem'> | null;

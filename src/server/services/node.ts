@@ -1,5 +1,5 @@
 import { BITCOIN_NETWORKS, type BitcoinChain, formatBytes, normalizePeerAddress, splitPeerAddress, networkType } from '../network.ts';
-import { type Data, type Rpc, errorMessage, nowSeconds, round } from '../types.ts';
+import { type Rpc, errorMessage, nowSeconds, round } from '../types.ts';
 import { Lru } from '../tasks.ts';
 import { SharedRead, readDeadline } from '../shared-read.ts';
 import { RpcBusyError } from '../rpc.ts';
@@ -7,9 +7,10 @@ import type { ConnectivityService } from './connectivity.ts';
 import type { GeoDatabase } from './geoip.ts';
 import { parsePeerInfo, parseNetworkInfo, parseBlockchainInfo, parseBlockHeader, parseBlock, parseMempoolInfo, parseChainTips, parseTxIndex, RpcValidationError, type TxIndexDetails, type NetworkInfo, type BlockchainInfo, type BlockHeader } from '../rpc-types.ts';
 import { NodeMetrics } from './node-metrics.ts';
-import type { DashboardDetails, DashboardInfo, RecentBlock, RecentBlocks, ChainTip, ChainTips, NetworkSummary, NetworkScores } from '../api-types.ts';
+import type { DashboardDetails, DashboardInfo, RecentBlock, RecentBlocks, ChainTip, ChainTips, NetworkSummary, NetworkScores, MempoolResponse, BlockchainResponse, ActionResponse, BansResponse } from '../api-types.ts';
 import { createFailureReporter, createLogger } from '../logging.ts';
 
+type CachedBlock = Omit<RecentBlock, 'age_seconds'> & { previous_hash: string };
 const log = createLogger('node');
 
 export const CHAIN_TIP_HEADER_LIMIT = 100;
@@ -31,9 +32,9 @@ export class NodeService {
     private indexCache = new SharedRead<TxIndexDetails>(5000);
     private chainTipsCache = new SharedRead<ChainTips>(5000, 1000, { fromCompletion: true });
     private headers = new Lru<BlockHeader>(256);
-    private blocks = new Lru<RecentBlock & { previous_hash: string }>(256);
+    private blocks = new Lru<CachedBlock>(256);
     private pendingHeaders = new Map<string, SharedRead<BlockHeader>>();
-    private pendingBlocks = new Map<string, SharedRead<RecentBlock & { previous_hash: string }>>();
+    private pendingBlocks = new Map<string, SharedRead<CachedBlock>>();
     private blockchainFailures = createFailureReporter(log);
     private blockFailures = createFailureReporter(log);
     private networkFailures = createFailureReporter(log);
@@ -46,7 +47,7 @@ export class NodeService {
     async dashboardInfo(signal?: AbortSignal): Promise<DashboardInfo> {
         const cached = await this.dashboardCache.get(signal => this.refreshDashboard(signal), signal);
         const connectivity = this.connectivity.snapshot();
-        const stats = this.geoDatabase.stats();
+        const stats: ReturnType<typeof this.geoDatabase.stats> & Partial<Pick<DashboardInfo['geo_db_stats'], 'oldest_age_days' | 'newest_age_days' | 'newest_age_seconds'>> = this.geoDatabase.stats();
         if (stats.entries) {
             const now = nowSeconds();
             stats.oldest_age_days = typeof stats.oldest_updated === 'number' && stats.oldest_updated ? Math.trunc((now - stats.oldest_updated) / 86400) : null;
@@ -149,22 +150,22 @@ export class NodeService {
             return null;
         }
     }
-    async mempool(signal?: AbortSignal): Promise<Data> {
-        const result: Data = { mempool: null, error: null };
+    async mempool(signal?: AbortSignal): Promise<MempoolResponse> {
+        const result: MempoolResponse = { mempool: null, error: null };
         try { result.mempool = await this.readMempool(signal); } catch (error) { if (error instanceof RpcBusyError || signal?.aborted) throw error; result.error = errorMessage(error); }
         return result;
     }
-    async blockchain(signal?: AbortSignal): Promise<Data> {
+    async blockchain(signal?: AbortSignal): Promise<BlockchainResponse> {
         try { return { blockchain: await this.readBlockchain(signal), error: null }; }
         catch (error) { if (error instanceof RpcBusyError || signal?.aborted) throw error; return { blockchain: null, error: errorMessage(error) }; }
     }
-    private async recentBlock(hash: string, expectedHeight: number, signal?: AbortSignal): Promise<RecentBlock & { previous_hash: string }> {
+    private async recentBlock(hash: string, expectedHeight: number, signal?: AbortSignal): Promise<CachedBlock> {
         signal?.throwIfAborted();
         const cached = this.blocks.get(hash);
         if (cached) return cached;
         let pending = this.pendingBlocks.get(hash);
         if (!pending) {
-            const read = new SharedRead<RecentBlock & { previous_hash: string }>(Infinity, 1000, { onIdle: () => {
+            const read = new SharedRead<CachedBlock>(Infinity, 1000, { onIdle: () => {
                 if (!read.loading && this.pendingBlocks.get(hash) === read) this.pendingBlocks.delete(hash);
             } });
             pending = read;
@@ -187,7 +188,7 @@ export class NodeService {
             const height = Number(blockchain.blocks || 0);
             let hash = blockchain.bestblockhash;
             if (typeof hash !== 'string' || !hash) throw new Error('getblockchaininfo did not return bestblockhash');
-            const cached: (RecentBlock & { previous_hash: string })[] = [];
+            const cached: CachedBlock[] = [];
             for (let offset = 0; offset < Math.min(limit, height + 1); offset++) {
                 signal?.throwIfAborted();
                 const block = await this.recentBlock(hash, height - offset, signal);
@@ -265,16 +266,16 @@ export class NodeService {
             } };
         } finally { source.cancel(); source.dispose(); metadata.cancel(); metadata.dispose(); total.cancel(); total.dispose(); }
     }
-    async connect(address: string): Promise<Data> {
+    async connect(address: string): Promise<ActionResponse> {
         try { const normalized = normalizePeerAddress(address, BITCOIN_NETWORKS[this.chain].default_peer_port); await this.rpc.call('addnode', [normalized, 'onetry']); this.dashboardCache.invalidate(); return { success: true, address: normalized }; }
         catch (error) { if (error instanceof RpcBusyError) throw error; return { success: false, error: errorMessage(error) }; }
     }
-    async disconnect(id: number | null): Promise<Data> {
+    async disconnect(id: number | null): Promise<ActionResponse> {
         if (id === null) return { success: false, error: 'peer_id is required' };
         try { await this.rpc.call('disconnectnode', ['', id]); this.dashboardCache.invalidate(); return { success: true }; }
         catch (error) { if (error instanceof RpcBusyError) throw error; return { success: false, error: errorMessage(error) }; }
     }
-    async ban(id: number | null): Promise<Data> {
+    async ban(id: number | null): Promise<ActionResponse> {
         if (id === null) return { success: false, error: 'peer_id is required' };
         try {
             const peers = parsePeerInfo(await this.rpc.call('getpeerinfo'));
@@ -288,16 +289,16 @@ export class NodeService {
             return { success: true, banned_ip: host, network };
         } catch (error) { if (error instanceof RpcBusyError) throw error; return { success: false, error: errorMessage(error) }; }
     }
-    async unban(address: string): Promise<Data> {
+    async unban(address: string): Promise<ActionResponse> {
         if (!address) return { success: false, error: 'address is required' };
         try { await this.rpc.call('setban', [address, 'remove']); this.bansCache.invalidate(); return { success: true }; }
         catch (error) { if (error instanceof RpcBusyError) throw error; return { success: false, error: errorMessage(error) }; }
     }
-    async bans(signal?: AbortSignal): Promise<Data> {
+    async bans(signal?: AbortSignal): Promise<BansResponse> {
         try { return { success: true, bans: await this.bansCache.get(signal => this.rpc.call('listbanned', [], 10, signal), signal) }; }
         catch (error) { if (error instanceof RpcBusyError || signal?.aborted) throw error; return { success: false, bans: [], error: errorMessage(error) }; }
     }
-    async clearBans(): Promise<Data> {
+    async clearBans(): Promise<ActionResponse> {
         try { await this.rpc.call('clearbanned'); this.bansCache.invalidate(); return { success: true }; }
         catch (error) { if (error instanceof RpcBusyError) throw error; return { success: false, error: errorMessage(error) }; }
     }

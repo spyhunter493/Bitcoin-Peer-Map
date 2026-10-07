@@ -301,8 +301,10 @@ for (const [chain, port] of [['main', 8333], ['test', 18333], ['testnet4', 48333
         assert.equal(info.blockchain, null);
         assert.deepEqual(info.bitcoin_network, { chain, default_peer_port: port });
         const schema = await (await fetch(base + '/openapi.json')).json();
-        const fields = schema.paths['/api/info'].get.responses['200'].content['application/json'].schema.properties;
-        assert.deepEqual(fields.blockchain.properties.ibd.type, ['boolean', 'null']);
+        const response = schema.paths['/api/info'].get.responses['200'].content['application/json'].schema;
+        assert.equal(response.$ref, '#/components/schemas/DashboardInfo');
+        const fields = schema.components.schemas.DashboardInfo.properties;
+        assert.deepEqual(schema.components.schemas.DashboardBlockchain.properties.ibd.type, ['boolean', 'null']);
         assert.equal(fields.bitcoin_network.$ref, '#/components/schemas/BitcoinNetwork');
         assert.deepEqual(schema.components.schemas.BitcoinNetwork.properties.chain.enum, ['main', 'test', 'testnet4', 'signet', 'regtest']);
     });

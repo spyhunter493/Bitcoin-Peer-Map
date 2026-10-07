@@ -5,24 +5,21 @@ import { GeoDatabase, isValidGeoData } from './geoip.ts';
 import { ConnectivityService } from './connectivity.ts';
 import { parsePeerInfo, parseNodeAddresses, type PeerInfo } from '../rpc-types.ts';
 import { createFailureReporter, createLogger } from '../logging.ts';
+import type { ValidGeoData } from './geoip-validation.ts';
 
 const log = createLogger('peers');
 
 export const REFRESH_INTERVAL_MS = 10_000;
 export const GEO_PERSISTENCE_RETRY_MS = 60_000;
-export const GEO_STALE_AFTER_SECONDS = 30 * 86400;
+export const GEO_STALE_AFTER_SECONDS = 2592000; // 30 days, matching the wire contract.
 export const GEO_REFRESH_RETRY_MS = 60 * 60 * 1000;
-export interface GeoMetadata {
-    source: 'dataset' | 'ip_api' | 'unknown' | null;
-    observed_at: number | null;
-    age_seconds: number | null;
-    freshness: 'fresh' | 'stale' | 'unknown' | 'unavailable';
-    stale_after_seconds: number;
-}
+export type { GeoMetadata } from '../../shared/api.generated.d.ts';
+import type { GeoMetadata, Peer, PeerSnapshot } from '../api-types.ts';
 const GEO_API_FIELDS = 'status,message,continent,continentCode,country,countryCode,region,regionName,city,district,zip,lat,lon,timezone,offset,currency,isp,org,as,asname,mobile,proxy,hosting';
-interface PendingGeoSave { data: Data; observedAt: number }
+type CachedGeoData = Data & Pick<Peer, 'country' | 'lat' | 'lon'>;
+interface PendingGeoSave { data: ValidGeoData; observedAt: number }
 interface GeoEntry {
-    data: Data; source: GeoMetadata['source']; observedAt: number | null;
+    data: CachedGeoData; source: GeoMetadata['source']; observedAt: number | null;
     generation: number; retryAt: number | null; refreshRetryAt: number | null;
     pendingSave?: PendingGeoSave; saveRetryAt?: number;
 }
@@ -108,7 +105,7 @@ export class PeerService {
             this.knownAddresses = new Set(addresses.map(item => item.address));
         } catch { /* Address-manager metadata is optional. */ }
     }
-    cachedGeo(host: string): Data | null {
+    cachedGeo(host: string): CachedGeoData | null {
         const entry = this.geoCache.get(host);
         if (!entry || (entry.data.status !== 'ok' && !entry.pendingSave &&
             (entry.generation !== this.geoDatabase.generation || (entry.retryAt !== null && performance.now() >= entry.retryAt)))) return null;
@@ -166,7 +163,7 @@ export class PeerService {
             return usedApi;
         } finally { this.pending.delete(host); }
     }
-    private cacheGeo(host: string, data: Data | null, fromDatabase: boolean, pendingSave?: PendingGeoSave, saveRetryAt?: number, observedAt?: number) {
+    private cacheGeo(host: string, data: ValidGeoData | null, fromDatabase: boolean, pendingSave?: PendingGeoSave, saveRetryAt?: number, observedAt?: number) {
         if (this.signal.aborted || !this.activeHosts.has(host)) return;
         const normalized = emptyGeo(data ? 'ok' : 'unavailable');
         if (data) {
@@ -207,7 +204,7 @@ export class PeerService {
         }
     }
     listPeers() { return this.snapshot().peers; }
-    snapshot(): { peers: Data[]; status: Data } {
+    snapshot(): PeerSnapshot {
         return { peers: this.serializePeers(this.peers, this.lastSuccessAt ?? nowSeconds()), status: {
             connected: this.lastAttemptAt === null ? null : this.lastError === null,
             last_success_at: this.lastSuccessAt, last_attempt_at: this.lastAttemptAt,
@@ -215,12 +212,13 @@ export class PeerService {
             error: this.lastError, stale_after_seconds: 30,
         } };
     }
-    serializePeers(peers: PeerInfo[], observedAt: number): Data[] {
+    serializePeers(peers: PeerInfo[], observedAt: number): Peer[] {
         const serviceNames: Record<string, string> = { NETWORK: 'N', WITNESS: 'W', NETWORK_LIMITED: 'NL', P2P_V2: 'P', COMPACT_FILTERS: 'CF', BLOOM: 'B', 'BLAKE2B?': 'BL', BLAKE2B: 'BL' };
         return peers.map(peer => {
             const address = peer.addr || '', network = peer.network ?? networkType(address);
             const [host, port] = splitPeerAddress(address), geo = this.cachedGeo(host);
-            let locationStatus = 'pending', location = 'Stalking...';
+            let locationStatus: Peer['location_status'] = 'pending';
+            let location = 'Stalking...';
             if (['onion', 'i2p', 'cjdns'].includes(network) || isPrivateAddress(host)) { locationStatus = 'private'; location = 'PRIVATE'; }
             else if (geo?.status === 'ok') {
                 const text = (value: unknown) => typeof value === 'string' ? value.trim() : '';
@@ -230,7 +228,7 @@ export class PeerService {
             }
             else if (geo?.status === 'unavailable') { locationStatus = 'unavailable'; location = 'UNAVAILABLE'; }
             const services: string[] = peer.servicesnames || [];
-            const result: Data = {
+            const result: Peer = {
                 id: peer.id ?? null, network, ip: host, port, direction: peer.inbound ? 'IN' : 'OUT',
                 subver: (peer.subver || '').replaceAll('/', ''),
                 bytessent: peer.bytessent ?? 0, bytesrecv: peer.bytesrecv ?? 0,
@@ -243,17 +241,53 @@ export class PeerService {
                 in_addrman: this.knownAddresses.has(host), location, location_status: locationStatus, addr: address,
                 geo: metadata(geo?.status === 'ok' ? this.geoCache.get(host) : undefined),
                 is_public: isPublicAddress(network, host),
+                continent: geo?.continent ?? '',
+                continentCode: geo?.continentCode ?? '',
+                countryCode: geo?.countryCode ?? '',
+                region: geo?.region ?? '',
+                regionName: geo?.regionName ?? '',
+                city: geo?.city ?? '',
+                district: geo?.district ?? '',
+                zip: geo?.zip ?? '',
+                timezone: geo?.timezone ?? '',
+                currency: geo?.currency ?? '',
+                isp: geo?.isp ?? '',
+                org: geo?.org ?? '',
+                as: geo?.as ?? '',
+                asname: geo?.asname ?? '',
+                country: geo?.country ?? '',
+                lat: geo?.lat ?? 0,
+                lon: geo?.lon ?? 0,
+                offset: geo?.offset ?? 0,
+                mobile: geo?.mobile ?? false,
+                proxy: geo?.proxy ?? false,
+                hosting: geo?.hosting ?? false,
+                minping: peer.minping ?? null,
+                lastsend: peer.lastsend ?? null,
+                lastrecv: peer.lastrecv ?? null,
+                startingheight: peer.startingheight ?? null,
+                synced_headers: peer.synced_headers ?? null,
+                synced_blocks: peer.synced_blocks ?? null,
+                addr_relay_enabled: peer.addr_relay_enabled ?? null,
+                relaytxes: peer.relaytxes ?? null,
+                minfeefilter: peer.minfeefilter ?? null,
+                mapped_as: peer.mapped_as ?? null,
+                transport_protocol_type: peer.transport_protocol_type ?? '',
+                session_id: peer.session_id ?? '',
+                addrlocal: peer.addrlocal ?? '',
+                bip152_hb_from: peer.bip152_hb_from ?? false,
+                bip152_hb_to: peer.bip152_hb_to ?? false,
+                last_transaction: peer.last_transaction ?? 0,
+                last_block: peer.last_block ?? 0,
+                timeoffset: peer.timeoffset ?? 0,
+                addr_processed: peer.addr_processed ?? 0,
+                addr_rate_limited: peer.addr_rate_limited ?? 0,
+                permissions: peer.permissions ?? [],
             };
-            for (const [key, fallback] of Object.entries(emptyGeo(''))) if (key !== 'status') result[key] = geo?.[key] ?? fallback;
-            for (const key of ['minping', 'lastsend', 'lastrecv', 'startingheight', 'synced_headers', 'synced_blocks', 'addr_relay_enabled', 'relaytxes', 'minfeefilter', 'mapped_as']) result[key] = peer[key] ?? null;
-            for (const key of ['transport_protocol_type', 'session_id', 'addrlocal']) result[key] = peer[key] ?? '';
-            for (const key of ['bip152_hb_from', 'bip152_hb_to']) result[key] = peer[key] ?? false;
-            for (const key of ['last_transaction', 'last_block', 'timeoffset', 'addr_processed', 'addr_rate_limited']) result[key] = peer[key] ?? 0;
-            result.permissions = peer.permissions ?? [];
             return result;
         });
     }
 }
-export function emptyGeo(status: string): Data {
+export function emptyGeo(status: string): CachedGeoData {
     return { status, continent: '', continentCode: '', country: '', countryCode: '', region: '', regionName: '', city: '', district: '', zip: '', lat: 0, lon: 0, timezone: '', offset: 0, currency: '', isp: '', org: '', as: '', asname: '', mobile: false, proxy: false, hosting: false };
 }

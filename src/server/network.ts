@@ -8,7 +8,7 @@ export const BITCOIN_NETWORKS = Object.freeze({
     regtest: Object.freeze({ default_peer_port: 18444 }),
 });
 export type BitcoinChain = keyof typeof BITCOIN_NETWORKS;
-export interface BitcoinNetwork { chain: BitcoinChain; default_peer_port: number }
+export type { BitcoinNetwork } from '../shared/api.generated.d.ts';
 export function isBitcoinChain(value: string): value is BitcoinChain { return Object.hasOwn(BITCOIN_NETWORKS, value); }
 
 const nonGlobal = new BlockList();

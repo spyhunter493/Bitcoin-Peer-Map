@@ -1,4 +1,5 @@
 import * as BPMApi from '../core/api.js';
+import { toDisplayPeer } from './data.js';
 /** @param {import('../types').PeerRefreshOptions} options
  *  @returns {import('../types').PeerRefreshController} */
 function create(options) {
@@ -72,7 +73,7 @@ function create(options) {
                         // An initial page load may legitimately receive a cached snapshot.
                         // Repeated failures preserve the existing map, table, and drill-down DOM.
                         if (status.connected || lastSuccessAt !== status.last_success_at) {
-                            peersToApply = snapshot.peers;
+                            peersToApply = snapshot.peers.map(toDisplayPeer);
                         }
                         lastSuccessAt = status.last_success_at;
                         ageAtReceipt = status.age_seconds;

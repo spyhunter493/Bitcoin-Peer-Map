@@ -98,6 +98,7 @@ Choose checks that match the change:
 | Command | Coverage |
 | --- | --- |
 | `npm run check:js` | JavaScript and TypeScript syntax |
+| `npm run check:api` | OpenAPI declarations match the checked-in generated types |
 | `npm run check:types` | Strict type checks for production code and backend tests |
 | `npm run test:server` | Backend behavior using Node's test runner |
 | `npm run test:js` | Frontend unit tests |
@@ -251,14 +252,34 @@ resolve handlers after composition, so the modules do not import each other.
 
 Modules are served under `/static/v/<asset_revision>/`, so a new revision
 invalidates every relative dependency. Existing static URLs remain available.
-`types.d.ts` defines shared API and controller interfaces; `tsconfig.json` checks
-production JavaScript using JSDoc annotations. No production build step is needed.
+`types.d.ts` re-exports generated API types and defines browser view/controller
+interfaces; `tsconfig.json` checks production JavaScript using JSDoc annotations.
+No production build step is needed.
 
 ### API behavior
 
 Interactive API documentation is served at `/docs`, with the specification at
-`/openapi.json`. Update [`src/server/openapi.json`](../src/server/openapi.json)
-alongside API contract changes.
+`/openapi.json`. [`src/server/openapi.json`](../src/server/openapi.json) is the
+canonical HTTP contract. After changing a request, serialized response, or stream
+payload, update its schema and run `npm run generate:api`. Commit the resulting
+[`src/shared/api.generated.d.ts`](../src/shared/api.generated.d.ts) together with
+the producer change. `npm run check:api` checks freshness without rewriting files,
+and CI also checks server/browser types and validates actual HTTP responses and
+browser fixtures against the schemas. Generated declarations are not edited by hand.
+
+The server and browser re-export these declarations under their existing type
+names. RPC input parsers, controller state, and display projections remain separate:
+OpenAPI describes what crosses HTTP, while a browser projection guards raw provider
+metadata and RPC extensions before rendering. Preserve nullable results, omitted
+optional values, string peer ports (including an empty string), numeric-string peer
+IDs, and passthrough extension fields when updating a contract. The legacy stream's
+`message` and `system` payloads are described by its `x-events` schemas.
+
+Generation uses the private development tool in `scripts/api-codegen`, with
+`openapi-typescript` 7.13.0 and its required TypeScript 5.9.3 AST API. The application
+continues to use TypeScript 7 for checks and native Node 26 execution. Ajv is used
+only in tests; production has no new runtime dependencies, schema validation, or
+build step. `npm ci` installs both toolchains without overriding peer dependencies.
 
 | Endpoint | Behavior |
 | --- | --- |

@@ -30,7 +30,7 @@ export function create(options) {
         catch { storage = null; }
     }
     let lifecycle = createLifecycle(clock);
-    /** @type {import('../types').NodeInfo | null} */
+    /** @type {import('../types').NodeDisplayInfo | null} */
     let lastNodeInfo = null;
     /** @type {import('../types').NodeRefreshState} */
     const refreshState = { stale: false, lastSuccessfulRefresh: null };

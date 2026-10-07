@@ -16,10 +16,10 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "boolean",
-              "default": false,
-              "title": "Include Status"
-            }
+              "type": "string",
+              "default": "false"
+            },
+            "description": "Case-insensitive true/1/yes/on or false/0/no/off; omitted defaults to false."
           }
         ],
         "responses": {
@@ -36,22 +36,7 @@
                       }
                     },
                     {
-                      "type": "object",
-                      "required": [
-                        "peers",
-                        "status"
-                      ],
-                      "properties": {
-                        "peers": {
-                          "type": "array",
-                          "items": {
-                            "$ref": "#/components/schemas/Peer"
-                          }
-                        },
-                        "status": {
-                          "type": "object"
-                        }
-                      }
+                      "$ref": "#/components/schemas/PeerSnapshot"
                     }
                   ]
                 }
@@ -67,6 +52,19 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "HTTP request failure (including unexpected internal failures).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/RpcBusy"
           }
         }
       }
@@ -90,7 +88,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ActionResponse"
+                }
               }
             }
           },
@@ -125,6 +125,16 @@
           },
           "503": {
             "$ref": "#/components/responses/RpcBusy"
+          },
+          "default": {
+            "description": "HTTP request failure (including unexpected internal failures).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -153,7 +163,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ActionResponse"
+                }
               }
             }
           },
@@ -188,6 +200,16 @@
           },
           "503": {
             "$ref": "#/components/responses/RpcBusy"
+          },
+          "default": {
+            "description": "HTTP request failure (including unexpected internal failures).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -216,7 +238,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ActionResponse"
+                }
               }
             }
           },
@@ -251,6 +275,16 @@
           },
           "503": {
             "$ref": "#/components/responses/RpcBusy"
+          },
+          "default": {
+            "description": "HTTP request failure (including unexpected internal failures).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -279,7 +313,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ActionResponse"
+                }
               }
             }
           },
@@ -314,6 +350,16 @@
           },
           "503": {
             "$ref": "#/components/responses/RpcBusy"
+          },
+          "default": {
+            "description": "HTTP request failure (including unexpected internal failures).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -332,12 +378,24 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/BansResponse"
+                }
               }
             }
           },
           "503": {
             "$ref": "#/components/responses/RpcBusy"
+          },
+          "default": {
+            "description": "HTTP request failure (including unexpected internal failures).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -351,7 +409,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ActionResponse"
+                }
               }
             }
           },
@@ -366,6 +426,16 @@
           },
           "503": {
             "$ref": "#/components/responses/RpcBusy"
+          },
+          "default": {
+            "description": "HTTP request failure (including unexpected internal failures).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -386,75 +456,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "updates": {
-                      "$ref": "#/components/schemas/UpdateStatus"
-                    },
-                    "blockchain": {
-                      "type": [
-                        "object",
-                        "null"
-                      ],
-                      "properties": {
-                        "size_gb": {
-                          "type": "number"
-                        },
-                        "pruned": {
-                          "type": "boolean"
-                        },
-                        "indexed": {
-                          "type": "boolean",
-                          "description": "Legacy presence indicator: true for a valid syncing or ready transaction index."
-                        },
-                        "ibd": {
-                          "type": [
-                            "boolean",
-                            "null"
-                          ],
-                          "description": "Initial block download; null when unavailable."
-                        },
-                        "txindex_status": {
-                          "type": "string",
-                          "enum": [
-                            "disabled",
-                            "syncing",
-                            "ready",
-                            "unknown"
-                          ],
-                          "description": "Missing txindex in a successful index response means disabled. Failed or malformed readiness information means unknown."
-                        },
-                        "txindex_height": {
-                          "type": [
-                            "integer",
-                            "null"
-                          ],
-                          "minimum": 0,
-                          "maximum": 9007199254740991,
-                          "description": "Last indexed block height when readiness information is valid; otherwise null."
-                        }
-                      },
-                      "required": [
-                        "size_gb",
-                        "pruned",
-                        "indexed",
-                        "ibd",
-                        "txindex_status",
-                        "txindex_height"
-                      ]
-                    },
-                    "bitcoin_network": {
-                      "$ref": "#/components/schemas/BitcoinNetwork"
-                    },
-                    "providers": {
-                      "type": "object",
-                      "required": ["geoip"],
-                      "properties": {
-                        "geoip": { "$ref": "#/components/schemas/ProviderHealth" }
-                      },
-                      "description": "GeoIP provider health, independent of the internet reachability probe."
-                    }
-                  }
+                  "$ref": "#/components/schemas/DashboardInfo"
                 }
               }
             }
@@ -471,6 +473,16 @@
           },
           "503": {
             "$ref": "#/components/responses/RpcBusy"
+          },
+          "default": {
+            "description": "HTTP request failure (including unexpected internal failures).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -484,12 +496,24 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/MempoolResponse"
+                }
               }
             }
           },
           "503": {
             "$ref": "#/components/responses/RpcBusy"
+          },
+          "default": {
+            "description": "HTTP request failure (including unexpected internal failures).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -503,12 +527,24 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/BlockchainResponse"
+                }
               }
             }
           },
           "503": {
             "$ref": "#/components/responses/RpcBusy"
+          },
+          "default": {
+            "description": "HTTP request failure (including unexpected internal failures).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -536,7 +572,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/RecentBlocksResponse"
+                }
               }
             }
           },
@@ -552,6 +590,16 @@
           },
           "503": {
             "$ref": "#/components/responses/RpcBusy"
+          },
+          "default": {
+            "description": "HTTP request failure (including unexpected internal failures).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -565,9 +613,24 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/RpcInfo"
+                }
               }
             }
+          },
+          "default": {
+            "description": "HTTP request failure (including unexpected internal failures).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/RpcBusy"
           }
         }
       }
@@ -582,68 +645,23 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean"
-                    },
-                    "error": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "tips": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "time": {
-                            "type": [
-                              "number",
-                              "null"
-                            ]
-                          },
-                          "age_seconds": {
-                            "type": [
-                              "number",
-                              "null"
-                            ]
-                          }
-                        }
-                      }
-                    },
-                    "summary": {
-                      "type": [
-                        "object",
-                        "null"
-                      ],
-                      "properties": {
-                        "age_lookup_limited": {
-                          "type": "boolean",
-                          "description": "More tips exist than the 100-tip age lookup cap."
-                        },
-                        "age_lookup_limit": {
-                          "type": "integer",
-                          "const": 100
-                        },
-                        "age_lookup_timed_out": {
-                          "type": "boolean",
-                          "description": "Header age enrichment exceeded its time budget; some ages may be unavailable."
-                        },
-                        "generated_at": {
-                          "type": "number",
-                          "description": "Unix timestamp in seconds for this returned copy."
-                        }
-                      }
-                    }
-                  }
+                  "$ref": "#/components/schemas/ChainTipsResponse"
                 }
               }
             }
           },
           "503": {
             "$ref": "#/components/responses/RpcBusy"
+          },
+          "default": {
+            "description": "HTTP request failure (including unexpected internal failures).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "description": "Loads tips within 15 seconds including RPC queue time. Required tips have up to 10 seconds; optional blockchain metadata has up to 5 seconds concurrently. Up to 100 header ages are enriched by 4 workers for at most 5 seconds within the overall deadline. Optional timeouts preserve valid tips with null ages. Completed partial results are shared for 5 seconds; ages and generated_at are refreshed on independent returned copies."
@@ -663,6 +681,19 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "HTTP request failure (including unexpected internal failures).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/RpcBusy"
           }
         }
       }
@@ -676,7 +707,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                }
               }
             }
           },
@@ -688,6 +721,19 @@
           },
           "429": {
             "$ref": "#/components/responses/AdminRateLimited"
+          },
+          "default": {
+            "description": "HTTP request failure (including unexpected internal failures).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/RpcBusy"
           }
         },
         "security": [
@@ -720,6 +766,19 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "HTTP request failure (including unexpected internal failures).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/RpcBusy"
           }
         },
         "security": [
@@ -754,6 +813,19 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "HTTP request failure (including unexpected internal failures).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/RpcBusy"
           }
         },
         "security": [
@@ -775,34 +847,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "required": [
-                    "success",
-                    "message"
-                  ],
-                  "properties": {
-                    "success": {
-                      "type": "boolean"
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "added_rows": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "description": "Rows added during the completed import."
-                    },
-                    "updated_rows": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "description": "Rows updated during the completed import."
-                    },
-                    "skipped_rows": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "description": "Rows skipped as invalid during the completed import."
-                    }
-                  }
+                  "$ref": "#/components/schemas/GeoUpdateResponse"
                 }
               }
             }
@@ -815,6 +860,19 @@
           },
           "429": {
             "$ref": "#/components/responses/AdminRateLimited"
+          },
+          "default": {
+            "description": "HTTP request failure (including unexpected internal failures).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/RpcBusy"
           }
         },
         "security": [
@@ -835,9 +893,24 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/StatsResponse"
+                }
               }
             }
+          },
+          "default": {
+            "description": "HTTP request failure (including unexpected internal failures).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/RpcBusy"
           }
         }
       }
@@ -851,9 +924,24 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigResponse"
+                }
               }
             }
+          },
+          "default": {
+            "description": "HTTP request failure (including unexpected internal failures).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/RpcBusy"
           }
         },
         "description": "Runtime configuration without credentials. build.version is the release tag or dev; build.revision is the exact source commit. build.updates contains cached release update status."
@@ -869,10 +957,19 @@
             "content": {
               "text/event-stream": {
                 "schema": {
-                  "type": "string"
+                  "type": "string",
+                  "example": "event: message\ndata: {\"type\":\"connected\"}\n\nevent: system\ndata: {\"uptime\":null,\"uptime_sec\":null,\"download_bytes\":null,\"upload_bytes\":null,\"rx_bps\":null,\"tx_bps\":null,\"ts\":1700000000}\n\n"
                 }
               }
             }
+          }
+        },
+        "x-events": {
+          "message": {
+            "$ref": "#/components/schemas/SystemConnectedEvent"
+          },
+          "system": {
+            "$ref": "#/components/schemas/NodeMetrics"
           }
         }
       }
@@ -906,15 +1003,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean"
-                    }
-                  },
-                  "required": [
-                    "success"
-                  ]
+                  "$ref": "#/components/schemas/SuccessResponse"
                 }
               }
             }
@@ -927,6 +1016,19 @@
           },
           "403": {
             "$ref": "#/components/responses/CrossOriginRequest"
+          },
+          "default": {
+            "description": "HTTP request failure (including unexpected internal failures).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/RpcBusy"
           }
         },
         "security": [
@@ -966,19 +1068,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "required": [
-                    "geo_db_only_mode",
-                    "message"
-                  ],
-                  "properties": {
-                    "geo_db_only_mode": {
-                      "type": "boolean"
-                    },
-                    "message": {
-                      "type": "string"
-                    }
-                  }
+                  "$ref": "#/components/schemas/GeoDbOnlyResponse"
                 }
               }
             }
@@ -1002,6 +1092,19 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "HTTP request failure (including unexpected internal failures).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/RpcBusy"
           }
         },
         "security": [
@@ -1041,19 +1144,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "required": [
-                    "auto_update",
-                    "message"
-                  ],
-                  "properties": {
-                    "auto_update": {
-                      "type": "boolean"
-                    },
-                    "message": {
-                      "type": "string"
-                    }
-                  }
+                  "$ref": "#/components/schemas/GeoAutoUpdateResponse"
                 }
               }
             }
@@ -1077,6 +1168,19 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "HTTP request failure (including unexpected internal failures).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/RpcBusy"
           }
         },
         "security": [
@@ -1085,37 +1189,63 @@
           }
         ]
       }
+    },
+    "/healthz": {
+      "get": {
+        "summary": "HTTP liveness",
+        "operationId": "healthz",
+        "responses": {
+          "200": {
+            "description": "HTTP server is listening; this does not assert Bitcoin RPC readiness.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
       "AddressRequest": {
+        "type": "object",
         "properties": {
           "address": {
-            "type": "string",
-            "title": "Address",
-            "default": ""
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": "",
+            "description": "Omitted or null becomes the empty string; other values must be strings."
           }
         },
-        "type": "object",
-        "title": "AddressRequest"
+        "required": []
       },
       "PeerIdRequest": {
+        "type": "object",
         "properties": {
           "peer_id": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Peer Id"
+            "description": "Omitted or null becomes null. Numbers and nonempty strings are accepted only when Number(value) is a safe integer; numeric-string compatibility is preserved."
           }
         },
-        "type": "object",
-        "title": "PeerIdRequest"
+        "required": []
       },
       "ErrorResponse": {
         "type": "object",
@@ -1314,12 +1444,42 @@
       },
       "Peer": {
         "type": "object",
-        "required": [
-          "ping_ms",
-          "geo",
-          "is_public"
-        ],
         "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "network": {
+            "type": "string",
+            "description": "RPC network name, or inferred family. Known names are ipv4, ipv6, onion, i2p, cjdns; unknown RPC names are retained."
+          },
+          "ip": {
+            "type": "string"
+          },
+          "port": {
+            "type": "string",
+            "description": "Port text extracted from addr; empty string when no port is present. It is not normalized into a number."
+          },
+          "direction": {
+            "$ref": "#/components/schemas/PeerDirection"
+          },
+          "addr": {
+            "type": "string"
+          },
+          "subver": {
+            "type": "string"
+          },
+          "bytessent": {
+            "type": "number"
+          },
+          "bytesrecv": {
+            "type": "number"
+          },
+          "bytessent_fmt": {
+            "type": "string"
+          },
+          "bytesrecv_fmt": {
+            "type": "string"
+          },
           "ping_ms": {
             "type": [
               "number",
@@ -1328,37 +1488,1768 @@
             "minimum": 0,
             "description": "Measured ping in fractional milliseconds. Null means no valid measurement; measured zero is valid."
           },
-          "geo": { "$ref": "#/components/schemas/GeoMetadata" },
+          "conntime": {
+            "type": "number"
+          },
+          "conntime_fmt": {
+            "type": "string"
+          },
+          "version": {
+            "type": "number"
+          },
+          "connection_type": {
+            "type": "string"
+          },
+          "connection_type_abbrev": {
+            "type": "string"
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "services_abbrev": {
+            "type": "string"
+          },
+          "in_addrman": {
+            "type": "boolean"
+          },
+          "location": {
+            "type": "string"
+          },
+          "location_status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "private",
+              "ok",
+              "unavailable"
+            ]
+          },
+          "geo": {
+            "$ref": "#/components/schemas/GeoMetadata"
+          },
           "is_public": {
             "type": "boolean",
             "description": "Whether this peer has a public IPv4 or IPv6 address, using the same server classification as GeoIP lookup eligibility. Private, reserved, malformed, and overlay addresses are excluded. Independent of whether location or provider data is available."
+          },
+          "continent": {
+            "description": "GeoIP metadata retained from the dataset/provider; consumers must check its type before rendering."
+          },
+          "continentCode": {
+            "description": "GeoIP metadata retained from the dataset/provider; consumers must check its type before rendering."
+          },
+          "countryCode": {
+            "description": "GeoIP metadata retained from the dataset/provider; consumers must check its type before rendering."
+          },
+          "region": {
+            "description": "GeoIP metadata retained from the dataset/provider; consumers must check its type before rendering."
+          },
+          "regionName": {
+            "description": "GeoIP metadata retained from the dataset/provider; consumers must check its type before rendering."
+          },
+          "city": {
+            "description": "GeoIP metadata retained from the dataset/provider; consumers must check its type before rendering."
+          },
+          "district": {
+            "description": "GeoIP metadata retained from the dataset/provider; consumers must check its type before rendering."
+          },
+          "zip": {
+            "description": "GeoIP metadata retained from the dataset/provider; consumers must check its type before rendering."
+          },
+          "timezone": {
+            "description": "GeoIP metadata retained from the dataset/provider; consumers must check its type before rendering."
+          },
+          "currency": {
+            "description": "GeoIP metadata retained from the dataset/provider; consumers must check its type before rendering."
+          },
+          "isp": {
+            "description": "GeoIP metadata retained from the dataset/provider; consumers must check its type before rendering."
+          },
+          "org": {
+            "description": "GeoIP metadata retained from the dataset/provider; consumers must check its type before rendering."
+          },
+          "as": {
+            "description": "GeoIP metadata retained from the dataset/provider; consumers must check its type before rendering."
+          },
+          "asname": {
+            "description": "GeoIP metadata retained from the dataset/provider; consumers must check its type before rendering."
+          },
+          "country": {
+            "type": "string"
+          },
+          "lat": {
+            "type": "number"
+          },
+          "lon": {
+            "type": "number"
+          },
+          "offset": {
+            "description": "Raw provider offset or database utc_offset; defaults to 0."
+          },
+          "mobile": {
+            "description": "Raw provider flag or database 0/1; defaults to false."
+          },
+          "proxy": {
+            "description": "Raw provider flag or database 0/1; defaults to false."
+          },
+          "hosting": {
+            "description": "Raw provider flag or database 0/1; defaults to false."
+          },
+          "minping": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "lastsend": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "lastrecv": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "startingheight": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "synced_headers": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "synced_blocks": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "minfeefilter": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "mapped_as": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "addr_relay_enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "relaytxes": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "transport_protocol_type": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "addrlocal": {
+            "type": "string"
+          },
+          "bip152_hb_from": {
+            "type": "boolean"
+          },
+          "bip152_hb_to": {
+            "type": "boolean"
+          },
+          "last_transaction": {
+            "type": "number"
+          },
+          "last_block": {
+            "type": "number"
+          },
+          "timeoffset": {
+            "type": "number"
+          },
+          "addr_processed": {
+            "type": "number"
+          },
+          "addr_rate_limited": {
+            "type": "number"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
+        "required": [
+          "id",
+          "network",
+          "ip",
+          "port",
+          "direction",
+          "addr",
+          "subver",
+          "bytessent",
+          "bytesrecv",
+          "bytessent_fmt",
+          "bytesrecv_fmt",
+          "ping_ms",
+          "conntime",
+          "conntime_fmt",
+          "version",
+          "connection_type",
+          "connection_type_abbrev",
+          "services",
+          "services_abbrev",
+          "in_addrman",
+          "location",
+          "location_status",
+          "geo",
+          "is_public",
+          "continent",
+          "continentCode",
+          "countryCode",
+          "region",
+          "regionName",
+          "city",
+          "district",
+          "zip",
+          "timezone",
+          "currency",
+          "isp",
+          "org",
+          "as",
+          "asname",
+          "country",
+          "lat",
+          "lon",
+          "offset",
+          "mobile",
+          "proxy",
+          "hosting",
+          "minping",
+          "lastsend",
+          "lastrecv",
+          "startingheight",
+          "synced_headers",
+          "synced_blocks",
+          "minfeefilter",
+          "mapped_as",
+          "addr_relay_enabled",
+          "relaytxes",
+          "transport_protocol_type",
+          "session_id",
+          "addrlocal",
+          "bip152_hb_from",
+          "bip152_hb_to",
+          "last_transaction",
+          "last_block",
+          "timeoffset",
+          "addr_processed",
+          "addr_rate_limited",
+          "permissions"
+        ],
         "additionalProperties": true
       },
       "GeoMetadata": {
         "type": "object",
-        "required": ["source", "observed_at", "age_seconds", "freshness", "stale_after_seconds"],
+        "required": [
+          "source",
+          "observed_at",
+          "age_seconds",
+          "freshness",
+          "stale_after_seconds"
+        ],
         "properties": {
           "source": {
-            "type": ["string", "null"],
-            "enum": ["dataset", "ip_api", "unknown", null],
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "dataset",
+              "ip_api",
+              "unknown",
+              null
+            ],
             "description": "Provenance of the winning location record. Legacy records report unknown; absent locations report null."
           },
           "observed_at": {
-            "type": ["integer", "null"],
+            "type": [
+              "integer",
+              "null"
+            ],
             "description": "Location observation Unix timestamp, not dataset download time."
           },
           "age_seconds": {
-            "type": ["integer", "null"], "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
             "description": "Seconds since observation; null for missing, zero, or future timestamps."
           },
           "freshness": {
-            "type": "string", "enum": ["fresh", "stale", "unknown", "unavailable"],
+            "type": "string",
+            "enum": [
+              "fresh",
+              "stale",
+              "unknown",
+              "unavailable"
+            ],
             "description": "Usable locations become stale at 30 days. Stale and unknown-age public locations refresh when API lookup is enabled; existing coordinates remain usable. Failed refreshes retry after one hour, and missing locations retry after one minute."
           },
-          "stale_after_seconds": { "type": "integer", "const": 2592000 }
+          "stale_after_seconds": {
+            "type": "integer",
+            "const": 2592000
+          }
         }
+      },
+      "NetworkFamily": {
+        "type": "string",
+        "enum": [
+          "ipv4",
+          "ipv6",
+          "onion",
+          "i2p",
+          "cjdns"
+        ]
+      },
+      "PeerDirection": {
+        "type": "string",
+        "enum": [
+          "IN",
+          "OUT"
+        ]
+      },
+      "PeerStatus": {
+        "type": "object",
+        "properties": {
+          "connected": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "last_success_at": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "last_attempt_at": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "age_seconds": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Snapshot age in seconds, null before the first successful read."
+          },
+          "stale_after_seconds": {
+            "type": "number"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "connected",
+          "last_success_at",
+          "last_attempt_at",
+          "age_seconds",
+          "stale_after_seconds",
+          "error"
+        ]
+      },
+      "PeerSnapshot": {
+        "type": "object",
+        "properties": {
+          "peers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Peer"
+            }
+          },
+          "status": {
+            "$ref": "#/components/schemas/PeerStatus"
+          }
+        },
+        "required": [
+          "peers",
+          "status"
+        ]
+      },
+      "NodeAddress": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "port": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "score": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "address",
+          "port",
+          "score"
+        ]
+      },
+      "NetworkDetails": {
+        "type": "object",
+        "properties": {
+          "reachable": {
+            "type": "boolean"
+          },
+          "limited": {
+            "type": "boolean"
+          },
+          "proxy": {
+            "type": "string"
+          },
+          "localaddresses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NodeAddress"
+            }
+          }
+        },
+        "required": [
+          "reachable",
+          "limited",
+          "proxy",
+          "localaddresses"
+        ]
+      },
+      "NetworkSummary": {
+        "type": "object",
+        "properties": {
+          "ipv4": {
+            "$ref": "#/components/schemas/NetworkDetails"
+          },
+          "ipv6": {
+            "$ref": "#/components/schemas/NetworkDetails"
+          },
+          "onion": {
+            "$ref": "#/components/schemas/NetworkDetails"
+          },
+          "i2p": {
+            "$ref": "#/components/schemas/NetworkDetails"
+          },
+          "cjdns": {
+            "$ref": "#/components/schemas/NetworkDetails"
+          }
+        },
+        "required": [
+          "ipv4",
+          "ipv6",
+          "onion",
+          "i2p",
+          "cjdns"
+        ]
+      },
+      "NetworkScores": {
+        "type": "object",
+        "properties": {
+          "ipv4": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "ipv6": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "ipv4",
+          "ipv6"
+        ]
+      },
+      "NodeTraffic": {
+        "type": "object",
+        "properties": {
+          "download_bytes": {
+            "type": "number"
+          },
+          "upload_bytes": {
+            "type": "number"
+          },
+          "download_fmt": {
+            "type": "string"
+          },
+          "upload_fmt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "download_bytes",
+          "upload_bytes",
+          "download_fmt",
+          "upload_fmt"
+        ]
+      },
+      "NodeMetrics": {
+        "type": "object",
+        "properties": {
+          "uptime": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "uptime_sec": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "download_bytes": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "upload_bytes": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "rx_bps": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Received bytes/second, null before a rate baseline or when unavailable."
+          },
+          "tx_bps": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Sent bytes/second, null before a rate baseline or when unavailable."
+          },
+          "ts": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "uptime",
+          "uptime_sec",
+          "download_bytes",
+          "upload_bytes",
+          "rx_bps",
+          "tx_bps",
+          "ts"
+        ]
+      },
+      "GeoDatabaseStats": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "disabled",
+              "closed",
+              "not_found",
+              "ok",
+              "error"
+            ]
+          },
+          "entries": {
+            "type": "number"
+          },
+          "size_bytes": {
+            "type": "number"
+          },
+          "last_updated": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "oldest_updated": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "db_path": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "entries",
+          "size_bytes",
+          "last_updated",
+          "oldest_updated",
+          "db_path"
+        ]
+      },
+      "GeoStats": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "disabled",
+              "closed",
+              "not_found",
+              "ok",
+              "error"
+            ]
+          },
+          "entries": {
+            "type": "number"
+          },
+          "size_bytes": {
+            "type": "number"
+          },
+          "last_updated": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "oldest_updated": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "db_path": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "auto_lookup": {
+            "type": "boolean"
+          },
+          "auto_update": {
+            "type": "boolean"
+          },
+          "db_only_mode": {
+            "type": "boolean"
+          },
+          "newest_age_seconds": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "newest_age_days": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "oldest_age_days": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "status",
+          "entries",
+          "size_bytes",
+          "last_updated",
+          "oldest_updated",
+          "db_path",
+          "auto_lookup",
+          "auto_update",
+          "db_only_mode"
+        ]
+      },
+      "DashboardBlockchain": {
+        "type": "object",
+        "properties": {
+          "size_gb": {
+            "type": "number"
+          },
+          "pruned": {
+            "type": "boolean"
+          },
+          "indexed": {
+            "type": "boolean",
+            "description": "Legacy presence indicator: true for a valid syncing or ready transaction index."
+          },
+          "ibd": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Initial block download; null when unavailable."
+          },
+          "txindex_status": {
+            "type": "string",
+            "enum": [
+              "disabled",
+              "syncing",
+              "ready",
+              "unknown"
+            ],
+            "description": "Missing txindex in a successful index response means disabled. Failed or malformed readiness information means unknown."
+          },
+          "txindex_height": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Last indexed block height when readiness information is valid; otherwise null."
+          }
+        },
+        "required": [
+          "size_gb",
+          "pruned",
+          "indexed",
+          "ibd",
+          "txindex_status",
+          "txindex_height"
+        ]
+      },
+      "LastBlock": {
+        "type": "object",
+        "properties": {
+          "height": {
+            "type": "number"
+          },
+          "time": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "height",
+          "time"
+        ]
+      },
+      "DashboardInfo": {
+        "type": "object",
+        "properties": {
+          "blockchain": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DashboardBlockchain"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_block": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LastBlock"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "subversion": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "connected": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "services": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "network_details": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NetworkSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "network_scores": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NetworkScores"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "node_traffic": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NodeTraffic"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "node_metrics": {
+            "$ref": "#/components/schemas/NodeMetrics"
+          },
+          "mempool_size": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "bitcoin_network": {
+            "$ref": "#/components/schemas/BitcoinNetwork"
+          },
+          "internet_state": {
+            "type": "string",
+            "enum": [
+              "green",
+              "yellow",
+              "red"
+            ],
+            "description": "Independent internet reachability probe status."
+          },
+          "api_available": {
+            "type": "boolean"
+          },
+          "geo_db_only_mode": {
+            "type": "boolean"
+          },
+          "providers": {
+            "type": "object",
+            "required": [
+              "geoip"
+            ],
+            "properties": {
+              "geoip": {
+                "$ref": "#/components/schemas/ProviderHealth"
+              }
+            }
+          },
+          "geo_db_stats": {
+            "$ref": "#/components/schemas/GeoStats"
+          },
+          "updates": {
+            "$ref": "#/components/schemas/UpdateStatus"
+          }
+        },
+        "required": [
+          "blockchain",
+          "last_block",
+          "subversion",
+          "connected",
+          "services",
+          "network_details",
+          "network_scores",
+          "node_traffic",
+          "node_metrics",
+          "mempool_size",
+          "bitcoin_network",
+          "internet_state",
+          "api_available",
+          "geo_db_only_mode",
+          "providers",
+          "geo_db_stats",
+          "updates"
+        ]
+      },
+      "RecentBlock": {
+        "type": "object",
+        "properties": {
+          "height": {
+            "type": "number"
+          },
+          "hash": {
+            "type": "string"
+          },
+          "time": {
+            "type": "number"
+          },
+          "size": {
+            "type": "number"
+          },
+          "size_mb": {
+            "type": "number"
+          },
+          "weight": {
+            "type": "number"
+          },
+          "tx_count": {
+            "type": "number"
+          },
+          "version": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "difficulty": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "age_seconds": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "height",
+          "hash",
+          "time",
+          "size",
+          "size_mb",
+          "weight",
+          "tx_count",
+          "version",
+          "difficulty",
+          "age_seconds"
+        ]
+      },
+      "RecentBlocksSummary": {
+        "type": "object",
+        "properties": {
+          "chain": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tip_height": {
+            "type": "number"
+          },
+          "count": {
+            "type": "number"
+          },
+          "latest_time": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "total_size": {
+            "type": "number"
+          },
+          "avg_size_mb": {
+            "type": "number"
+          },
+          "total_transactions": {
+            "type": "number"
+          },
+          "avg_transactions": {
+            "type": "number"
+          },
+          "generated_at": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "chain",
+          "tip_height",
+          "count",
+          "latest_time",
+          "total_size",
+          "avg_size_mb",
+          "total_transactions",
+          "avg_transactions",
+          "generated_at"
+        ]
+      },
+      "RecentBlocksResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "blocks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecentBlock"
+            }
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RecentBlocksSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "success",
+          "blocks",
+          "error",
+          "summary"
+        ]
+      },
+      "ChainTip": {
+        "type": "object",
+        "properties": {
+          "height": {
+            "type": "number"
+          },
+          "hash": {
+            "type": "string"
+          },
+          "branch_length": {
+            "type": "number"
+          },
+          "status": {
+            "type": "string"
+          },
+          "status_label": {
+            "type": "string"
+          },
+          "time": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "age_seconds": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "is_active": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "height",
+          "hash",
+          "branch_length",
+          "status",
+          "status_label",
+          "time",
+          "age_seconds",
+          "is_active"
+        ]
+      },
+      "ChainTipsSummary": {
+        "type": "object",
+        "properties": {
+          "chain": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "best_height": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "best_hash": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "total": {
+            "type": "number"
+          },
+          "active_count": {
+            "type": "number"
+          },
+          "non_active_count": {
+            "type": "number"
+          },
+          "fork_count": {
+            "type": "number"
+          },
+          "headers_only_count": {
+            "type": "number"
+          },
+          "latest_non_active_height": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "latest_non_active_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "counts_by_status": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number"
+            }
+          },
+          "age_lookup_limited": {
+            "type": "boolean",
+            "description": "More tips exist than the 100-tip age lookup cap."
+          },
+          "age_lookup_limit": {
+            "type": "integer",
+            "const": 100
+          },
+          "age_lookup_timed_out": {
+            "type": "boolean",
+            "description": "Header age enrichment exceeded its time budget; some ages may be unavailable."
+          },
+          "generated_at": {
+            "type": "number",
+            "description": "Unix timestamp in seconds for this returned copy."
+          }
+        },
+        "required": [
+          "chain",
+          "best_height",
+          "best_hash",
+          "total",
+          "active_count",
+          "non_active_count",
+          "fork_count",
+          "headers_only_count",
+          "latest_non_active_height",
+          "latest_non_active_status",
+          "counts_by_status",
+          "age_lookup_limited",
+          "age_lookup_limit",
+          "age_lookup_timed_out",
+          "generated_at"
+        ]
+      },
+      "ChainTipsResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "tips": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChainTip"
+            }
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChainTipsSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "success",
+          "tips",
+          "error",
+          "summary"
+        ]
+      },
+      "MempoolData": {
+        "type": "object",
+        "properties": {
+          "size": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "bytes": {
+            "description": "RPC extension retained without type validation."
+          },
+          "usage": {
+            "description": "RPC extension retained without type validation."
+          },
+          "total_fee": {
+            "description": "RPC extension retained without type validation."
+          },
+          "maxmempool": {
+            "description": "RPC extension retained without type validation."
+          },
+          "mempoolminfee": {
+            "description": "RPC extension retained without type validation."
+          },
+          "minrelaytxfee": {
+            "description": "RPC extension retained without type validation."
+          },
+          "fullrbf": {
+            "description": "RPC extension retained without type validation."
+          },
+          "unbroadcastcount": {
+            "description": "RPC extension retained without type validation."
+          }
+        },
+        "required": [],
+        "additionalProperties": true
+      },
+      "BlockchainData": {
+        "type": "object",
+        "properties": {
+          "chain": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "blocks": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "bestblockhash": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "size_on_disk": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "pruned": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "initialblockdownload": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "headers": {
+            "description": "RPC extension retained without type validation."
+          },
+          "difficulty": {
+            "description": "RPC extension retained without type validation."
+          },
+          "mediantime": {
+            "description": "RPC extension retained without type validation."
+          },
+          "softforks": {
+            "description": "RPC extension retained without type validation."
+          }
+        },
+        "required": [
+          "initialblockdownload"
+        ],
+        "additionalProperties": true
+      },
+      "MempoolResponse": {
+        "type": "object",
+        "properties": {
+          "mempool": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MempoolData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "mempool",
+          "error"
+        ]
+      },
+      "BlockchainResponse": {
+        "type": "object",
+        "properties": {
+          "blockchain": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BlockchainData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "blockchain",
+          "error"
+        ]
+      },
+      "ActionResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": "string"
+          },
+          "address": {
+            "type": "string"
+          },
+          "banned_ip": {
+            "type": "string"
+          },
+          "network": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "success"
+        ]
+      },
+      "BansResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "bans": {
+            "description": "Raw listbanned response, normally an array of ban entries. Retained without shape validation; empty array on failure."
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "success",
+          "bans"
+        ]
+      },
+      "BanEntry": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "ban_created": {
+            "type": "number"
+          },
+          "banned_until": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "address",
+          "ban_created",
+          "banned_until"
+        ],
+        "description": "Conventional listbanned entry; listbanned is passed through unchanged rather than validated against this schema.",
+        "additionalProperties": true
+      },
+      "SuccessResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success"
+        ]
+      },
+      "GeoUpdateResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "skipped_rows": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "added_rows": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "updated_rows": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "success",
+          "message",
+          "skipped_rows"
+        ]
+      },
+      "GeoDbOnlyResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "geo_db_only_mode": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "success",
+          "geo_db_only_mode",
+          "message"
+        ]
+      },
+      "GeoAutoUpdateResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "auto_update": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "success",
+          "auto_update",
+          "message"
+        ]
+      },
+      "StatsResponse": {
+        "type": "object",
+        "properties": {
+          "system_stats": {
+            "$ref": "#/components/schemas/NodeMetrics"
+          }
+        },
+        "required": [
+          "system_stats"
+        ]
+      },
+      "RpcInfo": {
+        "type": "object",
+        "properties": {
+          "scheme": {
+            "type": "string"
+          },
+          "host": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer"
+          },
+          "network": {
+            "type": "string",
+            "enum": [
+              "main",
+              "test",
+              "testnet4",
+              "signet",
+              "regtest"
+            ]
+          },
+          "endpoint": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "scheme",
+          "host",
+          "port",
+          "network",
+          "endpoint"
+        ]
+      },
+      "ConfigResponse": {
+        "type": "object",
+        "properties": {
+          "bitcoin_rpc": {
+            "type": "object",
+            "properties": {
+              "scheme": {
+                "type": "string"
+              },
+              "host": {
+                "type": "string"
+              },
+              "port": {
+                "type": "integer"
+              },
+              "network": {
+                "type": "string",
+                "enum": [
+                  "main",
+                  "test",
+                  "testnet4",
+                  "signet",
+                  "regtest"
+                ]
+              },
+              "endpoint": {
+                "type": "string"
+              },
+              "verify_tls": {
+                "type": "boolean"
+              },
+              "timeout": {
+                "type": "number"
+              },
+              "startup_timeout": {
+                "type": "number"
+              },
+              "username_configured": {
+                "type": "boolean"
+              },
+              "password_configured": {
+                "type": "boolean"
+              },
+              "password_file_configured": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "scheme",
+              "host",
+              "port",
+              "network",
+              "endpoint",
+              "verify_tls",
+              "timeout",
+              "startup_timeout",
+              "username_configured",
+              "password_configured",
+              "password_file_configured"
+            ]
+          },
+          "server": {
+            "type": "object",
+            "properties": {
+              "listen_address": {
+                "type": "string"
+              },
+              "listen_port": {
+                "type": "integer"
+              },
+              "log_level": {
+                "type": "string",
+                "enum": [
+                  "debug",
+                  "info",
+                  "warn",
+                  "error"
+                ]
+              }
+            },
+            "required": [
+              "listen_address",
+              "listen_port",
+              "log_level"
+            ]
+          },
+          "management": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "enabled"
+            ]
+          },
+          "geoip": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "auto_update_override": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "enabled",
+              "auto_update_override"
+            ]
+          },
+          "build": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "string"
+              },
+              "revision_known": {
+                "type": "boolean"
+              },
+              "asset_revision": {
+                "type": "string"
+              },
+              "revision_url": {
+                "type": "string"
+              },
+              "updates": {
+                "$ref": "#/components/schemas/UpdateStatus"
+              }
+            },
+            "required": [
+              "version",
+              "revision",
+              "revision_known",
+              "asset_revision",
+              "revision_url",
+              "updates"
+            ]
+          },
+          "repository": {
+            "type": "object",
+            "properties": {
+              "github": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "github",
+              "url"
+            ]
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "data_dir": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "data_dir"
+            ]
+          }
+        },
+        "required": [
+          "bitcoin_rpc",
+          "server",
+          "management",
+          "geoip",
+          "build",
+          "repository",
+          "data"
+        ]
+      },
+      "HealthResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "ok"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "SystemConnectedEvent": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "connected"
+          }
+        },
+        "required": [
+          "type"
+        ]
       }
     },
     "responses": {
