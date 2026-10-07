@@ -55,6 +55,14 @@ for (const engine of [chromium, firefox, webkit]) {
         await page.locator('#connect-addr-input').fill('8.8.8.8:8333');
         await page.locator('#connect-go-btn').click();
         await page.locator('#admin-token-input').waitFor({ state: 'visible' });
+        await page.keyboard.press('Escape');
+        await page.locator('#admin-token-modal').waitFor({ state: 'detached' });
+        assert.equal(await page.locator('#connect-peer-modal').isVisible(), true, 'Escape closes only the nested token prompt');
+        await page.waitForFunction(() => !document.getElementById('connect-go-btn').disabled && document.activeElement.id === 'connect-go-btn');
+        assert.equal(await page.locator('#connect-go-btn').isEnabled(), true);
+        assert.equal(await page.evaluate(() => document.activeElement.id), 'connect-go-btn', 'cancellation restores focus to the enabled parent action');
+        await page.locator('#connect-go-btn').click();
+        await page.locator('#admin-token-input').waitFor({ state: 'visible' });
         await page.locator('#admin-token-input').fill(FIXTURE_ADMIN_TOKEN);
         await page.locator('#admin-token-submit').click();
         await page.locator('#admin-token-modal').waitFor({ state: 'detached' });
