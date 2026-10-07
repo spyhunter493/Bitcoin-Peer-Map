@@ -34,6 +34,10 @@ for (const engine of [chromium, firefox, webkit]) {
         });
         const page = await context.newPage();
         page.on('pageerror', error => errors.push(error.message));
+        const specification = await (await page.request.get(base + '/openapi.json')).json();
+        const methods = new Set(['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace']);
+        const operationCount = Object.values(specification.paths).reduce((count, path) => count + Object.keys(path).filter(method => methods.has(method)).length, 0);
+        assert.ok(operationCount > 0, 'the canonical specification exposes operations');
         await page.goto(base, { waitUntil: 'domcontentloaded' });
         await page.waitForFunction(() => document.querySelectorAll('#peer-tbody tr').length >= 10 && document.querySelectorAll('#as-donut .as-donut-segment').length > 0 && document.getElementById('mo-status')?.textContent === 'Synced');
         const fonts = await page.evaluate(async () => Promise.all([600, 700, 900].map(async weight => {
@@ -80,10 +84,42 @@ for (const engine of [chromium, firefox, webkit]) {
         assert.equal(await page.evaluate(() => globalThis.injectedScriptExecuted), false);
         assert.equal(await page.evaluate(() => getComputedStyle(document.body).getPropertyValue('--injected-style')), '');
 
+        await page.evaluate(() => {
+            globalThis.inlineEventExecuted = false;
+            const button = document.createElement('button');
+            button.id = 'csp-event-probe';
+            button.type = 'button';
+            button.textContent = 'CSP event probe';
+            Object.assign(button.style, { position: 'fixed', top: '8px', left: '8px', zIndex: '10000' });
+            button.setAttribute('onclick', 'globalThis.inlineEventExecuted = true');
+            document.body.append(button);
+        });
+        await page.locator('#csp-event-probe').click();
+        await page.waitForFunction(() => globalThis.securityViolations.some(event => event.directive === 'script-src-attr'));
+        assert.equal(await page.evaluate(() => globalThis.inlineEventExecuted), false);
+
+        // Execute the probe as an allowed same-origin script: automation's own
+        // evaluation context can bypass CSP and cannot test unsafe-eval denial.
+        await page.route('**/static/browser-tests/execution-probe.js', route => route.fulfill({
+            contentType: 'application/javascript',
+            body: `
+                globalThis.executionProbe = { loaded: true, evalExecuted: false, functionExecuted: false, errors: [] };
+                try { eval('globalThis.executionProbe.evalExecuted = true'); }
+                catch (error) { globalThis.executionProbe.errors.push(error.name); }
+                try { new Function('globalThis.executionProbe.functionExecuted = true')(); }
+                catch (error) { globalThis.executionProbe.errors.push(error.name); }
+            `,
+        }));
+        await page.addScriptTag({ url: `${base}/static/browser-tests/execution-probe.js` });
+        assert.deepEqual(await page.evaluate(() => globalThis.executionProbe), {
+            loaded: true, evalExecuted: false, functionExecuted: false, errors: ['EvalError', 'EvalError'],
+        });
+        await page.waitForFunction(() => globalThis.securityViolations.some(event => event.blocked === 'eval'));
+
         for (const path of ['/docs?url=https://example.invalid/spec&configUrl=https://example.invalid/config', '/redoc']) {
             await page.goto(base + path, { waitUntil: 'domcontentloaded' });
             await page.locator('.swagger-ui .opblock').first().waitFor();
-            assert.equal(await page.locator('.swagger-ui .opblock').count(), 25);
+            assert.equal(await page.locator('.swagger-ui .opblock').count(), operationCount);
             assert.deepEqual(await page.evaluate(() => globalThis.securityViolations), [], 'documentation does not contact a validator or accept a query configuration');
         }
         await page.locator('.auth-wrapper .authorize').click();
@@ -113,10 +149,29 @@ for (const engine of [chromium, firefox, webkit]) {
         assert.deepEqual(external, []);
         assert.deepEqual(errors, []);
 
-        // A separate origin attempts to embed a page that normally renders.
+        const embedding = `<!doctype html><html><body><iframe name="protected" src="${base}/docs"></iframe></body></html>`;
+        const assertFrameDenied = async (hostUrl, label) => {
+            const protectedResponse = page.waitForResponse(response => response.url() === base + '/docs' && response.request().isNavigationRequest());
+            const parent = await page.goto(hostUrl, { waitUntil: 'load' });
+            assert.equal(parent.headers()['content-security-policy'], undefined, 'the embedding fixture must allow frames');
+            assert.equal(await page.locator('iframe[name="protected"]').count(), 1);
+            const response = await protectedResponse;
+            assert.equal(response.status(), 200, 'the unmodified application handles the frame request');
+            assert.equal(response.headers()['x-frame-options'], 'DENY');
+            const child = page.frame({ name: 'protected' });
+            if (child) assert.equal(await child.locator('#swagger-ui').count(), 0, label);
+        };
+
+        // An unprotected same-origin fixture tests the child's policy rather
+        // than the application's separate frame-src restriction on parents.
+        const sameOriginHost = `${base}/browser-tests/frame-host`;
+        await page.route(sameOriginHost, route => route.fulfill({ contentType: 'text/html', body: embedding }));
+        await assertFrameDenied(sameOriginHost, 'same-origin framing must not render the document');
+
+        // A separate origin also attempts to embed the normally working page.
         const host = createServer((_request, response) => {
             response.setHeader('Content-Type', 'text/html');
-            response.end(`<!doctype html><html><body><iframe name="protected" src="${base}/docs"></iframe></body></html>`);
+            response.end(embedding);
         });
         host.listen(0, '127.0.0.1'); await once(host, 'listening');
         t.after(() => new Promise(resolve => host.close(resolve)));
@@ -124,9 +179,7 @@ for (const engine of [chromium, firefox, webkit]) {
         assert.ok(hostAddress && typeof hostAddress !== 'string');
         const hostBase = `http://127.0.0.1:${hostAddress.port}`;
         allowedOrigins.add(hostBase);
-        await page.goto(hostBase, { waitUntil: 'load' });
-        const child = page.frame({ name: 'protected' });
-        if (child) assert.equal(await child.locator('#swagger-ui').count(), 0, 'a framed document must not render');
+        await assertFrameDenied(hostBase, 'cross-origin framing must not render the document');
         assert.deepEqual(external, []);
     });
 }
