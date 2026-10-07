@@ -1,0 +1,2 @@
+# Preserve upstream asset bytes, including license formatting, across checkouts.
+src/static/vendor/** -text -whitespace linguist-vendored

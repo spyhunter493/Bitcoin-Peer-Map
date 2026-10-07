@@ -5,6 +5,12 @@ export default async function assertPeerActionGeometry(browser, baseUrl) {
     await context.route(/https:\/\/fonts\.(googleapis|gstatic)\.com\//, route => route.abort());
     await context.addInitScript(() => localStorage.setItem('bpm.antarcticaDisclaimerSeen', 'true'));
     const page = await context.newPage();
+    await page.route('**/static/browser-tests/action-font*.css', route => route.fulfill({
+        contentType: 'text/css',
+        body: route.request().url().endsWith('action-font-large.css')
+            ? '.peer-table .peer-action-btn { font-size: 36px; }'
+            : '.peer-table .peer-action-btn { font-family: "Unavailable BPM font", monospace; font-size: 13px; }',
+    }));
     const snapshot = await (await page.request.get(`${baseUrl}/api/peers?include_status=true`)).json();
     const publicPeer = snapshot.peers.find(peer => peer.network === 'ipv4' && peer.is_public);
     const peers = Array.from({ length: 500 }, (_, index) => ({ ...publicPeer, id: index + 1 }));
@@ -16,9 +22,9 @@ export default async function assertPeerActionGeometry(browser, baseUrl) {
         await page.waitForSelector('#peer-tbody tr[data-net="ipv4"]');
         // Exercise fallback fonts and enlarged action text, as with a browser's
         // minimum font size. The Actions column must use the rendered controls.
-        await page.addStyleTag({ content: '.peer-table .peer-action-btn { font-family: "Unavailable BPM font", monospace; font-size: 13px; }' });
+        await page.addStyleTag({ url: `${baseUrl}/static/browser-tests/action-font.css` });
         for (const width of [900, 520, 1638, 320]) {
-            if (width === 320) await page.addStyleTag({ content: '.peer-table .peer-action-btn { font-size: 36px; }' });
+            if (width === 320) await page.addStyleTag({ url: `${baseUrl}/static/browser-tests/action-font-large.css` });
             await page.setViewportSize({ width, height: 900 });
             assert.equal(await page.locator('#peer-tbody .peer-table-spacer').count(), 2,
                 'width measurement skips the leading virtual spacer');

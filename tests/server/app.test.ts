@@ -145,7 +145,9 @@ test('static files support cache revalidation, immutable revisions, compression,
 });
 test('every relative frontend dependency is available in the revision namespace', async t => {
     const { base, get } = await application(t), prefix = '/static/v/abcdef0123456789/';
-    const pending = [`${prefix}js/app.js`], visited = new Set<string>();
+    const documents = await Promise.all(['/', '/docs'].map(async path => (await get(path)).text()));
+    const pending = documents.flatMap(html => [...html.matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map(match => match[1]).filter(path => path.startsWith(`${prefix}js/`)));
+    const visited = new Set<string>();
     while (pending.length) {
         const path = pending.pop()!; if (visited.has(path)) continue; visited.add(path);
         assert.ok(path.startsWith(prefix));

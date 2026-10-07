@@ -5,9 +5,12 @@
   "type": "module",
   "scripts": {
     "check:js": "node scripts/check-js.js",
+    "sync:assets": "node scripts/vendor-assets.js",
+    "check:assets": "node scripts/vendor-assets.js --check",
     "test:js": "cd tests/unit && node --test",
     "benchmark:dashboard": "node scripts/benchmark-dashboard.js",
     "test:layout": "node --test tests/test_layout.js",
+    "test:browser-security": "node --test tests/browser/security.test.js",
     "test:layout:docker": "scripts/test-layout-docker.sh",
     "check:types": "tsc --noEmit && tsc -p tsconfig.server.json",
     "start": "node src/server/main.ts",
@@ -19,11 +22,13 @@
     "check:api": "node scripts/api-codegen/generate.js --check"
   },
   "devDependencies": {
-    "@types/node": "26.6.4",
-    "playwright": "1.63.0",
-    "typescript": "7.0.2",
     "@bpm/api-codegen": "file:scripts/api-codegen",
-    "ajv": "8.20.0"
+    "@fontsource-variable/cinzel": "5.3.0",
+    "@types/node": "26.6.4",
+    "ajv": "8.20.0",
+    "playwright": "1.63.0",
+    "swagger-ui-dist": "5.33.1",
+    "typescript": "7.0.2"
   },
   "engines": {
     "node": ">=26.0.0 <27"

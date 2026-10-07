@@ -15,6 +15,7 @@ import { createAdminAuthentication } from './admin-auth.ts';
 import { createLogger } from './logging.ts';
 import { RpcBusyError } from './rpc.ts';
 import type { ApiRoutes, RouteHandler } from './api-routes.ts';
+import { setSecurityHeaders } from './security.ts';
 
 const log = createLogger('http');
 
@@ -54,6 +55,7 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
     const template = readFileSync(join(packageDir, 'templates/index.html'), 'utf8');
     const values: Record<string, string> = { version, asset_revision: assets, repository_url: repositoryUrl, repository_discussions_url: `${repositoryUrl}/discussions` };
     const html = template.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key) => escapeHtml(values[key] ?? ''));
+    const docs = `<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Bitcoin Peer Map API</title><link rel="stylesheet" href="/static/v/${assets}/vendor/swagger-ui/swagger-ui.css"></head><body><div id="swagger-ui"></div><script defer src="/static/v/${assets}/vendor/swagger-ui/swagger-ui-bundle.js"></script><script defer src="/static/v/${assets}/js/docs.js"></script></body></html>`;
     const schema: Data = JSON.parse(readFileSync(new URL('./openapi.json', import.meta.url), 'utf8'));
     if (!object(schema.info)) throw new Error('OpenAPI schema is missing its info object');
     schema.info.version = version;
@@ -100,6 +102,8 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
         'GET /openapi.json': () => schema,
     } satisfies ApiRoutes;
     const server = createServer(async (req, res) => {
+        // Set before routing so HEAD, errors, conditional assets, and streams agree.
+        setSecurityHeaders(res);
         const controller = new AbortController();
         const disconnected = () => { if (!res.writableFinished) controller.abort(new DOMException('Client disconnected', 'AbortError')); };
         res.once('close', disconnected);
@@ -109,7 +113,6 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
             if (method === 'POST' && url.pathname.startsWith('/api/')) requireDashboardOrigin(req);
             if (method === 'GET' && url.pathname === '/') { res.setHeader('Cache-Control', 'no-cache'); await sendResponse(req, res, html, 200, 'text/html'); return; }
             if (method === 'GET' && ['/docs', '/redoc'].includes(url.pathname)) {
-                const docs = '<!doctype html><html><head><title>Bitcoin Peer Map API</title><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css"></head><body><div id="swagger-ui"></div><script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script><script>SwaggerUIBundle({url:"/openapi.json",dom_id:"#swagger-ui"})</script></body></html>';
                 await sendResponse(req, res, docs, 200, 'text/html'); return;
             }
             if (method === 'GET' && url.pathname.startsWith('/static/')) {

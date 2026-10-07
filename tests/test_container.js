@@ -103,6 +103,32 @@ try {
     }
     assert.equal(await docker('exec', name, 'id', '-u'), '10001');
     await docker('exec', name, 'sh', '-c', 'test -z "$(command -v python)" && test -z "$(command -v python3)" && test ! -d /app/node_modules');
+    // Checked-in browser assets must ship intact without runtime dependencies.
+    await docker('exec', name, 'node', '--input-type=module', '-e', `
+        import assert from 'node:assert/strict';
+        import { readFileSync } from 'node:fs';
+        import { createHash } from 'node:crypto';
+        const root = './src/static/vendor/';
+        const manifest = JSON.parse(readFileSync(root + 'manifest.json', 'utf8'));
+        assert.equal(manifest.packages.length, 2);
+        for (const package_ of manifest.packages) for (const file of package_.files) {
+            const bytes = readFileSync(root + file.path);
+            assert.equal(bytes.length, file.bytes);
+            assert.equal(createHash('sha256').update(bytes).digest('hex'), file.sha256);
+        }
+    `);
+    const docs = await fetch(base + '/docs');
+    assert.equal(docs.status, 200);
+    assert.equal(docs.headers.get('X-Frame-Options'), 'DENY');
+    assert.match(docs.headers.get('Content-Security-Policy'), /script-src 'self'/);
+    const documentation = await docs.text();
+    assert.equal(/https?:\/\//.test(documentation), false);
+    for (const [, asset] of documentation.matchAll(/(?:src|href)="([^"]+)"/g)) {
+        const response = await fetch(base + asset);
+        assert.equal(response.status, 200, asset);
+        assert.equal(response.headers.get('Cache-Control'), 'public, max-age=31536000, immutable');
+        await response.arrayBuffer();
+    }
     assert.equal((await get('/api/connectivity')).geo_db_only_mode, true);
     assert.equal((await fetch(base + '/api/geodb/db-only', { method: 'POST', body: '{"enabled":false}' })).status, 401);
     assert.equal((await get('/api/connectivity')).geo_db_only_mode, true, 'unauthenticated request cannot change saved settings');
@@ -133,7 +159,7 @@ try {
     assert.equal((await get('/api/connectivity')).geo_db_only_mode, true);
     assert.equal((await get('/api/info')).geo_db_stats.entries, 1);
     await stop();
-    console.log('Production container smoke test passed: no Python, non-root/read-only operation, existing SQLite/preferences, health check, recreation, and clean shutdown');
+    console.log('Production container smoke test passed: local browser assets, no Python, non-root/read-only operation, existing SQLite/preferences, health check, recreation, and clean shutdown');
 } catch (error) {
     console.error(await docker('logs', name).catch(() => 'Container unavailable'));
     throw error;
