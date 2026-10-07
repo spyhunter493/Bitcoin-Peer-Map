@@ -450,10 +450,11 @@ excluded. There is no push, PR, tag-push, or manual-dispatch publish trigger.
    unchecked and select **Set as the latest release**.
 5. Publish the release. The workflow validates the tag, checks out the release
    event's exact commit, verifies the tag still resolves to that commit and the
-   commit is part of `main`, then builds a Linux AMD64/ARM64 image once with QEMU
-   and Docker Buildx. It loads the multi-platform index into the runner's
-   containerd image store, runs the production smoke test on both architectures
-   with the baked release version and revision, and uploads that same image
+   commit is part of `main`, then checks the version and SHA image tags for an
+   existing verified release. When neither exists, it builds a Linux AMD64/ARM64
+   image once with QEMU and Docker Buildx. It loads the multi-platform index into
+   the runner's containerd image store, runs the production smoke test on both
+   architectures with the baked release version and revision, and uploads that same image
    only after both pass. There is no rebuild between testing and publication.
    It verifies the registry index digest, both architecture manifests, and their
    build metadata before attaching the SHA tag or promoting `latest`. It uses
@@ -461,7 +462,11 @@ excluded. There is no push, PR, tag-push, or manual-dispatch publish trigger.
    only the publish job has `packages: write`.
 6. Wait for **Release → Publish container image** to succeed before announcing
    the image or deploying it. If a build fails, fix the cause and rerun the failed
-   workflow from Actions without moving the published tag.
+   workflow from Actions without moving the published tag. If publication stopped
+   after either immutable image tag was written, the rerun skips rebuilding and
+   pulls the original index by digest for both architectures. It verifies the
+   release metadata and runs both smoke tests again before completing missing
+   tags or promoting `latest`.
 
 For a new highest version `v1.3.0`, all three tags identify the same tested
 multi-architecture image:
@@ -483,8 +488,10 @@ Actions summary records both tested architectures, the index digest, and why
 `latest` was promoted or skipped.
 
 Never move/reuse published version tags or repurpose SHA tags. The workflow
-rejects publication if either existing tag identifies a different index digest;
-rerunning a successful release cannot replace its image with a rebuilt one.
+rejects existing tags with the wrong release version or source commit, or version
+and SHA tags identifying different index digests. Reruns preserve the original
+verified digest and write only missing immutable tags; a successful release can
+be rerun without replacing its image.
 Pin a version or image digest for deployments that must not follow `latest`.
 The GitHub Release becomes visible before the image build completes, so a notice
 can briefly precede image availability.

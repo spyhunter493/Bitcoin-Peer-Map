@@ -91,8 +91,32 @@ export function createRegistryReader({ fetcher = fetch, username = process.env.G
     };
 }
 
+export async function findPublishedReleaseImage({ version, revision }, { readImage = createRegistryReader() } = {}) {
+    if (!parseReleaseVersion(version) || !revisionPattern.test(revision || '')) throw new Error('A stable release version and full commit SHA are required');
+    let published;
+    for (const reference of [version, `sha-${revision}`]) {
+        const existing = await readImage(reference, { allowMissing: true });
+        if (!existing) continue;
+        assert.match(existing.digest, digestPattern, 'Published image must have a valid index digest');
+        assert.equal(existing.version, version, `Published ${reference} must match the release version`);
+        assert.equal(existing.revision, revision, `Published ${reference} must match the release commit`);
+        if (published && published.digest !== existing.digest) throw new Error('Published version and SHA tags identify different image digests');
+        published = existing;
+    }
+    if (published) assert.deepEqual(await readImage(published.digest), published, 'Published digest must retain the verified release metadata');
+    return published || null;
+}
+
 export async function publishReleaseImage({ image, digest, version, revision }, { execute = run, readImage = createRegistryReader(), smoke = 'tests/test_container.js' } = {}) {
-    if (!image || !digestPattern.test(digest || '') || !parseReleaseVersion(version) || !revisionPattern.test(revision || '')) throw new Error('A local image, index digest, stable release version, and full commit SHA are required');
+    const existingRelease = await findPublishedReleaseImage({ version, revision }, { readImage });
+    if (existingRelease) {
+        // Resume from the immutable index, even if this attempt already rebuilt a different image.
+        digest = existingRelease.digest;
+        image = `${IMAGE_REPOSITORY}@${digest}`;
+        for (const platform of RELEASE_PLATFORMS) await execute('docker', ['image', 'pull', '--platform', platform, image]);
+    } else if (!image || !digestPattern.test(digest || '')) {
+        throw new Error('A local image and index digest are required for an unpublished release');
+    }
     const verifyLocalIndex = async () => {
         const descriptor = JSON.parse(await execute('docker', ['image', 'inspect', '--format', '{{json .Descriptor}}', image]));
         assert.equal(descriptor?.digest, digest, 'Local image index must match the original build digest');
@@ -106,15 +130,25 @@ export async function publishReleaseImage({ image, digest, version, revision }, 
     }
     await verifyLocalIndex();
     const references = [version, `sha-${revision}`];
+    const expected = { digest, version, revision };
+    const images = new Map();
     for (const reference of references) {
         const existing = await readImage(reference, { allowMissing: true });
         if (existing && existing.digest !== digest) throw new Error(`Refusing to replace published ${reference} with a different image digest`);
+        if (existing) assert.deepEqual(existing, expected, `Published ${reference} must match the tested release metadata`);
+        images.set(reference, existing);
     }
-    await execute('docker', ['image', 'tag', image, `${IMAGE_REPOSITORY}:${version}`]);
-    await execute('docker', ['image', 'push', `${IMAGE_REPOSITORY}:${version}`]);
+    if (!images.get(version)) {
+        if (existingRelease) {
+            await execute('docker', ['buildx', 'imagetools', 'create', '--tag', `${IMAGE_REPOSITORY}:${version}`, `${IMAGE_REPOSITORY}@${digest}`]);
+        } else {
+            await execute('docker', ['image', 'tag', image, `${IMAGE_REPOSITORY}:${version}`]);
+            await execute('docker', ['image', 'push', `${IMAGE_REPOSITORY}:${version}`]);
+        }
+    }
     const published = await readImage(version);
-    assert.deepEqual(published, { digest, version, revision }, 'Published image must match the exact tested release index');
-    await execute('docker', ['buildx', 'imagetools', 'create', '--tag', `${IMAGE_REPOSITORY}:sha-${revision}`, `${IMAGE_REPOSITORY}@${digest}`]);
+    assert.deepEqual(published, expected, 'Published image must match the exact tested release index');
+    if (!images.get(`sha-${revision}`)) await execute('docker', ['buildx', 'imagetools', 'create', '--tag', `${IMAGE_REPOSITORY}:sha-${revision}`, `${IMAGE_REPOSITORY}@${digest}`]);
     assert.deepEqual(await readImage(`sha-${revision}`), published, 'Version and SHA tags must identify the same tested index');
 
     // This read happens immediately before promotion, inside the workflow's serialized job.
@@ -129,10 +163,17 @@ export async function publishReleaseImage({ image, digest, version, revision }, 
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
     try {
-        const result = await publishReleaseImage({ image: process.env.BPM_RELEASE_IMAGE, digest: process.env.BPM_RELEASE_DIGEST, version: process.env.BPM_RELEASE_VERSION, revision: process.env.BPM_RELEASE_REVISION });
-        const summary = `Tested ${result.version} (${result.revision}) on ${result.platforms.join(', ')}.\nImage index: ${result.digest}\nLatest ${result.latest}: ${result.reason}\n`;
-        console.log(summary);
-        if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
+        const release = { image: process.env.BPM_RELEASE_IMAGE, digest: process.env.BPM_RELEASE_DIGEST, version: process.env.BPM_RELEASE_VERSION, revision: process.env.BPM_RELEASE_REVISION };
+        if (process.argv[2] === '--find-existing') {
+            const existing = await findPublishedReleaseImage(release);
+            console.log(existing ? `Resuming verified release index ${existing.digest}` : 'No published release image exists; a build is required');
+            if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `digest=${existing?.digest || ''}\nimage=${existing ? `${IMAGE_REPOSITORY}@${existing.digest}` : ''}\n`);
+        } else {
+            const result = await publishReleaseImage(release);
+            const summary = `Tested ${result.version} (${result.revision}) on ${result.platforms.join(', ')}.\nImage index: ${result.digest}\nLatest ${result.latest}: ${result.reason}\n`;
+            console.log(summary);
+            if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
+        }
     } catch (error) {
         console.error(error.message);
         process.exitCode = 1;
