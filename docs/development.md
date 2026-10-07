@@ -176,12 +176,34 @@ callbacks. Controllers supply current-data getters and connect presentation and
 navigation effects. Snapshot reconciliation preserves active filters, tooltip
 geometry, focus, and scroll without applying user-navigation cleanup.
 
+`distribution/controller.js` exports `create({ dashboard, hooks?, document? })`.
+The map creates one instance and passes it into preferences, private-network
+views, and the renderer. Navigation state comes from the supplied dashboard;
+derived data, snapshot deduplication, integration hooks, cached elements, and
+child controllers belong to that instance. Replacing hooks updates the same
+object used by navigation and removes callbacks omitted from the replacement.
+
+`distribution/model.js` owns provider and country aggregates, scores, active-lens
+selectors, and summary data. Its peer snapshot, palette, segment limit, connection
+labels, and optional clock are explicit inputs. `presentation.js` renders centers,
+panels, lens chrome, highlights, and connection origins through model getters and
+lazy navigation callbacks. `controls.js` owns persistent DOM listeners and its
+observer. Initialization is idempotent; controller disposal is terminal and removes
+listeners, closes active exploration, and cancels timers and animation callbacks.
+
 The map controller connects polling, peer snapshots, settings, and navigation.
 `map/renderer.js` coordinates the camera and canvas surfaces; `basemap.js` owns
 geography loading and cached paths, `peer-renderer.js` owns peer animation and
 hit testing, and `connection-renderer.js` draws lines from distribution and
 private-network views. `input.js` binds pointer, touch, table, and badge input;
 `controls.js` binds dashboard buttons.
+
+`map/camera.js` contains pure peer framing, bounds, interpolation, drag, and
+cursor-anchored zoom calculations. `map/world-wrap.js` calculates visible world
+copies and distances across the longitude seam. These helpers take dimensions,
+camera values, and configuration as arguments and return values without reading
+DOM or mutating application state. The renderer, navigation, and input modules
+apply the results; existing geometry and navigation exports remain available.
 
 Geography and static connections have separate cached canvas layers. Peer
 animations continue at the existing frame rate; reduced-motion scenes redraw on

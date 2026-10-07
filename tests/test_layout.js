@@ -25,6 +25,7 @@ import assertNetworkExamples from './test_network_examples.js';
 import assertTableSettings from './test_table_settings.js';
 import assertKeyboardNavigation from './test_keyboard_navigation.js';
 import assertDistributionCoverage from './test_distribution_coverage.js';
+import assertDistributionLifecycle from './test_distribution_lifecycle.js';
 
 const repoRoot = path.resolve(import.meta.dirname, '..');
 
@@ -901,6 +902,7 @@ const suites = [
     ['dashboard polling and reduced motion', assertDashboardLifecycle],
     ['GeoIP settings', assertGeoIPSettings],
     ['distribution coverage', assertDistributionCoverage],
+    ['distribution controller lifecycle', assertDistributionLifecycle],
     ['node services', assertNodeServices],
     ['RPC node metrics', assertNodeMetrics],
     ['shared accessible dialogs', assertSharedDialogs],

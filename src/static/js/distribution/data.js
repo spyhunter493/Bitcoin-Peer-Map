@@ -250,7 +250,7 @@ function distributionScore(groups, denominator) {
 /**
  * @param {import('../types').DistributionGroup[]} groups
  * @param {number} denominator
- * @param {{maxSegments?: number; palette?: string[]; othersNoun?: string}} [options]
+ * @param {{maxSegments?: number; palette?: readonly string[]; othersNoun?: string}} [options]
  */
 function buildDonutSegments(groups, denominator, options) {
     const config = options || {};

@@ -1,5 +1,7 @@
 import * as geometry from './geometry.js';
-import { project, lerp, clamp } from './geometry.js';
+import { clamp } from './geometry.js';
+import { cameraSettled, interpolateCamera, verticalPanBounds } from './camera.js';
+import { worldWrapOffsets } from './world-wrap.js';
 import * as Basemap from './basemap.js';
 import * as PeerRenderer from './peer-renderer.js';
 import * as ConnectionRenderer from './connection-renderer.js';
@@ -20,7 +22,7 @@ import * as ConnectionRenderer from './connection-renderer.js';
  * @property {() => boolean} showAntarcticaPeers
  * @property {() => import('../types').Point | null} getPrivateInsightOrigin
  * @property {(network: string) => import('../types').Point | null} getPnMiniLegendDotPos
- * @property {Pick<typeof import('../distribution/controller.js'), 'getLineOriginForAs'>} distribution
+ * @property {Pick<ReturnType<typeof import('../distribution/controller.js').create>, 'getLineOriginForAs'>} distribution
  * @property {import('../types').GeometryLoaderOptions['fetchJson']} fetchJson
  * @property {() => void} onResize
  */
@@ -151,19 +153,11 @@ export function create(options) {
  * @param {import('../types').Camera} viewState
  * @param {number} margin */
     function getWrapOffsetsFor(viewState, margin) {
-        return geometry.worldWrapOffsets(mapView.width, viewState, margin);
+        return worldWrapOffsets(mapView.width, viewState, margin);
     }
 
     function getWrapOffsets() {
         return getWrapOffsetsFor(view, 200);
-    }
-
-    function cameraSettled() {
-        return (
-            Math.abs(view.x - mapView.target.x) < 0.25 &&
-            Math.abs(view.y - mapView.target.y) < 0.25 &&
-            Math.abs(view.zoom - mapView.target.zoom) < 0.001
-        );
     }
 
     /**
@@ -179,49 +173,13 @@ export function create(options) {
      *     world edges (±85°) never retreat inside the viewport.
      */
     function clampView() {
-        // ── Horizontal: free (wrapping handles it) ──
-        // No clamping on view.x or targetView.x
-
-        // ── Vertical: Mercator bounds at ±85° latitude ──
-        const yTop = project(0, 85).y; // ~0.035
-        const yBot = project(0, -85).y; // ~0.965
-        const centerY = ((yTop + yBot) / 2 - 0.5) * mapView.height;
-
-        if (view.zoom <= 1.001) {
-            // At zoom 1: lock vertical position — no panning at all
-            view.y = centerY;
-            mapView.target.y = centerY;
+        const { minimum, maximum } = verticalPanBounds(mapView.height, view.zoom, privateState.privateNetMode);
+        if (minimum === maximum) {
+            view.y = minimum;
+            mapView.target.y = minimum;
         } else {
-            // Zoomed in: allow vertical pan within bounds.
-            // World top in screen space = (yTop - 0.5) * H * zoom + H/2 - y * zoom
-            // We want that to be <= 0 (world top at or above screen top)
-            // => y >= (yTop - 0.5) * H + H / (2 * zoom)
-            // Similarly, world bottom must be >= H (at or below screen bottom)
-            // => y <= (yBot - 0.5) * H - H / (2 * zoom)
-            let minPanY = (yTop - 0.5) * mapView.height + mapView.height / (2 * view.zoom);
-            let maxPanY = (yBot - 0.5) * mapView.height - mapView.height / (2 * view.zoom);
-
-            // [PRIVATE-NET] In private mode, relax south bound so camera can center
-            // on Antarctica, and tighten north bound so user stays near the pole
-            if (privateState.privateNetMode) {
-                // Allow the view to push past the normal south edge (ocean beyond -85°)
-                // so Antarctica can actually be centered on screen at moderate zoom
-                const extraSouth = mapView.height * 0.35;
-                maxPanY += extraSouth;
-                // Restrict northward panning to ~50°S
-                const pnNorthLimit = project(0, -50).y;
-                const pnMinPanY = (pnNorthLimit - 0.5) * mapView.height;
-                minPanY = Math.max(minPanY, pnMinPanY);
-            }
-
-            if (minPanY >= maxPanY) {
-                // World doesn't fill screen vertically — center it
-                view.y = centerY;
-                mapView.target.y = centerY;
-            } else {
-                view.y = clamp(view.y, minPanY, maxPanY);
-                mapView.target.y = clamp(mapView.target.y, minPanY, maxPanY);
-            }
+            view.y = clamp(view.y, minimum, maximum);
+            mapView.target.y = clamp(mapView.target.y, minimum, maximum);
         }
     }
 
@@ -233,21 +191,13 @@ export function create(options) {
 
         // Direct tracking keeps pointer-driven movement responsive. Programmatic
         // zoom and focus changes retain the existing eased camera movement.
-        if (interacting || reducedMotion) {
-            view.x = mapView.target.x;
-            view.y = mapView.target.y;
-            view.zoom = mapView.target.zoom;
-        } else {
-            view.x = lerp(view.x, mapView.target.x, CFG.panSmooth);
-            view.y = lerp(view.y, mapView.target.y, CFG.panSmooth);
-            view.zoom = lerp(view.zoom, mapView.target.zoom, CFG.panSmooth);
-        }
+        Object.assign(view, interpolateCamera(view, mapView.target, CFG.panSmooth, interacting || reducedMotion));
 
         // Lock view within world bounds
         clampView();
         basemap.ensureZoomDetailLoaded(Math.max(view.zoom, mapView.target.zoom));
 
-        const settled = cameraSettled();
+        const settled = cameraSettled(view, mapView.target);
         document.body.classList.toggle('map-camera-moving', !settled && !interacting);
         if (settled && !interacting) {
             view.x = mapView.target.x;

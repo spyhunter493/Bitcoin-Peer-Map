@@ -8,7 +8,7 @@ import { dashboard as BPMDashboard } from '../core/dashboard-state.js';
 import * as BPMPreferences from '../settings/preferences.js';
 import * as BPMPolling from '../core/polling.js';
 import * as BPMNodeDashboard from '../node/dashboard.js';
-import * as BPMDistribution from '../distribution/controller.js';
+import * as BPMDistributionController from '../distribution/controller.js';
 import * as BPMPrivateNetwork from '../peers/private-network.js';
 import * as BPMWorldMap from './geometry.js';
 import * as BPMPeerRefresh from '../peers/refresh.js';
@@ -18,6 +18,7 @@ import * as BPMModal from '../core/modal.js';
 function create() {
     'use strict';
     const dashboard = BPMDashboard;
+    const BPMDistribution = BPMDistributionController.create({ dashboard });
     /** @type {import('../types').MapView} */
     const mapView = { width: 0, height: 0, nodes: [], target: { x: 0, y: 0, zoom: 1 } };
 
@@ -93,6 +94,7 @@ function create() {
     };
 
     const preferences = BPMPreferences.create({
+        distribution: BPMDistribution,
         config: CFG,
         onAction(type) {
             switch (type) {
@@ -233,6 +235,7 @@ function create() {
     // ═══════════════════════════════════════════════════════════
 
     const privateNetwork = BPMPrivateNetwork.create({
+        distribution: BPMDistribution,
         mapView,
         settings: advSettings,
         onAction(action) {

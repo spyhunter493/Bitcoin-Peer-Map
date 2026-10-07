@@ -184,7 +184,7 @@ for (const html of [
     assert.ok(html.includes('&lt;'), 'the label should remain visible as literal text');
 }
 
-assert.strictEqual(typeof BPMDistribution.openPeerDetailPanel, 'function');
+assert.strictEqual(typeof BPMDistribution.create({ dashboard: BPMDashboardState.create() }).openPeerDetailPanel, 'function');
 
 console.log('Distribution feature module tests passed');
 

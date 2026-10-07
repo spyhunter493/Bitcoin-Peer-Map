@@ -5,12 +5,11 @@ import * as BPMWorldMap from '../map/geometry.js';
 import * as BPMFormat from '../core/format.js';
 import * as BPMPrivateNetworkPanel from './private-panel.js';
 import * as BPMPeerDetail from './detail.js';
-import * as BPMDistribution from '../distribution/controller.js';
 import * as BPMDomState from '../core/dom-state.js';
 /**
- * @param {{mapView: import('../types').MapView; settings: import('../types').AdvancedSettings; onAction: (action: import('../types').PrivateNetworkAction) => void}} options
+ * @param {{distribution: ReturnType<typeof import('../distribution/controller.js').create>; mapView: import('../types').MapView; settings: import('../types').AdvancedSettings; onAction: (action: import('../types').PrivateNetworkAction) => void}} options
  */
-function create({ mapView, settings: advSettings, onAction }) {
+function create({ distribution: BPMDistribution, mapView, settings: advSettings, onAction }) {
     const dashboard = BPMDashboard;
     const privateState = dashboard.privateNetwork;
     const PRIVATE_NETS = new Set(['onion', 'i2p', 'cjdns']);

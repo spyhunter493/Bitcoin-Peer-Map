@@ -223,3 +223,20 @@ test('pinned groups reconcile arrivals and departures while empty filters stay a
     f.navigation.filterPeerTable(null);
     assert.equal(f.dashboard.interaction.asFilterPeerIds, null);
 });
+
+test('group reconciliation retains peers across the dateline and repeated worlds', () => {
+    const f = fixture();
+    const seed = f.peers[0];
+    f.replace([{ ...seed, id: 1, lon: 179.8 }, { ...seed, id: 2, lon: -179.8 }]);
+    const navigation = create({ ...minimalOptions(f), screenToWorld: () => ({ lon: 180, lat: 0 }) });
+    navigation.selectGroup(f.nodes, 600, 450);
+    f.replace([...f.peers, { ...seed, id: 3, lon: 170 }, { ...seed, id: 4, lon: 540 },
+        { ...seed, id: 5, lon: 180, lat: 20 }]);
+    navigation.reconcile();
+    assert.deepEqual(f.dashboard.interaction.groupedNodes.map(node => node.peerId), [1, 2, 4]);
+    assert.deepEqual([...f.dashboard.interaction.mapFilterPeerIds], [1, 2, 4]);
+    f.replace(f.peers.filter(peer => peer.id === 3 || peer.id === 5));
+    navigation.reconcile();
+    assert.deepEqual(f.dashboard.interaction.groupedNodes, []);
+    assert.equal(f.dashboard.interaction.mapFilterPeerIds.size, 0);
+});

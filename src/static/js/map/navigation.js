@@ -1,28 +1,7 @@
 import { project } from './geometry.js';
-
-/** Compute the existing peer framing target without applying selection effects.
- * @param {import('../types').MapNode} node
- * @param {import('../types').PeerCameraOptions} options
- * @returns {import('../types').Camera}
- */
-export function peerCameraTarget(node, { width, height, panelCollapsed, maxZoom }) {
-    const point = project(node.lon, node.lat);
-    const targetScreenY = 40 + (height - (panelCollapsed ? 32 : 340) - 40) * 0.35;
-    let zoom = 3;
-    for (; zoom <= maxZoom; zoom += 0.2) {
-        const offset = (height / 2 - targetScreenY) / zoom;
-        const candidate = (point.y - 0.5) * height - offset;
-        const minY = (project(0, 85).y - 0.5) * height + height / (2 * zoom);
-        const maxY = (project(0, -85).y - 0.5) * height - height / (2 * zoom);
-        if (minY < maxY && candidate >= minY && candidate <= maxY) break;
-    }
-    zoom = Math.min(zoom, maxZoom);
-    return {
-        x: (point.x - 0.5) * width - (width * 0.04) / zoom,
-        y: (point.y - 0.5) * height - (height / 2 - targetScreenY) / zoom,
-        zoom,
-    };
-}
+import { peerCameraTarget } from './camera.js';
+import { wrappedWorldDistance } from './world-wrap.js';
+export { peerCameraTarget } from './camera.js';
 
 /** @param {import('../types').MapNavigationOptions} options */
 export function create(options) {
@@ -218,8 +197,7 @@ export function create(options) {
         const group = options.getNodes().filter((node) => {
             if (!node.alive || (selection.privateGroup && !privateNetworks.has(node.peer.network))) return false;
             const point = project(node.lon, node.lat);
-            const deltaX = Math.abs(point.x - selection.point.x) % 1;
-            const dx = Math.min(deltaX, 1 - deltaX) / selection.radiusX;
+            const dx = wrappedWorldDistance(point.x, selection.point.x) / selection.radiusX;
             const dy = (point.y - selection.point.y) / selection.radiusY;
             return dx * dx + dy * dy < 1;
         });
