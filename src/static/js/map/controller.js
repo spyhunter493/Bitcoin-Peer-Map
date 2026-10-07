@@ -8,7 +8,7 @@ import { dashboard as BPMDashboard } from '../core/dashboard-state.js';
 import * as BPMPreferences from '../settings/preferences.js';
 import * as BPMPolling from '../core/polling.js';
 import * as BPMNodeDashboard from '../node/dashboard.js';
-import * as BPMDistribution from '../distribution/controller.js';
+import * as BPMDistributionController from '../distribution/controller.js';
 import * as BPMPrivateNetwork from '../peers/private-network.js';
 import * as BPMWorldMap from './geometry.js';
 import * as BPMPeerRefresh from '../peers/refresh.js';
@@ -18,6 +18,7 @@ import * as BPMModal from '../core/modal.js';
 function create() {
     'use strict';
     const dashboard = BPMDashboard;
+    const BPMDistribution = BPMDistributionController.create({ dashboard });
     /** @type {import('../types').MapView} */
     const mapView = { width: 0, height: 0, nodes: [], target: { x: 0, y: 0, zoom: 1 } };
 
@@ -93,6 +94,7 @@ function create() {
     };
 
     const preferences = BPMPreferences.create({
+        distribution: BPMDistribution,
         config: CFG,
         onAction(type) {
             switch (type) {
@@ -179,6 +181,7 @@ function create() {
     // ═══════════════════════════════════════════════════════════
 
     const nodeDashboard = BPMNodeDashboard.create({
+        dashboard,
         config: CFG,
         onAction(action) {
             switch (action.type) {
@@ -233,6 +236,8 @@ function create() {
     // ═══════════════════════════════════════════════════════════
 
     const privateNetwork = BPMPrivateNetwork.create({
+        dashboard,
+        distribution: BPMDistribution,
         mapView,
         settings: advSettings,
         onAction(action) {
@@ -796,7 +801,24 @@ function create() {
     // INIT — Start everything
     // ═══════════════════════════════════════════════════════════
 
+    /** Release feature-owned requests, timers and listeners when leaving the page.
+     * BFCache suspension retains the dashboard so returning preserves its view.
+     * @param {PageTransitionEvent} event */
+    function handlePageHide(event) {
+        if (event.persisted) return;
+        peerPolling.stop();
+        nodeDashboard.dispose();
+        privateNetwork.dispose();
+        BPMDistribution.dispose();
+        antDialog?.close(false);
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+        window.removeEventListener('pagehide', handlePageHide);
+    }
+
+    let started = false;
     function init() {
+        if (started) return;
+        started = true;
         // Capture dark theme CSS defaults before any overrides
         preferences.init();
 
@@ -826,6 +848,7 @@ function create() {
         infoPolling.start();
 
         document.addEventListener('visibilitychange', handleVisibilityChange);
+        window.addEventListener('pagehide', handlePageHide);
 
         showAntarcticaDisclaimerOnce();
 

@@ -571,18 +571,25 @@ function create(options) {
         animation = { state: 'idle', target: null, progress: 0, startedAt: 0 };
     }
 
-    if (motionQuery && motionQuery.addEventListener) {
-        motionQuery.addEventListener('change', () => {
-            if (!motionQuery.matches || animation.state === 'idle' || animation.state === 'expanded') return;
-            clearAnimationHandles();
-            if (animation.state === 'expanding') {
-                animation.state = 'expanded';
-                animation.progress = 1;
-            } else {
-                animation = { state: 'idle', target: null, progress: 0, startedAt: 0 };
-            }
-            renderDonut();
-        });
+    function onMotionChange() {
+        if (!motionQuery?.matches || animation.state === 'idle' || animation.state === 'expanded') return;
+        clearAnimationHandles();
+        if (animation.state === 'expanding') {
+            animation.state = 'expanded';
+            animation.progress = 1;
+        } else {
+            animation = { state: 'idle', target: null, progress: 0, startedAt: 0 };
+        }
+        renderDonut();
+    }
+    motionQuery?.addEventListener?.('change', onMotionChange);
+
+    function dispose() {
+        stopAnimation();
+        motionQuery?.removeEventListener?.('change', onMotionChange);
+        for (const element of [elements.svg, elements.legend, elements.center, elements.insight]) {
+            if (element) element.replaceChildren();
+        }
     }
 
     function renderLegend() {
@@ -995,6 +1002,7 @@ function create(options) {
         animateExpand,
         animateRevert,
         stopAnimation,
+        dispose,
         getAnimationState: () => animation.state,
         getAnimationTarget: () => animation.target,
         updateLoading,

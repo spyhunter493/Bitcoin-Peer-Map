@@ -1,12 +1,11 @@
 import { queryAll, required } from '../core/dom.js';
 import * as BPMModal from '../core/modal.js';
 import * as BPMWorldMap from '../map/geometry.js';
-import * as BPMDistribution from '../distribution/controller.js';
 import * as BPMDisplaySettings from './advanced.js';
 /**
- * @param {{config: import('../types').DashboardConfig; onAction: (type: 'theme' | 'map-style' | 'intervals' | 'peer-interval' | 'private-show' | 'private-hide') => void}} options
+ * @param {{distribution: ReturnType<typeof import('../distribution/controller.js').create>; config: import('../types').DashboardConfig; onAction: (type: 'theme' | 'map-style' | 'intervals' | 'peer-interval' | 'private-show' | 'private-hide') => void}} options
  */
-function create({ config: CFG, onAction }) {
+function create({ distribution: BPMDistribution, config: CFG, onAction }) {
     const escapeHtml = BPMModal.escapeHtml;
     const clamp = BPMWorldMap.clamp;
     const repositoryDiscussionsUrl = document.body.dataset.repositoryUrl + '/discussions';

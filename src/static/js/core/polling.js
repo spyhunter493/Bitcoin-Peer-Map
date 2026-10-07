@@ -1,6 +1,7 @@
-/** @param {import('../types').PollingOptions} options
+/** @param {import('../types').PollingOptions & {clock?: Pick<Window, 'setInterval' | 'clearInterval'>}} options
  *  @returns {import('../types').PollingController} */
 function create(options) {
+    const clock = options.clock || globalThis;
     let intervalMs = options.intervalMs;
     /** @type {number | null} */
     let timer = null;
@@ -19,13 +20,13 @@ function create(options) {
     }
 
     function stop() {
-        if (timer !== null) globalThis.clearInterval(timer);
+        if (timer !== null) clock.clearInterval(timer);
         timer = null;
     }
 
     function start() {
         stop();
-        timer = globalThis.setInterval(() => {
+        timer = clock.setInterval(() => {
             run().catch(options.onError || console.error);
         }, intervalMs);
     }

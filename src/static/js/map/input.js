@@ -1,5 +1,6 @@
 import { queryAll, required, closest } from '../core/dom.js';
-import { project, clamp } from './geometry.js';
+import { clamp } from './geometry.js';
+import { panCamera, wheelCameraTarget } from './camera.js';
 
 /** @typedef {object} Options
  * @property {HTMLCanvasElement} canvas
@@ -26,7 +27,7 @@ import { project, clamp } from './geometry.js';
 export function create(options) {
     const { canvas, mapView, view, interaction, privateState, peerTable, mapNavigation,
         showGroupHoverTooltip, showDisconnectDialog, exitPrivateNetMode, getNetworkStats } = options;
-    const { setMapInteraction, screenToWorld, findNodesAtScreen } = options.renderer;
+    const { setMapInteraction, findNodesAtScreen } = options.renderer;
     const hideTooltip = mapNavigation.hideTooltip;
     const CFG = options.config;
     const ALL_NETS = new Set(['ipv4', 'ipv6', 'onion', 'i2p', 'cjdns']);
@@ -93,11 +94,7 @@ export function create(options) {
             const dx = e.clientX - dragStart.x;
             const dy = e.clientY - dragStart.y;
             if (Math.abs(dx) > 3 || Math.abs(dy) > 3) dragMoved = true;
-            mapView.target.x = dragViewStart.x - dx / dragZoom;
-            // At zoom 1, vertical panning is locked (clampView enforces it)
-            if (dragZoom > 1.001) {
-                mapView.target.y = dragViewStart.y - dy / dragZoom;
-            }
+            Object.assign(mapView.target, panCamera(dragViewStart, { x: dx, y: dy }, dragZoom));
             if (dragMoved && !interaction.groupedNodes) hideTooltip();
         } else {
             // Hover detection for tooltip + table highlight (group-aware)
@@ -176,27 +173,9 @@ export function create(options) {
             }, 140);
             const dir = e.deltaY < 0 ? 1 : -1;
             const factor = dir > 0 ? CFG.zoomStep : 1 / CFG.zoomStep;
-            const newZoom = clamp(mapView.target.zoom * factor, CFG.minZoom, CFG.maxZoom);
-
-            // Remember world point under cursor before zoom
-            const mx = e.clientX;
-            const my = e.clientY;
-            const worldBefore = screenToWorld(mx, my);
-
-            mapView.target.zoom = newZoom;
-
-            // Adjust pan so the world point stays under the cursor after zoom
-            const pBefore = project(worldBefore.lon, worldBefore.lat);
-            const sxAfter =
-                (pBefore.x - 0.5) * mapView.width * mapView.target.zoom +
-                mapView.width / 2 -
-                mapView.target.x * mapView.target.zoom;
-            const syAfter =
-                (pBefore.y - 0.5) * mapView.height * mapView.target.zoom +
-                mapView.height / 2 -
-                mapView.target.y * mapView.target.zoom;
-            mapView.target.x += (sxAfter - mx) / mapView.target.zoom;
-            mapView.target.y += (syAfter - my) / mapView.target.zoom;
+            Object.assign(mapView.target, wheelCameraTarget(view, mapView.target, { x: e.clientX, y: e.clientY }, {
+                width: mapView.width, height: mapView.height, factor, minZoom: CFG.minZoom, maxZoom: CFG.maxZoom,
+            }));
         },
         { passive: false }
     );
@@ -229,11 +208,7 @@ export function create(options) {
             if (touchStart && e.touches.length === 1) {
                 const dx = e.touches[0].clientX - touchStart.x;
                 const dy = e.touches[0].clientY - touchStart.y;
-                mapView.target.x = dragViewStart.x - dx / touchZoom;
-                // At zoom 1, vertical panning is locked
-                if (touchZoom > 1.001) {
-                    mapView.target.y = dragViewStart.y - dy / touchZoom;
-                }
+                Object.assign(mapView.target, panCamera(dragViewStart, { x: dx, y: dy }, touchZoom));
             }
         },
         { passive: true }

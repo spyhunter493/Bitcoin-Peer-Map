@@ -263,15 +263,36 @@ export function renderNodeDetails(info, refreshState) {
 }
 
 /**
- * @param {{getNodeInfo: () => import('../types').NodeInfo | null; getRefreshState: () => import('../types').NodeRefreshState; formatBytes: (bytes: number) => string}} options
+ * @param {{getNodeInfo: () => import('../types').NodeInfo | null; getRefreshState: () => import('../types').NodeRefreshState; formatBytes: (bytes: number) => string; document?: Document; api?: typeof BPMApi}} options
  */
 function create(options) {
+    const document = options.document || globalThis.document;
+    const api = options.api || BPMApi;
+    /** @type {Set<import('../types').ModalController>} */
+    const dialogs = new Set();
+    /** @param {import('../types').ModalOptions} modalOptions */
+    function openDialog(modalOptions) {
+        const dialog = modal.open({ ...modalOptions, document, onClose: () => dialogs.delete(dialog) });
+        dialogs.add(dialog);
+        return dialog;
+    }
+    /** @template T @param {import('../types').ModalOptions & {url: string; render(data: T): string}} modalOptions */
+    function openFetchedDialog(modalOptions) {
+        const dialog = modal.openFetched({ ...modalOptions, api, document, onClose: () => dialogs.delete(dialog) });
+        dialogs.add(dialog);
+        return dialog;
+    }
+    function dispose() {
+        for (const dialog of dialogs) dialog.close(false);
+        dialogs.clear();
+    }
+
     const getNodeInfo = options.getNodeInfo;
     const formatBytes = options.formatBytes;
     const getRefreshState = options.getRefreshState;
 
     function openRecentBlocks() {
-        return modal.openFetched({
+        return openFetchedDialog({
             id: 'recent-blocks-modal',
             closeId: 'recent-blocks-close',
             bodyId: 'recent-blocks-body',
@@ -279,12 +300,11 @@ function create(options) {
             maxWidth: 900,
             url: '/api/blocks/recent?limit=25',
             render: /** @param {import('../types').RecentBlocksResponse} data */ (data) => renderRecentBlocks(data, formatBytes),
-            api,
         });
     }
 
     function openChainTips() {
-        return modal.openFetched({
+        return openFetchedDialog({
             id: 'chain-tips-modal',
             closeId: 'chain-tips-close',
             bodyId: 'chain-tips-body',
@@ -292,12 +312,11 @@ function create(options) {
             maxWidth: 820,
             url: '/api/chain-tips',
             render: renderChainTips,
-            api,
         });
     }
 
     function openNodeInfo() {
-        const dialog = modal.open({
+        const dialog = openDialog({
             id: 'node-info-modal',
             closeId: 'node-info-close',
             bodyId: 'node-info-body',
@@ -486,10 +505,10 @@ function create(options) {
     }
 
     function refreshNodeInfo() {
-        const section = query('#ni-node-section');
+        const section = query('#ni-node-section', document);
         if (section) section.innerHTML = renderNodeDetails(getNodeInfo(), getRefreshState());
     }
-    return Object.freeze({ openNodeInfo, openRecentBlocks, openChainTips, refreshNodeInfo });
+    return Object.freeze({ openNodeInfo, openRecentBlocks, openChainTips, refreshNodeInfo, dispose });
 }
 
 /**

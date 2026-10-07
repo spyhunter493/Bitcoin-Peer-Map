@@ -38,11 +38,15 @@ function toggleRow(label, id, enabled, title) {
 }
 
 /**
- * @param {{getNodeInfo: () => import('../types').NodeInfo | null; refreshInfo: () => Promise<void>}} options
+ * @param {{getNodeInfo: () => import('../types').NodeInfo | null; refreshInfo: () => Promise<void>; document?: Document; clock?: Pick<Window, 'setInterval' | 'clearInterval'>; nowSeconds?: () => number}} options
  */
-export function create({ getNodeInfo, refreshInfo }) {
+export function create({ getNodeInfo, refreshInfo, document = globalThis.document, clock = document.defaultView || globalThis, nowSeconds = () => Date.now() / 1000 }) {
+    /** @type {import('../types').ModalController | null} */
+    let currentDialog = null;
+    function dispose() { currentDialog?.close(false); currentDialog = null; }
     function open() {
-        const dialog = modal.open({ id: 'geodb-modal', title: 'GeoIP DB', maxWidth: 480 });
+        const dialog = modal.open({ id: 'geodb-modal', title: 'GeoIP DB', maxWidth: 480, document, onClose: () => { currentDialog = null; } });
+        currentDialog = dialog;
         const stats = getNodeInfo()?.geo_db_stats;
         if (!stats) {
             dialog.body.textContent = 'No GeoDB data available';
@@ -53,7 +57,7 @@ export function create({ getNodeInfo, refreshInfo }) {
         function renderProviderHealth() {
             const info = getNodeInfo();
             const provider = info?.providers?.geoip;
-            const now = Date.now() / 1000;
+            const now = nowSeconds();
             let html = modal.row('GeoIP provider', provider?.state || 'Unknown', 'Health of ip-api.com, independent of the Google reachability probe');
             if (info?.geo_db_only_mode) html += modal.row('External lookups', 'Off', 'Cached locations are used without contacting ip-api.com');
             if (provider?.last_success_at != null) html += modal.row('Last success', formatGeoAge(Math.max(0, now - provider.last_success_at)) + ' ago');
@@ -62,8 +66,8 @@ export function create({ getNodeInfo, refreshInfo }) {
             if (providerHealth.innerHTML !== html) providerHealth.innerHTML = html;
         }
         renderProviderHealth();
-        const healthTimer = setInterval(renderProviderHealth, 1000);
-        dialog.signal?.addEventListener('abort', () => clearInterval(healthTimer), { once: true });
+        const healthTimer = clock.setInterval(renderProviderHealth, 1000);
+        dialog.signal?.addEventListener('abort', () => clock.clearInterval(healthTimer), { once: true });
         const result = required('#geodb-result', dialog.body);
 
         /** @param {string} message @param {boolean} success */
@@ -129,5 +133,5 @@ export function create({ getNodeInfo, refreshInfo }) {
             }
         });
     }
-    return Object.freeze({ open });
+    return Object.freeze({ open, dispose });
 }

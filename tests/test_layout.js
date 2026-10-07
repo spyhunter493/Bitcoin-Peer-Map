@@ -18,6 +18,7 @@ import assertGeoIPSettings from './test_geoip_settings.js';
 import assertNodeServices from './test_node_services.js';
 import assertNodeMetrics from './test_node_metrics.js';
 import assertSharedDialogs from './test_shared_dialogs.js';
+import assertPrivateNodeComponents from './test_private_node_components.js';
 import assertNavigation from './test_navigation.js';
 import assertAdminAuthentication from './test_admin_auth.js';
 import assertManagementFeedback from './test_management_feedback.js';
@@ -25,6 +26,7 @@ import assertNetworkExamples from './test_network_examples.js';
 import assertTableSettings from './test_table_settings.js';
 import assertKeyboardNavigation from './test_keyboard_navigation.js';
 import assertDistributionCoverage from './test_distribution_coverage.js';
+import assertDistributionLifecycle from './test_distribution_lifecycle.js';
 
 const repoRoot = path.resolve(import.meta.dirname, '..');
 
@@ -901,9 +903,11 @@ const suites = [
     ['dashboard polling and reduced motion', assertDashboardLifecycle],
     ['GeoIP settings', assertGeoIPSettings],
     ['distribution coverage', assertDistributionCoverage],
+    ['distribution controller lifecycle', assertDistributionLifecycle],
     ['node services', assertNodeServices],
     ['RPC node metrics', assertNodeMetrics],
     ['shared accessible dialogs', assertSharedDialogs],
+    ['private and node component lifecycle', assertPrivateNodeComponents],
     ['revisioned modules', assertModules],
     ['map groups', assertMapGroups],
     ['map pan, zoom, touch, and canvas rendering', assertMapInput],
