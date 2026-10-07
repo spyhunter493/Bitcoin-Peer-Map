@@ -2,6 +2,8 @@ import * as BPMApi from './api.js';
 import { query, queryAll, required } from './dom.js';
 /** @type {import('../types').ModalController[]} */
 const modalStack = [];
+/** @type {WeakMap<import('../types').ModalController, HTMLElement>} */
+const lastDialogFocus = new WeakMap();
 const FOCUSABLE_SELECTOR = [
     'a[href]',
     'button:not([disabled])',
@@ -10,6 +12,34 @@ const FOCUSABLE_SELECTOR = [
     'textarea:not([disabled])',
     '[tabindex]:not([tabindex="-1"])',
 ].join(',');
+
+/** @param {HTMLElement} element */
+function canFocus(element) {
+    return !element.closest('[hidden], [inert], [aria-hidden="true"]') &&
+        element.getAttribute('aria-disabled') !== 'true' &&
+        !element.matches(':disabled') && element.getClientRects().length > 0 &&
+        getComputedStyle(element).visibility !== 'hidden';
+}
+
+function updateStack() {
+    modalStack.forEach((modal, index) => {
+        const top = index === modalStack.length - 1;
+        modal.overlay.style.zIndex = String(10000 + index);
+        modal.overlay.inert = !top;
+        if (top) modal.overlay.removeAttribute('aria-hidden');
+        else modal.overlay.setAttribute('aria-hidden', 'true');
+    });
+}
+
+/** @param {HTMLElement} dialog */
+function focusDialog(dialog) {
+    const first = queryAll(FOCUSABLE_SELECTOR, dialog).find(canFocus);
+    if (first) first.focus({ preventScroll: true });
+    else {
+        dialog.setAttribute('tabindex', '-1');
+        dialog.focus({ preventScroll: true });
+    }
+}
 
 /**
  * @param {unknown} value
@@ -94,10 +124,13 @@ function open(options) {
         else existing.remove();
     }
 
-    const returnFocus = document.activeElement;
+    const parent = modalStack[modalStack.length - 1];
+    const active = document.activeElement;
+    // Disabling a source button can blur it before its authentication dialog opens.
+    const returnFocus = parent && !parent.overlay.contains(active) ? lastDialogFocus.get(parent) || active : active;
     const overlay = document.createElement('div');
     const titleId = `${id}-title`;
-    const widthStyle = maxWidth ? ` style="width:calc(100vw - 32px);max-width:${Number(maxWidth)}px"` : '';
+    const widthStyle = ` style="width:calc(100vw - 32px)${maxWidth ? `;max-width:${Number(maxWidth)}px` : ''}"`;
     overlay.id = id;
     overlay.className = overlayClass;
 
@@ -120,13 +153,44 @@ function open(options) {
         closed = true;
         if (abortController) abortController.abort();
         const stackIndex = modalStack.indexOf(controller);
+        const wasTop = stackIndex === modalStack.length - 1;
         if (stackIndex !== -1) modalStack.splice(stackIndex, 1);
-        document.removeEventListener('keydown', handleKeydown);
+        document.removeEventListener('keydown', handleKeydown, true);
+        document.removeEventListener('focusin', handleFocusin);
         overlay.remove();
+        updateStack();
         if (typeof onClose === 'function') onClose();
-        if (restoreFocus && returnFocus instanceof HTMLElement && returnFocus.isConnected && typeof returnFocus.focus === 'function') {
+        const top = modalStack[modalStack.length - 1];
+        if (restoreFocus && wasTop && returnFocus instanceof HTMLElement && returnFocus.isConnected && canFocus(returnFocus) &&
+            (!top || top.overlay.contains(returnFocus))) {
             returnFocus.focus({ preventScroll: true });
+        } else if (wasTop && top) {
+            focusDialog(required(':scope > :first-child', top.overlay));
         }
+        // A cancelled request may re-enable its source button in a microtask.
+        // Restore it after that cleanup, provided focus and the stack still agree.
+        if (restoreFocus && wasTop && returnFocus instanceof HTMLElement && returnFocus.isConnected &&
+            (!top || top.overlay.contains(returnFocus)) && !canFocus(returnFocus)) {
+            const fallbackFocus = document.activeElement;
+            const restore = () => {
+                if (modalStack[modalStack.length - 1] === top && document.activeElement === fallbackFocus && canFocus(returnFocus)) {
+                    returnFocus.focus({ preventScroll: true });
+                }
+            };
+            const observer = new MutationObserver(restore);
+            observer.observe(returnFocus, { attributes: true, attributeFilter: ['disabled', 'aria-disabled', 'hidden', 'style', 'class'] });
+            requestAnimationFrame(() => { restore(); observer.disconnect(); });
+        }
+    }
+
+    /** @param {FocusEvent} event */
+    function handleFocusin(event) {
+        if (modalStack[modalStack.length - 1] !== controller) return;
+        if (event.target instanceof HTMLElement && dialogBox.contains(event.target)) {
+            lastDialogFocus.set(controller, event.target);
+            return;
+        }
+        focusDialog(dialogBox);
     }
 
     /**
@@ -136,11 +200,12 @@ function open(options) {
         if (modalStack[modalStack.length - 1] !== controller) return;
         if (event.key === 'Escape') {
             event.preventDefault();
+            event.stopImmediatePropagation();
             close();
             return;
         }
         if (event.key !== 'Tab') return;
-        const focusable = queryAll(FOCUSABLE_SELECTOR, dialogBox).filter((element) => element.getAttribute('aria-hidden') !== 'true');
+        const focusable = queryAll(FOCUSABLE_SELECTOR, dialogBox).filter(canFocus);
         if (!focusable.length) {
             event.preventDefault();
             dialogBox.setAttribute('tabindex', '-1');
@@ -166,17 +231,19 @@ function open(options) {
         isOpen: () => !closed && overlay.isConnected,
     };
     modalStack.push(controller);
-    document.addEventListener('keydown', handleKeydown);
+    updateStack();
+    document.addEventListener('keydown', handleKeydown, true);
+    document.addEventListener('focusin', handleFocusin);
     overlay.addEventListener('click', (event) => {
-        if (event.target === overlay) close();
+        if (modalStack[modalStack.length - 1] === controller && event.target === overlay) close();
     });
 
     const closeButton = showHeader ? query(`#${closeId}`, overlay) : null;
     if (closeButton) closeButton.addEventListener('click', () => close());
     const initialFocus = initialFocusSelector ? query(initialFocusSelector, overlay) : closeButton;
-    if (initialFocus && typeof initialFocus.focus === 'function') {
+    if (initialFocus && canFocus(initialFocus)) {
         initialFocus.focus({ preventScroll: true });
-    }
+    } else focusDialog(dialogBox);
     return controller;
 }
 

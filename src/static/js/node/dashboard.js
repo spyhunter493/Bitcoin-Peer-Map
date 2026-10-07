@@ -635,19 +635,11 @@ function create({ config: CFG, onAction }) {
     function showApiDownModal() {
         if (_apiDownModalVisible) return;
         _apiDownModalVisible = true;
-        const controller = new AbortController();
-
-        const overlay = document.createElement('div');
-        overlay.className = 'modal-overlay';
-        overlay.id = 'api-down-modal';
-        overlay.innerHTML = `
-        <div class="modal-box" style="max-width:440px">
-            <div class="modal-header">
-                <span class="modal-title">Geolocation API Not Responding</span>
-                <button class="modal-close" id="api-down-close">&times;</button>
-            </div>
-            <div class="modal-body" style="padding:16px">
-                <p style="color:var(--text-secondary);margin:0 0 12px;font-size:12px">
+        const dialog = BPMModal.open({
+            id: 'api-down-modal', title: 'Geolocation API Not Responding', maxWidth: 440,
+            bodyClass: 'modal-body api-down-body',
+            closeId: 'api-down-close', initialFocusSelector: '#api-down-keep',
+            initialHtml: `<p style="color:var(--text-secondary);margin:0 0 12px;font-size:12px">
                     The geolocation provider is not responding. Cached locations remain available while BPM retries.
                 </p>
                 <p style="color:var(--text-muted);margin:0 0 16px;font-size:11px">
@@ -658,20 +650,11 @@ function create({ config: CFG, onAction }) {
                     <button class="geodb-update-btn" id="api-down-keep">Keep Trying</button>
                 </div>
                 <div id="api-down-error" role="alert" style="color:var(--err);font-size:11px"></div>
-            </div>
-        </div>`;
-        document.body.appendChild(overlay);
-
-        const close = () => {
-            controller.abort();
-            overlay.remove();
-            _apiDownModalVisible = false;
-        };
-
-        required('#api-down-close').addEventListener('click', close);
-        overlay.addEventListener('click', (e) => {
-            if (e.target === overlay) close();
+                `,
+            onClose: () => { _apiDownModalVisible = false; },
         });
+        const overlay = dialog.overlay;
+        const close = () => dialog.close();
 
         /** @type {HTMLButtonElement} */
         const databaseOnlyButton = required('#api-down-dbonly');
@@ -679,7 +662,8 @@ function create({ config: CFG, onAction }) {
             databaseOnlyButton.disabled = true;
             try {
                 /** @type {{success: boolean; geo_db_only_mode?: boolean}} */
-                const data = await postJson('/api/geodb/db-only', { enabled: true }, { signal: controller.signal });
+                const data = await postJson('/api/geodb/db-only', { enabled: true }, { signal: dialog.signal });
+                if (!dialog.isOpen()) return;
                 if (!data.success || data.geo_db_only_mode !== true) throw new Error('Could not save API lookup setting');
                 close();
                 fetchInfo();
@@ -886,18 +870,13 @@ function create({ config: CFG, onAction }) {
 
     /** Open RPC node metrics, P2P traffic, and display toggles. */
     function openNodeMetricsModal() {
-        document.getElementById('system-info-modal')?.remove();
-        const overlay = document.createElement('div');
-        overlay.className = 'modal-overlay';
-        overlay.id = 'system-info-modal';
-        overlay.innerHTML = `<div class="modal-box" style="max-width:560px"><div class="modal-header"><span class="modal-title">Node Metrics</span><button class="modal-close" id="system-info-close">&times;</button></div><div class="modal-body" id="system-info-body"><div id="node-metrics-values"></div><div class="modal-section-title">Dashboard Display</div></div></div>`;
-        document.body.appendChild(overlay);
-        required('#system-info-close').addEventListener('click', () => overlay.remove());
-        overlay.addEventListener('click', (e) => {
-            if (e.target === overlay) overlay.remove();
+        const dialog = BPMModal.open({
+            id: 'system-info-modal', title: 'Node Metrics', maxWidth: 560,
+            closeId: 'system-info-close', bodyId: 'system-info-body',
+            initialHtml: '<div id="node-metrics-values"></div><div class="modal-section-title">Dashboard Display</div>',
         });
         renderNodeMetricsValues();
-        const body = required('#system-info-body');
+        const body = dialog.body;
         for (const item of nodeDisplayRows) {
             const visible = required(`#${item.id}`).style.display !== 'none';
             body.insertAdjacentHTML('beforeend', `<div class="info-row"><span class="info-label">${item.label}</span><label class="dsp-toggle"><input type="checkbox" class="si-dash-toggle" aria-label="${item.label}" data-target="${item.id}" ${visible ? 'checked' : ''}><span class="dsp-toggle-slider"></span></label></div>`);

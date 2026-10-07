@@ -34,6 +34,12 @@ all management callers should use `postJson`. See
 [admin authentication](configuration.md#admin-token-and-read-only-mode) for token
 generation, HTTPS deployment, revocation, and API responses. Viewing remains public.
 
+Dashboard dialogs use `core/modal.js` for accessible naming, focus containment,
+stacking, Escape/backdrop dismissal, and focus restoration. Pass the dialog's
+abort signal to requests and check `isOpen()` before applying asynchronous
+results. Keep persistent controls mounted when refreshing dialog values. Peer
+details, settings panels, tooltips, and pinned lists remain nonmodal popovers.
+
 ## Build from source with Docker
 
 ```bash

@@ -14,6 +14,7 @@ import * as BPMWorldMap from './geometry.js';
 import * as BPMPeerRefresh from '../peers/refresh.js';
 import * as BPMPeerTable from '../peers/table.js';
 import * as BPMPeerActions from '../peers/actions.js';
+import * as BPMModal from '../core/modal.js';
 function create() {
     'use strict';
     const dashboard = BPMDashboard;
@@ -168,7 +169,10 @@ function create() {
 
     // DOM references
     const clockEl = required('#clock');
-    const antOverlay = required('#antarctica-modal-overlay');
+    /** @type {HTMLTemplateElement} */
+    const antTemplate = required('#antarctica-disclaimer-template');
+    /** @type {import('../types').ModalController | null} */
+    let antDialog = null;
 
     // ═══════════════════════════════════════════════════════════
     // NODE DASHBOARD
@@ -603,7 +607,7 @@ function create() {
                         }
                     }
                     canvas.style.cursor = 'grab';
-                    antOverlay.classList.add('hidden');
+                    antDialog?.close();
                 }
             } else if (action.top !== undefined) fitDonutStackForPanelTop(action.top, action.immediate);
             else fitDonutStackToViewport();
@@ -677,7 +681,6 @@ function create() {
         showDisconnectDialog,
         exitPrivateNetMode,
         getNetworkStats,
-        antOverlay,
     });
     const controls = BPMMapControls.create({
         canvas,
@@ -700,7 +703,7 @@ function create() {
     }
 
     function showAntarcticaDisclaimerOnce() {
-        if (!peerTable.showAntarcticaPeers || !antOverlay) return;
+        if (!peerTable.showAntarcticaPeers || antDialog?.isOpen()) return;
 
         try {
             if (localStorage.getItem(STORAGE_KEYS.antarcticaDisclaimerSeen) === 'true') return;
@@ -709,7 +712,15 @@ function create() {
             // Storage may be unavailable in restricted browser contexts.
         }
 
-        antOverlay.classList.remove('hidden');
+        antDialog = BPMModal.open({
+            id: 'antarctica-modal-overlay', title: 'Private peer location disclaimer',
+            showHeader: false, ariaLabel: 'Private peer location disclaimer',
+            overlayClass: 'ant-modal-overlay', boxClass: 'ant-modal', maxWidth: 400,
+            contentHtml: antTemplate.innerHTML, initialFocusSelector: '#ant-close',
+            onClose: () => { antDialog = null; },
+        });
+        required(':scope > :first-child', antDialog.overlay).id = 'antarctica-note';
+        required('#ant-close', antDialog.overlay).addEventListener('click', () => antDialog?.close());
     }
 
     function syncPollingIntervals() {

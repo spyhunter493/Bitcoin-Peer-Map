@@ -18,7 +18,6 @@ import { project, clamp } from './geometry.js';
  * @property {(peerId: number, network: string) => void} showDisconnectDialog
  * @property {() => void} exitPrivateNetMode
  * @property {ReturnType<typeof import('../node/dashboard.js').create>['getNetworkStats']} getNetworkStats
- * @property {HTMLElement} antOverlay
  */
 
 /** Binds map pointer/touch input, peer-table input, and network badge controls.
@@ -26,7 +25,7 @@ import { project, clamp } from './geometry.js';
  */
 export function create(options) {
     const { canvas, mapView, view, interaction, privateState, peerTable, mapNavigation,
-        showGroupHoverTooltip, showDisconnectDialog, exitPrivateNetMode, getNetworkStats, antOverlay } = options;
+        showGroupHoverTooltip, showDisconnectDialog, exitPrivateNetMode, getNetworkStats } = options;
     const { setMapInteraction, screenToWorld, findNodesAtScreen } = options.renderer;
     const hideTooltip = mapNavigation.hideTooltip;
     const CFG = options.config;
@@ -276,7 +275,6 @@ export function create(options) {
 
     const netBadges = queryAll('.handle-nets .net-badge', document);
     const netPopover = required('#net-popover');
-    const antCloseBtn = document.getElementById('ant-close');
 
     /** Update badge visual states to reflect the current multi-select filter */
     function updateBadgeStates() {
@@ -349,22 +347,7 @@ export function create(options) {
         badge.addEventListener('blur', hideNetworkStats);
     });
 
-    // Close Antarctica modal ("Got it" button or click outside)
-    if (antCloseBtn) {
-        antCloseBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (antOverlay) antOverlay.classList.add('hidden');
-        });
-    }
-    if (antOverlay) {
-        antOverlay.addEventListener('click', (e) => {
-            if (e.target === antOverlay) {
-                antOverlay.classList.add('hidden');
-            }
-        });
-    }
-
-    /** Check if all networks are enabled (= "All" state) */
+    /** Check if all networks are enabled (= "All" state). */
     function isAllNetsEnabled() {
         for (const n of ALL_NETS) {
             if (!interaction.enabledNets.has(n)) return false;

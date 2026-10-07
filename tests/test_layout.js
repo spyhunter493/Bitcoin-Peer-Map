@@ -17,6 +17,7 @@ import assertDashboardPerformance from './test_dashboard_performance.js';
 import assertGeoIPSettings from './test_geoip_settings.js';
 import assertNodeServices from './test_node_services.js';
 import assertNodeMetrics from './test_node_metrics.js';
+import assertSharedDialogs from './test_shared_dialogs.js';
 import assertNavigation from './test_navigation.js';
 import assertAdminAuthentication from './test_admin_auth.js';
 import assertManagementFeedback from './test_management_feedback.js';
@@ -902,6 +903,7 @@ const suites = [
     ['distribution coverage', assertDistributionCoverage],
     ['node services', assertNodeServices],
     ['RPC node metrics', assertNodeMetrics],
+    ['shared accessible dialogs', assertSharedDialogs],
     ['revisioned modules', assertModules],
     ['map groups', assertMapGroups],
     ['map pan, zoom, touch, and canvas rendering', assertMapInput],
