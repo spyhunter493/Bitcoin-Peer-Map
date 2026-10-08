@@ -95,9 +95,10 @@ export class AppRuntime {
     }
     private applyOutboundPolicy() {
         const geoipAllowed = this.outboundPolicy.allowed('geoip');
+        const datasetAllowed = this.outboundPolicy.allowed('dataset');
         this.outboundPolicy.update(this.outboundPermissions());
         if (geoipAllowed && !this.outboundPolicy.allowed('geoip')) this.peers.cancelProviderWork();
-        this.scheduleUpdate(0);
+        if (datasetAllowed !== this.outboundPolicy.allowed('dataset')) this.scheduleUpdate(0);
     }
     private outboundSnapshot() {
         const permissions = this.outboundPermissions();

@@ -97,9 +97,10 @@ export class UpdateService {
         if (this.outbound && !this.outbound.allowed('updates')) return;
         const lifetime = this.outbound ? AbortSignal.any([this.signal, this.outbound.signal('updates')]) : this.signal;
         const signal = AbortSignal.any([lifetime, AbortSignal.timeout(10000)]);
+        let response: Response | undefined;
         try {
             signal.throwIfAborted();
-            const response = await this.fetcher(`https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/latest`, {
+            response = await this.fetcher(`https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/latest`, {
                 headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'Bitcoin-Peer-Map' },
                 signal, redirect: 'manual',
             });
@@ -123,6 +124,8 @@ export class UpdateService {
             if (lifetime.aborted) return;
             this.status = { ...this.status, checked_at: nowSeconds(), check_failed: true };
             this.checkFailures.failure(`Application update check failed: ${errorMessage(error)}`);
+        } finally {
+            if (response && !response.bodyUsed) await response.body?.cancel().catch(() => {});
         }
         if (!lifetime.aborted) this.saveCache();
     }

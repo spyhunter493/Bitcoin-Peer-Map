@@ -33,6 +33,8 @@ export function createGeoipLookup(connectivity: ConnectivityService, outbound: O
                 connectivity.providerFailure('geoip', new Error(message), response);
             }
             return null;
+        } finally {
+            if (response && !response.bodyUsed) await response.body?.cancel().catch(() => {});
         }
     };
 }

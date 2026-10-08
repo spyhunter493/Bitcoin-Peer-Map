@@ -28,6 +28,17 @@ test('scheduler retries hourly after completion, without a browser, including fa
     t.mock.timers.tick(1); await flush(); assert.equal(calls, 2);
     await app.stop(); t.mock.timers.tick(GEOIP_UPDATE_INTERVAL_MS); await flush(); assert.equal(calls, 2);
 });
+test('changing unrelated outbound features preserves the dataset scheduler cadence', async t => {
+    const app = runtime(t); let calls = 0;
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    t.mock.method(app.geoDatabase, 'update', async () => { calls++; return { success: true, message: 'OK', skipped_rows: 0 }; });
+    await app.start(); t.mock.timers.tick(0); await flush(); assert.equal(calls, 1);
+    app.setGeoipDbOnly(true);
+    app.setOutboundPreference('release_checks', false);
+    app.setOutboundPreference('reachability_checks', false);
+    t.mock.timers.tick(0); await flush(); assert.equal(calls, 1);
+    t.mock.timers.tick(GEOIP_UPDATE_INTERVAL_MS); await flush(); assert.equal(calls, 2);
+});
 test('live disabling lets the current import finish; re-enabling triggers an immediate check', async t => {
     const app = runtime(t, { BPM_GEOIP_AUTO_UPDATE: 'false' }), gate = deferred<{ success: boolean; message: string }>(); let calls = 0;
     t.mock.timers.enable({ apis: ['setTimeout'] });

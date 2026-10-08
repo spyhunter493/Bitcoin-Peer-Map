@@ -18,6 +18,14 @@ const deny = { geoip: false, dataset: false, updates: false, probe: false };
 const location = () => Response.json({ status: 'success', country: 'NZ', lat: 1, lon: 2 });
 const release = () => Response.json({ draft: false, prerelease: false, tag_name: 'v1.2.0' });
 
+test('enabling preferences does not start probing until the worker was explicitly started', async t => {
+    const policy = new OutboundPolicy(deny); let calls = 0;
+    const connectivity = new ConnectivityService(false, undefined, async () => { calls++; return new Response(null, { status: 204 }); }, policy);
+    t.after(async () => { policy.close(); await connectivity.stop(); });
+    policy.update(allow); await flush(); assert.equal(calls, 0);
+    connectivity.ensureChecker(); await flush(); assert.equal(calls, 1);
+});
+
 test('denied optional services perform no requests while local SQLite remains usable', async t => {
     t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 1_800_000_000_000 });
     const policy = new OutboundPolicy(deny), directory = temporaryDirectory(t);
@@ -47,7 +55,9 @@ test('disabling each feature cancels requests and rejects late responses without
     const fetcher: typeof fetch = (url, options) => {
         const text = String(url), feature = text.includes('ip-api') ? 'geoip' : text.includes('raw.githubusercontent') ? 'dataset' : text.includes('api.github') ? 'updates' : 'probe';
         assert.equal(options?.redirect, 'manual');
+        const restarted = signals.has(feature);
         signals.set(feature, options!.signal!); calls++;
+        if (restarted) return Promise.resolve(feature === 'updates' ? release() : new Response(null, { status: 204 }));
         return gates[feature].promise; // Deliberately ignore abort to exercise late completions.
     };
     const connectivity = new ConnectivityService(false, undefined, fetcher, policy);

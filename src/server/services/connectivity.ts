@@ -37,6 +37,7 @@ export class ConnectivityService {
     apiPromptAt = 0;
     geoipApiDisabled: boolean;
     private checker: Promise<void> | null = null;
+    private checkingRequested = false;
     private controller = new AbortController();
     readonly signal: AbortSignal;
     readonly fetcher: typeof fetch;
@@ -46,7 +47,7 @@ export class ConnectivityService {
         this.geoipApiDisabled = disabled; this.fetcher = fetcher;
         this.outbound = outbound;
         this.signal = AbortSignal.any([this.controller.signal, ...(signal ? [signal] : [])]);
-        this.unsubscribe = outbound?.subscribe((feature, allowed) => { if (feature === 'probe' && allowed) this.ensureChecker(); }) ?? (() => {});
+        this.unsubscribe = outbound?.subscribe((feature, allowed) => { if (feature === 'probe' && allowed && this.checkingRequested) this.ensureChecker(); }) ?? (() => {});
     }
     private setState(state: ConnectivityStatus['internet_state']) {
         if (state !== this.internetState) log[state === 'green' ? 'info' : 'warn'](`Internet state changed from ${this.internetState} to ${state}`);
@@ -109,6 +110,7 @@ export class ConnectivityService {
         this.setState('green');
     }
     ensureChecker() {
+        this.checkingRequested = true;
         if (!this.checker && !this.signal.aborted && (!this.outbound || this.outbound.allowed('probe'))) {
             const signal = this.outbound ? AbortSignal.any([this.signal, this.outbound.signal('probe')]) : this.signal;
             this.checker = this.checkLoop(signal).finally(() => {
@@ -131,7 +133,7 @@ export class ConnectivityService {
             await sleep(this.internetState === 'green' ? 30_000 : 2000, signal);
         }
     }
-    async stop() { this.unsubscribe(); this.controller.abort(); await this.checker; }
+    async stop() { this.checkingRequested = false; this.unsubscribe(); this.controller.abort(); await this.checker; }
     setGeoipApiDisabled(disabled: boolean) {
         this.geoipApiDisabled = disabled;
         if (disabled) { this.apiPromptCount = 0; this.apiPromptAt = 0; }
