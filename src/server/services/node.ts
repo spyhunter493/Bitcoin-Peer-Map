@@ -1,7 +1,7 @@
 import { BITCOIN_NETWORKS, type BitcoinChain, formatBytes, normalizePeerAddress, splitPeerAddress, networkType } from '../network.ts';
 import { type Rpc, errorMessage, nowSeconds, round } from '../types.ts';
 import { Lru } from '../tasks.ts';
-import { SharedRead, readDeadline } from '../shared-read.ts';
+import { SharedRead, KeyedSharedReads, readDeadline } from '../shared-read.ts';
 import { RpcBusyError } from '../rpc.ts';
 import type { ConnectivityService } from './connectivity.ts';
 import type { GeoDatabase } from './geoip.ts';
@@ -33,8 +33,8 @@ export class NodeService {
     private chainTipsCache = new SharedRead<ChainTips>(5000, 1000, { fromCompletion: true });
     private headers = new Lru<BlockHeader>(256);
     private blocks = new Lru<CachedBlock>(256);
-    private pendingHeaders = new Map<string, SharedRead<BlockHeader>>();
-    private pendingBlocks = new Map<string, SharedRead<CachedBlock>>();
+    private headerReads = new KeyedSharedReads<string, BlockHeader>();
+    private blockReads = new KeyedSharedReads<string, CachedBlock>();
     private blockchainFailures = createFailureReporter(log);
     private blockFailures = createFailureReporter(log);
     private networkFailures = createFailureReporter(log);
@@ -67,15 +67,7 @@ export class NodeService {
         signal?.throwIfAborted();
         const cached = this.headers.get(hash);
         if (cached) return cached;
-        let pending = this.pendingHeaders.get(hash);
-        if (!pending) {
-            const read = new SharedRead<BlockHeader>(Infinity, 1000, { onIdle: () => {
-                if (!read.loading && this.pendingHeaders.get(hash) === read) this.pendingHeaders.delete(hash);
-            } });
-            pending = read;
-            this.pendingHeaders.set(hash, pending);
-        }
-        return pending.get(signal => this.rpc.call('getblockheader', [hash], 10, signal).then(value => {
+        return this.headerReads.get(hash, signal => this.rpc.call('getblockheader', [hash], 10, signal).then(value => {
             const header = parseBlockHeader(value);
             if (!signal.aborted) this.headers.set(hash, header);
             return header;
@@ -163,15 +155,7 @@ export class NodeService {
         signal?.throwIfAborted();
         const cached = this.blocks.get(hash);
         if (cached) return cached;
-        let pending = this.pendingBlocks.get(hash);
-        if (!pending) {
-            const read = new SharedRead<CachedBlock>(Infinity, 1000, { onIdle: () => {
-                if (!read.loading && this.pendingBlocks.get(hash) === read) this.pendingBlocks.delete(hash);
-            } });
-            pending = read;
-            this.pendingBlocks.set(hash, pending);
-        }
-        return pending.get(signal => this.rpc.call('getblock', [hash, 1], 10, signal).then(value => {
+        return this.blockReads.get(hash, signal => this.rpc.call('getblock', [hash, 1], 10, signal).then(value => {
             const block = parseBlock(value);
             const height = Number(block.height ?? expectedHeight);
             if (height !== expectedHeight) throw new Error(`getblock returned height ${height} while traversing height ${expectedHeight}`);

@@ -1,4 +1,5 @@
 import { fmtPing } from '../core/ping.js';
+import { addrmanLabel } from '../core/addrman.js';
 import { query, queryAll } from '../core/dom.js';
 import { escapeHtml } from '../core/modal.js';
 import * as domState from '../core/dom-state.js';
@@ -104,7 +105,7 @@ export function create(options) {
                 : '<span class="tt-muted">Private Network</span>';
 
         // Addrman
-        const addrmanStr = node.isPrivate ? '—' : node.peer.in_addrman ? 'Yes' : 'No';
+        const addrmanStr = node.isPrivate ? '—' : addrmanLabel(node.peer.addrman_status);
 
         // Build tooltip HTML — grouped sections
         let html = '';

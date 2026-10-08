@@ -36,7 +36,7 @@ function peersForCount(count) {
             location_status: 'ok', ping_ms: 40 + index % 100,
             bytessent: id * 100000, bytesrecv: id * 120000,
             bytessent_fmt: `${id * 100}KB`, bytesrecv_fmt: `${id * 120}KB`,
-            in_addrman: index % 3 === 0, hosting: true, mobile: false, proxy: false,
+            in_addrman: index % 3 === 0, addrman_status: index % 3 === 0 ? 'present' : 'not_returned', hosting: true, mobile: false, proxy: false,
         };
     });
 }

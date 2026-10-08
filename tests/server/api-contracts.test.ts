@@ -169,6 +169,30 @@ test('request compatibility and HTTP validation, retired, authentication, thrott
     assert.equal((await disabled.json('/api/admin/verify', 'post')).response.status, 403);
 });
 
+test('Addrman uncertainty stays explicit in both peer API response forms across refreshes', async t => {
+    const { json, peers, rpc } = await application(t, true);
+    async function check(status: string) {
+        const list = (await json('/api/peers')).value as Record<string, unknown>[];
+        const snapshot = (await json('/api/peers?include_status=true')).value as { peers: Record<string, unknown>[] };
+        for (const result of [list, snapshot.peers]) {
+            assert.equal(result[0].addrman_status, status);
+            assert.equal(result[0].in_addrman, status === 'present');
+            assert.equal(result[1].addrman_status, 'unavailable', 'A peer without an explicit port has no usable endpoint identity');
+        }
+    }
+    await check('unavailable');
+    rpc.values.getnodeaddresses = [{ address: '8.8.8.8', port: 8334 }];
+    await peers.refreshKnownAddresses(); await check('not_returned');
+    rpc.values.getnodeaddresses = [{ address: '8.8.8.8', port: 8333 }];
+    await peers.refreshKnownAddresses(); await check('present');
+    rpc.failed.add('getnodeaddresses');
+    await peers.refreshKnownAddresses(); await check('unavailable');
+    rpc.failed.clear(); rpc.values.getnodeaddresses = [];
+    await peers.refreshKnownAddresses(); await check('not_returned');
+    rpc.values.getnodeaddresses = [{ address: '8.8.8.8', port: 8333 }];
+    await peers.refreshKnownAddresses(); await check('present');
+});
+
 test('SSE connected and system event payloads validate against the documented event schemas', async t => {
     const { base } = await application(t, true);
     const controller = new AbortController(); t.after(() => controller.abort());
@@ -196,6 +220,14 @@ test('schema validation rejects drift in field types, required fields and nullab
     const peer = compile(specification.components.schemas.Peer);
     assert.equal(peer({ ...peers[0], port: 8333 }), false);
     assert.equal(peer({ ...peers[0], ping_ms: '5' }), false);
+    for (const addrman_status of ['present', 'not_returned', 'unavailable']) {
+        assert.equal(peer({ ...peers[0], addrman_status }), true);
+    }
+    for (const addrman_status of ['absent', '', null, true]) {
+        assert.equal(peer({ ...peers[0], addrman_status }), false);
+    }
+    const missingStatus = { ...peers[0] }; delete missingStatus.addrman_status;
+    assert.equal(peer(missingStatus), false, 'Every peer response carries its Addrman uncertainty status');
     const missing = { ...peers[0] }; delete missing.id; assert.equal(peer(missing), false);
     const info = (await json('/api/info')).value as Record<string, unknown>; delete info.node_metrics;
     assert.equal(compile(specification.components.schemas.DashboardInfo)(info), false);
