@@ -117,8 +117,8 @@ Before running browser tests, install the three browser engines:
 npx playwright install --with-deps chromium firefox webkit
 ```
 
-CI runs code checks and unit tests, Chromium layout regressions, security tests
-for each of Chromium, Firefox and WebKit, and Compose/container validation on
+CI runs code checks and unit tests, two shards of Chromium layout regressions,
+security tests for each of Chromium, Firefox and WebKit, and Compose/container validation on
 separate Ubuntu runners in parallel. Each browser job installs only its engine;
 the container job uses Node.js built-ins without installing npm dependencies.
 Container validation verifies that the image and test runner use the same
@@ -143,6 +143,14 @@ matches suite names and fails if no suite matches. The keyboard and large-table
 journeys exercise real Tab/Shift+Tab traversal beyond mounted rows while checking
 that the DOM stays bounded. The Docker variant uses the same test runner and
 also requires Docker and curl on the host.
+
+CI distributes the layout suites between two independent runners, keeping two
+workers on each. Set `BPM_LAYOUT_TEST_SHARD=1/2 npm run test:layout` to reproduce
+the first shard, or `2/2` for the second. The default `1/1` runs every suite.
+Shard indices and totals must be integers from 1 to 8, with the index at most the
+total; invalid or empty selections fail. Shards assign suites by position before
+applying `BPM_LAYOUT_TEST_FILTER`. Browser security tests also run two independent
+cases at a time for each engine, with the longest case starting first.
 
 ### Validate the production container
 

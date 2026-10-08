@@ -14,12 +14,12 @@ import assertViewingPrivacy from '../test_viewing_privacy.js';
 import assertOutboundSettings from '../test_outbound_settings.js';
 
 for (const engine of [chromium, firefox, webkit]) {
-    test(`${engine.name()}: protected viewing, memory-only credentials, redaction and locking`, { timeout: 90_000 }, async t => {
+    const protectedViewing = async t => {
         const browser = await engine.launch({ headless: true });
         t.after(() => browser.close());
         await assertViewingPrivacy(browser);
-    });
-    test(`${engine.name()}: optional outbound controls and HTTP provider opt-in`, { timeout: 90_000 }, async t => {
+    };
+    const outboundControls = async t => {
         const settings = fixtureSettings(), app = createApplication(settings, new FixtureRuntime(settings));
         const address = await app.listen(0, '127.0.0.1');
         assert.ok(address && typeof address !== 'string');
@@ -27,8 +27,8 @@ for (const engine of [chromium, firefox, webkit]) {
         const browser = await engine.launch({ headless: true });
         t.after(() => browser.close());
         await assertOutboundSettings(browser, `http://127.0.0.1:${address.port}`);
-    });
-    test(`${engine.name()}: local assets, strict CSP, documentation, management dialogs, and framing`, { timeout: 180_000 }, async t => {
+    };
+    const localAssets = async t => {
         const settings = fixtureSettings(), app = createApplication(settings, new FixtureRuntime(settings));
         const address = await app.listen(0, '127.0.0.1');
         assert.ok(address && typeof address !== 'string');
@@ -216,5 +216,13 @@ for (const engine of [chromium, firefox, webkit]) {
         allowedOrigins.add(hostBase);
         await assertFrameDenied(hostBase, 'cross-origin framing must not render the document');
         assert.deepEqual(external, []);
+    };
+    await test(`${engine.name()}: browser security regressions`, { concurrency: 2 }, async t => {
+        // The longest case starts first; every case owns its app, browser and contexts.
+        await Promise.all([
+            t.test(`${engine.name()}: local assets, strict CSP, documentation, management dialogs, and framing`, { timeout: 180_000 }, localAssets),
+            t.test(`${engine.name()}: protected viewing, memory-only credentials, redaction and locking`, { timeout: 90_000 }, protectedViewing),
+            t.test(`${engine.name()}: optional outbound controls and HTTP provider opt-in`, { timeout: 90_000 }, outboundControls),
+        ]);
     });
 }
