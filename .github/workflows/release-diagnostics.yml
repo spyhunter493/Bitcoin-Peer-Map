@@ -17,7 +17,7 @@ jobs:
   smoke:
     name: Diagnose the published release source
     if: github.repository == 'spyhunter493/Bitcoin-Peer-Map' && !github.event.pull_request.draft
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 20
     env:
       BPM_DIAGNOSTIC_IMAGE: bitcoin-peer-map:release-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
