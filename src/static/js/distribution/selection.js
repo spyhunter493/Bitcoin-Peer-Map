@@ -421,16 +421,23 @@ export function create(options, getNavigation) {
     function closePeerPopup(skipZoomReset) {
         dismissPeerDetailView(!skipZoomReset);
 
-        if (options.state.summarySelected) {
+        if (options.state.summarySelected || options.state.activeNetwork) {
+            const summaryPeers = options.state.subSubFilterPeerIds ?? options.state.filterPeerIds;
             if (options.state.insightActiveAsNum) {
-                var peerIds = options.actions.getPeerIdsForAnyAs(options.state.insightActiveAsNum);
+                const providerPeers = options.actions.getPeerIdsForAnyAs(options.state.insightActiveAsNum);
+                const providerIds = new Set(providerPeers);
+                var peerIds = summaryPeers === null ? providerPeers : summaryPeers.filter(id => providerIds.has(id));
                 var color = options.actions.getColorForAsNum(options.state.insightActiveAsNum);
                 if (options.hooks.drawLinesForAs)
                     options.hooks.drawLinesForAs(options.state.insightActiveAsNum, peerIds, color);
                 if (options.hooks.filterPeerTable) options.hooks.filterPeerTable(peerIds);
                 if (options.hooks.dimMapPeers) options.hooks.dimMapPeers(peerIds);
-            } else if (options.state.filterPeerIds !== null) {
-                getNavigation().summaryPreviewSummaryLines(options.state.filterPeerIds);
+            } else if (summaryPeers !== null) {
+                getNavigation().summaryPreviewSummaryLines(summaryPeers);
+            } else if (options.state.activeNetwork) {
+                const networkPeers = options.getDashboard().peers
+                    .filter(peer => peer.network === options.state.activeNetwork).map(peer => peer.id);
+                getNavigation().summaryPreviewSummaryLines(networkPeers);
             } else {
                 if (options.hooks.filterPeerTable) options.hooks.filterPeerTable(null);
                 if (options.hooks.dimMapPeers) options.hooks.dimMapPeers(null);
@@ -458,10 +465,11 @@ export function create(options, getNavigation) {
                 }
             }
             if (seg) {
-                if (options.hooks.filterPeerTable) options.hooks.filterPeerTable(seg.peerIds);
-                if (options.hooks.dimMapPeers) options.hooks.dimMapPeers(seg.peerIds);
+                const peerIds = options.state.subSubFilterPeerIds ?? options.state.filterPeerIds ?? seg.peerIds;
+                if (options.hooks.filterPeerTable) options.hooks.filterPeerTable(peerIds);
+                if (options.hooks.dimMapPeers) options.hooks.dimMapPeers(peerIds);
                 if (options.hooks.drawLinesForAs)
-                    options.hooks.drawLinesForAs(options.state.selectedProvider, seg.peerIds, seg.color);
+                    options.hooks.drawLinesForAs(options.state.selectedProvider, peerIds, seg.color);
             }
             options.actions.renderCenter();
         } else {

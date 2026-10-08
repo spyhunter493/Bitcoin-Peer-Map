@@ -193,26 +193,44 @@
     <div id="peer-panel" class="peer-panel">
         <div id="peer-panel-handle" class="peer-panel-handle">
             <div class="handle-row1">
-                <span class="handle-title">PEER LIST</span>
-                <span class="handle-show-label">Show:</span>
-                <div class="handle-nets" role="group" aria-label="Peer network filters">
-                    <button type="button" class="net-badge net-all active" data-net="all" title="Click to show all peers" aria-pressed="true">All <span class="badge-count" id="bc-all">0</span></button>
-                    <button type="button" class="net-badge net-ipv4" data-net="ipv4" title="Click to filter by IPv4" aria-pressed="true">IPv4 <span class="badge-count" id="bc-ipv4">0</span></button>
-                    <button type="button" class="net-badge net-ipv6" data-net="ipv6" title="Click to filter by IPv6" aria-pressed="true">IPv6 <span class="badge-count" id="bc-ipv6">0</span></button>
-                    <button type="button" class="net-badge net-tor" data-net="onion" title="Click to filter by Tor/Onion" aria-pressed="true">Tor <span class="badge-count" id="bc-tor">0</span></button>
-                    <button type="button" class="net-badge net-i2p" data-net="i2p" title="Click to filter by I2P" aria-pressed="true">I2P <span class="badge-count" id="bc-i2p">0</span></button>
-                    <button type="button" class="net-badge net-cjdns" data-net="cjdns" title="Click to filter by CJDNS" aria-pressed="true">CJDNS <span class="badge-count" id="bc-cjdns">0</span></button>
+                <div class="peer-toolbar-filters">
+                    <span class="handle-title">PEER LIST</span>
+                    <span class="handle-show-label">Show:</span>
+                    <div class="handle-nets" role="group" aria-label="Peer network filters">
+                        <button type="button" class="net-badge net-all active" data-net="all" title="Click to show all peers" aria-pressed="true">All <span class="badge-count" id="bc-all">0</span></button>
+                        <button type="button" class="net-badge net-ipv4" data-net="ipv4" title="Click to filter by IPv4" aria-pressed="true">IPv4 <span class="badge-count" id="bc-ipv4">0</span></button>
+                        <button type="button" class="net-badge net-ipv6" data-net="ipv6" title="Click to filter by IPv6" aria-pressed="true">IPv6 <span class="badge-count" id="bc-ipv6">0</span></button>
+                        <button type="button" class="net-badge net-tor" data-net="onion" title="Click to filter by Tor/Onion" aria-pressed="true">Tor <span class="badge-count" id="bc-tor">0</span></button>
+                        <button type="button" class="net-badge net-i2p" data-net="i2p" title="Click to filter by I2P" aria-pressed="true">I2P <span class="badge-count" id="bc-i2p">0</span></button>
+                        <button type="button" class="net-badge net-cjdns" data-net="cjdns" title="Click to filter by CJDNS" aria-pressed="true">CJDNS <span class="badge-count" id="bc-cjdns">0</span></button>
+                    </div>
                 </div>
-                <div class="handle-spacer"></div>
-                <button class="handle-btn handle-btn-green" id="btn-connect-peer" title="Connect to a peer">Connect Peer</button>
-                <button class="handle-btn handle-btn-warn" id="btn-bans" title="View and manage banned peers">Banned Peers</button>
-                <button class="handle-btn handle-btn-accent" id="btn-node-info-peer" title="View detailed node information">NODE-INFO</button>
-                <button class="handle-btn handle-btn-accent" id="btn-recent-blocks" title="View recently validated blocks">BLOCKS</button>
-                <button class="handle-btn handle-btn-accent" id="btn-geoip-db-peer" title="GeoIP database info and updates">GEOIP-DB</button>
-                <button class="handle-btn handle-btn-accent" id="btn-chain-tips" title="View chain tips and fork status">CHAIN-TIPS</button>
-                <button class="handle-btn handle-btn-dim" id="btn-autofit" title="Automatic column size to fit">FIT</button>
-                <button type="button" class="handle-btn handle-btn-dim" id="btn-minimize" aria-expanded="true" aria-controls="peer-panel-body" aria-label="Hide peer list table" title="Toggle peer list table">&#9660;</button>
-                <button class="handle-btn handle-btn-dim" id="btn-table-settings" title="Table settings: columns, transparency">&#9881;</button>
+                <div class="peer-search-tools" id="peer-search-tools">
+                    <div class="peer-search-field">
+                        <label class="peer-search-label" for="peer-search">Search peers</label>
+                        <input id="peer-search" type="search" placeholder="Search peers…" aria-label="Search peers" autocomplete="off" spellcheck="false">
+                        <button id="peer-search-clear" type="button" aria-label="Clear peer search" hidden>&times;</button>
+                    </div>
+                </div>
+                <div class="peer-toolbar-actions">
+                    <button class="handle-btn handle-btn-green" id="btn-connect-peer" title="Connect to a peer">Connect Peer</button>
+                    <div class="peer-export">
+                        <button type="button" class="handle-btn handle-btn-accent" id="btn-export-peers" aria-expanded="false" aria-controls="peer-export-options">Export &#9662;</button>
+                    </div>
+                    <button class="handle-btn handle-btn-warn" id="btn-bans" title="View and manage banned peers">Banned Peers</button>
+                    <button class="handle-btn handle-btn-accent" id="btn-node-info-peer" title="View detailed node information">NODE-INFO</button>
+                    <button class="handle-btn handle-btn-accent" id="btn-recent-blocks" title="View recently validated blocks">BLOCKS</button>
+                    <button class="handle-btn handle-btn-accent" id="btn-geoip-db-peer" title="GeoIP database info and updates">GEOIP-DB</button>
+                    <button class="handle-btn handle-btn-accent" id="btn-chain-tips" title="View chain tips and fork status">CHAIN-TIPS</button>
+                    <button class="handle-btn handle-btn-dim" id="btn-autofit" title="Automatic column size to fit">FIT</button>
+                    <button type="button" class="handle-btn handle-btn-dim" id="btn-minimize" aria-expanded="true" aria-controls="peer-panel-body" aria-label="Hide peer list table" title="Toggle peer list table">&#9660;</button>
+                    <button class="handle-btn handle-btn-dim" id="btn-table-settings" title="Table settings: columns, transparency">&#9881;</button>
+                </div>
+            </div>
+            <div class="peer-filter-status" id="peer-filter-status">
+                <span id="peer-match-count" role="status" aria-live="polite">0 matching / 0 peers</span>
+                <div id="peer-filter-chips" aria-label="Active peer filters"></div>
+                <button type="button" id="peer-clear-filters" hidden>Clear filters</button>
             </div>
         </div>
         <div class="peer-panel-body" id="peer-panel-body">
@@ -223,6 +241,10 @@
                 </table>
             </div>
         </div>
+    </div>
+    <div class="peer-export-options" id="peer-export-options" role="group" aria-label="Export format" hidden>
+        <button type="button" id="peer-export-csv">Export CSV</button>
+        <button type="button" id="peer-export-json">Export JSON</button>
     </div>
 
     <!-- [DISTRIBUTION] Detail panel — slides in from right, pushes content -->
