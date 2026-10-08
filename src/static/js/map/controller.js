@@ -116,6 +116,7 @@ function create() {
                     renderPnMiniDonut();
                     break;
                 case 'private-hide':
+                    finishInitialViewSelection();
                     exitPrivateNetMode();
                     break;
             }
@@ -168,6 +169,26 @@ function create() {
     const privateState = dashboard.privateNetwork;
 
     const PRIVATE_NETS = new Set(['onion', 'i2p', 'cjdns']);
+
+    // Choose a startup view from the first applied snapshot, unless the user
+    // navigates while that snapshot is still loading. Polling only updates data.
+    let initialViewPending = true;
+
+    function finishInitialViewSelection() {
+        initialViewPending = false;
+        document.removeEventListener('click', preserveInitialViewNavigation, true);
+        document.removeEventListener('pointerdown', preserveInitialViewNavigation, true);
+        document.removeEventListener('wheel', preserveInitialViewNavigation, true);
+    }
+
+    /** @param {Event} event */
+    function preserveInitialViewNavigation(event) {
+        if (!(event.target instanceof Element)) return;
+        const selector = event.type === 'click'
+            ? '#worldmap, .zoom-btn, .net-badge, .fd-net-chip, #as-distribution-container, #as-detail-panel, #pn-container, #pn-detail-panel, #peer-tbody'
+            : '#worldmap';
+        if (event.target.closest(selector)) finishInitialViewSelection();
+    }
 
     // DOM references
     const clockEl = required('#clock');
@@ -521,11 +542,12 @@ function create() {
         // [PRIVATE-NET] Update private network UI if in that mode
         updatePrivateNetUI();
 
-        // [PRIVATE-NET] Auto-enter private mode if user only has private peers
-        if (!privateState.privateNetMode && dashboard.peers.length > 0) {
-            const publicPeers = dashboard.peers.filter((p) => !PRIVATE_NETS.has(p.network));
-            const privatePeers = dashboard.peers.filter((p) => PRIVATE_NETS.has(p.network));
-            if (publicPeers.length === 0 && privatePeers.length > 0) {
+        // [PRIVATE-NET] Default to private mode only for a private-only startup
+        // snapshot. An empty snapshot also settles the initial world view.
+        if (initialViewPending) {
+            finishInitialViewSelection();
+            if (!privateState.privateNetMode && dashboard.peers.length > 0 &&
+                dashboard.peers.every((peer) => PRIVATE_NETS.has(peer.network))) {
                 enterPrivateNetMode();
             }
         }
@@ -806,6 +828,7 @@ function create() {
      * @param {PageTransitionEvent} event */
     function handlePageHide(event) {
         if (event.persisted) return;
+        finishInitialViewSelection();
         peerPolling.stop();
         nodeDashboard.dispose();
         privateNetwork.dispose();
@@ -838,6 +861,9 @@ function create() {
         renderer.loadGeometry();
 
         // Fetch real peer data immediately, then poll every 10s
+        document.addEventListener('click', preserveInitialViewNavigation, true);
+        document.addEventListener('pointerdown', preserveInitialViewNavigation, true);
+        document.addEventListener('wheel', preserveInitialViewNavigation, { capture: true, passive: true });
         lastPeerFetchTime = Date.now();
         fetchPeers();
         peerPolling.start();

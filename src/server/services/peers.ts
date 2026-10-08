@@ -1,4 +1,4 @@
-import { abbreviateConnectionType, formatBytes, formatDuration, isPrivateAddress, isPublicAddress, networkType, splitPeerAddress } from '../network.ts';
+import { abbreviateConnectionType, formatBytes, formatDuration, isPrivateAddress, isPublicAddress, networkType, splitPeerAddress, peerEndpointKey } from '../network.ts';
 import { type Data, type Rpc, object, nowSeconds, errorMessage } from '../types.ts';
 import { repeat, sleep } from '../tasks.ts';
 import { GeoDatabase, isValidGeoData } from './geoip.ts';
@@ -51,6 +51,7 @@ export class PeerService {
     geoCache = new Map<string, GeoEntry>();
     activeHosts = new Set<string>();
     knownAddresses = new Set<string>();
+    private knownAddressesAvailable = false;
     constructor(rpc: Rpc, geoDatabase: GeoDatabase, connectivity: ConnectivityService, signal?: AbortSignal, fetcher = fetch) {
         this.rpc = rpc; this.geoDatabase = geoDatabase; this.connectivity = connectivity; this.fetcher = fetcher;
         this.signal = AbortSignal.any([this.controller.signal, ...(signal ? [signal] : [])]);
@@ -102,8 +103,11 @@ export class PeerService {
     async refreshKnownAddresses() {
         try {
             const addresses = parseNodeAddresses(await this.rpc.call('getnodeaddresses', [0]));
-            this.knownAddresses = new Set(addresses.map(item => item.address));
-        } catch { /* Address-manager metadata is optional. */ }
+            const keys = addresses.map(item => peerEndpointKey(item.address, item.port));
+            if (keys.some(key => key === null)) throw new Error('getnodeaddresses returned an unusable endpoint');
+            this.knownAddresses = new Set(keys as string[]);
+            this.knownAddressesAvailable = true;
+        } catch { this.knownAddressesAvailable = false; /* Retain optional metadata without making current claims. */ }
     }
     cachedGeo(host: string): CachedGeoData | null {
         const entry = this.geoCache.get(host);
@@ -217,6 +221,9 @@ export class PeerService {
         return peers.map(peer => {
             const address = peer.addr || '', network = peer.network ?? networkType(address);
             const [host, port] = splitPeerAddress(address), geo = this.cachedGeo(host);
+            const endpoint = peerEndpointKey(address);
+            const addrmanStatus: Peer['addrman_status'] = !this.knownAddressesAvailable || endpoint === null ? 'unavailable' :
+                this.knownAddresses.has(endpoint) ? 'present' : 'not_returned';
             let locationStatus: Peer['location_status'] = 'pending';
             let location = 'Stalking...';
             if (['onion', 'i2p', 'cjdns'].includes(network) || isPrivateAddress(host)) { locationStatus = 'private'; location = 'PRIVATE'; }
@@ -238,7 +245,7 @@ export class PeerService {
                 version: peer.version ?? 0, connection_type: peer.connection_type ?? '',
                 connection_type_abbrev: abbreviateConnectionType(peer.connection_type || ''),
                 services, services_abbrev: services.map(name => serviceNames[name] || name.slice(0, 2)).join(' '),
-                in_addrman: this.knownAddresses.has(host), location, location_status: locationStatus, addr: address,
+                in_addrman: addrmanStatus === 'present', addrman_status: addrmanStatus, location, location_status: locationStatus, addr: address,
                 geo: metadata(geo?.status === 'ok' ? this.geoCache.get(host) : undefined),
                 is_public: isPublicAddress(network, host),
                 continent: geo?.continent ?? '',

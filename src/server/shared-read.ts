@@ -15,6 +15,7 @@ export class SharedRead<T> {
         this.fromCompletion = options.fromCompletion ?? false; this.onIdle = options.onIdle;
     }
     get loading() { return this.pending !== null; }
+    get cachedFailureExpires() { return this.cached && !this.cached.ok ? this.cached.expires : null; }
     invalidate() { this.generation++; this.cached = null; this.pending = null; }
     get(load: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<T> {
         if (signal?.aborted) return Promise.reject(signal.reason);
@@ -74,6 +75,45 @@ export class SharedRead<T> {
                 try { resolve(structuredClone(value)); } catch (error) { reject(error); }
             }, error => { if (leave()) reject(error); });
         });
+    }
+}
+
+/** Active reads have their own lifetime; only settled failures consume bounded storage. */
+export class KeyedSharedReads<Key, Value> {
+    private active = new Map<Key, SharedRead<Value>>();
+    private failures = new Map<Key, SharedRead<Value>>();
+    private prune(now: number) {
+        for (const [key, read] of this.failures) {
+            if ((read.cachedFailureExpires ?? 0) <= now) this.failures.delete(key);
+        }
+    }
+    get(key: Key, load: (signal: AbortSignal) => Promise<Value>, signal?: AbortSignal): Promise<Value> {
+        if (signal?.aborted) return Promise.reject(signal.reason);
+        this.prune(performance.now());
+        let read = this.active.get(key) || this.failures.get(key);
+        if (!read) {
+            const owned = new SharedRead<Value>(0, 1000, { onIdle: () => {
+                // A cancelled transport may settle after a replacement has started.
+                if (owned.loading || this.active.get(key) !== owned) return;
+                this.active.delete(key);
+                const now = performance.now();
+                this.prune(now);
+                if ((owned.cachedFailureExpires ?? 0) > now) {
+                    this.failures.set(key, owned);
+                    if (this.failures.size > 256) this.failures.delete(this.failures.keys().next().value!);
+                }
+            } });
+            read = owned;
+            this.active.set(key, read);
+        }
+        const result = read.get(load, signal);
+        // The cache may expire between pruning and SharedRead's own clock check.
+        // A retry must own an active slot before another caller can join it.
+        if (read.loading) {
+            this.failures.delete(key);
+            this.active.set(key, read);
+        }
+        return result;
     }
 }
 

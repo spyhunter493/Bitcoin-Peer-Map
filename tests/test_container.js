@@ -5,6 +5,7 @@ import { once } from 'node:events';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { setTimeout as delay } from 'node:timers/promises';
+import { runMountedSecretsSmoke } from './deployment/mounted-secrets-smoke.js';
 
 const execute = promisify(execFile);
 const docker = async (...args) => (await execute('docker', args, { timeout: 60000 })).stdout.trim();
@@ -20,7 +21,7 @@ const values = {
     getblockheader: { height: 100, time: 1000 }, getindexinfo: {},
     getnettotals: { totalbytesrecv: 2048, totalbytessent: 4096 }, getmempoolinfo: { size: 5 },
     getpeerinfo: [{ id: 1, addr: '8.8.8.8:8333', network: 'ipv4', subver: '/Satoshi:30/' }],
-    getnodeaddresses: [{ address: '8.8.8.8' }],
+    getnodeaddresses: [{ address: '8.8.8.8', port: 8333 }],
 };
 const rpc = createServer(async (req, res) => {
     const chunks = []; for await (const chunk of req) chunks.push(chunk);
@@ -168,3 +169,4 @@ try {
     await docker('volume', 'rm', volume).catch(() => {});
     rpc.closeAllConnections(); await new Promise(resolve => rpc.close(resolve));
 }
+await runMountedSecretsSmoke({ image, platform });

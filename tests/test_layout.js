@@ -9,6 +9,8 @@ import { chromium } from 'playwright';
 import assertPeerViews from './test_peer_views.js';
 import assertPeerLifecycle from './test_peer_lifecycle.js';
 import assertTableDom from './test_peer_table_dom.js';
+import assertPeerAccuracy from './test_peer_accuracy.js';
+import assertNarrowManagementDialogs from './test_narrow_management_dialogs.js';
 import assertPeerActionGeometry from './test_peer_action_geometry.js';
 import assertModules from './test_modules.js';
 import assertMapGroups from './test_map_groups.js';
@@ -20,6 +22,7 @@ import assertNodeMetrics from './test_node_metrics.js';
 import assertSharedDialogs from './test_shared_dialogs.js';
 import assertPrivateNodeComponents from './test_private_node_components.js';
 import assertNavigation from './test_navigation.js';
+import assertPrivateViewNavigation from './test_private_view_navigation.js';
 import assertAdminAuthentication from './test_admin_auth.js';
 import assertManagementFeedback from './test_management_feedback.js';
 import assertNetworkExamples from './test_network_examples.js';
@@ -899,6 +902,8 @@ const suites = [
     ['peer views and safe rendering', assertPeerViews],
     ['peer lifecycle', assertPeerLifecycle],
     ['peer table DOM updates', assertTableDom],
+    ['peer accuracy and coordinate sorting', assertPeerAccuracy],
+    ['narrow management dialogs', assertNarrowManagementDialogs],
     ['peer action pointer geometry', assertPeerActionGeometry],
     ['dashboard polling and reduced motion', assertDashboardLifecycle],
     ['GeoIP settings', assertGeoIPSettings],
@@ -913,6 +918,7 @@ const suites = [
     ['map pan, zoom, touch, and canvas rendering', assertMapInput],
     ['large peer tables and static map rendering', assertDashboardPerformance],
     ['tooltip refresh and navigation', assertNavigation],
+    ['private view navigation', assertPrivateViewNavigation],
     ['keyboard exploration', assertKeyboardNavigation],
     ['admin authentication', assertAdminAuthentication],
     ['management feedback', assertManagementFeedback],
