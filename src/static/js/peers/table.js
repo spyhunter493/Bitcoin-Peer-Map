@@ -4,6 +4,8 @@ import { query, queryAll, required, closest } from '../core/dom.js';
 import * as BPMFormat from '../core/format.js';
 import * as BPMPeerTableModel from './table-model.js';
 import * as TableWindow from './table-window.js';
+import { filterSearch } from './table-search.js';
+import * as TableTools from './table-tools.js';
 import { fmtPing } from '../core/ping.js';
 import { formatCoordinate } from '../core/coordinates.js';
 import { addrmanLabel } from '../core/addrman.js';
@@ -11,6 +13,9 @@ import { formatGeoAge, geoSourceLabel, geoFreshnessLabel } from '../core/geo.js'
 /** @param {import('../types').PeerTableOptions} options
  *  @returns {import('../types').PeerTableController} */
 function create(options) {
+    let disposed = false;
+    /** @type {ReturnType<typeof setTimeout> | null} */
+    let fitTimer = null;
     const dashboard = options.dashboard;
     const privateState = dashboard.privateNetwork;
     const { mapView, preferences, onAction } = options;
@@ -260,6 +265,7 @@ function create(options) {
     /** Fit from the full snapshot's 95th percentile, preserving manual widths.
      * Cached measurements are reused on resize; unchanged widths retain the colgroup. */
     function renderColgroup() {
+        if (disposed) return;
         const table = required('#peer-table');
         measureActionsWidth();
         const widths = [];
@@ -337,7 +343,8 @@ function create(options) {
     const tableViewport = required('.peer-table-wrap', panelEl);
     let observedWidth = tableViewport.clientWidth;
     let layoutFrame = 0;
-    new ResizeObserver(() => {
+    const columnObserver = new ResizeObserver(() => {
+        if (disposed) return;
         const width = tableViewport.clientWidth;
         if (width === observedWidth) return;
         observedWidth = width;
@@ -346,9 +353,11 @@ function create(options) {
             layoutFrame = 0;
             if (autoFitColumns) renderColgroup();
         });
-    }).observe(tableViewport);
-    document.fonts.ready.then(() => renderColgroup());
-    document.fonts.addEventListener('loadingdone', () => renderColgroup());
+    });
+    columnObserver.observe(tableViewport);
+    const refreshFonts = () => renderColgroup();
+    document.fonts.ready.then(refreshFonts);
+    document.fonts.addEventListener('loadingdone', refreshFonts);
 
     /** Build table header row with resize handles */
     function renderPeerTableHead() {
@@ -380,6 +389,41 @@ function create(options) {
     let renderedColumns = [];
     /** @type {number | null} */
     let highlightedRowId = null;
+    const tableTools = TableTools.create({
+        onQuery: () => renderPeerTable(),
+        onClear: (filter) => onAction({ type: 'clear-filter', filter }),
+    });
+
+    /** The chips describe the same scopes that determine the table result. */
+    function activeFilterScopes() {
+        /** @type {import('./table-tools').FilterScope[]} */
+        const scopes = [];
+        const interaction = dashboard.interaction;
+        const distribution = dashboard.distribution;
+        if (privateState.privateNetMode) {
+            scopes.push({ key: 'private-mode', label: 'Private view' });
+            if (privateState.pnSelectedNet) scopes.push({ key: 'private-network', label: `Network: ${NET_DISPLAY[privateState.pnSelectedNet] || privateState.pnSelectedNet}` });
+            if (privateState.pnFilter) scopes.push({ key: 'private-filter', label: `Private group: ${privateState.pnFilter.label}` });
+        } else {
+            if (!['ipv4', 'ipv6', 'onion', 'i2p', 'cjdns'].every(network => interaction.enabledNets.has(network))) {
+                scopes.push({ key: 'network', label: `Networks: ${[...interaction.enabledNets].map(network => NET_DISPLAY[network] || network).join(', ') || 'none'}` });
+            }
+            const distributionScope = !distribution.peerDetailActive || distribution.selectedProvider ||
+                distribution.activeNetwork || distribution.insightActiveAsNum ||
+                distribution.filterPeerIds !== null || distribution.subSubFilterPeerIds !== null;
+            if (interaction.asFilterPeerIds !== null && distributionScope) {
+                const provider = distribution.selectedProvider;
+                const detail = distribution.filterLabel || (distribution.activeNetwork ? NET_DISPLAY[distribution.activeNetwork] : null);
+                const label = [provider, detail, distribution.subSubFilterProvider].filter(Boolean).join(' / ') || 'Distribution selection';
+                scopes.push({ key: 'provider', label: `Selection: ${label}` });
+            }
+            if (interaction.mapFilterPeerIds !== null) {
+                const ids = [...interaction.mapFilterPeerIds];
+                scopes.push({ key: 'map', label: ids.length === 1 ? `Map: peer ${ids[0]}` : `Map: ${ids.length} peers` });
+            }
+        }
+        return scopes;
+    }
 
     /**
      * @param {HTMLTableCellElement} cell
@@ -431,6 +475,7 @@ function create(options) {
 
     /** Build table body from lastPeers (filtered by active network filter) */
     function renderPeerTable() {
+        if (disposed) return;
         if (!tbodyEl) return;
         if (autoFitColumns) renderColgroup();
         const peers =
@@ -445,14 +490,26 @@ function create(options) {
             mapPeerIds: dashboard.interaction.mapFilterPeerIds,
         });
         const sorted = BPMPeerTableModel.sortPeers(
-            filtered,
+            filterSearch(filtered, tableTools.query),
             COLUMNS.find((column) => column.key === sortKey),
             sortAsc
         );
 
         renderedColumns = visibleColumns.map((key) => COLUMNS.find((column) => column.key === key)).filter((column) => column !== undefined);
         if (highlightedRowId !== null && !dashboard.byId.has(highlightedRowId)) highlightedRowId = null;
+        query('.peer-search-empty', tbodyEl)?.remove();
         tableWindow.update(sorted, visibleColumns.join('|'), renderedColumns.length + 1);
+        const scopes = activeFilterScopes();
+        tableTools.update({peers: sorted, total: dashboard.peers.length, columns: renderedColumns,
+            sort: {key: sortKey, direction: sortKey ? (sortAsc ? 'ascending' : 'descending') : null}, scopes});
+        if (!sorted.length && (tableTools.query.trim() || scopes.length)) {
+            const row = document.createElement('tr');
+            row.className = 'peer-search-empty';
+            const cell = row.insertCell();
+            cell.colSpan = renderedColumns.length + 1;
+            cell.textContent = 'No peers match these filters. Clear search or remove a filter to broaden the list.';
+            tbodyEl.appendChild(row);
+        }
         // The initial snapshot mounts the controls after the first width pass.
         // Measure their actual rendered font before exposing the finished table.
         renderColgroup();
@@ -855,14 +912,19 @@ function create(options) {
     }
 
     function applyMaxPeerRows() {
+        if (disposed) return;
+        if (fitTimer !== null) clearTimeout(fitTimer);
+        fitTimer = null;
         const panel = query('.peer-panel', document);
         if (!panel) return;
         let prefitForPanelGrowth = false;
         if (maxPeerRows > 0) {
-            // handle(48) + thead(22) + rows * 22 + a tiny bit of padding
-            const h = 48 + 22 + maxPeerRows * 22 + 4;
+            const headerHeight = required('#peer-panel-handle').offsetHeight;
             const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
-            const finalPanelTop = viewportHeight - h;
+            const topbarBottom = document.getElementById('topbar')?.getBoundingClientRect().bottom || 0;
+            const available = Math.max(headerHeight + 44, viewportHeight - topbarBottom - 40);
+            const h = Math.min(headerHeight + 22 + maxPeerRows * 22 + 4, available);
+            const finalPanelTop = viewportHeight - 28 - h;
             const currentPanelTop = panel.getBoundingClientRect().top;
             panel.style.maxHeight = h + 'px';
             if (finalPanelTop < currentPanelTop) {
@@ -873,10 +935,26 @@ function create(options) {
             panel.style.maxHeight = '';
         }
         if (prefitForPanelGrowth) {
-            setTimeout(() => onAction({ type: 'fit' }), 520);
+            fitTimer = setTimeout(() => { fitTimer = null; onAction({ type: 'fit' }); }, 520);
         } else {
             onAction({ type: 'layout' });
         }
+    }
+
+    const headerObserver = new ResizeObserver(applyMaxPeerRows);
+    headerObserver.observe(required('#peer-panel-handle'));
+
+    function dispose() {
+        if (disposed) return;
+        disposed = true;
+        if (fitTimer !== null) clearTimeout(fitTimer);
+        tableTools.dispose();
+        tableWindow.dispose();
+        headerObserver.disconnect();
+        columnObserver.disconnect();
+        if (layoutFrame) cancelAnimationFrame(layoutFrame);
+        document.fonts.removeEventListener('loadingdone', refreshFonts);
+        closeTableSettings();
     }
 
     /**
@@ -919,6 +997,7 @@ function create(options) {
         applyPanelOpacity,
         applyMaxPeerRows,
         highlightTableRow,
+        dispose,
     });
 }
 

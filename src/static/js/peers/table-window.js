@@ -28,6 +28,7 @@ export function create({ tbody, thead, viewport, updateRow }) {
     let columnCount = 1;
     let rowHeight = 22;
     let start = -1, end = -1;
+    let active = true;
 
     function spacer() {
         const row = document.createElement('tr');
@@ -64,6 +65,7 @@ export function create({ tbody, thead, viewport, updateRow }) {
 
     /** @param {boolean} [update] @param {boolean} [rebuildCells] */
     function render(update = false, rebuildCells = false) {
+        if (!active) return;
         const focused = focusedAction();
         const height = Math.max(rowHeight, viewport.clientHeight - thead.offsetHeight);
         const range = rowRange(peers.length, viewport.scrollTop, height, rowHeight);
@@ -128,12 +130,16 @@ export function create({ tbody, thead, viewport, updateRow }) {
         }
     }
 
-    viewport.addEventListener('scroll', () => render(), { passive: true });
-    new ResizeObserver(() => render()).observe(viewport);
-    tbody.addEventListener('focusout', () => queueMicrotask(() => render(true)));
+    const handleScroll = () => render();
+    const handleFocusOut = () => queueMicrotask(() => render(true));
+    const observer = new ResizeObserver(handleScroll);
+    viewport.addEventListener('scroll', handleScroll, { passive: true });
+    observer.observe(viewport);
+    tbody.addEventListener('focusout', handleFocusOut);
 
     /** @param {number} peerId @param {boolean} smooth */
     function reveal(peerId, smooth) {
+        if (!active) return;
         const index = peers.findIndex(peer => peer.id === peerId);
         if (index < 0) return;
         const top = index * rowHeight;
@@ -156,7 +162,8 @@ export function create({ tbody, thead, viewport, updateRow }) {
     }
 
     // Traverse the complete logical peer list, including unmounted rows.
-    tbody.addEventListener('keydown', event => {
+    /** @param {KeyboardEvent} event */
+    function handleKeydown(event) {
         if (event.key !== 'Tab' || event.altKey || event.ctrlKey || event.metaKey) return;
         const focused = focusedAction();
         if (!focused) return;
@@ -172,12 +179,14 @@ export function create({ tbody, thead, viewport, updateRow }) {
         const button = actionButton(peer.id, actions[next % actions.length]);
         if (button instanceof HTMLElement) button.focus();
         render(true);
-    });
+    }
+    tbody.addEventListener('keydown', handleKeydown);
 
     return Object.freeze({
         /** @param {readonly import('../types').Peer[]} sorted
          * @param {string} signature @param {number} count */
         update(sorted, signature, count) {
+            if (!active) return;
             const focused = focusedAction();
             const oldIndex = focused ? peers.findIndex(peer => peer.id === focused.peerId) : -1;
             const rebuild = columns !== signature;
@@ -202,5 +211,12 @@ export function create({ tbody, thead, viewport, updateRow }) {
         },
         /** @param {number} peerId @param {boolean} smooth */
         reveal,
+        dispose() {
+            active = false;
+            observer.disconnect();
+            viewport.removeEventListener('scroll', handleScroll);
+            tbody.removeEventListener('focusout', handleFocusOut);
+            tbody.removeEventListener('keydown', handleKeydown);
+        },
     });
 }

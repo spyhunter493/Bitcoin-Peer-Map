@@ -11,8 +11,21 @@ service providers, and inspect node, block, and mempool information.
 
 - Map connected peers by location, network, and service provider.
 - Inspect peer details, connection status, traffic, and advertised services.
+- Search the peer list, remove individual filters, and export matching peers.
 - Connect, disconnect, and ban peers from the dashboard.
 - Cache peer locations locally and control external GeoIP lookups.
+
+Search beside **Connect Peer** matches every word, ignoring case, across peer
+IDs, addresses, software, location, providers, networks, and connection direction.
+It combines with the current filters and stays in place as peer data refreshes.
+Remove a filter chip to broaden that scope; removing **Private view** returns to
+the public world with All networks. **Clear filters** clears the search and every
+scope, including selections hidden by the private view.
+
+**Export** downloads every matching peer in the current sort order, including
+rows outside the visible table. CSV uses the visible columns and their display
+values; JSON includes complete peer records, counts, filters, sort, columns, and
+the export time. An empty result exports a CSV header or an empty JSON peer list.
 
 ## Requirements
 
