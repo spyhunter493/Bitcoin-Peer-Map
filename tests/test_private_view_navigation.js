@@ -9,6 +9,16 @@ export default async function assertPrivateViewNavigation(browser, baseUrl) {
     const publicPeer = seed.peers.find(peer => peer.network === 'ipv4');
     assert.ok(publicPeer);
 
+    async function returnToWorld(page) {
+        // Opening the private panel moves the donut after the snapshot applies.
+        // Wait for that transition so the real pointer click reaches Return.
+        await page.waitForSelector('#pn-detail-panel.visible');
+        await page.waitForFunction(() => document.getElementById('pn-container').getAnimations()
+            .every(animation => !animation.pending && animation.playState !== 'running'));
+        await page.getByRole('button', { name: 'Return to public network view' }).click();
+        await page.waitForFunction(() => window.privateViewDashboard.privateNetwork.privateNetMode === false);
+    }
+
     async function scenario(initialPeers, run, { failed = false, delayed = false } = {}) {
         const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
         await context.addInitScript(() => {
@@ -76,7 +86,7 @@ export default async function assertPrivateViewNavigation(browser, baseUrl) {
 
     await scenario(privatePeers, async ({ page, mode, poll }) => {
         assert.equal(await mode(), true, 'a private-only startup defaults to private mode');
-        await page.getByRole('button', { name: 'Return to public network view' }).click();
+        await returnToWorld(page);
         assert.equal(await mode(), false);
         await poll(privatePeers);
         assert.equal(await mode(), false, 'a successful poll preserves Return to the world view');
@@ -102,7 +112,7 @@ export default async function assertPrivateViewNavigation(browser, baseUrl) {
         assert.equal(await mode(), false, 'a failed initial request has no snapshot to select a view');
         await poll(privatePeers);
         assert.equal(await mode(), true, 'the first applied snapshot still selects the startup view after a failure');
-        await page.getByRole('button', { name: 'Return to public network view' }).click();
+        await returnToWorld(page);
         await poll(privatePeers);
         assert.equal(await mode(), false);
     }, { failed: true });
