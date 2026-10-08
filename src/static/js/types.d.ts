@@ -2,7 +2,7 @@
 export interface AdminAuthentication {
     getToken(): string;
     clearToken(): void;
-    requestToken(signal?: AbortSignal): Promise<string>;
+    requestToken(signal?: AbortSignal, cooldownDeadline?: number): Promise<string>;
 }
 
 /** Wire contracts are generated; these projections describe browser-only display state. */

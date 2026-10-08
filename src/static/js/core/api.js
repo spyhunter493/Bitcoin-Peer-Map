@@ -93,7 +93,8 @@ async function postJson(url, body, options) {
         const anonymousCooldown = error.status === 429 && !previousToken && error.data !== null && typeof error.data === 'object' && 'code' in error.data && error.data.code === 'admin_rate_limited';
         if (error.status !== 401 && !anonymousCooldown) throw error;
         if (error.status === 401 && authentication.getToken() === previousToken) authentication.clearToken();
-        const token = await authentication.requestToken(options?.signal || undefined);
+        const cooldownDeadline = anonymousCooldown ? Date.now() + (error.retryAfterSeconds ?? 60) * 1000 : undefined;
+        const token = await authentication.requestToken(options?.signal || undefined, cooldownDeadline);
         options?.signal?.throwIfAborted();
         headers.set('Authorization', `Bearer ${token}`);
         try {

@@ -5,7 +5,7 @@ import { configureAdminAuthentication, postJson, getJson, HttpError } from '../.
 test('management challenge retries once with the same payload and preserves caller headers', async t => {
     let token = 'old', prompts = 0;
     const calls = [];
-    configureAdminAuthentication({ getToken: () => token, clearToken: () => { token = ''; }, requestToken: async () => { prompts++; return token = 'new'; } });
+    configureAdminAuthentication({ getToken: () => token, clearToken: () => { token = ''; }, requestToken: async (_signal, cooldownDeadline) => { assert.equal(cooldownDeadline, undefined); prompts++; return token = 'new'; } });
     t.after(() => configureAdminAuthentication(null));
     t.mock.method(globalThis, 'fetch', async (url, options) => {
         calls.push({ url, body: options.body, headers: new Headers(options.headers) });
@@ -99,6 +99,27 @@ test('anonymous unrelated cooldowns are not authentication challenges', async t 
         await assert.rejects(postJson('/api/peer/connect'), { status: 429 });
     }
     assert.equal(requests, 4);
+});
+
+test('an initial anonymous cooldown hands its deadline and cancellation signal to the prompt', async t => {
+    const controller = new AbortController();
+    t.mock.method(Date, 'now', () => 5000);
+    t.after(() => configureAdminAuthentication(null));
+    for (const [retryAfter, expectedDeadline] of [['42', 47000], [new Date(70000).toUTCString(), 70000], [null, 65000], ['invalid', 65000], ['0', 5000]]) {
+        let requests = 0, prompts = 0;
+        configureAdminAuthentication({ getToken: () => '', clearToken() {}, requestToken: async (signal, cooldownDeadline) => {
+            assert.equal(signal, controller.signal);
+            assert.equal(cooldownDeadline, expectedDeadline);
+            prompts++;
+            return 'valid';
+        } });
+        t.mock.method(globalThis, 'fetch', async () => ++requests === 1
+            ? Response.json({ code: 'admin_rate_limited' }, { status: 429, headers: retryAfter === null ? {} : { 'Retry-After': retryAfter } })
+            : Response.json({ success: true }));
+        await postJson('/api/peer/connect', { address: '8.8.8.8' }, { signal: controller.signal });
+        assert.equal(prompts, 1);
+        assert.equal(requests, 2, 'authentication replays only the challenged action');
+    }
 });
 
 test('an anonymous cooldown cancellation or failed replay never retries the management action again', async t => {
