@@ -99,6 +99,7 @@ Set the RPC host and credentials. Configure an admin token to enable management.
 | `BITCOIN_NETWORK` | `main` | Node network: `main`, `test`, `testnet4`, `signet`, or `regtest` |
 | `BPM_RPC_STARTUP_TIMEOUT` | `30` | Time to wait for RPC during startup, in seconds |
 | `BPM_ADMIN_TOKEN` | Unset (read-only) | Shared secret required for peer management and server settings changes |
+| `BPM_TRUSTED_PROXIES` | Empty (trust none) | Comma-separated literal IP addresses or CIDRs allowed to supply client addresses for anonymous authentication throttling |
 | `BPM_LOG_LEVEL` | `info` | Minimum server log level: `debug`, `info`, `warn`, or `error` |
 | `BPM_IMAGE` | `ghcr.io/spyhunter493/bitcoin-peer-map:latest` | Published image reference; use a tag or digest to pin a build |
 | `BPM_HOST_BIND` | `0.0.0.0` | Host interface to publish on; use `127.0.0.1` for access through a local reverse proxy |
@@ -207,18 +208,52 @@ values succeed without rewriting preferences. The old `/api/geodb/toggle-db-only
 and `/api/geodb/toggle-auto-update` endpoints return authenticated HTTP 410 with
 a replacement endpoint and reload instruction; they perform no mutation.
 Missing or incorrect tokens return HTTP 401 before any action executes. After ten
-failed attempts within 60 seconds of the first failure from a connection address,
-all subsequent management requests return HTTP 429 with `Retry-After`, including
-correct tokens, until that window expires. Blocked requests do not extend it;
-successful authentication before the threshold clears the failure history.
-The browser preserves its token on HTTP 429, shows the cooldown, and does not
-prompt or retry the action automatically. An open unlock dialog disables
-verification until the deadline while keeping cancellation available.
-At most 1,024 address windows are tracked; when full, new addresses receive HTTP
-429 until the earliest window expires. Active windows are never evicted.
-Limits use the socket
-address, so clients behind one reverse proxy share a limit. Forwarding headers do
-not change it.
+failed attempts within 60 seconds of the first failure from a client address,
+further invalid credentials return HTTP 429 with `Retry-After` until that fixed
+window expires. Blocked requests do not extend it. Correct tokens remain usable
+during a cooldown and do not clear another visitor's anonymous failure history.
+At most 1,024 address windows are tracked; while full, invalid credentials from
+new addresses receive HTTP 429 until a window expires. Active windows are never
+evicted, and valid credentials remain usable even when storage is full.
+
+For a user-initiated action without a stored token, an authentication cooldown can
+still open **Unlock management**. The dialog shows the remaining cooldown and
+allows manual verification of a changed token before expiry; it disables the same
+rejected token and submissions already in flight. Successful verification executes
+the pending action once. Cancellation remains available. Unrelated HTTP 429
+responses do not open authentication prompts or clear the tab's existing token,
+and the browser never automatically retries a throttled request.
+
+Credentials are checked before anonymous throttling to prevent visitors sharing
+an address from locking out administrators. This response throttle therefore
+does not impose a hard limit on token guesses. Use a long random token and
+separate request limits at the reverse proxy for public deployments.
+
+### Trusted proxy addresses
+
+By default, anonymous limits use the socket address and ignore forwarding
+headers. Visitors behind one proxy share that limit. Configure only the proxy
+addresses you control to give visitors independent failure windows, for example:
+
+```env
+BPM_TRUSTED_PROXIES=127.0.0.1,::1,172.20.0.5/32
+```
+
+Entries must be literal IPv4/IPv6 addresses or CIDRs. Hostnames, wildcards,
+malformed or blank list entries, and `/0` trust-all ranges fail startup. There is
+no automatic trust for loopback or private networks. Restrict backend access to
+these proxies, and configure each proxy to overwrite incoming `X-Forwarded-For`
+or append the address of its verified connection peer. Keep the trusted ranges
+as narrow as possible.
+
+Only a trusted socket peer enables `X-Forwarded-For`. The application combines
+all its fields in wire order, walks from right to left over trusted proxy hops,
+and uses the first untrusted IP as the limiter identity. Equivalent IPv6 spellings
+and IPv4-mapped addresses share an identity. Missing, malformed, all-trusted,
+or excessive chains fall back to the socket address. Parsing is bounded to 4 KiB
+and 32 forwarded addresses. Other forwarding headers do not affect this feature.
+See [MDN's trusted-proxy traversal guidance](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/X-Forwarded-For#selecting_an_ip_address).
+Proxy trust does not authenticate administrators or relax the Host/Origin guard.
 
 Use HTTPS when sending this token over an untrusted network, including browser
 access. A TLS proxy does not need to implement login if public viewing is intended;
@@ -242,8 +277,25 @@ includes the RPC endpoint, server settings, GeoIP settings, and installed build.
 ## Compose secrets
 
 Use a password file when your deployment supplies secrets as mounted files.
-For Docker Compose, store the password in `secrets/bitcoin_rpc_password`, restrict
-its file permissions, and add this to `compose.override.yaml`:
+The production image runs as UID/GID **10001:10001**. On rootful Linux without
+user-namespace remapping, a file owned by your login user with mode `0600` is
+usually unreadable to that container identity.
+
+Create `secrets/bitcoin_rpc_password` using your editor or secret manager. Choose
+one of these host-file permission patterns:
+
+```bash
+# Container identity owns the file; only that owner can read it.
+sudo chmod 0600 secrets/bitcoin_rpc_password
+sudo chown 10001:10001 secrets/bitcoin_rpc_password
+
+# Alternatively, keep your login user as owner and grant the container group read access.
+sudo chmod 0640 secrets/bitcoin_rpc_password
+sudo chown "$(id -u):10001" secrets/bitcoin_rpc_password
+```
+
+The second pattern lets your login user update the file; keep membership of host
+group 10001 restricted. Add this to `compose.override.yaml`:
 
 ```yaml
 services:
@@ -259,6 +311,33 @@ secrets:
     file: ./secrets/bitcoin_rpc_password
 ```
 
-Compose mounts the file at `/run/secrets/bitcoin_rpc_password`; the application
-reads it during startup. The `secrets/` directory, `.env`, and local Compose
-overrides are excluded from Git.
+Keep `BITCOIN_RPC_PASSWORD` empty when using `BITCOIN_RPC_PASSWORD_FILE`; supplying
+both sources causes a configuration error. Compose mounts file-backed secrets
+using bind mounts that preserve host permissions. The secret's `uid`, `gid`, and
+`mode` settings do not change permissions for this file-backed mount. See the
+[Docker Compose secrets reference](https://docs.docker.com/reference/compose-file/services/#secrets).
+
+Before starting the application, check the effective container identity and file
+readability with the same Compose configuration. This probe prints no password:
+
+```bash
+docker compose run --rm --no-deps bpm sh -c '
+  id &&
+  test -z "$BITCOIN_RPC_PASSWORD" &&
+  test -n "$BITCOIN_RPC_PASSWORD_FILE" &&
+  test -f "$BITCOIN_RPC_PASSWORD_FILE" &&
+  test -r "$BITCOIN_RPC_PASSWORD_FILE" &&
+  printf "Mounted RPC password is readable\n"
+'
+```
+
+A nonzero exit means the password source or permissions need correcting before
+startup. With rootless Docker or user-namespace remapping, container UID/GID 10001
+maps to different host IDs. Set ownership for your daemon's actual mapping and
+repeat the probe instead of assuming host IDs 10001. Docker's
+[user namespace guide](https://docs.docker.com/engine/security/userns-remap/)
+describes the mapping and bind-mount ownership requirements.
+
+The application reads `/run/secrets/bitcoin_rpc_password` during startup. The
+`secrets/` directory, `.env`, and local Compose overrides are excluded from Git
+and the Docker build context.

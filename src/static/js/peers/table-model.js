@@ -1,4 +1,5 @@
 import { comparePing } from '../core/ping.js';
+import { coordinateValue, compareCoordinates } from '../core/coordinates.js';
 /** @param {readonly import('../types').Peer[]} peers
  *  @param {import('../types').PeerTableFilters} filters
  *  @returns {import('../types').Peer[]} */
@@ -25,6 +26,7 @@ function sortPeers(peers, column, ascending) {
     return sorted.sort((a, b) => {
         let comparison;
         if (column.key === 'ping_ms') return comparePing(a.ping_ms, b.ping_ms, ascending);
+        else if (column.key === 'lat' || column.key === 'lon') return compareCoordinates(coordinateValue(a, column.key), coordinateValue(b, column.key), ascending);
         else if (column.key === 'geo_age_seconds') {
             const left = a.geo?.age_seconds, right = b.geo?.age_seconds;
             if (left == null) return right == null ? 0 : 1;

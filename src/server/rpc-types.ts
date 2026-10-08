@@ -10,6 +10,7 @@ const text: Parser<string> = (value, path) => typeof value === 'string' ? value 
 const nonempty: Parser<string> = (value, path) => typeof value === 'string' && value.trim() ? value : invalid(path);
 const number: Parser<number> = (value, path) => typeof value === 'number' && Number.isFinite(value) ? value : invalid(path);
 const integer: Parser<number> = (value, path) => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : invalid(path);
+const port: Parser<number> = (value, path) => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value <= 65535 ? value : invalid(path);
 const boolean: Parser<boolean> = (value, path) => typeof value === 'boolean' ? value : invalid(path);
 const optional = <T>(parse: Parser<T>): Parser<T | null | undefined> => (value, path) => value == null ? value : parse(value, path);
 const array = <T>(parse: Parser<T>): Parser<T[]> => (value, path) => {
@@ -59,7 +60,7 @@ const networkInfo = shape({
 });
 export type NetworkInfo = ReturnType<typeof networkInfo>;
 export const parseNetworkInfo = (value: unknown): NetworkInfo => networkInfo(value, 'getnetworkinfo');
-export const parseNodeAddresses = (value: unknown) => array(shape({ address: nonempty }))(value, 'getnodeaddresses');
+export const parseNodeAddresses = (value: unknown) => array(shape({ address: nonempty, port }))(value, 'getnodeaddresses');
 
 const blockchain = shape({
     chain: optional(nonempty), blocks: optional(integer), bestblockhash: optional(nonempty),

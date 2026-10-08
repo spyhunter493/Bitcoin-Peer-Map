@@ -60,6 +60,19 @@ test('admin token accepts short values and rejects malformed configuration witho
         });
     }
 });
+test('trusted proxy configuration is explicit, parsed at startup and frozen', () => {
+    assert.deepEqual(settings().trusted_proxies, []);
+    const config = settings({ BPM_TRUSTED_PROXIES: '192.0.2.12/24,2001:db8::12/128' }).trusted_proxies;
+    assert.deepEqual(config.map(proxy => [proxy.family, proxy.prefix]), [[4, 24], [6, 128]]);
+    assert.ok(Object.isFrozen(config));
+    for (const value of ['*', 'localhost', '127.0.0.1,', '127.0.0.1/0', '::/0', 'fe80::1%eth0', '127.0.0.1\n']) {
+        assert.throws(() => settings({ BPM_TRUSTED_PROXIES: value }), error => {
+            assert.ok(error instanceof ConfigurationError);
+            assert.match(error.message, /BPM_TRUSTED_PROXIES/);
+            return true;
+        });
+    }
+});
 test('build version defaults and stable release validation are independent of revision', () => {
     assert.equal(settings().build_version, 'dev');
     assert.equal(settings({ BPM_BUILD_VERSION: ' ' }).build_version, 'dev');

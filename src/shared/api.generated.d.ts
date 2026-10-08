@@ -568,7 +568,13 @@ export interface components {
             connection_type_abbrev: string;
             services: string[];
             services_abbrev: string;
+            /** @description True only when the exact normalized host and explicit port were observed in the latest valid getnodeaddresses inventory. False means not observed or unavailable; it never confirms absence from Addrman. */
             in_addrman: boolean;
+            /**
+             * @description present: exact endpoint observed; not_returned: endpoint omitted from the latest valid filtered inventory, including an empty inventory; unavailable: inventory failed, has not loaded, or the peer endpoint is unusable. Omission does not confirm absence from Addrman.
+             * @enum {string}
+             */
+            addrman_status: "present" | "not_returned" | "unavailable";
             location: string;
             /** @enum {string} */
             location_status: "pending" | "private" | "ok" | "unavailable";
@@ -1022,7 +1028,7 @@ export interface components {
                 "application/json": components["schemas"]["ErrorResponse"];
             };
         };
-        /** @description Authentication cooldown for the socket connection address. All management requests, including valid tokens, are rejected until Retry-After expires. Untracked addresses are also rejected while all 1,024 active windows are occupied. */
+        /** @description Anonymous authentication cooldown for the client address (socket by default, or the first untrusted hop supplied by explicitly trusted proxies). Invalid credentials are rejected until Retry-After expires. Invalid credentials from untracked addresses are also rejected while all 1,024 active windows are occupied. Valid admin tokens remain usable during cooldowns and storage saturation without clearing anonymous failure history. */
         AdminRateLimited: {
             headers: {
                 "Retry-After"?: string;

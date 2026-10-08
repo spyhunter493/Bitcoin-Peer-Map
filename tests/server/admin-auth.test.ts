@@ -1,14 +1,17 @@
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { createServer, request as httpRequest } from 'node:http';
+import { once } from 'node:events';
 import { createAdminAuthentication } from '../../src/server/admin-auth.ts';
+import { parseTrustedProxies } from '../../src/server/trusted-proxies.ts';
 import { createApplication } from '../../src/server/app.ts';
 import { FixtureRuntime, fixtureSettings, FIXTURE_ADMIN_TOKEN } from '../layout_server.ts';
 import { temporaryDirectory } from './helpers.ts';
 
 const actions = ['/api/peer/connect', '/api/peer/disconnect', '/api/peer/ban', '/api/peer/unban', '/api/bans/clear', '/api/geodb/db-only', '/api/geodb/auto-update', '/api/geodb/update', '/api/connectivity/api-prompt-ack'];
-async function application(t: TestContext, token = FIXTURE_ADMIN_TOKEN) {
-    const settings = fixtureSettings(temporaryDirectory(t), token), runtime = new FixtureRuntime(settings);
+async function application(t: TestContext, token = FIXTURE_ADMIN_TOKEN, proxies = '') {
+    const settings = { ...fixtureSettings(temporaryDirectory(t), token), trusted_proxies: parseTrustedProxies(proxies) }, runtime = new FixtureRuntime(settings);
     const calls: string[] = [];
     for (const name of ['connect', 'disconnect', 'ban', 'unban', 'clearBans'] as const) {
         const original = runtime.node[name];
@@ -99,7 +102,7 @@ test('the Origin guard remains enforced with valid tokens and tokens in URLs are
     assert.equal((await post('/api/peer/connect', { Authorization: `Bearer ${FIXTURE_ADMIN_TOKEN}`, Origin: base })).status, 200);
 });
 
-test('authentication cooldown rejects correct tokens, ignores forwarding headers, and never extends the first-failure window', async t => {
+test('anonymous cooldown ignores untrusted forwarding headers and valid credentials preserve the fixed window', async t => {
     let time = 1000;
     t.mock.method(Date, 'now', () => time);
     const { post, calls } = await application(t);
@@ -108,18 +111,27 @@ test('authentication cooldown rejects correct tokens, ignores forwarding headers
     assert.equal(limited.status, 429); assert.equal(limited.headers.get('retry-after'), '60');
     assert.equal((await limited.json()).code, 'admin_rate_limited');
     time += 15_000;
-    const validBlocked = await post('/api/peer/connect', { Authorization: `Bearer ${FIXTURE_ADMIN_TOKEN}` });
-    assert.equal(validBlocked.status, 429);
-    assert.equal(validBlocked.headers.get('retry-after'), '45');
-    assert.deepEqual(calls, []);
-    time += 45_000;
-    assert.equal((await post('/api/peer/connect', { Authorization: `Bearer ${FIXTURE_ADMIN_TOKEN}` })).status, 200);
-    // A success below the threshold resets history and starts a fresh window.
+    for (const path of [...actions, '/api/admin/verify']) {
+        const valid = await post(path, { Authorization: `Bearer ${FIXTURE_ADMIN_TOKEN}` });
+        assert.equal(valid.status, 200, path);
+        assert.equal(valid.headers.get('cache-control'), 'no-store');
+    }
+    assert.equal(calls.length, actions.length);
+    const stillLimited = await post('/api/admin/verify');
+    assert.equal(stillLimited.status, 429);
+    assert.equal(stillLimited.headers.get('retry-after'), '45');
+    time += 44_001;
+    const lastSecond = await post('/api/admin/verify');
+    assert.equal(lastSecond.status, 429);
+    assert.equal(lastSecond.headers.get('retry-after'), '1');
+    time += 999;
+    // Success below the threshold also preserves the remaining anonymous history.
     for (let i = 0; i < 9; i++) assert.equal((await post('/api/admin/verify')).status, 401);
     assert.equal((await post('/api/admin/verify', { Authorization: `Bearer ${FIXTURE_ADMIN_TOKEN}` })).status, 200);
-    for (let i = 0; i < 10; i++) assert.equal((await post('/api/admin/verify')).status, 401);
-    assert.equal((await post('/api/admin/verify', { Authorization: `Bearer ${FIXTURE_ADMIN_TOKEN}` })).status, 429);
-    assert.deepEqual(calls, ['connect']);
+    assert.equal((await post('/api/admin/verify')).status, 401);
+    assert.equal((await post('/api/admin/verify')).status, 429);
+    assert.equal((await post('/api/admin/verify', { Authorization: `Bearer ${FIXTURE_ADMIN_TOKEN}` })).status, 200);
+    assert.equal(calls.length, actions.length);
 });
 
 test('replacing the server token rejects the previous credential', async t => {
@@ -130,29 +142,99 @@ test('replacing the server token rejects the previous credential', async t => {
 });
 
 
-test('full authentication storage rejects untracked clients without evicting or comparing tokens', t => {
+test('full authentication storage compares credentials and never evicts anonymous windows', t => {
     let time = 1000, comparisons = 0;
     t.mock.method(Date, 'now', () => time);
     const authenticate = createAdminAuthentication(FIXTURE_ADMIN_TOKEN);
     const headers = new Map<string, string>();
     const response = { setHeader: (name: string, value: string) => headers.set(name, value) } as unknown as ServerResponse;
     function request(address: string, valid = false) {
-        return { socket: { remoteAddress: address }, headers: { get authorization() { comparisons++; return valid ? `Bearer ${FIXTURE_ADMIN_TOKEN}` : ''; } } } as IncomingMessage;
+        return { socket: { remoteAddress: address }, rawHeaders: [], headers: { get authorization() { comparisons++; return valid ? `Bearer ${FIXTURE_ADMIN_TOKEN}` : ''; } } } as unknown as IncomingMessage;
     }
     for (let i = 0; i < 1024; i++) {
         time = 1000 + i;
-        assert.throws(() => authenticate(request(`client-${i}`), response), { status: 401 });
+        assert.throws(() => authenticate(request(`192.0.${Math.floor(i / 256)}.${i % 256}`), response), { status: 401 });
     }
     const before = comparisons;
-    for (let i = 0; i < 100; i++) assert.throws(() => authenticate(request(`overflow-${i}`, true), response), { status: 429 });
-    assert.equal(comparisons, before, 'full storage is checked before credentials');
+    for (let i = 0; i < 100; i++) {
+        assert.doesNotThrow(() => authenticate(request(`198.51.100.${i}`, true), response));
+        assert.throws(() => authenticate(request(`198.51.100.${i}`), response), { status: 429 });
+    }
+    assert.equal(comparisons, before + 200, 'every request checks credentials before full storage');
     assert.equal(headers.get('Retry-After'), '59');
     // The first active window survives overflow and reaches its threshold.
-    for (let i = 0; i < 9; i++) assert.throws(() => authenticate(request('client-0'), response), { status: 401 });
-    assert.throws(() => authenticate(request('client-0', true), response), { status: 429 });
-    assert.equal(comparisons, before + 9);
+    for (let i = 0; i < 9; i++) assert.throws(() => authenticate(request('192.0.0.0'), response), { status: 401 });
+    assert.doesNotThrow(() => authenticate(request('192.0.0.0', true), response));
+    assert.throws(() => authenticate(request('192.0.0.0'), response), { status: 429 });
     time = 61_000;
-    assert.doesNotThrow(() => authenticate(request('overflow', true), response));
-    assert.throws(() => authenticate(request('overflow'), response), { status: 401 });
-    assert.throws(() => authenticate(request('another'), response), { status: 429 }, 'only one expired slot is available');
+    assert.doesNotThrow(() => authenticate(request('198.51.100.200', true), response));
+    assert.throws(() => authenticate(request('198.51.100.200'), response), { status: 401 });
+    assert.throws(() => authenticate(request('198.51.100.201'), response), { status: 429 }, 'only one expired slot is available');
+});
+
+test('valid credentials short circuit clock, socket and forwarding identity work', t => {
+    const authenticate = createAdminAuthentication(FIXTURE_ADMIN_TOKEN, parseTrustedProxies('127.0.0.1'));
+    t.mock.method(Date, 'now', () => assert.fail('Valid credentials do not consult anonymous windows'));
+    const req = { headers: { authorization: `Bearer ${FIXTURE_ADMIN_TOKEN}` }, get socket() { return assert.fail('Valid credentials do not resolve identity'); } } as unknown as IncomingMessage;
+    const response = { setHeader() {} } as unknown as ServerResponse;
+    assert.doesNotThrow(() => authenticate(req, response));
+});
+
+test('supplied bearer tokens are bounded and never truncated to the configured token', () => {
+    const token = 'a'.repeat(256), authenticate = createAdminAuthentication(token);
+    const response = { setHeader() {} } as unknown as ServerResponse;
+    for (const authorization of [`Bearer ${token}a`, `Bearer ${token}=`, `Bearer ${'a'.repeat(8192)}`, `Basic ${token}`, `Bearer ${token} `]) {
+        const req = { socket: { remoteAddress: '192.0.2.1' }, rawHeaders: [], headers: { authorization } } as unknown as IncomingMessage;
+        assert.throws(() => authenticate(req, response), { status: 401, code: 'admin_required' });
+    }
+    const req = { headers: { authorization: `bEaReR ${token}` } } as IncomingMessage;
+    assert.doesNotThrow(() => authenticate(req, response));
+});
+
+test('every management route remains usable when all anonymous windows are occupied', async t => {
+    const { post, calls } = await application(t, FIXTURE_ADMIN_TOKEN, '127.0.0.1');
+    for (let i = 0; i < 1024; i++) {
+        assert.equal((await post('/api/admin/verify', { 'X-Forwarded-For': `192.0.${Math.floor(i / 256)}.${i % 256}` })).status, 401);
+    }
+    for (const client of ['192.0.0.0', '198.51.100.10']) {
+        for (const path of [...actions, '/api/admin/verify']) {
+            assert.equal((await post(path, { 'X-Forwarded-For': client, Authorization: `Bearer ${FIXTURE_ADMIN_TOKEN}` })).status, 200, `${client}: ${path}`);
+        }
+    }
+    assert.equal(calls.length, actions.length * 2);
+    const rejected = await post('/api/peer/connect', { 'X-Forwarded-For': '198.51.100.10' });
+    assert.equal(rejected.status, 429);
+    assert.equal((await rejected.json()).code, 'admin_rate_limited');
+    assert.equal(calls.length, actions.length * 2);
+});
+
+test('a trusted reverse proxy keeps verified visitors independent despite injected XFF prefixes', async t => {
+    const { base, calls } = await application(t, FIXTURE_ADMIN_TOKEN, '127.0.0.1');
+    const proxy = createServer((req, res) => {
+        const incoming = req.headers['x-forwarded-for'];
+        const upstream = httpRequest(base + (req.url || '/'), { method: req.method, headers: { ...req.headers, 'x-forwarded-for': [incoming, req.socket.remoteAddress].filter(Boolean).join(', ') } }, reply => {
+            res.writeHead(reply.statusCode!, reply.headers); reply.pipe(res);
+        });
+        upstream.on('error', () => { res.writeHead(502); res.end(); });
+        req.pipe(upstream);
+    });
+    proxy.listen(0, '127.0.0.1'); await once(proxy, 'listening');
+    t.after(() => new Promise<void>(resolve => proxy.close(() => resolve())));
+    const address = proxy.address(); assert.ok(address && typeof address !== 'string');
+    const port = address.port;
+    function throughProxy(client: string, path = '/api/admin/verify', valid = false) {
+        return new Promise<{ status: number; code?: string }>((resolve, reject) => {
+            const req = httpRequest(`http://127.0.0.1:${port}${path}`, { method: 'POST', localAddress: client, headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': '198.51.100.222', ...(valid ? { Authorization: `Bearer ${FIXTURE_ADMIN_TOKEN}` } : {}) } }, response => {
+                let body = ''; response.setEncoding('utf8'); response.on('data', chunk => { body += chunk; });
+                response.on('end', () => resolve({ status: response.statusCode!, code: JSON.parse(body).code }));
+            });
+            req.on('error', reject); req.end('{"address":"8.8.8.8"}');
+        });
+    }
+    for (let i = 0; i < 10; i++) assert.equal((await throughProxy('127.0.0.2')).status, 401);
+    assert.equal((await throughProxy('127.0.0.2')).status, 429);
+    assert.equal((await throughProxy('127.0.0.3')).status, 401);
+    assert.equal((await throughProxy('127.0.0.2', '/api/peer/connect', true)).status, 200);
+    assert.equal((await throughProxy('127.0.0.2')).status, 429);
+    assert.deepEqual(calls, ['connect']);
 });

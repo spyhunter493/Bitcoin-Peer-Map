@@ -38,6 +38,68 @@ test('P2P rates use actual elapsed time and show zero for valid idle samples', a
     time = 25000; snapshot = await metrics.summary(); assert.equal(snapshot.rx_bps, 0);
 });
 
+test('traffic rates use totals observation times independently of delayed uptime', async t => {
+    let time = 0; t.mock.method(performance, 'now', () => time);
+    const rpc = new FakeRpc(), metrics = new NodeMetrics(rpc);
+    rpc.values.getnettotals = { totalbytesrecv: 0, totalbytessent: 0 };
+    rpc.values.uptime = 100;
+    await metrics.summary();
+
+    time = 5000;
+    rpc.values.getnettotals = { totalbytesrecv: 5000, totalbytessent: 5000 };
+    const uptime = deferred<number>(); rpc.values.uptime = () => uptime.promise;
+    const second = metrics.summary(); await flush();
+    time = 10000; uptime.resolve(105);
+    const delayed = await second;
+    assert.equal(delayed.rx_bps, 1000); assert.equal(delayed.tx_bps, 1000);
+
+    time = 15000;
+    rpc.values.getnettotals = { totalbytesrecv: 15000, totalbytessent: 15000 };
+    rpc.values.uptime = 115;
+    const third = await metrics.summary();
+    assert.equal(third.rx_bps, 1000); assert.equal(third.tx_bps, 1000);
+});
+
+test('early uptime and delayed totals use the totals arrival as the rate baseline', async t => {
+    let time = 0; t.mock.method(performance, 'now', () => time);
+    const rpc = new FakeRpc(), metrics = new NodeMetrics(rpc);
+    rpc.values.getnettotals = { totalbytesrecv: 0, totalbytessent: 0 };
+    rpc.values.uptime = 100;
+    await metrics.summary();
+    time = 5000;
+    const totals = deferred<{ totalbytesrecv: number; totalbytessent: number }>();
+    rpc.values.getnettotals = () => totals.promise;
+    rpc.values.uptime = 110;
+    const second = metrics.summary(); await flush();
+    time = 10000; totals.resolve({ totalbytesrecv: 10000, totalbytessent: 20000 });
+    const snapshot = await second;
+    assert.equal(snapshot.rx_bps, 1000); assert.equal(snapshot.tx_bps, 2000);
+    time = 15000;
+    rpc.values.getnettotals = { totalbytesrecv: 15000, totalbytessent: 30000 };
+    const next = await metrics.summary();
+    assert.equal(next.rx_bps, 1000); assert.equal(next.tx_bps, 2000);
+});
+
+test('uptime failure still uses observed totals without distorting later rates', async t => {
+    let time = 0; t.mock.method(performance, 'now', () => time);
+    const rpc = new FakeRpc(), metrics = new NodeMetrics(rpc);
+    rpc.values.getnettotals = { totalbytesrecv: 0, totalbytessent: 0 };
+    await metrics.summary();
+    time = 5000;
+    rpc.values.getnettotals = { totalbytesrecv: 5000, totalbytessent: 10000 };
+    const uptime = deferred<number>(); rpc.values.uptime = () => uptime.promise;
+    const failed = metrics.summary(); await flush();
+    time = 10000; uptime.reject(new Error('Uptime unavailable'));
+    const snapshot = await failed;
+    assert.equal(snapshot.uptime_sec, null);
+    assert.equal(snapshot.rx_bps, 1000); assert.equal(snapshot.tx_bps, 2000);
+    time = 15000;
+    rpc.values.getnettotals = { totalbytesrecv: 15000, totalbytessent: 30000 };
+    rpc.values.uptime = 183855;
+    const recovered = await metrics.summary();
+    assert.equal(recovered.rx_bps, 1000); assert.equal(recovered.tx_bps, 2000);
+});
+
 test('counter resets and a decreasing daemon uptime invalidate both rate baselines', async t => {
     let time = 0; t.mock.method(performance, 'now', () => time);
     const rpc = new FakeRpc(), metrics = new NodeMetrics(rpc);

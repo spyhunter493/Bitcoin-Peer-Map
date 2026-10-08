@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { createRegistryReader, IMAGE_REPOSITORY, publishReleaseImage, RELEASE_PLATFORMS } from '../../scripts/release-image.js';
+import { createRegistryReader, findPublishedReleaseImage, IMAGE_REPOSITORY, publishReleaseImage, RELEASE_PLATFORMS } from '../../scripts/release-image.js';
 import { REPOSITORY_URL } from '../../src/server/build.ts';
 
 const revision = 'abcdef0123456789abcdef0123456789abcdef01';
@@ -13,24 +13,29 @@ const config = (version = release.version, sha = revision) => ({
     Env: [`BPM_BUILD_VERSION=${version}`, `BPM_BUILD_REVISION=${sha}`],
 });
 
-function publication({ current = 'v1.9.0', failSmoke, failLatest, wrongDigest, existing } = {}) {
+function publication({ current = 'v1.9.0', failSmoke, failLatest, failCreate, wrongDigest, existing } = {}) {
     const commands = [], reads = [];
+    const faults = { failSmoke, failLatest, failCreate };
     const images = new Map(existing || []);
     if (current) images.set('latest', { ...published, digest: `sha256:${'b'.repeat(64)}`, version: current });
     const execute = async (command, args, options = {}) => {
         commands.push({ command, args, options });
-        if (args[0] === 'image' && args[1] === 'inspect') return JSON.stringify(args.includes('--platform') ? config() : { digest, mediaType: 'application/vnd.oci.image.index.v1+json' });
-        if (command === process.execPath && options.env.BPM_TEST_PLATFORM === failSmoke) throw new Error('Smoke failed');
+        if (args[0] === 'image' && args[1] === 'inspect') return JSON.stringify(args.includes('--platform') ? config() : { digest: args.at(-1).startsWith(`${IMAGE_REPOSITORY}@`) ? args.at(-1).slice(IMAGE_REPOSITORY.length + 1) : digest, mediaType: 'application/vnd.oci.image.index.v1+json' });
+        if (command === process.execPath && options.env.BPM_TEST_PLATFORM === faults.failSmoke) throw new Error('Smoke failed');
         if (args[0] === 'image' && args[1] === 'push') images.set(release.version, { ...published, ...(wrongDigest ? { digest: `sha256:${'c'.repeat(64)}` } : {}) });
-        if (args[0] === 'buildx' && args[2] === 'create') images.set(args[4].slice(IMAGE_REPOSITORY.length + 1), published);
+        if (args[0] === 'buildx' && args[2] === 'create') {
+            const reference = args[4].slice(IMAGE_REPOSITORY.length + 1);
+            if (reference === faults.failCreate) throw new Error('Tag creation failed');
+            images.set(reference, published);
+        }
         return 'Smoke passed';
     };
     const readImage = async reference => {
         reads.push(reference);
-        if (reference === 'latest' && failLatest) throw failLatest;
-        return images.get(reference) || null;
+        if (reference === 'latest' && faults.failLatest) throw faults.failLatest;
+        return images.get(reference) || [...images.values()].find(image => image.digest === reference) || null;
     };
-    return { commands, reads, images, execute, readImage };
+    return { commands, reads, images, faults, execute, readImage };
 }
 
 const pushes = context => context.commands.filter(({ args }) => args[0] === 'image' && args[1] === 'push');
@@ -79,7 +84,7 @@ test('a confirmed absent latest allows the first promotion', async () => {
 test('failed ARM64 smoke prevents every registry mutation', async () => {
     const context = publication({ failSmoke: 'linux/arm64' });
     await assert.rejects(publishReleaseImage(release, context), /Smoke failed/);
-    assert.deepEqual(context.reads, []);
+    assert.deepEqual(context.reads, [release.version, `sha-${revision}`]);
     assert.equal(pushes(context).length, 0);
     assert.equal(context.commands.some(({ args }) => args.includes('tag') || args.includes('create')), false);
 });
@@ -88,7 +93,7 @@ test('incorrect local build metadata prevents smoke and upload', async () => {
     const context = publication();
     context.execute = async (_command, args) => JSON.stringify(args.includes('--platform') ? config('v1.9.0') : { digest, mediaType: 'application/vnd.oci.image.index.v1+json' });
     await assert.rejects(publishReleaseImage(release, context), /Image version must match/);
-    assert.equal(context.reads.length, 0);
+    assert.equal(context.reads.length, 2);
 });
 
 test('a local image index changed during smoke cannot be published', async () => {
@@ -101,7 +106,7 @@ test('a local image index changed during smoke cannot be published', async () =>
     };
     await assert.rejects(publishReleaseImage(release, context), /original build digest/);
     assert.equal(pushes(context).length, 0);
-    assert.equal(context.reads.length, 0);
+    assert.equal(context.reads.length, 2);
 });
 
 test('a published digest mismatch prevents SHA and latest promotion', async () => {
@@ -110,12 +115,117 @@ test('a published digest mismatch prevents SHA and latest promotion', async () =
     assert.equal(context.commands.some(({ args }) => args.includes('create')), false);
 });
 
-test('existing version or SHA tags cannot be replaced by a different digest', async () => {
+test('conflicting immutable tags are rejected before pulling or testing an image', async () => {
+    const context = publication({ existing: [[release.version, published], [`sha-${revision}`, { ...published, digest: `sha256:${'b'.repeat(64)}` }]] });
+    await assert.rejects(publishReleaseImage(release, context), /different image digests/);
+    assert.deepEqual(context.commands, []);
+});
+
+test('tags published with another version or revision cannot be resumed', async () => {
     for (const reference of [release.version, `sha-${revision}`]) {
-        const context = publication({ existing: [[reference, { ...published, digest: `sha256:${'b'.repeat(64)}` }]] });
-        await assert.rejects(publishReleaseImage(release, context), /Refusing to replace published/);
-        assert.equal(pushes(context).length, 0);
-        assert.equal(context.commands.some(({ args }) => args.includes('tag') || args.includes('create')), false);
+        for (const metadata of [{ version: 'v1.9.0' }, { revision: 'f'.repeat(40) }]) {
+            const context = publication({ existing: [[reference, { ...published, ...metadata }]] });
+            await assert.rejects(publishReleaseImage(release, context), /must match the release/);
+            assert.deepEqual(context.commands, []);
+        }
+    }
+});
+
+test('a conflicting tag appearing after smoke cannot be replaced', async () => {
+    const context = publication();
+    const execute = context.execute;
+    context.execute = async (command, args, options) => {
+        const result = await execute(command, args, options);
+        if (command === process.execPath && options.env.BPM_TEST_PLATFORM === 'linux/arm64') context.images.set(release.version, { ...published, digest: `sha256:${'b'.repeat(64)}` });
+        return result;
+    };
+    await assert.rejects(publishReleaseImage(release, context), /Refusing to replace published/);
+    assert.equal(pushes(context).length, 0);
+    assert.equal(context.commands.some(({ args }) => args.includes('tag') || args.includes('create')), false);
+});
+
+test('a version upload followed by tag failure resumes the original digest despite a different rebuild', async () => {
+    const context = publication({ failCreate: `sha-${revision}` });
+    await assert.rejects(publishReleaseImage(release, context), /Tag creation failed/);
+    assert.deepEqual(context.images.get(release.version), published);
+    assert.equal(context.images.has(`sha-${revision}`), false);
+    const before = context.commands.length;
+    context.faults.failCreate = null;
+    const result = await publishReleaseImage({ ...release, digest: `sha256:${'f'.repeat(64)}` }, context);
+    const resumed = context.commands.slice(before);
+    assert.equal(result.digest, digest);
+    assert.equal(result.latest, 'promoted');
+    assert.equal(pushes(context).length, 1, 'The retry must retain the original version upload');
+    assert.deepEqual(resumed.filter(({ args }) => args[1] === 'pull').map(({ args }) => args), RELEASE_PLATFORMS.map(platform => ['image', 'pull', '--platform', platform, `${IMAGE_REPOSITORY}@${digest}`]));
+    assert.deepEqual(resumed.filter(({ command }) => command === process.execPath).map(({ options }) => [options.env.BPM_TEST_IMAGE, options.env.BPM_TEST_PLATFORM]), RELEASE_PLATFORMS.map(platform => [`${IMAGE_REPOSITORY}@${digest}`, platform]));
+    assert.deepEqual(resumed.filter(({ args }) => args.includes('create')).map(({ args }) => args[4]), [`${IMAGE_REPOSITORY}:sha-${revision}`, `${IMAGE_REPOSITORY}:latest`]);
+});
+
+test('a retry after latest failure completes promotion without replacing either immutable tag', async () => {
+    const context = publication({ failLatest: new Error('Network unavailable') });
+    await assert.rejects(publishReleaseImage(release, context), /Network unavailable/);
+    const before = context.commands.length;
+    context.faults.failLatest = null;
+    const result = await publishReleaseImage({ version: release.version, revision }, context);
+    assert.equal(result.latest, 'promoted');
+    assert.deepEqual(context.commands.slice(before).filter(({ args }) => args.includes('create')).map(({ args }) => args[4]), [`${IMAGE_REPOSITORY}:latest`]);
+    assert.equal(pushes(context).length, 1);
+});
+
+test('a verified SHA tag can restore a missing version tag by index digest', async () => {
+    const context = publication({ existing: [[`sha-${revision}`, published]] });
+    const result = await publishReleaseImage({ version: release.version, revision }, context);
+    assert.equal(result.digest, digest);
+    assert.equal(pushes(context).length, 0);
+    assert.deepEqual(context.commands.filter(({ args }) => args.includes('create')).map(({ args }) => args.slice(4)), [[`${IMAGE_REPOSITORY}:${release.version}`, `${IMAGE_REPOSITORY}@${digest}`], [`${IMAGE_REPOSITORY}:latest`, `${IMAGE_REPOSITORY}@${digest}`]]);
+});
+
+test('rerunning a completed release preserves all tags and still smoke-tests both architectures', async () => {
+    const context = publication({ current: release.version, existing: [[release.version, published], [`sha-${revision}`, published]] });
+    context.images.set('latest', published);
+    const result = await publishReleaseImage({ version: release.version, revision }, context);
+    assert.equal(result.latest, 'skipped');
+    assert.equal(context.commands.filter(({ command }) => command === process.execPath).length, 2);
+    assert.equal(context.commands.some(({ args }) => ['push', 'tag'].includes(args[1]) || args.includes('create')), false);
+});
+
+test('failed smoke of a resumed release prevents missing tags and latest promotion', async () => {
+    const context = publication({ existing: [[release.version, published]], failSmoke: 'linux/arm64' });
+    await assert.rejects(publishReleaseImage(release, context), /Smoke failed/);
+    assert.equal(context.commands.some(({ args }) => ['push', 'tag'].includes(args[1]) || args.includes('create')), false);
+});
+
+test('a pulled release must retain the original multi-platform index', async () => {
+    for (const descriptor of [
+        { digest: `sha256:${'f'.repeat(64)}`, mediaType: 'application/vnd.oci.image.index.v1+json' },
+        { digest, mediaType: 'application/vnd.oci.image.manifest.v1+json' },
+    ]) {
+        const context = publication({ existing: [[release.version, published]] });
+        const execute = context.execute;
+        context.execute = async (command, args, options) => args.includes('{{json .Descriptor}}') ? JSON.stringify(descriptor) : execute(command, args, options);
+        await assert.rejects(publishReleaseImage(release, context), /original build digest|retain its multi-platform index/);
+        assert.equal(context.commands.some(({ args }) => ['push', 'tag'].includes(args[1]) || args.includes('create')), false);
+    }
+});
+
+test('preflight finds only verified matching release digests and reports missing tags', async () => {
+    const empty = publication();
+    assert.equal(await findPublishedReleaseImage(release, empty), null);
+    for (const reference of [release.version, `sha-${revision}`]) {
+        const context = publication({ existing: [[reference, published]] });
+        assert.deepEqual(await findPublishedReleaseImage(release, context), published);
+        assert.equal(context.reads.at(-1), digest, 'The chosen immutable digest is verified directly');
+        assert.deepEqual(context.commands, []);
+    }
+});
+
+test('preflight errors cannot request a rebuild or trigger registry mutations', async () => {
+    for (const error of [new Error('HTTP 401'), new Error('HTTP 500'), new TypeError('Network unavailable')]) {
+        const context = publication();
+        context.readImage = async () => { throw error; };
+        await assert.rejects(findPublishedReleaseImage(release, context), value => value === error);
+        await assert.rejects(publishReleaseImage(release, context), value => value === error);
+        assert.deepEqual(context.commands, []);
     }
 });
 
@@ -146,7 +256,7 @@ function registry({ version = release.version, architectureMismatch = false, mis
     }
     manifests.push({ digest: `sha256:${'e'.repeat(64)}`, platform: { os: 'unknown', architecture: 'unknown' }, annotations: { 'vnd.docker.reference.type': 'attestation-manifest' } });
     const indexDigest = store('manifests', { schemaVersion: 2, manifests });
-    bodies.set('manifests/latest', bodies.get(`manifests/${indexDigest}`));
+    for (const reference of ['latest', release.version, `sha-${revision}`]) bodies.set(`manifests/${reference}`, bodies.get(`manifests/${indexDigest}`));
     const fetcher = async url => {
         if (url.startsWith('https://ghcr.io/token?')) return Response.json({ token: 'test-token' });
         const path = url.split('/bitcoin-peer-map/')[1];
@@ -173,6 +283,13 @@ for (const [name, options, message] of [
     test(`registry rejects ${name}`, async () => {
         const fixture = registry(options);
         await assert.rejects(createRegistryReader({ fetcher: fixture.fetcher })('latest'), message);
+    });
+    test(`resuming a release rejects ${name} before any Docker command`, async () => {
+        const fixture = registry(options);
+        await assert.rejects(publishReleaseImage(release, {
+            readImage: createRegistryReader({ fetcher: fixture.fetcher }),
+            execute: async () => assert.fail('An invalid published release cannot be pulled or promoted'),
+        }), message);
     });
 }
 

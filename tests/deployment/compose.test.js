@@ -56,6 +56,7 @@ test('published deployment keeps its existing data volume and container safeguar
     assert.equal(deployment.volumes['bpm-data'].name, 'bitcoin-peer-map-data');
     assert.equal(service.environment.BPM_DATA_DIR, service.volumes[0].target);
     assert.equal(service.environment.BPM_ADMIN_TOKEN, '');
+    assert.equal(service.environment.BPM_TRUSTED_PROXIES, '');
     assert.equal(service.environment.BPM_LOG_LEVEL, 'info');
     assert.equal(service.read_only, true);
     assert.equal(service.init, true);
@@ -70,6 +71,7 @@ test('image pinning, IPv6 host binding, custom ports, and isolated volumes merge
         BPM_HOST_BIND: '::1', BPM_HOST_PORT: '58444', BPM_LISTEN_PORT: '58555',
         BPM_DATA_VOLUME: 'bpm-second-instance-data',
         BPM_ADMIN_TOKEN: 'test-admin-token-'.padEnd(64, 'x'),
+        BPM_TRUSTED_PROXIES: '127.0.0.1,2001:db8::/64',
         BPM_LOG_LEVEL: 'debug',
     });
     const service = deployment.services.bpm;
@@ -81,6 +83,7 @@ test('image pinning, IPv6 host binding, custom ports, and isolated volumes merge
     assert.equal(service.environment.BPM_LISTEN_PORT, '58555');
     assert.equal(service.environment.BPM_LISTEN_ADDRESS, '0.0.0.0');
     assert.equal(service.environment.BPM_ADMIN_TOKEN, 'test-admin-token-'.padEnd(64, 'x'));
+    assert.equal(service.environment.BPM_TRUSTED_PROXIES, '127.0.0.1,2001:db8::/64');
     assert.equal(service.environment.BPM_LOG_LEVEL, 'debug');
     assert.equal(deployment.volumes['bpm-data'].name, 'bpm-second-instance-data');
 });

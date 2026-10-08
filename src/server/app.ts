@@ -61,7 +61,7 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
     schema.info.version = version;
     const streams = new Set<ServerResponse>();
     let closeTask: Promise<void> | null = null;
-    const requireAdmin = createAdminAuthentication(settings.admin_token);
+    const requireAdmin = createAdminAuthentication(settings.admin_token, settings.trusted_proxies);
 
     const routes: Record<string, RouteHandler> = {
         'GET /healthz': () => ({ status: 'ok' }),
