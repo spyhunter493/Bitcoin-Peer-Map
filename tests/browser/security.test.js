@@ -161,7 +161,7 @@ for (const engine of [chromium, firefox, webkit]) {
         const adminAuthorization = authorization.locator('.auth-container').filter({ hasText: 'AdminToken' });
         await adminAuthorization.locator('input').fill(FIXTURE_ADMIN_TOKEN);
         await adminAuthorization.locator('.auth-btn-wrapper .authorize').click();
-        await authorization.getByRole('button', { name: 'Close', exact: true }).click();
+        await adminAuthorization.getByRole('button', { name: 'Close', exact: true }).click();
         const operation = page.locator('.opblock').filter({ hasText: '/api/admin/verify' });
         await operation.locator('.opblock-summary').click();
         await operation.getByRole('button', { name: 'Try it out', exact: true }).click();
