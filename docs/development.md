@@ -142,6 +142,14 @@ also requires Docker and curl on the host.
 
 ### Validate the production container
 
+`test:container` also runs an isolated Compose project with real file-backed RPC
+secrets on rootful Linux without user-namespace remapping. It verifies both
+documented readable ownership patterns and rejects an unreadable owner-only file
+before RPC calls. Tests retain UID/GID 10001, the read-only root filesystem, dropped
+capabilities, and no-new-privileges; fixtures and named volumes are removed afterward.
+Rootless, remapped, and non-Linux daemons skip only these host-permission cases.
+
+
 ```bash
 BITCOIN_RPC_USER=test BITCOIN_RPC_PASSWORD=test \
   docker compose config --quiet

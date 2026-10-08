@@ -5,6 +5,7 @@ import { once } from 'node:events';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { setTimeout as delay } from 'node:timers/promises';
+import { runMountedSecretsSmoke } from './deployment/mounted-secrets-smoke.js';
 
 const execute = promisify(execFile);
 const docker = async (...args) => (await execute('docker', args, { timeout: 60000 })).stdout.trim();
@@ -168,3 +169,4 @@ try {
     await docker('volume', 'rm', volume).catch(() => {});
     rpc.closeAllConnections(); await new Promise(resolve => rpc.close(resolve));
 }
+await runMountedSecretsSmoke({ image, platform });

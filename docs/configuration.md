@@ -277,8 +277,25 @@ includes the RPC endpoint, server settings, GeoIP settings, and installed build.
 ## Compose secrets
 
 Use a password file when your deployment supplies secrets as mounted files.
-For Docker Compose, store the password in `secrets/bitcoin_rpc_password`, restrict
-its file permissions, and add this to `compose.override.yaml`:
+The production image runs as UID/GID **10001:10001**. On rootful Linux without
+user-namespace remapping, a file owned by your login user with mode `0600` is
+usually unreadable to that container identity.
+
+Create `secrets/bitcoin_rpc_password` using your editor or secret manager. Choose
+one of these host-file permission patterns:
+
+```bash
+# Container identity owns the file; only that owner can read it.
+sudo chmod 0600 secrets/bitcoin_rpc_password
+sudo chown 10001:10001 secrets/bitcoin_rpc_password
+
+# Alternatively, keep your login user as owner and grant the container group read access.
+sudo chmod 0640 secrets/bitcoin_rpc_password
+sudo chown "$(id -u):10001" secrets/bitcoin_rpc_password
+```
+
+The second pattern lets your login user update the file; keep membership of host
+group 10001 restricted. Add this to `compose.override.yaml`:
 
 ```yaml
 services:
@@ -294,6 +311,33 @@ secrets:
     file: ./secrets/bitcoin_rpc_password
 ```
 
-Compose mounts the file at `/run/secrets/bitcoin_rpc_password`; the application
-reads it during startup. The `secrets/` directory, `.env`, and local Compose
-overrides are excluded from Git.
+Keep `BITCOIN_RPC_PASSWORD` empty when using `BITCOIN_RPC_PASSWORD_FILE`; supplying
+both sources causes a configuration error. Compose mounts file-backed secrets
+using bind mounts that preserve host permissions. The secret's `uid`, `gid`, and
+`mode` settings do not change permissions for this file-backed mount. See the
+[Docker Compose secrets reference](https://docs.docker.com/reference/compose-file/services/#secrets).
+
+Before starting the application, check the effective container identity and file
+readability with the same Compose configuration. This probe prints no password:
+
+```bash
+docker compose run --rm --no-deps bpm sh -c '
+  id &&
+  test -z "$BITCOIN_RPC_PASSWORD" &&
+  test -n "$BITCOIN_RPC_PASSWORD_FILE" &&
+  test -f "$BITCOIN_RPC_PASSWORD_FILE" &&
+  test -r "$BITCOIN_RPC_PASSWORD_FILE" &&
+  printf "Mounted RPC password is readable\n"
+'
+```
+
+A nonzero exit means the password source or permissions need correcting before
+startup. With rootless Docker or user-namespace remapping, container UID/GID 10001
+maps to different host IDs. Set ownership for your daemon's actual mapping and
+repeat the probe instead of assuming host IDs 10001. Docker's
+[user namespace guide](https://docs.docker.com/engine/security/userns-remap/)
+describes the mapping and bind-mount ownership requirements.
+
+The application reads `/run/secrets/bitcoin_rpc_password` during startup. The
+`secrets/` directory, `.env`, and local Compose overrides are excluded from Git
+and the Docker build context.

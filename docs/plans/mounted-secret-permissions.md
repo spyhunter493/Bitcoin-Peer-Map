@@ -1,10 +1,11 @@
 # Mounted-secret permissions and startup tests
 
-Status: planning only. Implementation has not started.
+Status: implemented. This document records the permission guidance and real-mount
+startup checks delivered by this PR.
 
 This is the third of three ordered implementation plans. It clarifies password-file permissions and proves startup behavior with real Compose file-backed secrets.
 
-## Intended documentation changes
+## Documentation changes
 
 - Explain that the production image runs as UID/GID 10001 and that an operator-owned 0600 password file may therefore be unreadable inside the container.
 - Document two rootful Linux host-file patterns: ownership 10001:10001 with mode 0600, or operator ownership with group 10001 and mode 0640.
@@ -25,8 +26,9 @@ Extend the production container smoke coverage with an isolated Compose project,
 
 ## Validation and boundaries
 
-For the eventual implementation, run configuration tests, Compose deployment tests, a production image build, and container smoke tests. Permission acceptance tests run on rootful Linux CI; documentation also explains mapped identities for rootless/user-namespace deployments.
+Validation uses configuration tests, Compose deployment tests, a production image build, and container smoke tests. Permission acceptance tests run on rootful Linux CI; documentation also explains mapped identities for rootless/user-namespace deployments.
 
 Keep image ownership and runtime safeguards unchanged. Do not add a root startup workaround, broaden secret permissions automatically, or add production dependencies.
 
-This planning PR adds only this document; it does not implement the fixes or claim implementation tests passed.
+The implementation updates the operator guide and runs all three actual mounted-file
+permission cases through the production container smoke test.
