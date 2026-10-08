@@ -105,7 +105,7 @@ export class AppRuntime {
         return { preferences: { optional_outbound, geoip_dataset_downloads, release_checks, reachability_checks },
             effective: { geoip_lookups: permissions.geoip, dataset_downloads: permissions.dataset, release_checks: permissions.updates, reachability_probes: permissions.probe },
             forced_disabled: this.settings.outbound_enabled_override === false,
-            provider: { name: 'ip-api', transport: 'http' as const } };
+            provider: { name: 'ip-api' as const, transport: 'http' as const } };
     }
     setOutboundPreference(preference: OutboundPreference, enabled: boolean) {
         if (!['optional_outbound', 'geoip_dataset_downloads', 'release_checks', 'reachability_checks'].includes(preference) || typeof enabled !== 'boolean') throw new TypeError('Invalid outbound preference');

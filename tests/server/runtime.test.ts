@@ -140,7 +140,7 @@ for (const override of ['', 'true', 'false']) {
         const raw = '{"geoip_db_only":"true","geoip_auto_update":false}';
         writeFileSync(path, raw);
         const original = process.env;
-        process.env = { ...original, BITCOIN_RPC_HOST: '127.0.0.1', BITCOIN_RPC_USER: 'test', BITCOIN_RPC_PASSWORD: 'test', BITCOIN_RPC_PASSWORD_FILE: '', BPM_DATA_DIR: dir, BPM_GEOIP_AUTO_UPDATE: override };
+        process.env = { ...original, BITCOIN_RPC_HOST: '127.0.0.1', BITCOIN_RPC_USER: 'test', BITCOIN_RPC_PASSWORD: 'test', BITCOIN_RPC_PASSWORD_FILE: '', BPM_DATA_DIR: dir, BPM_GEOIP_AUTO_UPDATE: override, BPM_VIEW_MODE: 'public' };
         t.after(() => { process.env = original; });
         t.mock.method(BitcoinRpcClient.prototype, 'checkConnection', async () => assert.fail('RPC check started'));
         t.mock.method(BitcoinRpcClient.prototype, 'call', async () => assert.fail('RPC activity started'));

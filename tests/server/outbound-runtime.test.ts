@@ -49,7 +49,7 @@ test('explicit deployment denial overrides saved opt-ins and authenticated prefe
     assert.equal(status.forced_disabled, true);
     assert.equal(Object.values(status.effective).every(enabled => !enabled), true);
     assert.match((await app.geoDatabase.update()).message, /disabled/);
-    assert.equal(app.rpc.signal.aborted, false, 'optional denial leaves configured RPC alive');
+    assert.equal(app.rpc.signal?.aborted, false, 'optional denial leaves configured RPC alive');
 });
 
 test('failed optional-policy persistence leaves live permissions and cancellation generations unchanged', async t => {

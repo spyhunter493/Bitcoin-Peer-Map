@@ -118,7 +118,11 @@ export function create({ getNodeInfo, refreshInfo, document = globalThis.documen
                 const input = required(selector, dialog.body);
                 input.addEventListener('change', async () => {
                     outboundSaving = true;
-                    for (const selector of Object.values(outboundSelectors)) required(selector, dialog.body).disabled = true;
+                    for (const selector of Object.values(outboundSelectors)) {
+                        /** @type {HTMLInputElement} */
+                        const toggle = required(selector, dialog.body);
+                        toggle.disabled = true;
+                    }
                     let committed = false;
                     try {
                         const data = await postJson('/api/config/outbound', { preference, enabled: input.checked }, { signal: dialog.signal });

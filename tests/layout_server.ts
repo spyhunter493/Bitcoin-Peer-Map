@@ -32,7 +32,7 @@ export class FixtureRuntime implements ApplicationRuntime {
         const preferences = { ...this.outboundPreferences }, enabled = this.settings.outbound_enabled_override !== false && preferences.optional_outbound;
         return { preferences, effective: { geoip_lookups: enabled && !this.dbOnly, dataset_downloads: enabled && preferences.geoip_dataset_downloads && this.settings.geoip_enabled,
             release_checks: enabled && preferences.release_checks, reachability_probes: enabled && preferences.reachability_checks },
-            forced_disabled: this.settings.outbound_enabled_override === false, provider: { name: 'ip-api', transport: 'http' as const } };
+            forced_disabled: this.settings.outbound_enabled_override === false, provider: { name: 'ip-api' as const, transport: 'http' as const } };
     } };
     peers = {
         listPeers: () => structuredClone(fixtures.peers),
