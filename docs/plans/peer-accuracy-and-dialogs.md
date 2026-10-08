@@ -1,6 +1,7 @@
 # Accurate peers and responsive dialogs
 
-Status: planning only. Implementation has not started.
+Status: implemented. This document records endpoint identity, location display,
+and dialog behavior covered by the regression tests in this PR.
 
 This is the second of three ordered implementation plans. It addresses Addrman uncertainty, coordinate sorting, and the remaining disconnect/ban dialog minimum width.
 
@@ -13,7 +14,7 @@ This is the second of three ordered implementation plans. It addresses Addrman u
 - Add required addrman_status with the values present, not_returned, and unavailable. A valid latest inventory yields present for exact matches and not_returned otherwise, including an empty inventory.
 - Initial reads, failed/invalid refreshes, or an unusable peer endpoint yield unavailable. Retain the last validated inventory internally, but suppress membership claims while unavailable and recover on the next successful refresh.
 - Use one formatter throughout the table, peer details, and map tooltip: Yes / Not returned / Unavailable. Treat absent or invalid status as Unavailable. Preserve the private-map dash and the existing column preference key; expose the complete status in cell and hover text.
-- Update canonical OpenAPI and checked-in generated declarations. Cover both peer response forms and stream payloads.
+- Update canonical OpenAPI and checked-in generated declarations. Cover both peer response forms; the existing metrics-only stream retains its response contract.
 
 getnodeaddresses filters results for quality and recency, so omission cannot confirm absence. See the [Knots RPC implementation](https://github.com/bitcoinknots/bitcoin/blob/v29.4.1.knots20260508/src/rpc/net.cpp#L911-L961).
 
@@ -37,6 +38,11 @@ Connect and nested authentication already fit at 320px on the current baseline. 
 
 ## Validation and boundaries
 
-For the eventual implementation, run syntax/type/API-generation checks, backend and frontend regressions, browser layout tests, and the existing three-engine smoke suite. Preserve authentication, polling cadence, saved preferences, native Node 26 execution, and zero production npm dependencies.
+Validation uses syntax/type/API-generation checks, backend and frontend regressions,
+browser layout tests, and the three-engine smoke suite. Authentication, polling
+cadence, saved preferences, native Node 26 execution, and zero production npm
+dependencies remain unchanged.
 
-This planning PR adds only this document; it does not implement the fixes or claim implementation tests passed.
+The implementation includes exact endpoint matching and explicit inventory
+availability, shared coordinate and Addrman display helpers, and narrow choice
+dialog sizing. Backend contracts and browser fixtures carry the additive status.

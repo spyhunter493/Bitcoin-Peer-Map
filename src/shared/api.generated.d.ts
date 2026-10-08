@@ -568,7 +568,13 @@ export interface components {
             connection_type_abbrev: string;
             services: string[];
             services_abbrev: string;
+            /** @description True only when the exact normalized host and explicit port were observed in the latest valid getnodeaddresses inventory. False means not observed or unavailable; it never confirms absence from Addrman. */
             in_addrman: boolean;
+            /**
+             * @description present: exact endpoint observed; not_returned: endpoint omitted from the latest valid filtered inventory, including an empty inventory; unavailable: inventory failed, has not loaded, or the peer endpoint is unusable. Omission does not confirm absence from Addrman.
+             * @enum {string}
+             */
+            addrman_status: "present" | "not_returned" | "unavailable";
             location: string;
             /** @enum {string} */
             location_status: "pending" | "private" | "ok" | "unavailable";

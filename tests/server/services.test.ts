@@ -374,10 +374,10 @@ test('malformed nested peer fields cannot replace a good snapshot or reach a ban
 test('address-manager validation retains prior metadata instead of coercing invalid addresses', async t => {
     const { rpc, geo, connectivity } = services(t);
     const peers = new PeerService(rpc, geo, connectivity);
-    rpc.values.getnodeaddresses = [{ address: '8.8.8.8' }]; await peers.refreshKnownAddresses();
+    rpc.values.getnodeaddresses = [{ address: '8.8.8.8', port: 8333 }]; await peers.refreshKnownAddresses();
     for (const value of [null, {}, [null], [{ address: {} }], [{ address: '' }]]) {
         rpc.values.getnodeaddresses = value; await peers.refreshKnownAddresses();
-        assert.deepEqual([...peers.knownAddresses], ['8.8.8.8']);
+        assert.deepEqual([...peers.knownAddresses], ['8.8.8.8:8333']);
     }
     rpc.values.getnodeaddresses = []; await peers.refreshKnownAddresses();
     assert.equal(peers.knownAddresses.size, 0);

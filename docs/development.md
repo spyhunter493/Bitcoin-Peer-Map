@@ -275,6 +275,19 @@ the producer change. `npm run check:api` checks freshness without rewriting file
 and CI also checks server/browser types and validates actual HTTP responses and
 browser fixtures against the schemas. Generated declarations are not edited by hand.
 
+Peers expose `addrman_status` as `present`, `not_returned`, or `unavailable`.
+Membership matches a normalized host and explicit port against the latest valid
+`getnodeaddresses` inventory; failed refreshes suppress claims from retained
+metadata. That RPC filters its inventory, so an omitted endpoint does not prove
+absence from Addrman. The compatibility `in_addrman` boolean is true only for
+`present`. The table, peer details, and map tooltip display **Yes**, **Not returned**,
+or **Unavailable**, with the private-map dash preserved.
+
+Coordinate display and sorting share finite numeric values. Located peers and
+older snapshots without a location status retain genuine zero coordinates;
+pending, private, or unavailable placeholders display an em dash. Numeric sorts
+keep missing coordinates last in both directions and preserve equal-value order.
+
 The server and browser re-export these declarations under their existing type
 names. RPC input parsers, controller state, and display projections remain separate:
 OpenAPI describes what crosses HTTP, while a browser projection guards raw provider

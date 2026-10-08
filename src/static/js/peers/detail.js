@@ -1,4 +1,5 @@
 import { fmtPing } from '../core/ping.js';
+import { addrmanLabel } from '../core/addrman.js';
 import { query, queryAll, required } from '../core/dom.js';
 import * as BPMModal from '../core/modal.js';
 import * as BPMDistributionData from '../distribution/data.js';
@@ -210,7 +211,7 @@ function renderPeerDetails(peer, options) {
         html += '<div class="peer-popup-section"><div class="peer-popup-section-title">Status</div>';
     }
     html += peerDetailRow('Relay Txs', peer.relaytxes != null ? (peer.relaytxes ? 'Yes' : 'No') : '\u2014');
-    html += peerDetailRow('Addrman', peer.in_addrman ? 'Yes' : 'No');
+    html += peerDetailRow('Addrman', addrmanLabel(peer.addrman_status));
     html += peerDetailRow('Addr Relay', peer.addr_relay_enabled != null ? (peer.addr_relay_enabled ? 'Yes' : 'No') : '\u2014');
     if (peer.addr_processed || peer.addr_rate_limited) {
         html += peerDetailRow('Addr Stats', (peer.addr_processed || 0) + ' processed, ' + (peer.addr_rate_limited || 0) + ' limited');

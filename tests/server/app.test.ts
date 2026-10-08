@@ -72,6 +72,31 @@ test('peer list and optional status keep their API contracts', async t => {
     const snapshot = await (await get('/api/peers?include_status=true')).json();
     assert.ok(Array.isArray(snapshot.peers)); assert.equal(snapshot.status.connected, true);
 });
+test('both peer HTTP response forms expose exact Addrman matches, unavailable refreshes and recovery', async t => {
+    const { runtime, get } = await application(t);
+    const rpc = new FakeRpc(), geo = new GeoDatabase(temporaryDirectory(t), false), connectivity = new ConnectivityService(false);
+    const peers = new PeerService(rpc, geo, connectivity);
+    t.after(() => peers.stop()); t.after(() => connectivity.stop()); t.after(() => geo.close());
+    t.mock.method(runtime.peers, 'listPeers', peers.listPeers.bind(peers));
+    t.mock.method(runtime.peers, 'snapshot', peers.snapshot.bind(peers));
+    rpc.values.getpeerinfo = [{ id: 1, addr: '8.8.8.8:8333' }, { id: 2, addr: '8.8.8.8:18333' }];
+    await peers.refreshOnce();
+    async function assertForms(statuses: string[]) {
+        const bare = await (await get('/api/peers')).json(), snapshot = await (await get('/api/peers?include_status=true')).json();
+        assert.deepEqual(snapshot.peers, bare);
+        assert.deepEqual(bare.map((peer: { addrman_status: string }) => peer.addrman_status), statuses);
+        assert.deepEqual(bare.map((peer: { in_addrman: boolean }) => peer.in_addrman), statuses.map(status => status === 'present'));
+    }
+    await assertForms(['unavailable', 'unavailable']);
+    rpc.values.getnodeaddresses = [{ address: '8.8.8.8', port: 8333 }]; await peers.refreshKnownAddresses();
+    await assertForms(['present', 'not_returned']);
+    rpc.failed.add('getnodeaddresses'); await peers.refreshKnownAddresses();
+    await assertForms(['unavailable', 'unavailable']);
+    rpc.failed.delete('getnodeaddresses'); rpc.values.getnodeaddresses = []; await peers.refreshKnownAddresses();
+    await assertForms(['not_returned', 'not_returned']);
+    rpc.values.getnodeaddresses = [{ address: '8.8.8.8', port: 18333 }]; await peers.refreshKnownAddresses();
+    await assertForms(['not_returned', 'present']);
+});
 test('price endpoint is removed and node responses do not contain market prices', async t => {
     const { get } = await application(t);
     assert.equal((await get('/api/price')).status, 404);

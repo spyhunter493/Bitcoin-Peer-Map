@@ -1513,7 +1513,17 @@
             "type": "string"
           },
           "in_addrman": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "True only when the exact normalized host and explicit port were observed in the latest valid getnodeaddresses inventory. False means not observed or unavailable; it never confirms absence from Addrman."
+          },
+          "addrman_status": {
+            "type": "string",
+            "enum": [
+              "present",
+              "not_returned",
+              "unavailable"
+            ],
+            "description": "present: exact endpoint observed; not_returned: endpoint omitted from the latest valid filtered inventory, including an empty inventory; unavailable: inventory failed, has not loaded, or the peer endpoint is unusable. Omission does not confirm absence from Addrman."
           },
           "location": {
             "type": "string"
@@ -1715,6 +1725,7 @@
           "services",
           "services_abbrev",
           "in_addrman",
+          "addrman_status",
           "location",
           "location_status",
           "geo",
