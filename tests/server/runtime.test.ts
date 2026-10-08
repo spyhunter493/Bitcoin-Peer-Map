@@ -5,14 +5,15 @@ import { join } from 'node:path';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { AppRuntime, GEOIP_UPDATE_INTERVAL_MS } from '../../src/server/runtime.ts';
-import { PreferenceStore } from '../../src/server/preferences.ts';
+import { PreferenceStore, DEFAULT_PREFERENCES } from '../../src/server/preferences.ts';
 import { main, waitForRpc } from '../../src/server/main.ts';
 import { BitcoinRpcClient, RpcAuthenticationError } from '../../src/server/rpc.ts';
 import { settings, temporaryDirectory, deferred, flush, FakeRpc } from './helpers.ts';
 import type { TestContext } from 'node:test';
 
 function runtime(t: TestContext, overrides: Record<string, string> = {}) {
-    const app = new AppRuntime(settings({ BPM_DATA_DIR: temporaryDirectory(t), ...overrides }));
+    const app = new AppRuntime(settings({ BPM_DATA_DIR: temporaryDirectory(t), BPM_OUTBOUND_ENABLED: 'true', ...overrides }));
+    app.setGeoipDbOnly(false); // Explicit opt-in for unrelated legacy scheduler fixtures.
     t.mock.method(app.peers, 'start', async () => {});
     t.mock.method(app.connectivity, 'ensureChecker', () => {});
     t.after(() => app.stop()); return app;
@@ -71,7 +72,7 @@ for (const [method, key] of [['setGeoipDbOnly', 'geoip_db_only'], ['setGeoipAuto
 test('simultaneous preference changes preserve both flags', async t => {
     const app = runtime(t);
     await Promise.all([Promise.resolve().then(() => app.setGeoipDbOnly(true)), Promise.resolve().then(() => app.setGeoipAutoUpdate(false))]);
-    assert.deepEqual(app.preferencesStore.load(), { geoip_auto_update: false, geoip_db_only: true });
+    assert.deepEqual(app.preferencesStore.load(), { ...DEFAULT_PREFERENCES, optional_outbound: true, geoip_auto_update: false, geoip_db_only: true });
 });
 test('explicit preferences are idempotent and do not rewrite already saved values', t => {
     const app = runtime(t), save = t.mock.method(app.preferencesStore, 'save');
@@ -83,7 +84,7 @@ test('explicit preferences are idempotent and do not rewrite already saved value
     assert.equal(app.setGeoipAutoUpdate(false), false);
     assert.equal(app.setGeoipAutoUpdate(false), false);
     assert.equal(save.mock.callCount(), 2);
-    assert.deepEqual(app.preferencesStore.load(), { geoip_auto_update: false, geoip_db_only: true });
+    assert.deepEqual(app.preferencesStore.load(), { ...DEFAULT_PREFERENCES, optional_outbound: true, geoip_auto_update: false, geoip_db_only: true });
 });
 test('startup validates the chain and fails immediately on authentication errors', async t => {
     const app = runtime(t);

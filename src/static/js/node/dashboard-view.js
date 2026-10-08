@@ -259,13 +259,15 @@ export function create(options) {
     function updateInternetDot(state) {
         const dot = document.getElementById('internet-dot');
         if (!dot) return;
-        dot.classList.remove('green', 'yellow', 'red');
+        dot.classList.remove('green', 'yellow', 'red', 'disabled');
         dot.classList.add(state);
         let tip;
         if (state === 'green') {
             tip = 'Google reachability probe succeeded; GeoIP provider health is tracked separately';
         } else if (state === 'yellow') {
             tip = 'Google reachability probe failed; retrying. GeoIP lookups use their own provider health.';
+        } else if (state === 'disabled') {
+            tip = 'Google reachability probe disabled by your optional-request policy';
         } else {
             tip = 'Google reachability probe unavailable; GeoIP lookups use their own provider health';
         }

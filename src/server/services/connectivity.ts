@@ -1,6 +1,7 @@
 import { sleep } from '../tasks.ts';
 import { errorMessage, nowSeconds } from '../types.ts';
 import { createFailureReporter, createLogger } from '../logging.ts';
+import type { OutboundPolicy } from '../outbound-policy.ts';
 
 const log = createLogger('connectivity');
 
@@ -39,9 +40,13 @@ export class ConnectivityService {
     private controller = new AbortController();
     readonly signal: AbortSignal;
     readonly fetcher: typeof fetch;
-    constructor(disabled = false, signal?: AbortSignal, fetcher = fetch) {
+    private readonly outbound?: OutboundPolicy;
+    private readonly unsubscribe: () => void;
+    constructor(disabled = false, signal?: AbortSignal, fetcher = fetch, outbound?: OutboundPolicy) {
         this.geoipApiDisabled = disabled; this.fetcher = fetcher;
+        this.outbound = outbound;
         this.signal = AbortSignal.any([this.controller.signal, ...(signal ? [signal] : [])]);
+        this.unsubscribe = outbound?.subscribe((feature, allowed) => { if (feature === 'probe' && allowed) this.ensureChecker(); }) ?? (() => {});
     }
     private setState(state: ConnectivityStatus['internet_state']) {
         if (state !== this.internetState) log[state === 'green' ? 'info' : 'warn'](`Internet state changed from ${this.internetState} to ${state}`);
@@ -52,15 +57,16 @@ export class ConnectivityService {
         if (windows.quotaAt !== null && now >= windows.quotaAt) windows.quotaAt = null;
         if (windows.outageAt !== null && now >= windows.outageAt) windows.outageAt = null;
         current.retry_at = windows.quotaAt === null ? windows.outageAt : windows.outageAt === null ? windows.quotaAt : Math.max(windows.quotaAt, windows.outageAt);
-        current.state = windows.quotaAt !== null ? 'rate_limited' : current.consecutive_failures ? 'unavailable' : current.last_success_at !== null ? 'healthy' : 'unknown';
+        current.state = this.geoipApiDisabled || (this.outbound && !this.outbound.allowed('geoip')) ? 'disabled'
+            : windows.quotaAt !== null ? 'rate_limited' : current.consecutive_failures ? 'unavailable' : current.last_success_at !== null ? 'healthy' : 'unknown';
         return current;
     }
     providerReady(provider: Provider) {
         const retryAt = this.updateProvider(provider).retry_at;
-        return !this.signal.aborted && (retryAt === null || nowSeconds() >= retryAt);
+        return !this.signal.aborted && !this.geoipApiDisabled && (!this.outbound || this.outbound.allowed('geoip')) && (retryAt === null || nowSeconds() >= retryAt);
     }
     providerFailure(provider: Provider, error: unknown, response?: Response) {
-        if (this.signal.aborted) return;
+        if (this.signal.aborted || this.geoipApiDisabled || (this.outbound && !this.outbound.allowed('geoip'))) return;
         const current = this.providers[provider];
         current.consecutive_failures++;
         current.last_error = errorMessage(error); current.last_failure_at = nowSeconds();
@@ -77,7 +83,7 @@ export class ConnectivityService {
         this.providerFailures.failure(`GeoIP provider ${current.state}: ${current.last_error}`);
     }
     providerSuccess(provider: Provider, response?: Response) {
-        if (this.signal.aborted) return;
+        if (this.signal.aborted || this.geoipApiDisabled || (this.outbound && !this.outbound.allowed('geoip'))) return;
         const current = this.providers[provider];
         current.consecutive_failures = 0;
         current.last_error = null; current.last_success_at = nowSeconds();
@@ -103,23 +109,29 @@ export class ConnectivityService {
         this.setState('green');
     }
     ensureChecker() {
-        if (!this.checker && !this.signal.aborted) this.checker = this.checkLoop().finally(() => { this.checker = null; });
+        if (!this.checker && !this.signal.aborted && (!this.outbound || this.outbound.allowed('probe'))) {
+            const signal = this.outbound ? AbortSignal.any([this.signal, this.outbound.signal('probe')]) : this.signal;
+            this.checker = this.checkLoop(signal).finally(() => {
+                this.checker = null;
+                if (!this.signal.aborted && (!this.outbound || this.outbound.allowed('probe'))) this.ensureChecker();
+            });
+        }
     }
-    private async checkLoop() {
-        while (!this.signal.aborted) {
+    private async checkLoop(signal: AbortSignal) {
+        while (!signal.aborted && (!this.outbound || this.outbound.allowed('probe'))) {
             let available = false;
             try {
-                const response = await this.fetcher('https://www.google.com', { method: 'HEAD', signal: AbortSignal.any([this.signal, AbortSignal.timeout(2000)]) });
+                const response = await this.fetcher('https://www.google.com', { method: 'HEAD', signal: AbortSignal.any([signal, AbortSignal.timeout(2000)]), redirect: 'manual' });
                 // Any HTTP response proves reachability, including a probe-host outage.
                 available = true;
                 await response.body?.cancel();
             } catch { /* Retry while the connection is unavailable. */ }
-            if (this.signal.aborted) return;
+            if (signal.aborted) return;
             if (available) this.networkSuccess(); else this.networkFailure();
-            await sleep(this.internetState === 'green' ? 30_000 : 2000, this.signal);
+            await sleep(this.internetState === 'green' ? 30_000 : 2000, signal);
         }
     }
-    async stop() { this.controller.abort(); await this.checker; }
+    async stop() { this.unsubscribe(); this.controller.abort(); await this.checker; }
     setGeoipApiDisabled(disabled: boolean) {
         this.geoipApiDisabled = disabled;
         if (disabled) { this.apiPromptCount = 0; this.apiPromptAt = 0; }
@@ -127,11 +139,11 @@ export class ConnectivityService {
     acknowledgePrompt() { this.apiPromptAt = nowSeconds(); this.apiPromptCount++; }
     snapshot(): ConnectivityStatus {
         let shouldPrompt = false;
-        if (this.apiConsecutiveFailures >= 5 && !this.geoipApiDisabled) {
+        if (this.apiConsecutiveFailures >= 5 && !this.geoipApiDisabled && (!this.outbound || this.outbound.allowed('geoip'))) {
             const elapsed = this.apiPromptAt ? nowSeconds() - this.apiPromptAt : Infinity;
             shouldPrompt = this.apiPromptCount === 0 || (this.apiPromptCount <= 3 && elapsed >= this.apiPromptCount * 60) || (this.apiPromptCount > 3 && elapsed >= 300);
         }
-        return { internet_state: this.internetState, api_available: this.apiConsecutiveFailures < 5 && this.providerReady('geoip'),
+        return { internet_state: this.outbound && !this.outbound.allowed('probe') ? 'disabled' : this.internetState, api_available: this.apiConsecutiveFailures < 5 && this.providerReady('geoip'),
             api_consecutive_failures: this.apiConsecutiveFailures,
             geo_db_only_mode: this.geoipApiDisabled, api_down_prompt: shouldPrompt,
             providers: { geoip: { ...this.updateProvider('geoip') } } };
