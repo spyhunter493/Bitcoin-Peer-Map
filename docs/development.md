@@ -493,6 +493,9 @@ excluded. There is no push, PR, tag-push, or manual-dispatch publish trigger.
    release metadata and runs both smoke tests again before completing missing
    tags or promoting `latest`.
 
+Resume behavior applies to releases whose source commit includes this publisher.
+Rerunning an older release workflow executes the code from that original release.
+
 For a new highest version `v1.3.0`, all three tags identify the same tested
 multi-architecture image:
 
