@@ -7,6 +7,8 @@ function create(options) {
     const now = options.now || Date.now;
     /** @type {Promise<void> | null} */
     let pending = null;
+    let active = true;
+    const requests = new AbortController();
     /** @type {boolean | null} */
     let connected = null;
     let dashboardUnavailable = false;
@@ -36,21 +38,24 @@ function create(options) {
     }
 
     function renderStatus() {
+        if (!active) return;
         options.onStatus(getStatus());
     }
 
     function refresh() {
+        if (!active) return Promise.resolve();
         // A slow request must finish before a timer or peer action starts another.
         if (pending) return pending;
         pending = Promise.resolve()
             .then(async () => {
+                if (!active) return;
                 const controller = new globalThis.AbortController();
                 const timeout = globalThis.setTimeout(() => controller.abort(), options.timeoutMs || 15000);
                 /** @type {import('../types').Peer[] | null} */
                 let peersToApply = null;
                 try {
                     const snapshot = await api.getJson('/api/peers?include_status=true', {
-                        signal: controller.signal,
+                        signal: AbortSignal.any([controller.signal, requests.signal]),
                         cache: 'no-store',
                     });
                     const status = snapshot && snapshot.status;
@@ -87,7 +92,7 @@ function create(options) {
                 } finally {
                     globalThis.clearTimeout(timeout);
                 }
-                if (peersToApply !== null) options.onPeers(peersToApply);
+                if (active && peersToApply !== null) options.onPeers(peersToApply);
                 renderStatus();
             })
             .finally(() => {
@@ -96,7 +101,7 @@ function create(options) {
         return pending;
     }
 
-    return Object.freeze({ refresh, getStatus, renderStatus });
+    return Object.freeze({ refresh, getStatus, renderStatus, dispose() { active = false; requests.abort(); } });
 }
 
 export { create };

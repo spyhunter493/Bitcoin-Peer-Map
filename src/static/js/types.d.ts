@@ -4,6 +4,11 @@ export interface AdminAuthentication {
     clearToken(): void;
     requestToken(signal?: AbortSignal, cooldownDeadline?: number): Promise<string>;
 }
+export interface ViewingAuthentication {
+    getToken(): string;
+    getSignal(): AbortSignal;
+    onAuthenticationFailure(): void;
+}
 
 /** Wire contracts are generated; these projections describe browser-only display state. */
 import type { Peer as ApiPeer, DashboardInfo, PeerSnapshot, PeerDirection } from '../../shared/api.generated.d.ts';
@@ -54,6 +59,7 @@ export interface PeerRefreshController {
     refresh(): Promise<void>;
     getStatus(): PeerDataStatus;
     renderStatus(): void;
+    dispose(): void;
 }
 export interface PollingOptions {
     task: () => Promise<void>;

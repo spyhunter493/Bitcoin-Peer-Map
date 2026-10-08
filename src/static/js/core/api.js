@@ -11,10 +11,16 @@ class HttpError extends Error {
 
 /** @type {import('../types').AdminAuthentication | null} */
 let adminAuthentication = null;
+/** @type {import('../types').ViewingAuthentication | null} */
+let viewingAuthentication = null;
 
 /** @param {import('../types').AdminAuthentication | null} authentication */
 export function configureAdminAuthentication(authentication) {
     adminAuthentication = authentication;
+}
+/** @param {import('../types').ViewingAuthentication | null} authentication */
+export function configureViewingAuthentication(authentication) {
+    viewingAuthentication = authentication;
 }
 
 /**
@@ -63,8 +69,29 @@ async function requestJson(url, options, timeoutMs) {
  * @param {number} [timeoutMs]
  * @returns {Promise<T>}
  */
-function getJson(url, options, timeoutMs) {
-    return requestJson(url, Object.assign({}, options, { method: 'GET' }), timeoutMs);
+async function getJson(url, options, timeoutMs) {
+    const target = new URL(url, globalThis.location?.href || 'http://localhost/');
+    const authentication = target.origin === (globalThis.location?.origin || 'http://localhost') && target.pathname.startsWith('/api/') ? viewingAuthentication : null;
+    const requestOptions = Object.assign({}, options, { method: 'GET' });
+    const signal = authentication?.getSignal();
+    if (authentication && signal) {
+        const headers = new Headers(options?.headers);
+        const token = authentication.getToken();
+        if (token) headers.set('Authorization', `Bearer ${token}`);
+        requestOptions.headers = headers;
+        requestOptions.cache = 'no-store';
+        requestOptions.signal = options?.signal ? AbortSignal.any([options.signal, signal]) : signal;
+    }
+    try {
+        const result = await requestJson(url, requestOptions, timeoutMs);
+        // Abort can happen after headers/JSON arrived; never apply a locked generation.
+        signal?.throwIfAborted();
+        return /** @type {T} */ (result);
+    } catch (error) {
+        const viewingCooldown = error instanceof HttpError && error.status === 429 && error.data !== null && typeof error.data === 'object' && 'code' in error.data && error.data.code === 'view_rate_limited';
+        if (error instanceof HttpError && authentication && !signal?.aborted && (error.status === 401 || viewingCooldown)) authentication.onAuthenticationFailure();
+        throw error;
+    }
 }
 
 /**
