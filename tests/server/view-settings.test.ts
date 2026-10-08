@@ -2,8 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { ConfigurationError } from '../../src/server/settings.ts';
+import { ConfigurationError, loadSettings } from '../../src/server/settings.ts';
 import { settings, temporaryDirectory } from './helpers.ts';
+
+test('implicit viewing configuration is private and fails closed without a secret', () => {
+    const environment = { BITCOIN_RPC_HOST: '127.0.0.1', BITCOIN_RPC_USER: 'test', BITCOIN_RPC_PASSWORD: 'secret' };
+    assert.throws(() => loadSettings(environment), /BPM_VIEW_MODE requires/);
+    assert.equal(loadSettings({ ...environment, BPM_ADMIN_TOKEN: 'admin' }).view_mode, 'authenticated');
+    assert.equal(loadSettings({ ...environment, BPM_VIEW_MODE: 'public' }).view_mode, 'public');
+});
 
 test('explicit private modes require a credential and preserve viewer/admin separation', () => {
     for (const mode of ['authenticated', 'redacted']) {

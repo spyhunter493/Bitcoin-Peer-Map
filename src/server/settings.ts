@@ -75,7 +75,7 @@ function bearerSecret(env: Environment, name: 'BPM_ADMIN_TOKEN' | 'BPM_VIEW_TOKE
 
 export type ViewMode = 'public' | 'authenticated' | 'redacted';
 function viewing(env: Environment) {
-    const mode = env.BPM_VIEW_MODE?.trim().toLowerCase() || 'public';
+    const mode = env.BPM_VIEW_MODE?.trim().toLowerCase() || 'authenticated';
     if (!['public', 'authenticated', 'redacted'].includes(mode)) throw new ConfigurationError('BPM_VIEW_MODE must be public, authenticated, or redacted');
     const admin = bearerSecret(env, 'BPM_ADMIN_TOKEN'), viewer = bearerSecret(env, 'BPM_VIEW_TOKEN');
     if (mode !== 'public' && !admin && !viewer) throw new ConfigurationError('BPM_VIEW_MODE requires BPM_VIEW_TOKEN(_FILE) or BPM_ADMIN_TOKEN(_FILE)');
@@ -118,6 +118,7 @@ export function loadSettings(env: Environment = process.env) {
         listen_port: integer(env, 'BPM_LISTEN_PORT', 58333, 1024, 65535),
         data_dir: resolve(dataDir), geoip_enabled: boolean(env, 'BPM_GEOIP_ENABLED', true),
         geoip_auto_update_override: env.BPM_GEOIP_AUTO_UPDATE?.trim() ? boolean(env, 'BPM_GEOIP_AUTO_UPDATE', true) : null,
+        outbound_enabled_override: env.BPM_OUTBOUND_ENABLED?.trim() ? boolean(env, 'BPM_OUTBOUND_ENABLED', false) : null,
         build_version: version(env), build_revision: revision(env),
         ...viewing(env),
         trusted_proxies: trustedProxies(env),
