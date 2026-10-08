@@ -1,0 +1,112 @@
+name: Release diagnostics
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+    paths:
+      - .github/workflows/release-diagnostics.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-diagnostics-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Diagnose the published release source
+    if: github.repository == 'spyhunter493/Bitcoin-Peer-Map' && !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      BPM_DIAGNOSTIC_IMAGE: bitcoin-peer-map:release-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+      BPM_DIAGNOSTIC_VERSION: v2.0.0
+      BPM_DIAGNOSTIC_REVISION: 8635dad2412c1dc6e08701f829998d443c801143
+    steps:
+      - name: Check out the exact published release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: 8635dad2412c1dc6e08701f829998d443c801143
+          persist-credentials: false
+      - name: Verify diagnostic source
+        run: test "$(git rev-parse HEAD)" = "$BPM_DIAGNOSTIC_REVISION"
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+      - name: Enable local multi-platform images
+        uses: docker/setup-docker-action@2bf61fb9464cc67f0cbdeabed6aa0380accd1c70 # v5.5.0
+        with:
+          daemon-config: |
+            {"debug":true,"features":{"containerd-snapshotter":true}}
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build the exact release source for both architectures
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          load: true
+          push: false
+          pull: true
+          tags: ${{ env.BPM_DIAGNOSTIC_IMAGE }}
+          build-args: |
+            BPM_BUILD_VERSION=${{ env.BPM_DIAGNOSTIC_VERSION }}
+            BPM_BUILD_REVISION=${{ env.BPM_DIAGNOSTIC_REVISION }}
+          cache-from: type=gha
+      - name: Run unchanged smoke assertions with full failure diagnostics
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import { readFileSync, writeFileSync, rmSync } from 'node:fs';
+          import { execFile } from 'node:child_process';
+          import { promisify } from 'node:util';
+
+          const execute = promisify(execFile);
+          const smokePath = 'tests/.release-smoke-diagnostic.js';
+          let source = readFileSync('tests/test_container.js', 'utf8');
+          const oldDocker = "const docker = async (...args) => (await execute('docker', args, { timeout: 60000 })).stdout.trim();";
+          assert.ok(source.includes(oldDocker), 'The diagnostic wrapper must match the published smoke runner');
+          source = source.replace(oldDocker, `const docker = async (...args) => {
+              const result = await execute('docker', args, { timeout: 60000 });
+              return (result.stdout + (args[0] === 'logs' ? result.stderr : '')).trim();
+          };`);
+          const oldTimeout = "throw new Error('Container did not become ready');";
+          assert.ok(source.includes(oldTimeout), 'The readiness diagnostic must match the published smoke runner');
+          source = source.replace(oldTimeout, `console.error('Readiness timeout:', { image, platform, name, port, rpcPort });
+              console.error('Container state:', await docker('inspect', '--format', '{{json .State}}', name).catch(error => error.message));
+              throw new Error('Container did not become ready');`);
+          writeFileSync(smokePath, source);
+          let failed = false;
+          try {
+              for (const platform of ['linux/amd64', 'linux/arm64']) {
+                  console.log('Starting full release smoke:', platform, process.version);
+                  try {
+                      const result = await execute(process.execPath, [smokePath], {
+                          timeout: 600000,
+                          maxBuffer: 8 * 1024 * 1024,
+                          env: { ...process.env,
+                              BPM_TEST_IMAGE: process.env.BPM_DIAGNOSTIC_IMAGE,
+                              BPM_TEST_PLATFORM: platform,
+                              BPM_TEST_EXPECT_VERSION: process.env.BPM_DIAGNOSTIC_VERSION,
+                              BPM_TEST_EXPECT_REVISION: process.env.BPM_DIAGNOSTIC_REVISION,
+                          },
+                      });
+                      process.stdout.write(result.stdout);
+                      process.stderr.write(result.stderr);
+                      console.log('Full release smoke passed:', platform);
+                  } catch (error) {
+                      failed = true;
+                      process.stdout.write(error.stdout || '');
+                      process.stderr.write(error.stderr || '');
+                      console.error('Full release smoke failed:', platform, { code: error.code, signal: error.signal, killed: error.killed });
+                  }
+              }
+          } finally {
+              rmSync(smokePath, { force: true });
+          }
+          if (failed) process.exitCode = 1;
+          JS
