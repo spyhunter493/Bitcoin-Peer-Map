@@ -71,6 +71,49 @@ test('authentication cooldown exposes Retry-After and preserves the token withou
     assert.equal(prompts, 0); assert.equal(requests, 1); assert.equal(clears, 0);
 });
 
+test('an anonymous authentication cooldown prompts and replays the action once', async t => {
+    let token = '', prompts = 0, clears = 0;
+    const calls = [];
+    configureAdminAuthentication({ getToken: () => token, clearToken() { clears++; token = ''; }, requestToken: async () => { prompts++; return token = 'valid'; } });
+    t.after(() => configureAdminAuthentication(null));
+    t.mock.method(globalThis, 'fetch', async (url, options) => {
+        calls.push({ url, body: options.body, headers: new Headers(options.headers) });
+        return calls.length === 1
+            ? Response.json({ code: 'admin_rate_limited' }, { status: 429, headers: { 'Retry-After': '60' } })
+            : Response.json({ success: true });
+    });
+    assert.deepEqual(await postJson('/api/peer/connect', { address: '8.8.8.8' }, { headers: { 'X-Test': 'preserved' } }), { success: true });
+    assert.equal(prompts, 1); assert.equal(clears, 0); assert.equal(calls.length, 2);
+    assert.equal(calls[0].headers.has('authorization'), false);
+    assert.equal(calls[1].headers.get('authorization'), 'Bearer valid');
+    assert.equal(calls[1].headers.get('x-test'), 'preserved');
+    assert.equal(calls[0].body, calls[1].body);
+});
+
+test('anonymous unrelated cooldowns are not authentication challenges', async t => {
+    let requests = 0;
+    configureAdminAuthentication({ getToken: () => '', clearToken: () => assert.fail('Unexpected token clear'), requestToken: async () => assert.fail('Unexpected authentication') });
+    t.after(() => configureAdminAuthentication(null));
+    for (const body of [{ code: 'rpc_rate_limited' }, {}, null, 'admin_rate_limited']) {
+        t.mock.method(globalThis, 'fetch', async () => { requests++; return Response.json(body, { status: 429 }); });
+        await assert.rejects(postJson('/api/peer/connect'), { status: 429 });
+    }
+    assert.equal(requests, 4);
+});
+
+test('an anonymous cooldown cancellation or failed replay never retries the management action again', async t => {
+    let token = '', requests = 0, prompts = 0;
+    const controller = new AbortController();
+    configureAdminAuthentication({ getToken: () => token, clearToken() { token = ''; }, requestToken: async () => { controller.abort(); return 'valid'; } });
+    t.after(() => configureAdminAuthentication(null));
+    t.mock.method(globalThis, 'fetch', async () => { requests++; return Response.json({ code: 'admin_rate_limited' }, { status: 429 }); });
+    await assert.rejects(postJson('/api/peer/connect', undefined, { signal: controller.signal }), { name: 'AbortError' });
+    assert.equal(requests, 1);
+    configureAdminAuthentication({ getToken: () => token, clearToken() { token = ''; }, requestToken: async () => { prompts++; return token = 'valid'; } });
+    await assert.rejects(postJson('/api/peer/connect'), { status: 429 });
+    assert.equal(requests, 3); assert.equal(prompts, 1); assert.equal(token, 'valid');
+});
+
 test('a cooldown on the authenticated retry preserves the newly verified token', async t => {
     let token = 'old', requests = 0, prompts = 0;
     configureAdminAuthentication({ getToken: () => token, clearToken() { token = ''; }, requestToken: async () => { prompts++; return token = 'new'; } });

@@ -9,6 +9,8 @@ import { chromium } from 'playwright';
 import assertPeerViews from './test_peer_views.js';
 import assertPeerLifecycle from './test_peer_lifecycle.js';
 import assertTableDom from './test_peer_table_dom.js';
+import assertPeerAccuracy from './test_peer_accuracy.js';
+import assertNarrowManagementDialogs from './test_narrow_management_dialogs.js';
 import assertPeerActionGeometry from './test_peer_action_geometry.js';
 import assertModules from './test_modules.js';
 import assertMapGroups from './test_map_groups.js';
@@ -899,6 +901,8 @@ const suites = [
     ['peer views and safe rendering', assertPeerViews],
     ['peer lifecycle', assertPeerLifecycle],
     ['peer table DOM updates', assertTableDom],
+    ['peer accuracy and coordinate sorting', assertPeerAccuracy],
+    ['narrow management dialogs', assertNarrowManagementDialogs],
     ['peer action pointer geometry', assertPeerActionGeometry],
     ['dashboard polling and reduced motion', assertDashboardLifecycle],
     ['GeoIP settings', assertGeoIPSettings],
