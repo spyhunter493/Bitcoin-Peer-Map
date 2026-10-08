@@ -19,6 +19,99 @@ function services(t: TestContext, fetcher: typeof fetch = async () => { throw ne
     const node = new NodeService(rpc, connectivity, geo, () => false);
     return { rpc, geo, connectivity, node };
 }
+type KeyedNodeReads = {
+    recentBlock(hash: string, height: number, signal?: AbortSignal): Promise<{ time: number }>;
+    header(hash: string, signal?: AbortSignal): Promise<{ time?: number }>;
+};
+const keyedReadCases = [
+    { kind: 'block', method: 'getblock', read: (node: NodeService, hash: string, signal?: AbortSignal) => (node as unknown as KeyedNodeReads).recentBlock(hash, 100, signal) },
+    { kind: 'header', method: 'getblockheader', read: (node: NodeService, hash: string, signal?: AbortSignal) => (node as unknown as KeyedNodeReads).header(hash, signal) },
+] as const;
+
+for (const { kind, method, read } of keyedReadCases) {
+    test(`${kind} failures share twenty sequential requests, expire exactly after settlement, and recover into the successful LRU`, async t => {
+        let now = 0; t.mock.method(performance, 'now', () => now);
+        const { node, rpc } = services(t); rpc.failed.add(method);
+        for (let i = 0; i < 20; i++) await assert.rejects(read(node, 'failed-hash'), new RegExp(`${method} failed`));
+        assert.equal(rpc.count(method), 1);
+        now = 999; await assert.rejects(read(node, 'failed-hash'), new RegExp(`${method} failed`));
+        assert.equal(rpc.count(method), 1);
+        rpc.failed.delete(method); rpc.values[method] = { height: 100, time: 2000 };
+        now = 1000; assert.equal((await read(node, 'failed-hash')).time, 2000);
+        assert.equal(rpc.count(method), 2);
+        now = 100_000; rpc.failed.add(method);
+        assert.equal((await read(node, 'failed-hash')).time, 2000);
+        assert.equal(rpc.count(method), 2, 'Recovery keeps the immutable success cache');
+        await assert.rejects(read(node, 'other-hash'), new RegExp(`${method} failed`));
+        assert.equal(rpc.count(method), 3, 'Different hashes remain independent');
+    });
+
+    test(`${kind} slow failures share twenty concurrent requests and receive a full one-second failure interval`, async t => {
+        let now = 0; t.mock.method(performance, 'now', () => now);
+        const { node, rpc } = services(t), gate = deferred<unknown>(), error = new Error(`${method} offline`);
+        rpc.values[method] = () => gate.promise;
+        const rejected = Array.from({ length: 20 }, () => assert.rejects(read(node, 'slow-hash'), error));
+        await flush(); assert.equal(rpc.count(method), 1);
+        now = 5000; gate.reject(error); await Promise.all(rejected);
+        now = 5999; await assert.rejects(read(node, 'slow-hash'), error);
+        assert.equal(rpc.count(method), 1);
+        now = 6000; rpc.values[method] = { height: 100, time: 2000 };
+        assert.equal((await read(node, 'slow-hash')).time, 2000);
+        assert.equal(rpc.count(method), 2);
+    });
+
+    test(`${kind} parser failures are cached separately from successful values`, async t => {
+        let now = 0; t.mock.method(performance, 'now', () => now);
+        const { node, rpc } = services(t); rpc.values[method] = { height: 'invalid' };
+        for (let i = 0; i < 20; i++) await assert.rejects(read(node, 'malformed-hash'), new RegExp(method));
+        assert.equal(rpc.count(method), 1);
+        rpc.values[method] = { height: 100, time: 2000 }; now = 1000;
+        assert.equal((await read(node, 'malformed-hash')).time, 2000);
+        assert.equal(rpc.count(method), 2);
+    });
+
+    test(`${kind} cancellation keeps another subscriber and late cancelled results cannot poison a replacement`, async t => {
+        const { node, rpc } = services(t), firstGate = deferred<unknown>(), oldGate = deferred<unknown>(), newGate = deferred<unknown>();
+        const original = rpc.call.bind(rpc); let loadSignal: AbortSignal | undefined, transport = 0;
+        t.mock.method(rpc, 'call', (name: string, params: unknown[] = [], _timeout?: number, signal?: AbortSignal) => {
+            if (name !== method) return original(name, params);
+            rpc.calls.push({ method: name, params }); loadSignal = signal;
+            return [firstGate, oldGate, newGate][transport++].promise;
+        });
+        const one = new AbortController(), first = read(node, 'shared-hash', one.signal), second = read(node, 'shared-hash');
+        const cancelledFirst = assert.rejects(first, { name: 'AbortError' });
+        await flush(); one.abort(); await cancelledFirst;
+        assert.equal(loadSignal!.aborted, false);
+        firstGate.resolve({ height: 100, time: 1000 }); assert.equal((await second).time, 1000);
+        const controller = new AbortController(), abandoned = read(node, 'replacement-hash', controller.signal);
+        const cancelled = assert.rejects(abandoned, { name: 'AbortError' });
+        await flush(); controller.abort(); await cancelled;
+        assert.equal(loadSignal!.aborted, true);
+        const fresh = read(node, 'replacement-hash'); await flush();
+        oldGate.resolve({ height: 100, time: 1500 }); await flush();
+        const joined = read(node, 'replacement-hash'); await flush();
+        assert.equal(rpc.count(method), 3, 'Late completion cannot delete the active replacement');
+        newGate.resolve({ height: 100, time: 2000 });
+        assert.deepEqual((await Promise.all([fresh, joined])).map(value => value.time), [2000, 2000]);
+        assert.equal((await read(node, 'replacement-hash')).time, 2000);
+        assert.equal(rpc.count(method), 3, 'Late old result cannot overwrite the success LRU');
+    });
+}
+
+test('block and header failure budgets are independent for the same hash', async t => {
+    let now = 0; t.mock.method(performance, 'now', () => now);
+    const { node, rpc } = services(t);
+    rpc.failed.add('getblock'); rpc.failed.add('getblockheader');
+    const reads = node as unknown as KeyedNodeReads;
+    await assert.rejects(reads.header('same-hash'), /getblockheader failed/);
+    for (let key = 0; key < 257; key++) await assert.rejects(reads.recentBlock(`block-${key}`, 100), /getblock failed/);
+    await assert.rejects(reads.header('same-hash'), /getblockheader failed/);
+    assert.equal(rpc.count('getblockheader'), 1, 'Block failure saturation cannot evict header failures');
+    now = 1000; rpc.failed.delete('getblockheader');
+    assert.equal((await reads.header('same-hash')).time, 1000);
+    assert.equal(rpc.count('getblockheader'), 2);
+});
+
 test('node details and mempool use only RPC and never request market prices', async t => {
     const { node, rpc, connectivity } = services(t, async () => assert.fail('Node reads must not request external prices'));
     rpc.values.getmempoolinfo = { size: 5, total_fee: 0.125 };

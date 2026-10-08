@@ -1,6 +1,7 @@
 # Reliable RPC retries and traffic rates
 
-Status: planning only. Implementation has not started.
+Status: implemented. This document records the reader-cache and traffic-timing
+behavior covered by the backend regressions in this PR.
 
 This is the first of three ordered implementation plans. It addresses failed block/header retry caching and traffic-rate distortion caused by delayed uptime responses.
 
@@ -26,6 +27,10 @@ Use the existing mocked monotonic clock and deferred RPC fixtures rather than re
 
 ## Validation and boundaries
 
-For the eventual implementation, run syntax/type checks and the backend suite, including shared-reader, service, and metrics regressions. Keep HTTP response shapes, authentication, native Node 26 execution, and zero production npm dependencies unchanged.
+Validation uses syntax/type checks and the backend suite, including shared-reader,
+service, and metrics regressions. HTTP response shapes, authentication, native
+Node 26 execution, and zero production npm dependencies remain unchanged.
 
-This planning PR adds only this document; it does not implement the fixes or claim implementation tests passed.
+The implementation adds bounded retention of settled read failures and records
+validated totals at their observation time. Mocked monotonic clocks and deferred
+RPC fixtures cover expiry, capacity, cancellation, recovery, and traffic delays.
