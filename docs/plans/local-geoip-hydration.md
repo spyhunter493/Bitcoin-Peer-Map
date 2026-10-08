@@ -1,21 +1,21 @@
 # Faster local GeoIP hydration
 
-Status: planning only. Implementation has not started. Reviewed against main `b066ba7` on 2026-10-09.
+Status: implemented in this draft. Based on main `37e802b`; local service validation is recorded below. Reviewed on 2026-10-09.
 
 ## Problem and intended result
 
-The current peer geolocation loop performs a synchronous local database read, then awaits an external provider request and persistence retries for one host before processing the next. A slow provider request can leave later peers pending even when their locations already exist in the local database. SQLite save retries can stall the same queue for up to 65 seconds.
+The previous peer geolocation loop performed a synchronous local database read, then awaited an external provider request and persistence retries for one host before processing the next. A slow provider request could leave later peers pending even when their locations already exist in the local database. SQLite save retries could stall the same queue for up to 65 seconds.
 
-A fresh read-only reproduction on this revision used the real peer worker with fixture RPC/database/provider objects in an isolated Node 26 container with networking disabled. While the first provider response was held open, the next host remained queued and its fresh local row had not been read; the serialized peer was still pending. This verifies the scheduling problem, not the proposed replacement architecture. Local locations should become available independently of provider and persistence latency.
+A read-only reproduction on the planning baseline used the real peer worker with fixture RPC/database/provider objects in an isolated Node 26 container with networking disabled. While the first provider response was held open, the next host remained queued and its fresh local row had not been read; the serialized peer was still pending. This verifies the scheduling problem, not the proposed replacement architecture. Local locations should become available independently of provider and persistence latency.
 
-## Current-code evidence
+## Baseline evidence before implementation
 
-- `src/server/services/peers.ts`: `refreshOnce()` queues missing or changed-generation locations; `geoLoop()` awaits `resolveGeo()`, which also awaits `persistGeo()`. The existing 1.5-second delay applies after a provider attempt, rather than after every local-only job.
-- `src/server/services/geoip.ts`: `get()` uses `DatabaseSync` and currently returns `null` for both a missing row and a read error. `save()` retains the original observation timestamp, retries busy/locked writes with a 65-second budget, and returns the stored winner.
+- `src/server/services/peers.ts`: `refreshOnce()` queued missing or changed-generation locations; `geoLoop()` awaited `resolveGeo()`, which also awaited `persistGeo()`. The previous 1.5-second delay applied after a provider attempt, rather than after every local-only job.
+- `src/server/services/geoip.ts`: `get()` used `DatabaseSync` and returned `null` for both a missing row and a read error. `save()` retains the original observation timestamp, retries busy/locked writes with a 65-second budget, and returns the stored winner.
 - `src/server/services/geoip-merge.ts` and `geoip-schema.ts`: imports and provider saves replace a row only when their timestamp is strictly newer. Equal timestamps retain the existing row and provenance; missing/zero ages and future timestamps must retain the existing unknown-age treatment.
-- `src/server/runtime.ts`: shutdown awaits peer tasks and the automatic dataset task before closing SQLite. Any new worker must join that shutdown barrier. Current per-host deduplication and active-host checks do not identify a departed host that later reconnects under the same address.
+- `src/server/runtime.ts`: shutdown awaits peer tasks and the automatic dataset task before closing SQLite. Any new worker must join that shutdown barrier. The previous per-host deduplication and active-host checks did not identify a departed host that later reconnects under the same address.
 
-## Proposed implementation
+## Implemented behavior
 
 - During each successful peer refresh, hydrate eligible local records for unique active public hosts before dispatching newly queued provider work. Read for cache misses, expired negative entries, and database-generation changes; do not repeat reads merely because the same host has multiple connections. Keep the private-address classification and exclusion path intact.
 - Use small bounded batches with event-loop yields when a refresh contains many hosts. SQLite reads remain synchronous: separate queues remove awaits on network/save retries, but do not make SQLite itself nonblocking. Preserve retained locations through local read failures; internally distinguish a read failure from a confirmed miss without changing HTTP response shapes or reporting a provider outage.
@@ -46,10 +46,12 @@ Use deferred provider/save fixtures and mocked clocks instead of wall-clock dela
 
 ## Validation and boundaries
 
-For the eventual implementation, run backend service, persistence, freshness, connectivity, and runtime tests; syntax/type/API-generation checks; browser GeoIP/stale-recovery coverage; and production-container checks.
+The implementation adds deferred provider/save fixtures, mocked clocks, real worker scheduling checks, and host-lifetime race tests in `tests/server/peer-hydration.test.ts`. Existing SQLite persistence and freshness tests now drive the independent save worker explicitly and verify immediate local hydration.
+
+Local validation passed on native Node 26.10.0: all 353 backend tests, including 39 new hydration tests and the persistence, freshness, connectivity, and runtime suites; syntax/type/API-generation checks. Browser GeoIP/stale-recovery coverage and production-container checks are required during final integration before marking the draft ready.
 
 Keep existing HTTP response shapes, provider choice, scoring, saved preferences, native Node 26 execution, and zero production npm dependencies. This scheduling change can be implemented independently of selecting an HTTPS provider. It must recheck the existing database-only preference before dispatch; the separate privacy and HTTPS planning draft owns additional outbound controls and cancellation on policy changes. Expose owned cancellation/job-identity hooks for that work without treating today's database-only setting as a general prohibition on all network traffic.
 
-Review acceptance fixtures before implementation, especially the definition of an imported winner versus a newer pending observation. No provider selection, schema migration, or outbound-default decision is made here.
+Timestamp arbitration compares imported rows against the current observation before publishing and again after a save returns. Equal timestamps retain the stored row and provenance; pending observations remain owned until persistence reconciles its result. No provider selection, schema migration, or outbound-default decision is made here.
 
-This draft adds only this document. It does not change the queue, database, network behavior, or tests.
+The draft now implements local hydration, independent provider/persistence workers, cancellation, and regression tests. `GeoDatabase.read()` distinguishes hits, misses, disabled storage, and read errors while `get()` retains its row-or-null compatibility contract. `PeerService.cancelProviderWork()` and an optional injected lookup callback provide the separate outbound-controls PR with owned cancellation without stopping local hydration or persistence.
