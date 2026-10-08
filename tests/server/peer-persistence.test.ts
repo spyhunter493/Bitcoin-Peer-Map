@@ -27,7 +27,8 @@ test('failed busy persistence retains a visible location and retries its origina
     const writer = new DatabaseSync(geo.path); t.after(() => writer.close());
     writer.exec('BEGIN IMMEDIATE');
     await peers.refreshOnce(); assert.deepEqual(peers.geoQueue.shift(), ['8.8.8.8', 'ipv4']);
-    const pending = peers.resolveGeo('8.8.8.8', 'ipv4');
+    await peers.resolveGeo('8.8.8.8', 'ipv4');
+    const pending = peers.persistGeo('8.8.8.8');
     await flush();
     assert.equal(peers.listPeers()[0].location, 'API, NZ', 'a writer lock must not hide a known location');
     assert.equal((peers.listPeers()[0].geo as { source: string }).source, 'ip_api');
@@ -36,10 +37,10 @@ test('failed busy persistence retains a visible location and retries its origina
     assert.equal(calls, 1); assert.equal(geo.get('8.8.8.8'), null);
     assert.ok(peers.geoCache.get('8.8.8.8')?.pendingSave);
     time += GEO_PERSISTENCE_RETRY_MS - 1; await peers.refreshOnce(); assert.deepEqual(peers.geoQueue, []);
-    time++; await peers.refreshOnce(); assert.deepEqual(peers.geoQueue.shift(), ['8.8.8.8', 'ipv4']);
+    time++; await peers.refreshOnce(); assert.deepEqual(peers.saveQueue, ['8.8.8.8']);
     connectivity.setGeoipApiDisabled(true);
     writer.exec('COMMIT');
-    await peers.resolveGeo('8.8.8.8', 'ipv4');
+    await peers.persistGeo('8.8.8.8');
     assert.equal(calls, 1); assert.equal(geo.get('8.8.8.8')?.last_updated, 1_700_000_000);
     assert.equal(geo.get('8.8.8.8')?.geo_source, 'ip_api');
     assert.equal(peers.geoCache.get('8.8.8.8')?.pendingSave, undefined);
@@ -52,7 +53,7 @@ test('retained persistence survives a dataset generation change and adopts the n
     let calls = 0;
     const { geo, peers } = setup(t, async () => { calls++; return location(); });
     const save = t.mock.method(geo, 'save', async () => ({ status: 'failed' as const, message: 'Disk full' }));
-    await peers.refreshOnce(); peers.geoQueue.shift(); await peers.resolveGeo('8.8.8.8', 'ipv4');
+    await peers.refreshOnce(); peers.geoQueue.shift(); await peers.resolveGeo('8.8.8.8', 'ipv4'); await peers.persistGeo('8.8.8.8');
     assert.ok(peers.geoCache.get('8.8.8.8')?.pendingSave);
     save.mock.restore();
     const writer = new DatabaseSync(geo.path);
@@ -60,9 +61,11 @@ test('retained persistence survives a dataset generation change and adopts the n
     writer.close(); geo.datasetChanged();
     assert.equal(peers.cachedGeo('8.8.8.8')?.city, 'API');
     await peers.refreshOnce(); assert.deepEqual(peers.geoQueue, [], 'generation changes preserve the separate persistence retry deadline');
+    assert.equal(peers.cachedGeo('8.8.8.8')?.city, 'Imported', 'a newer import is visible before persistence retry');
+    assert.deepEqual(peers.saveQueue, []);
     time = GEO_PERSISTENCE_RETRY_MS;
-    await peers.refreshOnce(); assert.deepEqual(peers.geoQueue.shift(), ['8.8.8.8', 'ipv4']);
-    await peers.resolveGeo('8.8.8.8', 'ipv4');
+    await peers.refreshOnce(); assert.deepEqual(peers.saveQueue, ['8.8.8.8']);
+    await peers.persistGeo('8.8.8.8');
     assert.equal(calls, 1); assert.equal(peers.cachedGeo('8.8.8.8')?.city, 'Imported');
     assert.equal(peers.geoCache.get('8.8.8.8')?.generation, geo.generation);
     assert.equal(peers.geoCache.get('8.8.8.8')?.pendingSave, undefined);
@@ -76,11 +79,11 @@ test('an invalid newer stored row cannot replace a valid API cache and persisten
     const writer = new DatabaseSync(geo.path);
     writer.prepare('INSERT INTO geo_cache (ip, country, lat, lon, city, last_updated) VALUES (?, ?, ?, ?, ?, ?)').run('8.8.8.8', 'NZ', 999, 2, 'Invalid newer', 200);
     writer.close();
-    await peers.refreshOnce(); peers.geoQueue.shift(); await peers.resolveGeo('8.8.8.8', 'ipv4');
+    await peers.refreshOnce(); peers.geoQueue.shift(); await peers.resolveGeo('8.8.8.8', 'ipv4'); await peers.persistGeo('8.8.8.8');
     assert.equal(peers.cachedGeo('8.8.8.8')?.city, 'API'); assert.equal(peers.cachedGeo('8.8.8.8')?.lat, 1);
     assert.ok(peers.geoCache.get('8.8.8.8')?.pendingSave); assert.equal(calls, 1);
     time = GEO_PERSISTENCE_RETRY_MS; await peers.refreshOnce();
-    assert.deepEqual(peers.geoQueue.shift(), ['8.8.8.8', 'ipv4']); await peers.resolveGeo('8.8.8.8', 'ipv4');
+    assert.deepEqual(peers.saveQueue, ['8.8.8.8']); await peers.persistGeo('8.8.8.8');
     assert.equal(calls, 1); assert.equal(peers.cachedGeo('8.8.8.8')?.city, 'API');
     assert.ok(peers.geoCache.get('8.8.8.8')?.pendingSave); assert.equal(geo.get('8.8.8.8')?.last_updated, 200);
 });
@@ -91,7 +94,7 @@ test('a fresh API result across an import uses timestamp arbitration and only pu
     const { geo, peers, rpc } = setup(t, () => response.promise);
     await peers.refreshOnce(); peers.geoQueue.shift();
     const pending = peers.resolveGeo('8.8.8.8', 'ipv4');
-    geo.datasetChanged(); response.resolve(location()); await pending;
+    geo.datasetChanged(); response.resolve(location()); await pending; await peers.persistGeo('8.8.8.8');
     assert.equal(geo.get('8.8.8.8')?.city, 'API'); assert.equal(peers.cachedGeo('8.8.8.8')?.city, 'API');
     const departedResponse = deferred<Response>();
     const departed = new PeerService(rpc, geo, new ConnectivityService(), undefined, () => departedResponse.promise);
@@ -111,7 +114,8 @@ test('shutdown cancels an active busy save promptly without counting it as an ou
     const writer = new DatabaseSync(geo.path); t.after(() => writer.close());
     writer.exec('BEGIN IMMEDIATE');
     await peers.refreshOnce();
-    const pending = peers.resolveGeo('8.8.8.8', 'ipv4'); await flush();
+    await peers.resolveGeo('8.8.8.8', 'ipv4');
+    const pending = peers.persistGeo('8.8.8.8'); await flush();
     await peers.stop(); await pending; geo.close(); writer.exec('ROLLBACK');
     assert.deepEqual(errors, []);
 });

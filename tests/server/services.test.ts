@@ -340,7 +340,7 @@ test('private and departed peers do not trigger API requests and fresh in-flight
     await peers.resolveGeo('1.1.1.1', 'ipv4'); assert.equal(calls, 0);
     const lookup = peers.resolveGeo('8.8.8.8', 'ipv4'); geo.datasetChanged();
     gate.resolve(new Response('{"status":"success","lat":1,"lon":2,"country":"NZ"}'));
-    await lookup;
+    await lookup; await peers.persistGeo('8.8.8.8');
     assert.equal(calls, 1); assert.equal(peers.cachedGeo('8.8.8.8')?.status, 'ok'); assert.equal(geo.get('8.8.8.8')?.country, 'NZ');
 });
 test('malformed nested peer fields cannot replace a good snapshot or reach a ban RPC', async t => {
@@ -625,7 +625,8 @@ for (const source of ['database', 'api']) {
             t.after(() => peers.stop());
             rpc.values.getpeerinfo = [{ id: 1, addr: '8.8.8.8:8333', network: 'ipv4' }, { id: 2, addr: '10.0.0.1:8333', network: 'ipv4' }];
             await peers.refreshOnce();
-            assert.equal(peers.listPeers()[0].location_status, 'pending');
+            assert.equal(peers.listPeers()[0].location_status, source === 'database' ? 'ok' : 'pending',
+                'local records hydrate during refresh before provider work');
             await peers.resolveGeo('8.8.8.8', 'ipv4');
             const [peer, privatePeer] = JSON.parse(JSON.stringify(peers.listPeers()));
             assert.equal(peer.location_status, 'ok');

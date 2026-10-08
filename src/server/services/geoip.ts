@@ -18,6 +18,9 @@ export const GEO_SAVE_RETRY_BUDGET_MS = 65_000;
 export type GeoSaveResult = { status: 'saved' | 'superseded'; row: ValidGeoData }
     | { status: 'disabled' | 'cancelled' }
     | { status: 'failed'; message: string };
+export type GeoReadResult = { status: 'hit'; row: Data }
+    | { status: 'miss' | 'disabled' }
+    | { status: 'error'; message: string };
 export type { GeoUpdateResponse as GeoUpdateResult } from '../api-types.ts';
 import type { GeoUpdateResponse as GeoUpdateResult, GeoDatabaseStats } from '../api-types.ts';
 const isBusy = (error: unknown) => object(error) && typeof error.errcode === 'number' && [5, 6].includes(error.errcode & 255);
@@ -65,15 +68,20 @@ export class GeoDatabase {
         } catch (error) { return { ...result, status: 'error', error: errorMessage(error) }; }
     }
     get(ip: string): Data | null {
-        if (!this.enabled || this.signal.aborted || !existsSync(this.path)) return null;
+        const result = this.read(ip);
+        return result.status === 'hit' ? result.row : null;
+    }
+    read(ip: string): GeoReadResult {
+        if (!this.enabled || this.signal.aborted) return { status: 'disabled' };
+        if (!existsSync(this.path)) return { status: 'miss' };
         try {
             if (!this.database) {
                 this.database = new DatabaseSync(this.path);
                 this.database.exec(GEO_PROVENANCE_SCHEMA);
             }
             const row = this.database.prepare(GEO_RECORD_QUERY).get(ip);
-            return row ? { ...row } : null;
-        } catch { return null; }
+            return row ? { status: 'hit', row: { ...row } } : { status: 'miss' };
+        } catch (error) { return { status: 'error', message: errorMessage(error) }; }
     }
     async save(ip: string, data: Data, observedAt = Math.floor(nowSeconds()), signal?: AbortSignal): Promise<GeoSaveResult> {
         if (!this.enabled) return { status: 'disabled' };
