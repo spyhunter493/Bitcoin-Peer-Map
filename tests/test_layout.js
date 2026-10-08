@@ -905,6 +905,14 @@ const workers = Number(process.env.BPM_LAYOUT_TEST_WORKERS ?? 2);
 if (!Number.isInteger(workers) || workers < 1 || workers > 8) {
     throw new Error('BPM_LAYOUT_TEST_WORKERS must be an integer between 1 and 8');
 }
+const shard = process.env.BPM_LAYOUT_TEST_SHARD ?? '1/1';
+if (!/^[1-8]\/[1-8]$/.test(shard)) {
+    throw new Error('BPM_LAYOUT_TEST_SHARD must be INDEX/TOTAL with integers between 1 and 8');
+}
+const [shardIndex, shardTotal] = shard.split('/').map(Number);
+if (shardIndex > shardTotal) {
+    throw new Error('BPM_LAYOUT_TEST_SHARD index must not exceed its total');
+}
 
 const suites = [
     ['dashboard interactions and layout', assertDashboardInteractions],
@@ -939,6 +947,12 @@ const suites = [
     ['network connection examples', assertNetworkExamples],
 ];
 
+// Assign every suite to exactly one shard before applying a focused-run filter.
+const selected = suites.filter(([name], index) =>
+    index % shardTotal === shardIndex - 1 &&
+    (!process.env.BPM_LAYOUT_TEST_FILTER || name.includes(process.env.BPM_LAYOUT_TEST_FILTER)));
+assert.ok(selected.length, 'Layout shard and filter must select at least one suite');
+
 await test('browser layout regressions', { concurrency: workers }, async t => {
     const externalBaseUrl = process.env.BPM_LAYOUT_TEST_BASE_URL;
     const port = externalBaseUrl ? null : await freePort();
@@ -953,8 +967,5 @@ await test('browser layout regressions', { concurrency: workers }, async t => {
     await waitForServer(baseUrl, server);
     browser = await chromium.launch();
     // Each suite owns its browser context; interactions on a shared page remain serial.
-    const selected = process.env.BPM_LAYOUT_TEST_FILTER
-        ? suites.filter(([name]) => name.includes(process.env.BPM_LAYOUT_TEST_FILTER)) : suites;
-    assert.ok(selected.length, 'BPM_LAYOUT_TEST_FILTER must match at least one suite');
     await Promise.all(selected.map(([name, run]) => t.test(name, { timeout: 120000 }, () => run(browser, baseUrl))));
 });
