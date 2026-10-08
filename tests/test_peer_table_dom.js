@@ -36,6 +36,10 @@ export default async function assertTableDom(browser, baseUrl) {
         const emptyColumns = await page.locator('#peer-table col').evaluateAll(columns => columns.map(column => column.style.width));
         releaseInitial();
         await page.waitForSelector('#peer-tbody tr[data-id="1"]');
+        await page.evaluate(async () => {
+            const revision = document.body.dataset.assetRevision;
+            window.testTableDashboard = (await import(`/static/v/${revision}/js/core/dashboard-state.js`)).dashboard;
+        });
         const pingSort = page.locator('th[data-sort="ping_ms"] button');
         await pingSort.focus();
         await page.keyboard.press('Enter');
@@ -127,6 +131,11 @@ export default async function assertTableDom(browser, baseUrl) {
             network: 'onion', location_status: 'private', lat: null, lon: null, as: '', ping_ms,
         }));
         await poll();
+        await page.waitForFunction(() => window.testTableDashboard.peers.length === 3 &&
+            window.testTableDashboard.peers.every(peer => peer.network === 'onion'));
+        assert.equal(await page.evaluate(() => window.testTableDashboard.privateNetwork.privateNetMode), false,
+            'a private-only poll preserves the chosen world view');
+        await page.locator('#pn-mini-trigger').click();
         await page.waitForSelector('#pn-detail-panel.visible');
         assert.match(await page.locator('#pn-detail-body .pn-insight-row[data-insight-type="fastest"]').textContent(), /#3.*0ms/);
         await page.locator('#pn-donut-svg .pn-donut-segment[data-net="onion"]').first().dispatchEvent('click');
