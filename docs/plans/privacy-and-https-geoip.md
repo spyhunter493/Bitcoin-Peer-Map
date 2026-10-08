@@ -1,6 +1,6 @@
 # Private viewing and optional outbound requests
 
-Status: implementation approved on 2026-10-09. This PR implements viewing privacy and outbound controls. The local hydration implementation is in the preceding PR.
+Status: implemented and locally validated on 2026-10-09. This PR implements viewing privacy and outbound controls. The local hydration implementation is in the preceding PR.
 
 ## Approved behavior
 
@@ -24,5 +24,7 @@ This implementation does not add Pro, ipwho.is, a subscription, an API key, or a
 Meaningful backend fixtures cover protected routes/HEAD/errors/streams, viewer/admin separation and throttling, aggregate allowlists and bucket boundaries, private startup defaults, mounted-secret loading, preference migration, scheduling/cancellation/re-enable races, and zero optional requests while denied.
 
 Browser coverage checks credential memory, gating before login, private-data disposal, reload/back-forward navigation, redacted-only payloads, and authenticated management of optional requests. Generated API contracts, type/syntax/assets, existing backend/frontend/deployment suites, Chromium/Firefox/WebKit checks, and the production-container smoke test are required before merging.
+
+Final local integration passed on Node 26.10.0: 379 backend tests, 123 frontend unit tests, 39 deployment tests, all 30 Chromium layout journeys, and protected viewing/outbound plus CSP/documentation/management/framing checks in Chromium, Firefox, and WebKit. Syntax, types, API generation, and pinned assets passed. Production-container and mounted-secret smoke checks passed, including default private access, viewer/admin separation, legacy local data, denied optional traffic, recreation, and clean shutdown. WebKit ran with matching Playwright 1.63 browsers in the browser dependency container. Required GitHub CI validates the final merge candidate.
 
 The implementation preserves native Node 26 execution and zero production npm dependencies. No billable or live provider calls are needed for validation.
