@@ -157,15 +157,17 @@ export default async function assertDashboardPerformance(browser) {
         assert.ok((await ids()).every(id => id % 2 === 1), 'network filtering applies to the entire data set');
         await scroll(0);
         assert.equal((await ids())[0], 499);
+        // Check a fresh hover before closing a dialog can leave this row already hovered.
+        const highlighted = await page.evaluate(() => window.canvasRedraws.worldmap);
+        await page.locator('#peer-tbody tr[data-id="499"]').hover();
+        await page.waitForFunction(count => window.canvasRedraws.worldmap > count, highlighted);
+
         await page.locator('#peer-tbody tr[data-id="499"] .peer-action-btn[data-action="disconnect"]').click();
         await page.waitForSelector('#disconnect-dialog');
         assert.match(await page.locator('#disconnect-dialog').textContent(), /499/,
             'virtual rows retain the correct disconnect target');
         await page.keyboard.press('Escape');
 
-        const highlighted = await page.evaluate(() => window.canvasRedraws.worldmap);
-        await page.locator('#peer-tbody tr[data-id="499"]').hover();
-        await page.waitForFunction(count => window.canvasRedraws.worldmap > count, highlighted);
         await page.locator('#peer-tbody tr[data-id="499"]').click();
         await page.waitForSelector('.peer-detail-popup');
         assert.equal(await page.locator('#peer-tbody').getAttribute('data-peer-count'), '1', 'selecting a row still focuses that peer');
