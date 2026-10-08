@@ -7,7 +7,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Peers */
+        /**
+         * List Peers
+         * @description Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management.
+         */
         get: operations["list_peers_api_peers_get"];
         put?: never;
         post?: never;
@@ -92,7 +95,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Bans */
+        /**
+         * List Bans
+         * @description Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management.
+         */
         get: operations["list_bans_api_bans_get"];
         put?: never;
         post?: never;
@@ -129,6 +135,8 @@ export interface paths {
         /**
          * Dashboard Info
          * @description Includes node_metrics: Bitcoin Knots uptime, P2P totals, and average P2P rates between RPC samples. Unavailable metrics and rates without a valid baseline are null. Includes services: the P2P service names advertised by this node, from getnetworkinfo.localservicesnames. An empty array means no services are advertised; null means service information is unavailable. Includes updates: the cached application update status. Dashboard reads do not trigger GitHub requests; the server checks once every 24 hours. Updates compare stable release versions, never unreleased main commits. Development builds skip checks. Blockchain ibd is true during initial block download, false only when explicitly complete, and null when unavailable. Includes bitcoin_network: configured chain and default peer connection port. Explicit peer ports are preserved; I2P requires :0. Blockchain txindex_status distinguishes disabled, syncing, ready, and unknown; txindex_height reports the indexed height. The legacy indexed boolean indicates index presence, not readiness.
+         *
+         *     Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management.
          */
         get: operations["dashboard_info_api_info_get"];
         put?: never;
@@ -146,7 +154,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Mempool */
+        /**
+         * Mempool
+         * @description Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management.
+         */
         get: operations["mempool_api_mempool_get"];
         put?: never;
         post?: never;
@@ -163,7 +174,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Blockchain */
+        /**
+         * Blockchain
+         * @description Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management.
+         */
         get: operations["blockchain_api_blockchain_get"];
         put?: never;
         post?: never;
@@ -180,7 +194,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Recent Blocks */
+        /**
+         * Recent Blocks
+         * @description Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management.
+         */
         get: operations["recent_blocks_api_blocks_recent_get"];
         put?: never;
         post?: never;
@@ -197,7 +214,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Rpc Info */
+        /**
+         * Rpc Info
+         * @description Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management.
+         */
         get: operations["rpc_info_api_rpc_info_get"];
         put?: never;
         post?: never;
@@ -217,6 +237,8 @@ export interface paths {
         /**
          * Chain Tips
          * @description Loads tips within 15 seconds including RPC queue time. Required tips have up to 10 seconds; optional blockchain metadata has up to 5 seconds concurrently. Up to 100 header ages are enriched by 4 workers for at most 5 seconds within the overall deadline. Optional timeouts preserve valid tips with null ages. Completed partial results are shared for 5 seconds; ages and generated_at are refreshed on independent returned copies.
+         *
+         *     Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management.
          */
         get: operations["chain_tips_api_chain_tips_get"];
         put?: never;
@@ -234,7 +256,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Connectivity */
+        /**
+         * Connectivity
+         * @description Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management.
+         */
         get: operations["connectivity_api_connectivity_get"];
         put?: never;
         post?: never;
@@ -333,6 +358,8 @@ export interface paths {
         /**
          * Node Metrics
          * @description RPC-only node metrics from uptime and getnettotals, shared with /api/info.node_metrics. The legacy system_stats response key is retained; no dashboard host metrics are collected.
+         *
+         *     Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management.
          */
         get: operations["stats_api_stats_get"];
         put?: never;
@@ -353,6 +380,8 @@ export interface paths {
         /**
          * Config
          * @description Runtime configuration without credentials. build.version is the release tag or dev; build.revision is the exact source commit. build.updates contains cached release update status.
+         *
+         *     Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management.
          */
         get: operations["config_api_config_get"];
         put?: never;
@@ -370,7 +399,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Node Metrics Stream */
+        /**
+         * Node Metrics Stream
+         * @description Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management.
+         */
         get: operations["system_stream_api_stream_system_get"];
         put?: never;
         post?: never;
@@ -474,6 +506,90 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Viewing Access Mode
+         * @description Public minimal bootstrap used before detailed polling.
+         */
+        get: operations["viewing_access_mode"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/view/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Verify Viewing Token
+         * @description Verify a viewing or administrator credential without granting management permissions or creating a server session. Credentials remain required on every protected read.
+         */
+        post: operations["verify_viewing_token"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/config/outbound": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Optional Outbound Request Policy
+         * @description Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management.
+         */
+        get: operations["get_optional_outbound_policy"];
+        put?: never;
+        /**
+         * Change Optional Outbound Preference
+         * @description Persist one preference atomically, then apply effective policy and cancel disabled feature-owned optional requests. A deployment-level prohibition cannot be overridden. Does not disable configured Bitcoin RPC, local hydration, or local persistence.
+         */
+        post: operations["set_optional_outbound_preference"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/view/aggregate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Redacted Viewing Aggregate
+         * @description Anonymous aggregate reads are allowed in public and redacted modes. Authenticated mode requires a viewing or administrator bearer token even for this endpoint. Uses the cached peer snapshot and starts no RPC work.
+         */
+        get: operations["redacted_viewing_aggregate"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -509,7 +625,7 @@ export interface components {
         };
         ProviderHealth: {
             /** @enum {string} */
-            state: "unknown" | "healthy" | "unavailable" | "rate_limited";
+            state: "unknown" | "healthy" | "unavailable" | "rate_limited" | "disabled";
             consecutive_failures: number;
             last_error: string | null;
             /** @description Unix timestamp in seconds. */
@@ -521,10 +637,10 @@ export interface components {
         };
         ConnectivityStatus: {
             /**
-             * @description Independent internet reachability probe status.
+             * @description Independent optional internet reachability status; disabled means no probe is scheduled by policy and does not claim connectivity.
              * @enum {string}
              */
-            internet_state: "green" | "yellow" | "red";
+            internet_state: "green" | "yellow" | "red" | "disabled";
             /** @description GeoIP has fewer than five consecutive failures and is outside its rate-limit cooldown. */
             api_available: boolean;
             /** @description Consecutive GeoIP failures only. */
@@ -776,10 +892,10 @@ export interface components {
             mempool_size: number | null;
             bitcoin_network: components["schemas"]["BitcoinNetwork"];
             /**
-             * @description Independent internet reachability probe status.
+             * @description Independent optional internet reachability status; disabled means no probe is scheduled by policy and does not claim connectivity.
              * @enum {string}
              */
-            internet_state: "green" | "yellow" | "red";
+            internet_state: "green" | "yellow" | "red" | "disabled";
             api_available: boolean;
             geo_db_only_mode: boolean;
             providers: {
@@ -1007,6 +1123,61 @@ export interface components {
             /** @constant */
             type: "connected";
         };
+        /** @description Minimal access-mode bootstrap. Contains no node details, tokens, paths, or peer data. */
+        AccessResponse: {
+            /** @enum {string} */
+            mode: "public" | "authenticated" | "redacted";
+            authentication_available: boolean;
+        };
+        OutboundPreferences: {
+            optional_outbound: boolean;
+            geoip_dataset_downloads: boolean;
+            release_checks: boolean;
+            reachability_checks: boolean;
+        };
+        /** @description Saved preferences and effective optional-server-request policy. Bitcoin RPC and local database reads/writes remain independent. Provider credentials and secret-file paths are never returned. */
+        OutboundPolicyResponse: {
+            preferences: components["schemas"]["OutboundPreferences"];
+            effective: {
+                geoip_lookups: boolean;
+                dataset_downloads: boolean;
+                release_checks: boolean;
+                reachability_probes: boolean;
+            };
+            forced_disabled: boolean;
+            provider: {
+                /** @enum {string} */
+                name: "ip-api";
+                /** @enum {string} */
+                transport: "http";
+            };
+        };
+        OutboundPreferenceRequest: {
+            /** @enum {string} */
+            preference: "optional_outbound" | "geoip_dataset_downloads" | "release_checks" | "reachability_checks";
+            enabled: boolean;
+        };
+        /** @description A range of five counts: min is rounded down to a multiple of five and max is min+4. Zero is represented as 0-4. */
+        CountRange: {
+            min: number;
+            max: number;
+        };
+        /** @description Explicit anonymous aggregate allowlist, with cached peer counts grouped into ranges of five. No exact total, peer identifiers, endpoints, precise locations, providers, paths, credentials, timestamps, or raw errors. Retained counts during a monitoring gap are marked unavailable or unknown; bucketing is not an anonymity guarantee. */
+        ViewingAggregateResponse: {
+            /** @enum {string} */
+            availability: "available" | "unavailable" | "unknown";
+            networks: {
+                ipv4: components["schemas"]["CountRange"];
+                ipv6: components["schemas"]["CountRange"];
+                onion: components["schemas"]["CountRange"];
+                i2p: components["schemas"]["CountRange"];
+                cjdns: components["schemas"]["CountRange"];
+            };
+            directions: {
+                inbound: components["schemas"]["CountRange"];
+                outbound: components["schemas"]["CountRange"];
+            };
+        };
     };
     responses: {
         /** @description Browser requests whose Origin host does not match Host are rejected. Reverse proxies must preserve the external Host header. Management is also rejected when BPM_ADMIN_TOKEN is not configured (code: management_disabled). */
@@ -1052,6 +1223,26 @@ export interface components {
                  *       "code": "rpc_busy"
                  *     }
                  */
+                "application/json": components["schemas"]["ErrorResponse"];
+            };
+        };
+        /** @description Detailed viewing requires a valid viewing or administrator bearer token in authenticated and redacted modes. The response has code view_required. */
+        ViewRequired: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorResponse"];
+            };
+        };
+        /** @description Anonymous viewing authentication has been throttled. Valid credentials remain usable. The response has code view_rate_limited. */
+        ViewRateLimited: {
+            headers: {
+                /** @description Seconds until anonymous authentication may be retried. */
+                "Retry-After"?: number;
+                [name: string]: unknown;
+            };
+            content: {
                 "application/json": components["schemas"]["ErrorResponse"];
             };
         };
@@ -1108,10 +1299,18 @@ export type RpcInfo = components['schemas']['RpcInfo'];
 export type ConfigResponse = components['schemas']['ConfigResponse'];
 export type HealthResponse = components['schemas']['HealthResponse'];
 export type SystemConnectedEvent = components['schemas']['SystemConnectedEvent'];
+export type AccessResponse = components['schemas']['AccessResponse'];
+export type OutboundPreferences = components['schemas']['OutboundPreferences'];
+export type OutboundPolicyResponse = components['schemas']['OutboundPolicyResponse'];
+export type OutboundPreferenceRequest = components['schemas']['OutboundPreferenceRequest'];
+export type CountRange = components['schemas']['CountRange'];
+export type ViewingAggregateResponse = components['schemas']['ViewingAggregateResponse'];
 export type ResponseCrossOriginRequest = components['responses']['CrossOriginRequest'];
 export type ResponseAdminRequired = components['responses']['AdminRequired'];
 export type ResponseAdminRateLimited = components['responses']['AdminRateLimited'];
 export type ResponseRpcBusy = components['responses']['RpcBusy'];
+export type ResponseViewRequired = components['responses']['ViewRequired'];
+export type ResponseViewRateLimited = components['responses']['ViewRateLimited'];
 export type $defs = Record<string, never>;
 export interface operations {
     list_peers_api_peers_get: {
@@ -1135,6 +1334,7 @@ export interface operations {
                     "application/json": components["schemas"]["Peer"][] | components["schemas"]["PeerSnapshot"];
                 };
             };
+            401: components["responses"]["ViewRequired"];
             /** @description Validation Error */
             422: {
                 headers: {
@@ -1144,6 +1344,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            429: components["responses"]["ViewRateLimited"];
             503: components["responses"]["RpcBusy"];
             /** @description HTTP request failure (including unexpected internal failures). */
             default: {
@@ -1394,6 +1595,8 @@ export interface operations {
                     "application/json": components["schemas"]["BansResponse"];
                 };
             };
+            401: components["responses"]["ViewRequired"];
+            429: components["responses"]["ViewRateLimited"];
             503: components["responses"]["RpcBusy"];
             /** @description HTTP request failure (including unexpected internal failures). */
             default: {
@@ -1457,6 +1660,7 @@ export interface operations {
                     "application/json": components["schemas"]["DashboardInfo"];
                 };
             };
+            401: components["responses"]["ViewRequired"];
             /** @description Validation Error */
             422: {
                 headers: {
@@ -1466,6 +1670,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            429: components["responses"]["ViewRateLimited"];
             503: components["responses"]["RpcBusy"];
             /** @description HTTP request failure (including unexpected internal failures). */
             default: {
@@ -1496,6 +1701,8 @@ export interface operations {
                     "application/json": components["schemas"]["MempoolResponse"];
                 };
             };
+            401: components["responses"]["ViewRequired"];
+            429: components["responses"]["ViewRateLimited"];
             503: components["responses"]["RpcBusy"];
             /** @description HTTP request failure (including unexpected internal failures). */
             default: {
@@ -1526,6 +1733,8 @@ export interface operations {
                     "application/json": components["schemas"]["BlockchainResponse"];
                 };
             };
+            401: components["responses"]["ViewRequired"];
+            429: components["responses"]["ViewRateLimited"];
             503: components["responses"]["RpcBusy"];
             /** @description HTTP request failure (including unexpected internal failures). */
             default: {
@@ -1558,6 +1767,7 @@ export interface operations {
                     "application/json": components["schemas"]["RecentBlocksResponse"];
                 };
             };
+            401: components["responses"]["ViewRequired"];
             /** @description Validation Error */
             422: {
                 headers: {
@@ -1567,6 +1777,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            429: components["responses"]["ViewRateLimited"];
             503: components["responses"]["RpcBusy"];
             /** @description HTTP request failure (including unexpected internal failures). */
             default: {
@@ -1597,6 +1808,8 @@ export interface operations {
                     "application/json": components["schemas"]["RpcInfo"];
                 };
             };
+            401: components["responses"]["ViewRequired"];
+            429: components["responses"]["ViewRateLimited"];
             503: components["responses"]["RpcBusy"];
             /** @description HTTP request failure (including unexpected internal failures). */
             default: {
@@ -1627,6 +1840,8 @@ export interface operations {
                     "application/json": components["schemas"]["ChainTipsResponse"];
                 };
             };
+            401: components["responses"]["ViewRequired"];
+            429: components["responses"]["ViewRateLimited"];
             503: components["responses"]["RpcBusy"];
             /** @description HTTP request failure (including unexpected internal failures). */
             default: {
@@ -1657,6 +1872,8 @@ export interface operations {
                     "application/json": components["schemas"]["ConnectivityStatus"];
                 };
             };
+            401: components["responses"]["ViewRequired"];
+            429: components["responses"]["ViewRateLimited"];
             503: components["responses"]["RpcBusy"];
             /** @description HTTP request failure (including unexpected internal failures). */
             default: {
@@ -1819,6 +2036,8 @@ export interface operations {
                     "application/json": components["schemas"]["StatsResponse"];
                 };
             };
+            401: components["responses"]["ViewRequired"];
+            429: components["responses"]["ViewRateLimited"];
             503: components["responses"]["RpcBusy"];
             /** @description HTTP request failure (including unexpected internal failures). */
             default: {
@@ -1849,6 +2068,8 @@ export interface operations {
                     "application/json": components["schemas"]["ConfigResponse"];
                 };
             };
+            401: components["responses"]["ViewRequired"];
+            429: components["responses"]["ViewRateLimited"];
             503: components["responses"]["RpcBusy"];
             /** @description HTTP request failure (including unexpected internal failures). */
             default: {
@@ -1879,6 +2100,8 @@ export interface operations {
                     "text/event-stream": string;
                 };
             };
+            401: components["responses"]["ViewRequired"];
+            429: components["responses"]["ViewRateLimited"];
         };
     };
     dashboard__get: {
@@ -2060,6 +2283,182 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
+    viewing_access_mode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccessResponse"];
+                };
+            };
+            /** @description HTTP request failure. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    verify_viewing_token: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SuccessResponse"];
+                };
+            };
+            401: components["responses"]["ViewRequired"];
+            /** @description Viewing authentication is unavailable (viewing_disabled) or the request Origin does not match. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["ViewRateLimited"];
+            /** @description HTTP request failure. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_optional_outbound_policy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutboundPolicyResponse"];
+                };
+            };
+            401: components["responses"]["ViewRequired"];
+            429: components["responses"]["ViewRateLimited"];
+            /** @description HTTP request failure. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    set_optional_outbound_preference: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OutboundPreferenceRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutboundPolicyResponse"];
+                };
+            };
+            401: components["responses"]["AdminRequired"];
+            403: components["responses"]["CrossOriginRequest"];
+            /** @description Invalid preference or enabled value. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["AdminRateLimited"];
+            /** @description HTTP request failure. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    redacted_viewing_aggregate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Allowed coarse cached summary */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ViewingAggregateResponse"];
+                };
+            };
+            401: components["responses"]["ViewRequired"];
+            429: components["responses"]["ViewRateLimited"];
+            /** @description HTTP request failure. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
