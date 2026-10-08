@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { parseReleaseVersion } from './build.ts';
 import { LOG_LEVELS, type LogLevel } from './logging.ts';
 import { BITCOIN_NETWORKS, isBitcoinChain } from './network.ts';
+import { parseTrustedProxies } from './trusted-proxies.ts';
 
 export class ConfigurationError extends Error {}
 type Environment = Record<string, string | undefined>;
@@ -71,6 +72,11 @@ function logLevel(env: Environment): LogLevel {
     return value as LogLevel;
 }
 
+function trustedProxies(env: Environment) {
+    try { return parseTrustedProxies(env.BPM_TRUSTED_PROXIES); }
+    catch (error) { throw new ConfigurationError((error as Error).message); }
+}
+
 export function loadSettings(env: Environment = process.env) {
     const scheme = (env.BITCOIN_RPC_SCHEME || 'http').trim().toLowerCase();
     if (!['http', 'https'].includes(scheme)) throw new ConfigurationError('BITCOIN_RPC_SCHEME must be http or https');
@@ -95,6 +101,7 @@ export function loadSettings(env: Environment = process.env) {
         geoip_auto_update_override: env.BPM_GEOIP_AUTO_UPDATE?.trim() ? boolean(env, 'BPM_GEOIP_AUTO_UPDATE', true) : null,
         build_version: version(env), build_revision: revision(env),
         admin_token: adminToken(env),
+        trusted_proxies: trustedProxies(env),
         log_level: logLevel(env),
     });
 }

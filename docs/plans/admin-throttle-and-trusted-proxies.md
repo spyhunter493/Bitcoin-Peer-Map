@@ -1,6 +1,7 @@
 # Prevent administrator lockouts and handle trusted proxies
 
-Status: planning only. Implementation has not started.
+Status: implemented. This document records the authentication and proxy boundaries
+covered by the backend and browser regressions in this PR.
 
 Priority: high for publicly accessible reverse-proxy deployments. Treat this independently of, and before, the existing three maintenance plans.
 
@@ -53,10 +54,12 @@ The trust-list traversal follows [Mozilla's X-Forwarded-For guidance](https://de
 - Browser regression: a fresh tab under anonymous cooldown can open the prompt, submit a correct token before expiry, and execute the pending action once. A wrong token followed by a changed correct token also succeeds before expiry; repeated failed tokens remain locally disabled.
 - Retain keyboard/focus containment, cancellation, stored-token behavior, and no-secret-persistence checks in Chromium, Firefox, and WebKit.
 
-## Eventual implementation validation
+## Implementation validation
 
 Update authentication tests that currently require valid-token rejection and browser tests that require blanket submission disablement. Update the configuration guide and canonical OpenAPI cooldown descriptions, regenerate checked-in declarations, and verify unchanged response envelopes.
 
 Run syntax, type, generated-contract, backend, browser/security, Compose deployment, and production-container checks. Preserve native Node 26 execution, zero production npm dependencies, and existing deployment safeguards. No migration or automatic release publication is required.
 
-This planning PR adds only this document. No authentication, proxy, browser, configuration, or test implementation changes are included.
+The implementation includes server authentication and proxy handling, startup
+configuration and Compose forwarding, browser unlock recovery, API descriptions,
+and focused backend, frontend, proxy, and three-engine browser regression coverage.

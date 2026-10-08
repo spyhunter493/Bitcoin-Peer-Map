@@ -1022,7 +1022,7 @@ export interface components {
                 "application/json": components["schemas"]["ErrorResponse"];
             };
         };
-        /** @description Authentication cooldown for the socket connection address. All management requests, including valid tokens, are rejected until Retry-After expires. Untracked addresses are also rejected while all 1,024 active windows are occupied. */
+        /** @description Anonymous authentication cooldown for the client address (socket by default, or the first untrusted hop supplied by explicitly trusted proxies). Invalid credentials are rejected until Retry-After expires. Invalid credentials from untracked addresses are also rejected while all 1,024 active windows are occupied. Valid admin tokens remain usable during cooldowns and storage saturation without clearing anonymous failure history. */
         AdminRateLimited: {
             headers: {
                 "Retry-After"?: string;
