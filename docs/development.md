@@ -117,10 +117,14 @@ Before running browser tests, install the three browser engines:
 npx playwright install --with-deps chromium firefox webkit
 ```
 
-CI runs syntax checks, type checks, backend tests, and frontend unit tests before
-installing the browsers. It then runs browser regressions, security smoke tests, Compose checks, and
-container validation, which verifies that the image and test runner use the same
-Node.js major version. The Ubuntu VM runner supports both Chromium and Docker.
+CI runs code checks and unit tests, Chromium layout regressions, security tests
+for each of Chromium, Firefox and WebKit, and Compose/container validation on
+separate Ubuntu runners in parallel. Each browser job installs only its engine;
+the container job uses Node.js built-ins without installing npm dependencies.
+Container validation verifies that the image and test runner use the same
+Node.js major version. The required `test` check succeeds only when every job
+succeeds; failures, cancellations and skipped jobs cannot satisfy it. Draft PRs
+skip all jobs, and moving a PR back to draft cancels its previous run.
 Tests use local fixtures and mock RPC servers, without a live Bitcoin node or
 external GeoIP services.
 

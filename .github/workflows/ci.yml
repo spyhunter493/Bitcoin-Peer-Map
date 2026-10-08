@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
+  checks:
     if: ${{ github.event.pull_request.draft == false }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -37,12 +37,64 @@ jobs:
         run: npm run test:server
       - name: Run JavaScript unit tests
         run: npm run test:js
+
+  layout:
+    if: ${{ github.event.pull_request.draft == false }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ".nvmrc"
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install JavaScript test dependencies
+        run: npm ci --ignore-scripts
       - name: Install headless browser dependencies
-        run: npx playwright install --with-deps chromium firefox webkit
-      - name: Run browser tests
-        run: |
-          npm run test:layout
-          npm run test:browser-security
+        run: npx playwright install --with-deps chromium
+      - name: Run layout tests
+        run: npm run test:layout
+
+  browser-security:
+    if: ${{ github.event.pull_request.draft == false }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    env:
+      BPM_TEST_BROWSER: ${{ matrix.browser }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ".nvmrc"
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install JavaScript test dependencies
+        run: npm ci --ignore-scripts
+      - name: Install headless browser dependencies
+        run: npx playwright install --with-deps "$BPM_TEST_BROWSER"
+      - name: Run browser security tests
+        run: node --test --test-name-pattern "^${BPM_TEST_BROWSER}:" tests/browser/security.test.js
+
+  container:
+    if: ${{ github.event.pull_request.draft == false }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ".nvmrc"
       - name: Validate container
         env:
           BITCOIN_RPC_USER: test
@@ -52,3 +104,24 @@ jobs:
           npm run test:compose
           docker build --build-arg BPM_BUILD_REVISION="${GITHUB_SHA}" --tag bitcoin-peer-map:test .
           npm run test:container
+
+  # Keep the required check stable and reject failed, cancelled, or skipped work.
+  test:
+    if: ${{ always() && github.event.pull_request.draft == false }}
+    needs: [checks, layout, browser-security, container]
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Require every test job to succeed
+        env:
+          CHECKS_RESULT: ${{ needs.checks.result }}
+          LAYOUT_RESULT: ${{ needs.layout.result }}
+          BROWSER_RESULT: ${{ needs.browser-security.result }}
+          CONTAINER_RESULT: ${{ needs.container.result }}
+        run: |
+          for result in "$CHECKS_RESULT" "$LAYOUT_RESULT" "$BROWSER_RESULT" "$CONTAINER_RESULT"; do
+            if [[ "$result" != "success" ]]; then
+              echo "A required test job failed or did not complete: $result"
+              exit 1
+            fi
+          done
