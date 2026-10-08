@@ -5,6 +5,8 @@ import * as BPMFormat from '../core/format.js';
 import * as BPMPeerTableModel from './table-model.js';
 import * as TableWindow from './table-window.js';
 import { fmtPing } from '../core/ping.js';
+import { formatCoordinate } from '../core/coordinates.js';
+import { addrmanLabel } from '../core/addrman.js';
 import { formatGeoAge, geoSourceLabel, geoFreshnessLabel } from '../core/geo.js';
 /** @param {import('../types').PeerTableOptions} options
  *  @returns {import('../types').PeerTableController} */
@@ -72,7 +74,7 @@ function create(options) {
         { key: 'ping_ms', label: 'Ping', get: (p) => fmtPing(p.ping_ms), full: null, vis: true, w: 50 },
         { key: 'bytessent_fmt', label: 'Sent', get: (p) => p.bytessent_fmt || '—', full: null, vis: true, w: 60 },
         { key: 'bytesrecv_fmt', label: 'Recv', get: (p) => p.bytesrecv_fmt || '—', full: null, vis: true, w: 60 },
-        { key: 'in_addrman', label: 'Addrman', get: (p) => (p.in_addrman ? 'Yes' : 'No'), full: null, vis: true, w: 55 },
+        { key: 'in_addrman', label: 'Addrman', get: (p) => addrmanLabel(p.addrman_status), full: null, vis: true, w: 100 },
         // Advanced columns (hidden by default)
         {
             key: 'direction',
@@ -84,8 +86,8 @@ function create(options) {
         },
         { key: 'countryCode', label: 'CC', get: (p) => p.countryCode || '—', full: null, vis: false, w: 35 },
         { key: 'continentCode', label: 'CntC', get: (p) => p.continentCode || '—', full: null, vis: false, w: 40 },
-        { key: 'lat', label: 'Lat', get: (p) => (p.lat != null ? p.lat.toFixed(2) : '—'), full: null, vis: false, w: 55 },
-        { key: 'lon', label: 'Lon', get: (p) => (p.lon != null ? p.lon.toFixed(2) : '—'), full: null, vis: false, w: 55 },
+        { key: 'lat', label: 'Lat', get: (p) => formatCoordinate(p, 'lat'), full: null, vis: false, w: 55 },
+        { key: 'lon', label: 'Lon', get: (p) => formatCoordinate(p, 'lon'), full: null, vis: false, w: 55 },
         { key: 'region', label: 'Rgn', get: (p) => p.region || '—', full: null, vis: false, w: 60 },
         { key: 'as', label: 'AS', get: (p) => p.as || '—', full: null, vis: false, w: 80 },
         { key: 'asname', label: 'AS Name', get: (p) => p.asname || '—', full: null, vis: false, w: 100 },

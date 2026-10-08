@@ -31,6 +31,41 @@ export function splitPeerAddress(address: string): [string, string] {
     const parts = address.split(':');
     return parts.length === 2 ? parts as [string, string] : [address, ''];
 }
+/** Exact endpoint identity: callers must supply a port, with no inferred defaults. */
+export function peerEndpointKey(address: string, port?: number): string | null {
+    if (typeof address !== 'string' || (port !== undefined && typeof port !== 'number')) return null;
+    let host = address, suppliedPort: string | number | undefined = port;
+    if (port === undefined) {
+        const bracketed = /^\[([^\[\]]+)\]:([0-9]+)$/.exec(address);
+        if (bracketed) {
+            host = bracketed[1]; suppliedPort = bracketed[2];
+            if (isIP(host) !== 6) return null;
+        } else {
+            const plain = /^([^:\[\]\s]+):([0-9]+)$/.exec(address);
+            if (!plain) return null;
+            host = plain[1]; suppliedPort = plain[2];
+        }
+    }
+    const numericPort = Number(suppliedPort);
+    if (!Number.isSafeInteger(numericPort) || numericPort < 0 || numericPort > 65535 || host.includes('%')) return null;
+    const family = isIP(host);
+    let normalized: string;
+    if (family === 6) {
+        // URL canonicalizes a validated IPv6 literal without resolving any host.
+        normalized = new URL(`http://[${host}]/`).hostname;
+        const mapped = /^\[::ffff:([0-9a-f]+):([0-9a-f]+)\]$/.exec(normalized);
+        if (mapped) {
+            const high = Number.parseInt(mapped[1], 16), low = Number.parseInt(mapped[2], 16);
+            normalized = [high >> 8, high & 255, low >> 8, low & 255].join('.');
+        }
+    } else if (family === 4) normalized = host;
+    else {
+        // Hostnames, including onion/I2P names, are compared literally in lowercase.
+        if (/^[0-9.]+$/.test(host) || host.length > 253 || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$/i.test(host) || host.split('.').some(label => label.length > 63)) return null;
+        normalized = host.toLowerCase();
+    }
+    return `${normalized}:${numericPort}`;
+}
 export function networkType(address: string) {
     const value = address.toLowerCase();
     if (value.includes('.onion')) return 'onion';

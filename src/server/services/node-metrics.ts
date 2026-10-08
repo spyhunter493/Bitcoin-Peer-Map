@@ -18,13 +18,16 @@ export class NodeMetrics {
         return { ...await this.cache.get(() => this.sample()) };
     }
     private async sample(): Promise<NodeMetricsSnapshot> {
-        const [totals, uptime] = await Promise.all([
-            this.rpc.call('getnettotals', [], 10).then(parseNetTotals).catch(() => null),
+        const [observation, uptime] = await Promise.all([
+            this.rpc.call('getnettotals', [], 10).then(value => ({
+                totals: parseNetTotals(value), time: performance.now() / 1000,
+            })).catch(() => null),
             this.rpc.call('uptime', [], 10).then(parseUptime).catch(() => null),
         ]);
-        const time = performance.now() / 1000;
+        const totals = observation?.totals ?? null;
         let rx: number | null = null, tx: number | null = null;
-        if (totals) {
+        if (observation && totals) {
+            const time = observation.time;
             const received = totals.totalbytesrecv, sent = totals.totalbytessent;
             const previous = this.previous;
             const restarted = previous && uptime !== null && previous.uptime !== null && uptime < previous.uptime;

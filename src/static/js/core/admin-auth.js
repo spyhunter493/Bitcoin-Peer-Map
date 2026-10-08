@@ -30,6 +30,8 @@ export function create() {
     function openPrompt() {
         if (dialog) return;
         let cooldownDeadline = 0;
+        let rejectedToken = '';
+        let verificationInFlight = false;
         /** @type {ReturnType<typeof setInterval> | null} */
         let countdown = null;
         const current = modal.open({
@@ -38,6 +40,8 @@ export function create() {
             initialHtml: '<form id="admin-token-form"><p>Enter the admin token to allow management actions in this tab.</p><label for="admin-token-input">Admin token</label><input id="admin-token-input" class="connect-input" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" required maxlength="256"><div id="admin-token-error" class="connect-result err" role="alert"></div><div class="admin-token-actions"><button type="button" class="dialog-btn dialog-btn-cancel" id="admin-token-cancel">Cancel</button><button type="submit" class="connect-btn" id="admin-token-submit">Unlock</button></div></form>',
             onClose: () => {
                 if (countdown !== null) clearInterval(countdown);
+                rejectedToken = '';
+                input.value = '';
                 dialog = null;
                 for (const waiter of waiters) { waiter.cleanup(); waiter.reject(cancelled()); }
                 waiters.clear();
@@ -49,17 +53,23 @@ export function create() {
         /** @type {HTMLButtonElement} */
         const submit = required('#admin-token-submit', current.body);
         const error = required('#admin-token-error', current.body);
+        function updateSubmission() {
+            submit.disabled = verificationInFlight || !input.value || (Date.now() < cooldownDeadline && input.value === rejectedToken);
+        }
         function updateCooldown() {
             const remaining = Math.max(0, Math.ceil((cooldownDeadline - Date.now()) / 1000));
-            submit.disabled = remaining > 0;
-            error.textContent = remaining > 0 ? `Authentication cooldown. Try again in ${remaining} seconds.` : 'Cooldown ended. You can verify your token now.';
+            updateSubmission();
+            error.textContent = remaining > 0 ? `Authentication cooldown. Try a different token now, or retry this token in ${remaining} seconds.` : 'Cooldown ended. You can verify your token now.';
             if (!remaining && countdown !== null) { clearInterval(countdown); countdown = null; }
         }
+        input.addEventListener('input', updateSubmission);
+        updateSubmission();
         required('#admin-token-cancel', current.body).addEventListener('click', () => current.close());
         required('#admin-token-form', current.body).addEventListener('submit', async event => {
             event.preventDefault();
             if (submit.disabled) return;
-            submit.disabled = true;
+            verificationInFlight = true;
+            updateSubmission();
             error.textContent = '';
             const supplied = input.value;
             try {
@@ -73,15 +83,19 @@ export function create() {
                 current.close();
             } catch (failure) {
                 if (!current.isOpen()) return;
-                if (failure instanceof HttpError && failure.status === 429) {
-                    cooldownDeadline = Date.now() + (failure.retryAfterSeconds ?? 60) * 1000;
-                    updateCooldown();
-                    if (submit.disabled) countdown = setInterval(updateCooldown, 1000);
-                } else error.textContent = errorMessage(failure);
                 input.value = '';
+                if (failure instanceof HttpError && failure.status === 429 && failure.data !== null && typeof failure.data === 'object' && 'code' in failure.data && failure.data.code === 'admin_rate_limited') {
+                    cooldownDeadline = Date.now() + (failure.retryAfterSeconds ?? 60) * 1000;
+                    rejectedToken = supplied;
+                    updateCooldown();
+                    if (countdown !== null) clearInterval(countdown);
+                    if (Date.now() < cooldownDeadline) countdown = setInterval(updateCooldown, 1000);
+                    else countdown = null;
+                } else error.textContent = errorMessage(failure);
                 input.focus();
             } finally {
-                submit.disabled = Date.now() < cooldownDeadline;
+                verificationInFlight = false;
+                updateSubmission();
             }
         });
     }

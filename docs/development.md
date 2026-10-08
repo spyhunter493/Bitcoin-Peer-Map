@@ -275,6 +275,19 @@ the producer change. `npm run check:api` checks freshness without rewriting file
 and CI also checks server/browser types and validates actual HTTP responses and
 browser fixtures against the schemas. Generated declarations are not edited by hand.
 
+Peers expose `addrman_status` as `present`, `not_returned`, or `unavailable`.
+Membership matches a normalized host and explicit port against the latest valid
+`getnodeaddresses` inventory; failed refreshes suppress claims from retained
+metadata. That RPC filters its inventory, so an omitted endpoint does not prove
+absence from Addrman. The compatibility `in_addrman` boolean is true only for
+`present`. The table, peer details, and map tooltip display **Yes**, **Not returned**,
+or **Unavailable**, with the private-map dash preserved.
+
+Coordinate display and sorting share finite numeric values. Located peers and
+older snapshots without a location status retain genuine zero coordinates;
+pending, private, or unavailable placeholders display an em dash. Numeric sorts
+keep missing coordinates last in both directions and preserve equal-value order.
+
 The server and browser re-export these declarations under their existing type
 names. RPC input parsers, controller state, and display projections remain separate:
 OpenAPI describes what crosses HTTP, while a browser projection guards raw provider
@@ -387,9 +400,13 @@ their final widths change; manual sizing and virtualized row identity are retain
 feature branch → pull request → CI/tests → merge to main
 ```
 
-The [CI workflow](../.github/workflows/ci.yml) runs on pull requests and retains
-all syntax/type, backend, JavaScript, browser/layout, Compose, Docker build, and
-container checks. It has a read-only token and no registry login or publish job.
+The [CI workflow](../.github/workflows/ci.yml) runs when a pull request is opened
+or marked ready for review, and on new commits or reopening while it is ready.
+Draft pull requests skip the test job until they are marked ready for review.
+Returning a PR to draft cancels any active CI run for that PR.
+CI retains all syntax/type, backend, JavaScript, browser/layout, Compose, Docker
+build, and container checks. It has a read-only token and no registry login or
+publish job.
 Merging integrates changes into `main`; it neither repeats the full CI suite on
 the push nor publishes a production image. Pushing a tag alone also does not
 publish an image.
