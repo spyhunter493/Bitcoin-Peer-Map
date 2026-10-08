@@ -622,6 +622,46 @@ function create() {
         preferences,
         onAction(action) {
             if (action.type === 'layout') scheduleDonutStackFit();
+            else if (action.type === 'clear-filter') {
+                const filter = action.filter;
+                // Leaving the private view follows Return: start from the public
+                // world with All networks rather than reviving hidden scopes.
+                const publicReset = filter === 'all' || filter === 'private-mode';
+                if (publicReset) {
+                    finishInitialViewSelection();
+                    exitPrivateNetMode();
+                }
+                if (publicReset || filter === 'provider') {
+                    BPMDistribution.deselect();
+                    dashboard.distribution.resetNavigation();
+                    dashboard.distribution.insightActiveAsNum = null;
+                    dashboard.distribution.insightActiveType = null;
+                    dashboard.distribution.insightActiveData = null;
+                    mapNavigation.filterPeerTable(null);
+                }
+                if (publicReset || filter === 'map') {
+                    if (dashboard.distribution.peerDetailActive) BPMDistribution.closePeerPopup(true);
+                    mapNavigation.closeGroup();
+                }
+                if (publicReset || filter === 'network') {
+                    dashboard.interaction.enabledNets = new Set(['ipv4', 'ipv6', 'onion', 'i2p', 'cjdns']);
+                    updateBadgeStates();
+                }
+                if (filter === 'private-network') {
+                    const group = privateState.pnFilter;
+                    privateState.pnSelectedNet = null;
+                    privatePanel.hidePnSubTooltip();
+                    privatePanel.openPnOverviewPanel();
+                    updatePrivateNetUI();
+                    // The group descriptor still applies across private networks;
+                    // its chip remains removable after the old popover closes.
+                    privateState.pnFilter = group;
+                } else if (filter === 'private-filter') {
+                    privatePanel.hidePnSubTooltip();
+                    updatePrivateNetUI();
+                }
+                peerTable.renderPeerTable();
+            }
             else if (action.type === 'antarctica') {
                 if (!action.visible) {
                     if (dashboard.interaction.pinnedNode?.isPrivate || dashboard.interaction.groupedNodes?.some((node) => node.isPrivate)) {
@@ -830,6 +870,7 @@ function create() {
         if (event.persisted) return;
         finishInitialViewSelection();
         peerPolling.stop();
+        peerTable.dispose();
         nodeDashboard.dispose();
         privateNetwork.dispose();
         BPMDistribution.dispose();

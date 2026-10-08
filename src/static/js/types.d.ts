@@ -2,7 +2,7 @@
 export interface AdminAuthentication {
     getToken(): string;
     clearToken(): void;
-    requestToken(signal?: AbortSignal): Promise<string>;
+    requestToken(signal?: AbortSignal, cooldownDeadline?: number): Promise<string>;
 }
 
 /** Wire contracts are generated; these projections describe browser-only display state. */
@@ -134,7 +134,7 @@ export interface PeerTableOptions {
         writeSavedDisplaySettings(settings: Partial<TableDisplaySettings>): void;
         readSavedDisplaySettings(): Partial<TableDisplaySettings>;
     };
-    onAction(action: { type: 'layout' } | { type: 'fit'; top?: number; immediate?: boolean } | { type: 'antarctica'; visible: boolean }): void;
+    onAction(action: { type: 'layout' } | { type: 'fit'; top?: number; immediate?: boolean } | { type: 'antarctica'; visible: boolean } | { type: 'clear-filter'; filter: string }): void;
 }
 export interface PeerTableController {
     readonly showAntarcticaPeers: boolean;
@@ -148,6 +148,7 @@ export interface PeerTableController {
     applyPanelOpacity(): void;
     applyMaxPeerRows(): void;
     highlightTableRow(peerId: number | null, scrollIntoView?: boolean): void;
+    dispose(): void;
 }
 
 export interface ServiceFlag {

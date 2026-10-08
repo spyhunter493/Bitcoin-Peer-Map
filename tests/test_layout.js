@@ -7,6 +7,7 @@ import { spawn } from 'child_process';
 import test from 'node:test';
 import { chromium } from 'playwright';
 import assertPeerViews from './test_peer_views.js';
+import assertPeerSearchExport from './test_peer_search_export.js';
 import assertPeerLifecycle from './test_peer_lifecycle.js';
 import assertTableDom from './test_peer_table_dom.js';
 import assertPeerAccuracy from './test_peer_accuracy.js';
@@ -635,11 +636,15 @@ async function assertPeerControlsResponsive(browser, baseUrl) {
 
     const compactLayout = await compactPage.evaluate(() => {
         const row = document.querySelector('.handle-row1');
+        const actions = document.querySelector('.peer-toolbar-actions');
+        actions.scrollLeft = actions.scrollWidth;
         const lastButton = document.getElementById('btn-table-settings');
+        const search = document.getElementById('peer-search').getBoundingClientRect();
         return {
             clientWidth: row.clientWidth,
             scrollWidth: row.scrollWidth,
             lastRight: lastButton.getBoundingClientRect().right,
+            searchLeft: search.left, searchRight: search.right,
             viewportWidth: window.innerWidth,
         };
     });
@@ -648,6 +653,8 @@ async function assertPeerControlsResponsive(browser, baseUrl) {
         `compact peer controls overflow: ${compactLayout.scrollWidth} > ${compactLayout.clientWidth}`
     );
     assert.ok(compactLayout.lastRight <= compactLayout.viewportWidth);
+    assert.ok(compactLayout.searchLeft >= 0 && compactLayout.searchRight <= compactLayout.viewportWidth,
+        'search should remain visible while the action row is scrolled');
     await compactContext.close();
 
     const narrowContext = await browser.newContext({ viewport: { width: 720, height: 728 } });
@@ -659,12 +666,14 @@ async function assertPeerControlsResponsive(browser, baseUrl) {
     await waitForDashboardReady(narrowPage);
 
     const narrowLayout = await narrowPage.evaluate(() => {
-        const row = document.querySelector('.handle-row1');
-        row.scrollLeft = row.scrollWidth;
+        const actions = document.querySelector('.peer-toolbar-actions');
+        actions.scrollLeft = actions.scrollWidth;
         const lastButton = document.getElementById('btn-table-settings');
+        const search = document.getElementById('peer-search').getBoundingClientRect();
         return {
-            overflowX: getComputedStyle(row).overflowX,
+            overflowX: getComputedStyle(actions).overflowX,
             lastRight: lastButton.getBoundingClientRect().right,
+            searchLeft: search.left, searchRight: search.right,
             viewportWidth: window.innerWidth,
         };
     });
@@ -673,6 +682,8 @@ async function assertPeerControlsResponsive(browser, baseUrl) {
         narrowLayout.lastRight <= narrowLayout.viewportWidth,
         'the final peer control should be reachable by scrolling'
     );
+    assert.ok(narrowLayout.searchLeft >= 0 && narrowLayout.searchRight <= narrowLayout.viewportWidth,
+        'search should remain visible while the action row is scrolled');
     await narrowContext.close();
 }
 
@@ -900,6 +911,7 @@ const suites = [
     ['table settings and Antarctic visibility', assertTableSettings],
     ['peer refresh reliability', assertPeerRefreshReliability],
     ['peer views and safe rendering', assertPeerViews],
+    ['peer search and export', assertPeerSearchExport],
     ['peer lifecycle', assertPeerLifecycle],
     ['peer table DOM updates', assertTableDom],
     ['peer accuracy and coordinate sorting', assertPeerAccuracy],
