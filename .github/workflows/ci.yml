@@ -42,6 +42,10 @@ jobs:
     if: ${{ github.event.pull_request.draft == false }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Keep the image version aligned with the Playwright npm dependency.
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+      options: --ipc=host
     strategy:
       fail-fast: false
       matrix:
@@ -59,8 +63,15 @@ jobs:
           cache-dependency-path: package-lock.json
       - name: Install JavaScript test dependencies
         run: npm ci --ignore-scripts
-      - name: Install headless browser dependencies
-        run: npx playwright install --with-deps chromium
+      - name: Verify preinstalled browser version
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import { readFileSync } from 'node:fs';
+          const image = JSON.parse(readFileSync('/ms-playwright/.docker-info', 'utf8'));
+          const installed = JSON.parse(readFileSync('node_modules/playwright/package.json', 'utf8'));
+          assert.equal(image.driverVersion, installed.version, 'Update the CI browser image when Playwright changes');
+          JS
       - name: Run layout tests
         run: npm run test:layout
 
@@ -68,12 +79,24 @@ jobs:
     if: ${{ github.event.pull_request.draft == false }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+      options: --ipc=host
     strategy:
       fail-fast: false
       matrix:
-        browser: [chromium, firefox, webkit]
+        include:
+          - browser: chromium
+            suite: all
+          - browser: firefox
+            suite: all
+          - browser: webkit
+            suite: policy
+          - browser: webkit
+            suite: controls
     env:
       BPM_TEST_BROWSER: ${{ matrix.browser }}
+      BPM_TEST_SUITE: ${{ matrix.suite }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -85,10 +108,24 @@ jobs:
           cache-dependency-path: package-lock.json
       - name: Install JavaScript test dependencies
         run: npm ci --ignore-scripts
-      - name: Install headless browser dependencies
-        run: npx playwright install --with-deps "$BPM_TEST_BROWSER"
+      - name: Verify preinstalled browser version
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import { readFileSync } from 'node:fs';
+          const image = JSON.parse(readFileSync('/ms-playwright/.docker-info', 'utf8'));
+          const installed = JSON.parse(readFileSync('node_modules/playwright/package.json', 'utf8'));
+          assert.equal(image.driverVersion, installed.version, 'Update the CI browser image when Playwright changes');
+          JS
       - name: Run browser security tests
-        run: node --test --test-name-pattern "^${BPM_TEST_BROWSER}:" tests/browser/security.test.js
+        run: |
+          case "$BPM_TEST_SUITE" in
+            all) skip='^$' ;;
+            policy) skip='protected viewing|optional outbound' ;;
+            controls) skip='local assets' ;;
+            *) echo "Unknown browser security suite: $BPM_TEST_SUITE"; exit 1 ;;
+          esac
+          node --test --test-name-pattern "^${BPM_TEST_BROWSER}:" --test-skip-pattern "$skip" tests/browser/security.test.js
 
   container:
     if: ${{ github.event.pull_request.draft == false }}

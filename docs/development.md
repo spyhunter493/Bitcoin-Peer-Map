@@ -118,9 +118,13 @@ npx playwright install --with-deps chromium firefox webkit
 ```
 
 CI runs code checks and unit tests, two shards of Chromium layout regressions,
-security tests for each of Chromium, Firefox and WebKit, and Compose/container validation on
-separate Ubuntu runners in parallel. Each browser job installs only its engine;
-the container job uses Node.js built-ins without installing npm dependencies.
+security tests for each of Chromium, Firefox and WebKit, and Compose/container
+validation on separate Ubuntu runners in parallel. Browser jobs use the official
+Playwright image with browsers, libraries and fonts preinstalled, while
+`setup-node` still selects Node.js 26. CI checks that the installed Playwright
+package matches the image version; update both browser-job image references when
+updating that dependency. The container job uses Node.js built-ins without
+installing npm dependencies.
 Container validation verifies that the image and test runner use the same
 Node.js major version. The required `test` check succeeds only when every job
 succeeds; failures, cancellations and skipped jobs cannot satisfy it. Draft PRs
@@ -150,7 +154,9 @@ the first shard, or `2/2` for the second. The default `1/1` runs every suite.
 Shard indices and totals must be integers from 1 to 8, with the index at most the
 total; invalid or empty selections fail. Shards assign suites by position before
 applying `BPM_LAYOUT_TEST_FILTER`. Browser security tests also run two independent
-cases at a time for each engine, with the longest case starting first.
+cases at a time for each engine, with the longest case starting first. CI gives
+WebKit's longer policy/dialog case a separate runner from its viewing and
+outbound-control cases, so they do not compete for the same runner's CPU.
 
 ### Validate the production container
 
