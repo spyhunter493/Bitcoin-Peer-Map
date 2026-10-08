@@ -9,6 +9,7 @@ import assertSharedDialogs from '../test_shared_dialogs.js';
 import assertAdminAuthentication from '../test_admin_auth.js';
 import assertPeerAccuracy from '../test_peer_accuracy.js';
 import assertNarrowManagementDialogs from '../test_narrow_management_dialogs.js';
+import assertPeerSearchExport from '../test_peer_search_export.js';
 
 for (const engine of [chromium, firefox, webkit]) {
     test(`${engine.name()}: local assets, strict CSP, documentation, management dialogs, and framing`, { timeout: 180_000 }, async t => {
@@ -23,6 +24,7 @@ for (const engine of [chromium, firefox, webkit]) {
         await assertAdminAuthentication(browser, base);
         await assertPeerAccuracy(browser, base);
         await assertNarrowManagementDialogs(browser, base);
+        await assertPeerSearchExport(browser, base);
         const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
         t.after(() => context.close());
         const external = [], requests = [], errors = [];

@@ -8,6 +8,8 @@ export function create() {
     let token = '';
     /** @type {import('../types').ModalController | null} */
     let dialog = null;
+    /** @type {((deadline: number) => void) | null} */
+    let updatePromptCooldown = null;
     /** @type {Set<Waiter>} */
     const waiters = new Set();
     /** @type {HTMLButtonElement | null} */
@@ -27,8 +29,11 @@ export function create() {
         dialog?.close();
     }
 
-    function openPrompt() {
-        if (dialog) return;
+    function openPrompt(initialCooldownDeadline = 0) {
+        if (dialog) {
+            if (initialCooldownDeadline > Date.now()) updatePromptCooldown?.(initialCooldownDeadline);
+            return;
+        }
         let cooldownDeadline = 0;
         let rejectedToken = '';
         let verificationInFlight = false;
@@ -42,6 +47,7 @@ export function create() {
                 if (countdown !== null) clearInterval(countdown);
                 rejectedToken = '';
                 input.value = '';
+                updatePromptCooldown = null;
                 dialog = null;
                 for (const waiter of waiters) { waiter.cleanup(); waiter.reject(cancelled()); }
                 waiters.clear();
@@ -59,11 +65,23 @@ export function create() {
         function updateCooldown() {
             const remaining = Math.max(0, Math.ceil((cooldownDeadline - Date.now()) / 1000));
             updateSubmission();
-            error.textContent = remaining > 0 ? `Authentication cooldown. Try a different token now, or retry this token in ${remaining} seconds.` : 'Cooldown ended. You can verify your token now.';
+            error.textContent = remaining > 0 ? rejectedToken
+                ? `Authentication cooldown. Try a different token now, or retry this token in ${remaining} seconds.`
+                : `Authentication cooldown. You can verify a token now (${remaining} seconds remaining).`
+                : 'Cooldown ended. You can verify your token now.';
             if (!remaining && countdown !== null) { clearInterval(countdown); countdown = null; }
         }
+        /** @param {number} deadline */
+        function setCooldown(deadline) {
+            cooldownDeadline = deadline;
+            updateCooldown();
+            if (Date.now() < cooldownDeadline && countdown === null) countdown = setInterval(updateCooldown, 1000);
+        }
+        // Merge pending-action hints; verification responses supply the current deadline.
+        updatePromptCooldown = deadline => setCooldown(Math.max(cooldownDeadline, deadline));
         input.addEventListener('input', updateSubmission);
         updateSubmission();
+        if (initialCooldownDeadline > Date.now()) setCooldown(initialCooldownDeadline);
         required('#admin-token-cancel', current.body).addEventListener('click', () => current.close());
         required('#admin-token-form', current.body).addEventListener('submit', async event => {
             event.preventDefault();
@@ -85,12 +103,8 @@ export function create() {
                 if (!current.isOpen()) return;
                 input.value = '';
                 if (failure instanceof HttpError && failure.status === 429 && failure.data !== null && typeof failure.data === 'object' && 'code' in failure.data && failure.data.code === 'admin_rate_limited') {
-                    cooldownDeadline = Date.now() + (failure.retryAfterSeconds ?? 60) * 1000;
                     rejectedToken = supplied;
-                    updateCooldown();
-                    if (countdown !== null) clearInterval(countdown);
-                    if (Date.now() < cooldownDeadline) countdown = setInterval(updateCooldown, 1000);
-                    else countdown = null;
+                    setCooldown(Date.now() + (failure.retryAfterSeconds ?? 60) * 1000);
                 } else error.textContent = errorMessage(failure);
                 input.focus();
             } finally {
@@ -100,8 +114,8 @@ export function create() {
         });
     }
 
-    /** @param {AbortSignal} [signal] @returns {Promise<string>} */
-    function requestToken(signal) {
+    /** @param {AbortSignal} [signal] @param {number} [cooldownDeadline] @returns {Promise<string>} */
+    function requestToken(signal, cooldownDeadline) {
         if (signal?.aborted) return Promise.reject(cancelled());
         if (token) return Promise.resolve(token);
         return new Promise((resolve, reject) => {
@@ -115,7 +129,7 @@ export function create() {
             }
             waiters.add(waiter);
             signal?.addEventListener('abort', abort, { once: true });
-            openPrompt();
+            openPrompt(cooldownDeadline);
         });
     }
 

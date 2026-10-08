@@ -76,9 +76,9 @@ export default async function assertPeerViews(browser, baseUrl) {
     }
     try {
         await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
-        await page.waitForFunction(() => document.querySelectorAll('#peer-tbody tr').length >= 10);
-        assert.strictEqual(await page.locator('#peer-tbody tr').first().locator('td').nth(5).textContent(), hostile);
-        assert.strictEqual(await page.locator('#peer-tbody tr').first().locator('td').nth(5).getAttribute('title'), hostile);
+        await page.waitForFunction(() => document.querySelectorAll('#peer-tbody tr[data-id]').length >= 10);
+        assert.strictEqual(await page.locator('#peer-tbody tr[data-id]').first().locator('td').nth(5).textContent(), hostile);
+        assert.strictEqual(await page.locator('#peer-tbody tr[data-id]').first().locator('td').nth(5).getAttribute('title'), hostile);
         const servicesCell = page.locator('#peer-tbody tr[data-id="1"] td').nth(6);
         assert.match(await servicesCell.textContent(), /\bBL\b/);
         assert.match(await servicesCell.getAttribute('title'), /BL = BLAKE2b \(NODE_BLAKE2B\)/);
@@ -132,7 +132,7 @@ export default async function assertPeerViews(browser, baseUrl) {
             const matches = peer => peer.as.split(' ')[0] === provider && peer.direction === direction;
             const expected = () => peers.filter(matches).map(peer => peer.id).sort((a, b) => a - b);
             await row.click();
-            const tableIds = () => page.locator('#peer-tbody tr').evaluateAll(rows => rows.map(row => Number(row.dataset.id)));
+            const tableIds = () => page.locator('#peer-tbody tr[data-id]').evaluateAll(rows => rows.map(row => Number(row.dataset.id)));
             assert.deepStrictEqual(await tableIds(), expected());
             const replaced = peers.find(matches);
             const replacementId = direction === 'IN' ? 901 : 902;
@@ -176,7 +176,7 @@ export default async function assertPeerViews(browser, baseUrl) {
         peers = peers.filter(peer => peer.network !== 'onion');
         await poll();
         assert.equal(await page.locator('#pn-sub-tooltip .as-sub-tt-peer').count(), 0);
-        assert.equal(await page.locator('#peer-tbody tr').count(), 0);
+        assert.equal(await page.locator('#peer-tbody tr[data-id]').count(), 0);
         peers = savedPeers;
         await poll();
         assert.equal(await page.locator('#pn-sub-tooltip .as-sub-tt-peer').count(), tor.length);
@@ -215,14 +215,14 @@ export default async function assertPeerViews(browser, baseUrl) {
         await page.locator('#pn-donut-svg .pn-donut-segment').first().dispatchEvent('click');
         await page.waitForSelector('#pn-detail-back:not(.hidden)');
         await safe();
-        await page.locator('#peer-tbody tr').first().click();
+        await page.locator('#peer-tbody tr[data-id]').first().click();
         await page.waitForSelector('.peer-detail-popup.visible');
         await safe();
         assert.ok((await page.locator('.peer-detail-popup').textContent()).includes(hostile));
         peers = peers.filter(peer => !['onion', 'i2p', 'cjdns'].includes(peer.network));
         await poll();
         await page.waitForSelector('.peer-detail-popup', { state: 'detached' });
-        assert.strictEqual(await page.locator('#peer-tbody tr').count(), 0);
+        assert.strictEqual(await page.locator('#peer-tbody tr[data-id]').count(), 0);
         await safe();
     } finally {
         await context.close();
