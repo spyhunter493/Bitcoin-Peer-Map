@@ -312,6 +312,15 @@ Chain-tip age lookup timeouts preserve the tip list and identify unavailable age
 Missing ping measurements display **—** and do not affect averages or rankings.
 Measured zero remains valid, and positive pings below 0.1 ms display **<0.1ms**.
 
+Addrman **Yes** means the exact peer host and port appeared in the latest valid
+inventory. **Not returned** means it was not included and does not establish
+absence. **Unavailable** means the inventory or peer endpoint cannot support
+that comparison.
+
+Coordinate columns show known locations to two decimal places, including genuine
+zero coordinates. Unresolved locations display **—**. Sorting uses the numeric
+coordinates and keeps missing values last in both directions.
+
 **Blocks** and **Chain Tips** link recognized public-network block hashes to
 [mempool.guide](https://mempool.guide/). Testnet3 and local regtest hashes remain
 plain text: mempool.guide does not support Testnet3, and regtest data belongs to
