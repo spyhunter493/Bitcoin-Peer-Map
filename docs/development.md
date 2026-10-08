@@ -157,6 +157,8 @@ applying `BPM_LAYOUT_TEST_FILTER`. Browser security tests also run two independe
 cases at a time for each engine, with the longest case starting first. CI gives
 WebKit's longer policy/dialog case a separate runner from its viewing and
 outbound-control cases, so they do not compete for the same runner's CPU.
+Each security job also verifies its completed test count, including the parent
+suite. Update the expected counts in CI when adding or regrouping security cases.
 
 ### Validate the production container
 

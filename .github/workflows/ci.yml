@@ -120,12 +120,22 @@ jobs:
       - name: Run browser security tests
         run: |
           case "$BPM_TEST_SUITE" in
-            all) skip='^$' ;;
-            policy) skip='protected viewing|optional outbound' ;;
-            controls) skip='local assets' ;;
+            all) set --; expected=4 ;;
+            policy) set -- --test-skip-pattern 'protected viewing|optional outbound'; expected=2 ;;
+            controls) set -- --test-skip-pattern 'local assets'; expected=3 ;;
             *) echo "Unknown browser security suite: $BPM_TEST_SUITE"; exit 1 ;;
           esac
-          node --test --test-name-pattern "^${BPM_TEST_BROWSER}:" --test-skip-pattern "$skip" tests/browser/security.test.js
+          report=$(mktemp)
+          trap 'rm -f "$report"' EXIT
+          status=0
+          node --test --test-reporter=tap --test-name-pattern "^${BPM_TEST_BROWSER}:" "$@" tests/browser/security.test.js >"$report" 2>&1 || status=$?
+          cat "$report"
+          if [ "$status" -ne 0 ]; then exit "$status"; fi
+          # Counts include one parent suite. Missing cases must never report green.
+          if ! grep -qx "# tests $expected" "$report" || ! grep -qx "# pass $expected" "$report"; then
+            echo "Expected $expected completed browser tests, including the parent suite."
+            exit 1
+          fi
 
   container:
     if: ${{ github.event.pull_request.draft == false }}
