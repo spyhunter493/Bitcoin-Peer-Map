@@ -121,6 +121,12 @@ export function create(options) {
         generation++;
         requests.abort();
         infoPolling.stop();
+        lastNodeInfo = null;
+        refreshState.stale = false;
+        refreshState.lastSuccessfulRefresh = null;
+        ui.counts = data.networkCounts([]);
+        ui.scores = { ipv4: null, ipv6: null };
+        ui.networkDetails = {};
         controls.dispose();
         monitor.dispose();
         settings.dispose();

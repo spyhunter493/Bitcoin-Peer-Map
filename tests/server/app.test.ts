@@ -178,7 +178,7 @@ test('every relative frontend dependency is available in the revision namespace'
         assert.ok(path.startsWith(prefix));
         const response = await get(path); assert.equal(response.status, 200, path);
         assert.match(response.headers.get('content-type')!, /javascript/); assert.match(response.headers.get('cache-control')!, /immutable/);
-        for (const match of (await response.text()).matchAll(/from\s+['"]([^'"]+\.js)['"]/g)) pending.push(new URL(match[1], base + path).pathname);
+        for (const match of (await response.text()).matchAll(/(?:from\s+|import\s*\(\s*)['"]([^'"]+\.js)['"]/g)) pending.push(new URL(match[1], base + path).pathname);
     }
     const modules = readdirSync(new URL('../../src/static/js/', import.meta.url), { recursive: true }).filter(path => String(path).endsWith('.js'));
     assert.equal(visited.size, modules.length);
@@ -204,7 +204,10 @@ test('all documented JSON endpoints are wired and removed endpoints stay absent'
     for (const [path, methods] of Object.entries(schema.paths)) {
         if (!path.startsWith('/api/') || path === '/api/stream/system') continue;
         for (const method of Object.keys(methods as object)) {
-            const response = await get(path, { method: method.toUpperCase(), ...(method === 'post' ? { body: '{"address":"8.8.8.8","peer_id":1,"enabled":true}', headers: { 'Content-Type': 'application/json' } } : {}) });
+            const body = path === '/api/config/outbound'
+                ? { preference: 'release_checks', enabled: false }
+                : { address: '8.8.8.8', peer_id: 1, enabled: true };
+            const response = await get(path, { method: method.toUpperCase(), ...(method === 'post' ? { body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } } : {}) });
             assert.equal(response.status, (methods as Record<string, {deprecated?: boolean}>)[method].deprecated ? 410 : 200, `${method} ${path}`); assert.ok(await response.json());
         }
     }

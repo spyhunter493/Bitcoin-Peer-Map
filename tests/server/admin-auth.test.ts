@@ -9,7 +9,7 @@ import { createApplication } from '../../src/server/app.ts';
 import { FixtureRuntime, fixtureSettings, FIXTURE_ADMIN_TOKEN } from '../layout_server.ts';
 import { temporaryDirectory } from './helpers.ts';
 
-const actions = ['/api/peer/connect', '/api/peer/disconnect', '/api/peer/ban', '/api/peer/unban', '/api/bans/clear', '/api/geodb/db-only', '/api/geodb/auto-update', '/api/geodb/update', '/api/connectivity/api-prompt-ack'];
+const actions = ['/api/peer/connect', '/api/peer/disconnect', '/api/peer/ban', '/api/peer/unban', '/api/bans/clear', '/api/geodb/db-only', '/api/geodb/auto-update', '/api/geodb/update', '/api/connectivity/api-prompt-ack', '/api/config/outbound'];
 async function application(t: TestContext, token = FIXTURE_ADMIN_TOKEN, proxies = '') {
     const settings = { ...fixtureSettings(temporaryDirectory(t), token), trusted_proxies: parseTrustedProxies(proxies) }, runtime = new FixtureRuntime(settings);
     const calls: string[] = [];
@@ -19,13 +19,15 @@ async function application(t: TestContext, token = FIXTURE_ADMIN_TOKEN, proxies 
     }
     t.mock.method(runtime, 'setGeoipDbOnly', () => { calls.push('geoip-api'); return true; });
     t.mock.method(runtime, 'setGeoipAutoUpdate', () => { calls.push('geoip-update'); return true; });
+    const updateOutbound = runtime.setOutboundPreference.bind(runtime);
+    t.mock.method(runtime, 'setOutboundPreference', (...args: Parameters<typeof updateOutbound>) => { calls.push('outbound'); return updateOutbound(...args); });
     t.mock.method(runtime.geoDatabase, 'update', async () => { calls.push('geodb'); return { success: true, message: 'done' }; });
     t.mock.method(runtime.connectivity, 'acknowledgePrompt', () => { calls.push('ack'); });
     const app = createApplication(settings, runtime);
     const address = await app.listen(0, '127.0.0.1'); assert.ok(address && typeof address !== 'string');
     t.after(() => app.close());
     const base = `http://127.0.0.1:${address.port}`;
-    const post = (path: string, headers: Record<string, string> = {}) => fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: '{"peer_id":1,"address":"8.8.8.8","enabled":true}' });
+    const post = (path: string, headers: Record<string, string> = {}) => fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: path === '/api/config/outbound' ? '{"preference":"release_checks","enabled":true}' : '{"peer_id":1,"address":"8.8.8.8","enabled":true}' });
     return { base, post, calls };
 }
 
@@ -36,7 +38,8 @@ for (const [name, header] of [['missing', ''], ['wrong', `Bearer ${'z'.repeat(64
             const response = await post(path, header ? { Authorization: header } : {});
             assert.equal(response.status, 401, path);
             assert.match(response.headers.get('www-authenticate')!, /^Bearer /);
-            assert.equal(response.headers.get('cache-control'), 'no-store');
+            assert.equal(response.headers.get('cache-control'), header ? 'private, no-store' : 'no-store');
+            if (header) assert.match(response.headers.get('vary')!, /Authorization/);
             assert.equal((await response.json()).code, 'admin_required');
         }
         assert.deepEqual(calls, []);
@@ -89,7 +92,7 @@ test('token never appears in public responses and OpenAPI describes authenticati
     for (const [path, methods] of Object.entries(schema.paths)) {
         const post = (methods as { post?: { security: unknown; responses: Record<string, unknown> } }).post;
         if (!post) continue;
-        assert.deepEqual(post.security, [{ AdminToken: [] }], path);
+        assert.deepEqual(post.security, path === '/api/view/verify' ? [{ ViewToken: [] }, { AdminToken: [] }] : [{ AdminToken: [] }], path);
         for (const status of ['401', '403', '429']) assert.ok(post.responses[status], `${path}: ${status}`);
     }
 });
@@ -114,7 +117,8 @@ test('anonymous cooldown ignores untrusted forwarding headers and valid credenti
     for (const path of [...actions, '/api/admin/verify']) {
         const valid = await post(path, { Authorization: `Bearer ${FIXTURE_ADMIN_TOKEN}` });
         assert.equal(valid.status, 200, path);
-        assert.equal(valid.headers.get('cache-control'), 'no-store');
+        assert.equal(valid.headers.get('cache-control'), 'private, no-store');
+        assert.match(valid.headers.get('vary')!, /Authorization/);
     }
     assert.equal(calls.length, actions.length);
     const stillLimited = await post('/api/admin/verify');

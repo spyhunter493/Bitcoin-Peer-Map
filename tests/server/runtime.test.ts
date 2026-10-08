@@ -5,14 +5,15 @@ import { join } from 'node:path';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { AppRuntime, GEOIP_UPDATE_INTERVAL_MS } from '../../src/server/runtime.ts';
-import { PreferenceStore } from '../../src/server/preferences.ts';
+import { PreferenceStore, DEFAULT_PREFERENCES } from '../../src/server/preferences.ts';
 import { main, waitForRpc } from '../../src/server/main.ts';
 import { BitcoinRpcClient, RpcAuthenticationError } from '../../src/server/rpc.ts';
 import { settings, temporaryDirectory, deferred, flush, FakeRpc } from './helpers.ts';
 import type { TestContext } from 'node:test';
 
 function runtime(t: TestContext, overrides: Record<string, string> = {}) {
-    const app = new AppRuntime(settings({ BPM_DATA_DIR: temporaryDirectory(t), ...overrides }));
+    const app = new AppRuntime(settings({ BPM_DATA_DIR: temporaryDirectory(t), BPM_OUTBOUND_ENABLED: 'true', ...overrides }));
+    app.setGeoipDbOnly(false); // Explicit opt-in for unrelated legacy scheduler fixtures.
     t.mock.method(app.peers, 'start', async () => {});
     t.mock.method(app.connectivity, 'ensureChecker', () => {});
     t.after(() => app.stop()); return app;
@@ -26,6 +27,17 @@ test('scheduler retries hourly after completion, without a browser, including fa
     t.mock.timers.tick(GEOIP_UPDATE_INTERVAL_MS - 1); await flush(); assert.equal(calls, 1);
     t.mock.timers.tick(1); await flush(); assert.equal(calls, 2);
     await app.stop(); t.mock.timers.tick(GEOIP_UPDATE_INTERVAL_MS); await flush(); assert.equal(calls, 2);
+});
+test('changing unrelated outbound features preserves the dataset scheduler cadence', async t => {
+    const app = runtime(t); let calls = 0;
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    t.mock.method(app.geoDatabase, 'update', async () => { calls++; return { success: true, message: 'OK', skipped_rows: 0 }; });
+    await app.start(); t.mock.timers.tick(0); await flush(); assert.equal(calls, 1);
+    app.setGeoipDbOnly(true);
+    app.setOutboundPreference('release_checks', false);
+    app.setOutboundPreference('reachability_checks', false);
+    t.mock.timers.tick(0); await flush(); assert.equal(calls, 1);
+    t.mock.timers.tick(GEOIP_UPDATE_INTERVAL_MS); await flush(); assert.equal(calls, 2);
 });
 test('live disabling lets the current import finish; re-enabling triggers an immediate check', async t => {
     const app = runtime(t, { BPM_GEOIP_AUTO_UPDATE: 'false' }), gate = deferred<{ success: boolean; message: string }>(); let calls = 0;
@@ -71,7 +83,7 @@ for (const [method, key] of [['setGeoipDbOnly', 'geoip_db_only'], ['setGeoipAuto
 test('simultaneous preference changes preserve both flags', async t => {
     const app = runtime(t);
     await Promise.all([Promise.resolve().then(() => app.setGeoipDbOnly(true)), Promise.resolve().then(() => app.setGeoipAutoUpdate(false))]);
-    assert.deepEqual(app.preferencesStore.load(), { geoip_auto_update: false, geoip_db_only: true });
+    assert.deepEqual(app.preferencesStore.load(), { ...DEFAULT_PREFERENCES, optional_outbound: true, geoip_auto_update: false, geoip_db_only: true });
 });
 test('explicit preferences are idempotent and do not rewrite already saved values', t => {
     const app = runtime(t), save = t.mock.method(app.preferencesStore, 'save');
@@ -83,7 +95,7 @@ test('explicit preferences are idempotent and do not rewrite already saved value
     assert.equal(app.setGeoipAutoUpdate(false), false);
     assert.equal(app.setGeoipAutoUpdate(false), false);
     assert.equal(save.mock.callCount(), 2);
-    assert.deepEqual(app.preferencesStore.load(), { geoip_auto_update: false, geoip_db_only: true });
+    assert.deepEqual(app.preferencesStore.load(), { ...DEFAULT_PREFERENCES, optional_outbound: true, geoip_auto_update: false, geoip_db_only: true });
 });
 test('startup validates the chain and fails immediately on authentication errors', async t => {
     const app = runtime(t);
@@ -139,7 +151,7 @@ for (const override of ['', 'true', 'false']) {
         const raw = '{"geoip_db_only":"true","geoip_auto_update":false}';
         writeFileSync(path, raw);
         const original = process.env;
-        process.env = { ...original, BITCOIN_RPC_HOST: '127.0.0.1', BITCOIN_RPC_USER: 'test', BITCOIN_RPC_PASSWORD: 'test', BITCOIN_RPC_PASSWORD_FILE: '', BPM_DATA_DIR: dir, BPM_GEOIP_AUTO_UPDATE: override };
+        process.env = { ...original, BITCOIN_RPC_HOST: '127.0.0.1', BITCOIN_RPC_USER: 'test', BITCOIN_RPC_PASSWORD: 'test', BITCOIN_RPC_PASSWORD_FILE: '', BPM_DATA_DIR: dir, BPM_GEOIP_AUTO_UPDATE: override, BPM_VIEW_MODE: 'public' };
         t.after(() => { process.env = original; });
         t.mock.method(BitcoinRpcClient.prototype, 'checkConnection', async () => assert.fail('RPC check started'));
         t.mock.method(BitcoinRpcClient.prototype, 'call', async () => assert.fail('RPC activity started'));

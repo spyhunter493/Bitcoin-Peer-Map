@@ -10,8 +10,24 @@ import assertAdminAuthentication from '../test_admin_auth.js';
 import assertPeerAccuracy from '../test_peer_accuracy.js';
 import assertNarrowManagementDialogs from '../test_narrow_management_dialogs.js';
 import assertPeerSearchExport from '../test_peer_search_export.js';
+import assertViewingPrivacy from '../test_viewing_privacy.js';
+import assertOutboundSettings from '../test_outbound_settings.js';
 
 for (const engine of [chromium, firefox, webkit]) {
+    test(`${engine.name()}: protected viewing, memory-only credentials, redaction and locking`, { timeout: 90_000 }, async t => {
+        const browser = await engine.launch({ headless: true });
+        t.after(() => browser.close());
+        await assertViewingPrivacy(browser);
+    });
+    test(`${engine.name()}: optional outbound controls and HTTP provider opt-in`, { timeout: 90_000 }, async t => {
+        const settings = fixtureSettings(), app = createApplication(settings, new FixtureRuntime(settings));
+        const address = await app.listen(0, '127.0.0.1');
+        assert.ok(address && typeof address !== 'string');
+        t.after(() => app.close());
+        const browser = await engine.launch({ headless: true });
+        t.after(() => browser.close());
+        await assertOutboundSettings(browser, `http://127.0.0.1:${address.port}`);
+    });
     test(`${engine.name()}: local assets, strict CSP, documentation, management dialogs, and framing`, { timeout: 180_000 }, async t => {
         const settings = fixtureSettings(), app = createApplication(settings, new FixtureRuntime(settings));
         const address = await app.listen(0, '127.0.0.1');
@@ -142,9 +158,10 @@ for (const engine of [chromium, firefox, webkit]) {
         }
         await page.locator('.auth-wrapper .authorize').click();
         const authorization = page.locator('.dialog-ux');
-        await authorization.locator('.auth-container input').fill(FIXTURE_ADMIN_TOKEN);
-        await authorization.locator('.auth-btn-wrapper .authorize').click();
-        await authorization.getByRole('button', { name: 'Close', exact: true }).click();
+        const adminAuthorization = authorization.locator('.auth-container').filter({ hasText: 'AdminToken' });
+        await adminAuthorization.locator('input').fill(FIXTURE_ADMIN_TOKEN);
+        await adminAuthorization.locator('.auth-btn-wrapper .authorize').click();
+        await adminAuthorization.getByRole('button', { name: 'Close', exact: true }).click();
         const operation = page.locator('.opblock').filter({ hasText: '/api/admin/verify' });
         await operation.locator('.opblock-summary').click();
         await operation.getByRole('button', { name: 'Try it out', exact: true }).click();

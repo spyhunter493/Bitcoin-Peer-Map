@@ -11,7 +11,7 @@ export function temporaryDirectory(t: TestContext) {
     return path;
 }
 export function settings(overrides: Record<string, string> = {}) {
-    return loadSettings({ BITCOIN_RPC_HOST: '127.0.0.1', BITCOIN_RPC_USER: 'bpm-test', BITCOIN_RPC_PASSWORD: 'secret', ...overrides });
+    return loadSettings({ BITCOIN_RPC_HOST: '127.0.0.1', BITCOIN_RPC_USER: 'bpm-test', BITCOIN_RPC_PASSWORD: 'secret', BPM_VIEW_MODE: 'public', ...overrides });
 }
 export function deferred<T>() {
     let resolve!: (value: T) => void;

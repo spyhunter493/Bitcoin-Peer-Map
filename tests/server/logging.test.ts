@@ -1,7 +1,10 @@
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { LOG_LEVELS, configureLogging, createFailureReporter, createLogger } from '../../src/server/logging.ts';
+import { temporaryDirectory } from './helpers.ts';
 
 function capture(t: TestContext) {
     const lines: { level: string; message: string }[] = [];
@@ -82,6 +85,34 @@ test('startup configuration errors are formatted before runtime creation, even w
         assert.equal(result.status, 1);
         assert.match(result.stderr, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z ERROR \[startup\] Bitcoin Peer Map: startup failed: /m);
         assert.equal(result.stderr.includes('secret-not-in-logs'), false);
+        assert.equal(result.stdout, '');
+    }
+});
+
+test('startup redacts viewing secrets before and after loading direct or mounted credentials', t => {
+    const directory = temporaryDirectory(t);
+    const token = 'viewer-startup-log-secret';
+    const dataDir = join(directory, token);
+    mkdirSync(dataDir);
+    writeFileSync(join(dataDir, 'settings.json'), JSON.stringify({ geoip_db_only: 'invalid' }));
+    const tokenFile = join(directory, 'view-token');
+    writeFileSync(tokenFile, token + '\n', { mode: 0o600 });
+    const cases = [
+        { BPM_VIEW_TOKEN: token, BITCOIN_RPC_PASSWORD: '', BITCOIN_RPC_PASSWORD_FILE: join(directory, token, 'missing-password') },
+        { BPM_VIEW_TOKEN: token, BPM_DATA_DIR: dataDir },
+        { BPM_VIEW_TOKEN_FILE: tokenFile, BPM_DATA_DIR: dataDir },
+    ];
+    for (const overrides of cases) {
+        const result = spawnSync(process.execPath, ['src/server/main.ts'], {
+            cwd: new URL('../../', import.meta.url), encoding: 'utf8', timeout: 5000,
+            env: { PATH: process.env.PATH, BITCOIN_RPC_HOST: '127.0.0.1', BITCOIN_RPC_USER: 'fixture',
+                BITCOIN_RPC_PASSWORD: 'rpc-log-secret', ...overrides },
+        });
+        assert.equal(result.status, 1);
+        assert.match(result.stderr, /ERROR \[startup\].*startup failed:/);
+        assert.match(result.stderr, /\[redacted\]/);
+        assert.equal(result.stderr.includes(token), false);
+        assert.equal(result.stderr.includes('rpc-log-secret'), false);
         assert.equal(result.stdout, '');
     }
 });

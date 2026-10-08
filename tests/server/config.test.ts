@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { ConfigurationError, loadSettings } from '../../src/server/settings.ts';
-import { PreferenceStore } from '../../src/server/preferences.ts';
+import { PreferenceStore, DEFAULT_PREFERENCES } from '../../src/server/preferences.ts';
 import { abbreviateConnectionType, formatBytes, formatDuration, isPrivateAddress, isPublicAddress, networkType, normalizePeerAddress, splitPeerAddress } from '../../src/server/network.ts';
 import { settings, temporaryDirectory } from './helpers.ts';
 
@@ -86,9 +86,9 @@ test('build version defaults and stable release validation are independent of re
 test('preferences survive atomic replacement with restricted permissions', t => {
     const dir = temporaryDirectory(t), path = join(dir, 'settings.json');
     const store = new PreferenceStore(path);
-    assert.deepEqual(store.load(), { geoip_auto_update: true, geoip_db_only: false });
-    store.save({ geoip_auto_update: false, geoip_db_only: true });
-    assert.deepEqual(new PreferenceStore(path).load(), { geoip_auto_update: false, geoip_db_only: true });
+    assert.deepEqual(store.load(), DEFAULT_PREFERENCES);
+    store.save({ ...DEFAULT_PREFERENCES, geoip_auto_update: false, geoip_db_only: true });
+    assert.deepEqual(new PreferenceStore(path).load(), { ...DEFAULT_PREFERENCES, geoip_auto_update: false, geoip_db_only: true });
     assert.equal(statSync(path).mode & 0o777, 0o600);
     assert.deepEqual(readdirSync(dir), ['settings.json']);
     assert.equal(JSON.parse(readFileSync(path, 'utf8')).geoip_db_only, true);
@@ -123,9 +123,21 @@ test('settings errors never disclose file contents', t => {
 test('older saved preferences remain compatible', t => {
     const path = join(temporaryDirectory(t), 'settings.json');
     writeFileSync(path, '{"geoip_auto_update":false}');
-    assert.deepEqual(new PreferenceStore(path).load(), { geoip_auto_update: false, geoip_db_only: false });
+    assert.deepEqual(new PreferenceStore(path).load(), { ...DEFAULT_PREFERENCES, geoip_auto_update: false });
     writeFileSync(path, '{"geoip_db_only":true}');
-    assert.deepEqual(new PreferenceStore(path).load(), { geoip_auto_update: true, geoip_db_only: true });
+    assert.deepEqual(new PreferenceStore(path).load(), { ...DEFAULT_PREFERENCES, geoip_db_only: true });
+});
+test('legacy preferences retain explicit choices while missing outbound flags deny optional requests', t => {
+    const path = join(temporaryDirectory(t), 'settings.json');
+    writeFileSync(path, '{"geoip_auto_update":true,"geoip_db_only":false}');
+    assert.deepEqual(new PreferenceStore(path).load(), { ...DEFAULT_PREFERENCES, geoip_db_only: false });
+    assert.equal(new PreferenceStore(path, true).load().optional_outbound, true, 'explicit deployment opt-in seeds a missing preference');
+    writeFileSync(path, '{"optional_outbound":false,"geoip_db_only":false}');
+    assert.equal(new PreferenceStore(path, true).load().optional_outbound, false, 'deployment opt-in never overrides a saved denial');
+    const invalid = '{"optional_outbound":"false"}';
+    writeFileSync(path, invalid);
+    assert.throws(() => new PreferenceStore(path, true).load(), /optional_outbound must be a boolean/);
+    assert.equal(readFileSync(path, 'utf8'), invalid);
 });
 test('peer address parsing and normalization preserve supported networks', () => {
     for (const [input, host, port, normalized] of [

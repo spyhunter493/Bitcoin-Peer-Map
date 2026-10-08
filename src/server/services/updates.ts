@@ -4,6 +4,7 @@ import type { Settings } from '../settings.ts';
 import { object, errorMessage, nowSeconds } from '../types.ts';
 import { GITHUB_REPOSITORY, REPOSITORY_URL, isNewerRelease, parseReleaseVersion } from '../build.ts';
 import { createFailureReporter, createLogger } from '../logging.ts';
+import type { OutboundPolicy } from '../outbound-policy.ts';
 
 const log = createLogger('updates');
 
@@ -21,14 +22,23 @@ export class UpdateService {
     private readonly cachePath: string;
     private readonly version: string;
     private readonly fetcher: typeof fetch;
+    private readonly outbound?: OutboundPolicy;
+    private readonly unsubscribe: () => void;
     private checkFailures = createFailureReporter(log);
     private saveFailures = createFailureReporter(log);
 
-    constructor(settings: Settings, signal?: AbortSignal, fetcher = fetch) {
+    constructor(settings: Settings, signal?: AbortSignal, fetcher = fetch, outbound?: OutboundPolicy) {
         this.version = settings.build_version;
         this.cachePath = join(settings.data_dir, 'update-check.json');
         this.signal = AbortSignal.any([this.controller.signal, ...(signal ? [signal] : [])]);
         this.fetcher = fetcher;
+        this.outbound = outbound;
+        this.unsubscribe = outbound?.subscribe((feature, allowed) => {
+            if (feature !== 'updates') return;
+            if (this.timer) clearTimeout(this.timer);
+            this.timer = null;
+            if (allowed && !this.pending) this.schedule();
+        }) ?? (() => {});
         this.loadCache();
     }
 
@@ -40,6 +50,7 @@ export class UpdateService {
     }
     async stop() {
         this.started = false;
+        this.unsubscribe();
         this.controller.abort();
         if (this.timer) clearTimeout(this.timer);
         this.timer = null;
@@ -75,7 +86,7 @@ export class UpdateService {
         }
     }
     private schedule() {
-        if (!this.started || this.signal.aborted) return;
+        if (!this.started || this.signal.aborted || this.pending || (this.outbound && !this.outbound.allowed('updates'))) return;
         const delay = this.status.checked_at === null ? 0 : Math.min(UPDATE_CHECK_INTERVAL_MS, Math.max(0, this.status.checked_at * 1000 + UPDATE_CHECK_INTERVAL_MS - Date.now()));
         this.timer = setTimeout(() => {
             this.timer = null;
@@ -83,11 +94,17 @@ export class UpdateService {
         }, delay).unref();
     }
     private async check() {
+        if (this.outbound && !this.outbound.allowed('updates')) return;
+        const lifetime = this.outbound ? AbortSignal.any([this.signal, this.outbound.signal('updates')]) : this.signal;
+        const signal = AbortSignal.any([lifetime, AbortSignal.timeout(10000)]);
+        let response: Response | undefined;
         try {
-            const response = await this.fetcher(`https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/latest`, {
+            signal.throwIfAborted();
+            response = await this.fetcher(`https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/latest`, {
                 headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'Bitcoin-Peer-Map' },
-                signal: AbortSignal.any([this.signal, AbortSignal.timeout(10000)]),
+                signal, redirect: 'manual',
             });
+            signal.throwIfAborted();
             let latest: string | null = null;
             if (response.status === 404) {
                 // The public canonical repository may not have a published release yet.
@@ -100,13 +117,16 @@ export class UpdateService {
                 }
                 latest = release.tag_name;
             }
+            signal.throwIfAborted();
             this.status = { ...this.releaseStatus(latest), checked_at: nowSeconds(), check_failed: false };
             this.checkFailures.recovered('Application update check recovered');
         } catch (error) {
-            if (this.signal.aborted) return;
+            if (lifetime.aborted) return;
             this.status = { ...this.status, checked_at: nowSeconds(), check_failed: true };
             this.checkFailures.failure(`Application update check failed: ${errorMessage(error)}`);
+        } finally {
+            if (response && !response.bodyUsed) await response.body?.cancel().catch(() => {});
         }
-        if (!this.signal.aborted) this.saveCache();
+        if (!lifetime.aborted) this.saveCache();
     }
 }

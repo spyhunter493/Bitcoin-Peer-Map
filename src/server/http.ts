@@ -109,7 +109,9 @@ export async function sendResponse(
     const textContent = type.startsWith('text/') || type === 'application/json';
     res.statusCode = status;
     res.setHeader('Content-Type', textContent ? `${type}; charset=utf-8` : type);
-    res.setHeader('Vary', 'Accept-Encoding');
+    const vary = String(res.getHeader('Vary') || '').split(',').map(value => value.trim()).filter(Boolean);
+    if (!vary.some(value => value.toLowerCase() === 'accept-encoding' || value === '*')) vary.push('Accept-Encoding');
+    res.setHeader('Vary', vary.join(', '));
     if (bytes.length >= MIN_GZIP_BYTES && acceptsGzip(req.headers['accept-encoding'] || '')) {
         bytes = await compress(bytes, { level: 6 });
         res.setHeader('Content-Encoding', 'gzip');

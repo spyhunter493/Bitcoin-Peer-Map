@@ -38,9 +38,9 @@ export async function waitForRpc(runtime: Pick<AppRuntime, 'settings' | 'rpc' | 
 }
 export async function main() {
     // Configuration failures also receive formatted logs without exposing supplied credentials.
-    configureLogging({ level: 'info', secrets: [process.env.BPM_ADMIN_TOKEN, process.env.BITCOIN_RPC_PASSWORD] });
+    configureLogging({ level: 'info', secrets: [process.env.BPM_ADMIN_TOKEN, process.env.BPM_VIEW_TOKEN, process.env.BITCOIN_RPC_PASSWORD] });
     const settings = loadSettings();
-    configureLogging({ level: settings.log_level, secrets: [settings.admin_token, settings.rpc_password, Buffer.from(`${settings.rpc_user}:${settings.rpc_password}`).toString('base64')] });
+    configureLogging({ level: settings.log_level, secrets: [settings.admin_token, settings.view_token, settings.rpc_password, Buffer.from(`${settings.rpc_user}:${settings.rpc_password}`).toString('base64')] });
     const runtime = new AppRuntime(settings);
     const app = createApplication(runtime.settings, runtime);
     let stopping = false;

@@ -35,8 +35,10 @@ const probe = createServer(); probe.listen(0, '127.0.0.1'); await once(probe, 'l
 const port = probe.address().port; await new Promise(resolve => probe.close(resolve));
 const base = `http://127.0.0.1:${port}`;
 const adminToken = 'admin';
+const viewToken = 'view-only';
 const get = async (path, method = 'GET', body) => {
-    const response = await fetch(base + path, { method, ...(method === 'POST' ? { headers: { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) } : {}), signal: AbortSignal.timeout(5000) });
+    const headers = { Authorization: `Bearer ${adminToken}`, ...(method === 'POST' ? { 'Content-Type': 'application/json' } : {}) };
+    const response = await fetch(base + path, { method, headers, ...(method === 'POST' ? { body: body === undefined ? undefined : JSON.stringify(body) } : {}), signal: AbortSignal.timeout(5000) });
     assert.equal(response.status, 200, path); return response.json();
 };
 async function start() {
@@ -44,6 +46,7 @@ async function start() {
         '--tmpfs', '/tmp:rw,noexec,nosuid,size=64m', '-v', `${volume}:/var/lib/bitcoin-peer-map`,
         '-e', 'BITCOIN_RPC_HOST=127.0.0.1', '-e', `BITCOIN_RPC_PORT=${rpcPort}`, '-e', 'BITCOIN_RPC_USER=test', '-e', 'BITCOIN_RPC_PASSWORD=test',
         '-e', `BPM_ADMIN_TOKEN=${adminToken}`,
+        '-e', `BPM_VIEW_TOKEN=${viewToken}`,
         '-e', 'BPM_LOG_LEVEL=info',
         '-e', `BPM_LISTEN_PORT=${port}`, '-e', 'BPM_LISTEN_ADDRESS=127.0.0.1', image);
     const deadline = Date.now() + 30000;
@@ -91,6 +94,26 @@ try {
         if (process.env.BPM_BUILD_VERSION !== 'dev') writeFileSync('/var/lib/bitcoin-peer-map/update-check.json', JSON.stringify({repository:'spyhunter493/Bitcoin-Peer-Map', version:process.env.BPM_BUILD_VERSION, checked_at:Date.now()/1000, latest_version:process.env.BPM_BUILD_VERSION, check_failed:false}), {mode:0o600});
     `);
     await start();
+    const access = await (await fetch(base + '/api/access')).json();
+    assert.deepEqual(access, { mode: 'authenticated', authentication_available: true });
+    for (const path of ['/api/peers?include_status=true', '/api/info', '/api/config', '/api/stream/system']) {
+        const anonymous = await fetch(base + path);
+        assert.equal(anonymous.status, 401, `${path}: default private viewing blocks anonymous reads`);
+        assert.equal((await anonymous.json()).code, 'view_required');
+        assert.match(anonymous.headers.get('cache-control'), /no-store/);
+        assert.match(anonymous.headers.get('vary'), /Authorization/i);
+    }
+    const viewerPeers = await fetch(base + '/api/peers', { headers: { Authorization: `Bearer ${viewToken}` } });
+    assert.equal(viewerPeers.status, 200, 'the viewing credential permits detailed monitoring');
+    assert.ok(Array.isArray(await viewerPeers.json()));
+    const viewerMutation = await fetch(base + '/api/geodb/db-only', {
+        method: 'POST', headers: { Authorization: `Bearer ${viewToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: false }),
+    });
+    assert.equal(viewerMutation.status, 401, 'the viewing credential cannot change settings');
+    const outbound = await get('/api/config/outbound');
+    assert.equal(outbound.preferences.optional_outbound, false, 'legacy files lacking the new preference default to local-only');
+    assert.deepEqual(outbound.effective, { geoip_lookups: false, dataset_downloads: false, release_checks: false, reachability_probes: false });
     const config = await get('/api/config'), build = config.build;
     assert.equal(config.server.log_level, 'info');
     assert.equal(build.version, buildEnvironment.BPM_BUILD_VERSION);
@@ -153,14 +176,15 @@ try {
     assert.equal((await get('/api/geodb/db-only', 'POST', { enabled: true })).geo_db_only_mode, true);
     assert.equal((await get('/api/geodb/db-only', 'POST', { enabled: true })).geo_db_only_mode, true);
     const saved = JSON.parse(await docker('exec', name, 'cat', '/var/lib/bitcoin-peer-map/settings.json'));
-    assert.deepEqual(saved, { geoip_auto_update: false, geoip_db_only: true });
+    assert.deepEqual(saved, { geoip_auto_update: false, geoip_db_only: true, optional_outbound: false,
+        geoip_dataset_downloads: true, release_checks: true, reachability_checks: true });
     const health = JSON.parse(await docker('inspect', '--format', '{{json .Config.Healthcheck.Test}}', name));
     await docker('exec', name, 'sh', '-c', health[1]);
     await stop(); await start();
     assert.equal((await get('/api/connectivity')).geo_db_only_mode, true);
     assert.equal((await get('/api/info')).geo_db_stats.entries, 1);
     await stop();
-    console.log('Production container smoke test passed: local browser assets, no Python, non-root/read-only operation, existing SQLite/preferences, health check, recreation, and clean shutdown');
+    console.log('Production container smoke test passed: private viewing, viewer/admin separation, local-only defaults, local browser assets, no Python, non-root/read-only operation, existing SQLite/preferences, health check, recreation, and clean shutdown');
 } catch (error) {
     console.error(await docker('logs', name).catch(() => 'Container unavailable'));
     throw error;

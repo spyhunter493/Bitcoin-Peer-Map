@@ -54,6 +54,7 @@ export function locationStatus(peers, info, nowSeconds) {
     const provider = info?.providers?.geoip;
     const retryIn = provider?.retry_at == null ? 0 : Math.max(0, Math.ceil(provider.retry_at - nowSeconds));
     if (info?.geo_db_only_mode) return { text: 'API lookup off', loaded: false, color: 'var(--warn)' };
+    if (provider?.state === 'disabled') return { text: 'External lookups disabled', loaded: false, color: 'var(--text-secondary)' };
     if (retryIn > 0) return { text: `${provider?.state === 'rate_limited' ? 'GeoIP rate limited' : 'GeoIP retry'} (${retryIn}s)`, loaded: false, color: 'var(--warn)' };
     if (provider?.state === 'unavailable' || info?.api_available === false) return { text: 'GeoIP provider unavailable', loaded: false, color: 'var(--warn)' };
     const pending = peers.filter(peer => peer.location_status === 'pending').length;

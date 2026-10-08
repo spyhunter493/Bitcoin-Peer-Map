@@ -31,6 +31,8 @@ import * as ConnectionRenderer from './connection-renderer.js';
  * @param {Options} options
  */
 export function create(options) {
+    let running = false, frameHandle = 0;
+    function queueFrame() { if (running) frameHandle = requestAnimationFrame(frame); }
     const { mapView, view, canvas, ctx, basemapCanvas, baseCtx, interaction, privateState } = options;
     const CFG = options.config;
     const PRIVATE_NETS = new Set(['onion', 'i2p', 'cjdns']);
@@ -185,6 +187,7 @@ export function create(options) {
 
     /** @param {number} timestamp */
     function frame(timestamp) {
+        if (!running) return;
         const now = Date.now();
         const interacting = document.body.classList.contains('map-interacting');
         const reducedMotion = reducedMotionQuery.matches;
@@ -231,7 +234,7 @@ export function create(options) {
         const idleFps = mapView.nodes.length >= 250 ? 20 : 30;
         const frameInterval = interacting || !settled ? 1000 / 60 : 1000 / idleFps;
         if (timestamp - lastPeerFrameTime < frameInterval - 1) {
-            requestAnimationFrame(frame);
+            queueFrame();
             return;
         }
         lastPeerFrameTime = timestamp;
@@ -241,7 +244,7 @@ export function create(options) {
             reducedMotion && now < brightnessChangesUntil ? Math.floor(now / 1000) : 0];
         if (settled && !interacting && (reducedMotion || (!animatedPeers && !fading)) &&
             sameScene(lastScene, nextScene)) {
-            requestAnimationFrame(frame);
+            queueFrame();
             return;
         }
         lastScene = nextScene;
@@ -322,7 +325,7 @@ export function create(options) {
             if (hlNode) peers.drawHighlightRing(hlNode, now, wrapOffsets);
         }
 
-        requestAnimationFrame(frame);
+        queueFrame();
     }
 
     return Object.freeze({
@@ -336,6 +339,7 @@ export function create(options) {
         invalidate,
         markBasemapDirty() { basemap.markBasemapDirty(); invalidate(); },
         loadGeometry: basemap.loadGeometry,
-        start: () => requestAnimationFrame(frame),
+        start() { if (!running) { running = true; queueFrame(); } },
+        stop() { running = false; cancelAnimationFrame(frameHandle); frameHandle = 0; },
     });
 }

@@ -46,7 +46,7 @@ that release's notes. Unreleased commits on `main` never cause a notice. The
 version comes from `BPM_BUILD_VERSION`; `BPM_BUILD_REVISION` remains internal
 source metadata.
 
-The server checks at startup if no recent result exists, then once every
+When optional release checks are enabled, the server checks at startup if no recent result exists, then once every
 **24 hours**, even without an open dashboard. The cache survives restarts and is
 refreshed when the installed release version changes. Old commit-comparison
 caches are discarded. Dashboard requests only read the cache.
@@ -113,6 +113,8 @@ For RPC endpoints and effective settings, see
 GeoIP reports its state, consecutive failures, last error, success/failure
 timestamps, and retry deadline. The `api_available` and `api_consecutive_failures`
 fields refer to GeoIP.
+An optional feature disabled by policy reports `disabled`, rather than healthy or
+failed connectivity. Disabled work does not produce outage prompts.
 
 Provider failures do not change probe status, and failed Google probes do not
 suppress GeoIP lookups or provider notices.
@@ -149,7 +151,7 @@ The named volume `bitcoin-peer-map-data` is mounted at
 | File or directory | Contents |
 | --- | --- |
 | `geo.db` | Cached peer locations in SQLite |
-| `settings.json` | Server preferences for GeoIP lookups and automatic dataset updates |
+| `settings.json` | Server preferences for GeoIP lookups, automatic updates, and optional outbound requests |
 | `update-check.json` | Application update status and last check time |
 | `tmp/` | Temporary files used during GeoIP dataset updates |
 
@@ -179,7 +181,11 @@ this valid file disables both external API lookups and automatic dataset downloa
 ```
 
 Use JSON `true`/`false`, without quotes. Legacy files may omit fields:
-`geoip_auto_update` defaults to `true` and `geoip_db_only` to `false` when absent.
+`geoip_auto_update` defaults to `true`, `geoip_db_only` to `true`, and
+`optional_outbound` to `false` when absent. The dataset-download, release-check,
+and reachability-check flags default to `true` but remain blocked by that global
+preference. `BPM_OUTBOUND_ENABLED=true` seeds a missing global preference as an
+explicit deployment opt-in; it never replaces an explicitly saved `false`.
 Deleting the file restores those first-install defaults; repair it instead when
 you want to retain privacy restrictions. Ensure the container user can read it,
 then restart the service. `BPM_GEOIP_AUTO_UPDATE` applies only after the saved
@@ -214,16 +220,25 @@ Open **GEOIP-DB** in the dashboard to manage the local database:
 
 | Control | Behavior |
 | --- | --- |
-| Auto-update | Downloads the GeoIP dataset at startup and hourly after each completed attempt |
-| API Lookup | Looks up missing, stale, or unknown-age public peer IPs through ip-api.com |
-| Manual update | Updates the dataset on demand, including when auto-update is disabled |
+| Optional outbound | Global saved opt-in for optional server internet requests |
+| Dataset downloads | Allows automatic and manual dataset downloads when global outbound is enabled |
+| Release checks | Allows application update checks when global outbound is enabled |
+| Reachability checks | Allows internet probes when global outbound is enabled |
+| Auto-update | Schedules dataset checks at startup and hourly, subject to outbound policy |
+| API Lookup | Explicitly permits missing/stale public-IP lookups through free ip-api over HTTP, subject to outbound policy |
+| Manual update | Updates the dataset on demand when dataset downloads are permitted |
 
-Auto-update and API Lookup are enabled on new installs. Both choices are saved
-and restored before peer workers start, including after container recreation.
+Optional outbound requests and API Lookup are disabled on new installs. Saved
+choices are restored before workers start, including after container recreation.
+Legacy files retain their explicit GeoIP booleans; a missing global outbound
+preference defaults to disabled. `BPM_OUTBOUND_ENABLED=false` prohibits optional
+requests even if an administrator changes the saved preference.
 `BPM_GEOIP_AUTO_UPDATE` can override the saved auto-update preference.
 
-Enabling auto-update starts a check immediately. Disabling it prevents future
-checks; an update already running finishes normally. Dataset imports add new IPs
+Enabling auto-update starts a check immediately when policy permits. Disabling
+automatic scheduling prevents future automatic checks. Disabling a feature's
+outbound policy cancels owned requests and prevents late completions or retries
+from scheduling more traffic. Dataset imports add new IPs
 and replace records only when the downloaded `last_updated` timestamp is newer,
 preserving newer local API results.
 Peer details show the winning record's source, observation time, age, and
@@ -248,12 +263,17 @@ endpoints receive a reload message and cannot change settings until refreshed.
 
 API Lookup sends the queried peer IP to ip-api.com over unencrypted HTTP; the
 provider's [free endpoint does not support HTTPS](https://ip-api.com/docs/api:json).
+Both global outbound and API Lookup must be explicitly enabled for those calls.
+No paid provider, subscription, or automatic provider switch is introduced.
 Turn it off for database-only peer lookups. Valid coordinates map to their real
 location even when no city is supplied. Labels use city and country, then region
 and country, then country alone; unresolved locations retain their pending or
-unavailable states. Dataset downloads, application update
-checks, and internet reachability probes operate separately and still use the
-network.
+unavailable states. Dataset downloads, application update checks, and reachability
+probes have separate controls under the global optional-outbound policy.
+Configured Bitcoin RPC remains functional, including any DNS/TLS needed for that
+connection. Local GeoIP hydration and persistence continue when optional outbound
+is denied; a completely downloaded, validated dataset may finish its local merge.
+The policy does not control user-initiated browser links or operating-system traffic.
 `BPM_GEOIP_ENABLED=false` disables the persistent database, rather than disabling
 external peer lookups.
 

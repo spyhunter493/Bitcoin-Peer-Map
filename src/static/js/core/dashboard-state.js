@@ -43,6 +43,13 @@ function create() {
         privateNetwork,
         interaction,
         replace,
+        clear() {
+            replace([]);
+            const empty = create();
+            Object.assign(distribution, empty.distribution.snapshot());
+            Object.assign(privateNetwork, empty.privateNetwork);
+            Object.assign(interaction, empty.interaction);
+        },
     });
 }
 export { create };

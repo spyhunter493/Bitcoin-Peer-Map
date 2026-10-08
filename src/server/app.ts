@@ -12,6 +12,9 @@ import { HttpError, readJsonBody, parseAddress, parseEnabled, parsePeerId, parse
 import { GITHUB_REPOSITORY, REPOSITORY_URL } from './build.ts';
 import { NODE_METRICS_INTERVAL_MS } from './services/node-metrics.ts';
 import { createAdminAuthentication } from './admin-auth.ts';
+import { createViewingAuthentication, privateViewingResponse } from './viewer-auth.ts';
+import { viewingAggregate } from './viewer-summary.ts';
+import type { OutboundPreference } from './preferences.ts';
 import { createLogger } from './logging.ts';
 import { RpcBusyError } from './rpc.ts';
 import type { ApiRoutes, RouteHandler } from './api-routes.ts';
@@ -25,6 +28,8 @@ export interface ApplicationRuntime {
     stop(): void | Promise<void>;
     setGeoipDbOnly(enabled: boolean): boolean;
     setGeoipAutoUpdate(enabled: boolean): boolean;
+    setOutboundPreference: AppRuntime['setOutboundPreference'];
+    outbound: Pick<AppRuntime['outbound'], 'snapshot'>;
     peers: Pick<AppRuntime['peers'], 'snapshot' | 'listPeers'>;
     node: Pick<AppRuntime['node'], 'dashboardInfo' | 'mempool' | 'blockchain' | 'recentBlocks' | 'chainTips' | 'connect' | 'disconnect' | 'ban' | 'unban' | 'bans' | 'clearBans'>;
     metrics: Pick<AppRuntime['metrics'], 'latest' | 'summary'>;
@@ -62,11 +67,15 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
     const streams = new Set<ServerResponse>();
     let closeTask: Promise<void> | null = null;
     const requireAdmin = createAdminAuthentication(settings.admin_token, settings.trusted_proxies);
+    const requireViewer = createViewingAuthentication(settings.view_token, settings.admin_token, settings.trusted_proxies);
 
     const routes: Record<string, RouteHandler> = {
         'GET /healthz': () => ({ status: 'ok' }),
+        'GET /api/access': (_query, _req, res) => { if (!res.hasHeader('Cache-Control')) res.setHeader('Cache-Control', 'no-store'); return { mode: settings.view_mode, authentication_available: Boolean(settings.view_token || settings.admin_token) }; },
+        'GET /api/view/aggregate': (_query, _req, res) => { if (!res.hasHeader('Cache-Control')) res.setHeader('Cache-Control', 'no-store'); return viewingAggregate(runtime.peers.snapshot()); },
+        'POST /api/view/verify': () => ({ success: true }),
         'POST /api/admin/verify': () => ({ success: true }),
-        'GET /api/peers': (query, _req, res) => { res.setHeader('Cache-Control', 'no-store'); return parseQueryBoolean(query, 'include_status', false) ? runtime.peers.snapshot() : runtime.peers.listPeers(); },
+        'GET /api/peers': (query, _req, res) => { if (!res.hasHeader('Cache-Control')) res.setHeader('Cache-Control', 'no-store'); return parseQueryBoolean(query, 'include_status', false) ? runtime.peers.snapshot() : runtime.peers.listPeers(); },
         'GET /api/info': async (_query, _req, _res, signal) => ({ ...await runtime.node.dashboardInfo(signal), updates: runtime.updates.snapshot() }),
         'GET /api/mempool': (_query, _req, _res, signal) => runtime.node.mempool(signal),
         'GET /api/blockchain': (_query, _req, _res, signal) => runtime.node.blockchain(signal),
@@ -95,10 +104,22 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
             bitcoin_rpc: { scheme: settings.rpc_scheme, host: settings.rpc_host, port: settings.rpc_port, network: settings.bitcoin_network, verify_tls: settings.rpc_verify_tls, timeout: settings.rpc_timeout, startup_timeout: settings.rpc_startup_timeout, username_configured: Boolean(settings.rpc_user), password_configured: Boolean(settings.rpc_password), password_file_configured: settings.rpc_password_file_configured, endpoint: settings.rpc_url },
             server: { listen_address: settings.listen_address, listen_port: settings.listen_port, log_level: settings.log_level },
             management: { enabled: Boolean(settings.admin_token) },
+            outbound: runtime.outbound.snapshot(),
             geoip: { enabled: settings.geoip_enabled, auto_update_override: settings.geoip_auto_update_override },
             build: { version, revision, revision_known: revision !== 'unknown', asset_revision: assets, revision_url: revisionUrl, updates: runtime.updates.snapshot() },
             repository: { github: GITHUB_REPOSITORY, url: repositoryUrl }, data: { data_dir: settings.data_dir },
         }),
+        'GET /api/config/outbound': () => runtime.outbound.snapshot(),
+        'POST /api/config/outbound': async (_query, req) => {
+            const payload = await readJsonBody(req);
+            if (Object.keys(payload).some(key => !['preference', 'enabled'].includes(key))) {
+                throw new HttpError(422, 'body may contain only preference and enabled');
+            }
+            if (typeof payload.preference !== 'string' || !['optional_outbound', 'geoip_dataset_downloads', 'release_checks', 'reachability_checks'].includes(payload.preference)) {
+                throw new HttpError(422, 'preference must name a supported outbound control');
+            }
+            return runtime.setOutboundPreference(payload.preference as OutboundPreference, parseEnabled(payload));
+        },
         'GET /openapi.json': () => schema,
     } satisfies ApiRoutes;
     const server = createServer(async (req, res) => {
@@ -110,8 +131,14 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
         try {
             const url = new URL(req.url || '/', 'http://localhost');
             const method = req.method === 'HEAD' ? 'GET' : req.method;
+            const credentialBearing = Boolean(req.headers.authorization);
+            const anonymousAggregate = url.pathname === '/api/view/aggregate' && settings.view_mode !== 'authenticated';
+            const protectedRead = method === 'GET' && url.pathname.startsWith('/api/') && url.pathname !== '/api/access' && !anonymousAggregate;
+            // Apply before direct streams, query parsing, RPC work, HEAD and errors.
+            if (credentialBearing || (protectedRead && settings.view_mode !== 'public')) privateViewingResponse(res);
+            if (protectedRead && settings.view_mode !== 'public') requireViewer(req, res);
             if (method === 'POST' && url.pathname.startsWith('/api/')) requireDashboardOrigin(req);
-            if (method === 'GET' && url.pathname === '/') { res.setHeader('Cache-Control', 'no-cache'); await sendResponse(req, res, html, 200, 'text/html'); return; }
+            if (method === 'GET' && url.pathname === '/') { if (!credentialBearing) res.setHeader('Cache-Control', 'no-cache'); await sendResponse(req, res, html, 200, 'text/html'); return; }
             if (method === 'GET' && ['/docs', '/redoc'].includes(url.pathname)) {
                 await sendResponse(req, res, docs, 200, 'text/html'); return;
             }
@@ -132,13 +159,13 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
                 const bytes = await readFile(path);
                 const etag = `W/"${createHash('sha256').update(bytes).digest('hex')}"`;
                 const versions = url.searchParams.getAll('v');
-                res.setHeader('Cache-Control', versioned || (versions.length === 1 && versions[0] === assets) ? 'public, max-age=31536000, immutable' : 'public, max-age=0, must-revalidate');
+                if (!credentialBearing) res.setHeader('Cache-Control', versioned || (versions.length === 1 && versions[0] === assets) ? 'public, max-age=31536000, immutable' : 'public, max-age=0, must-revalidate');
                 res.setHeader('ETag', etag);
-                if (req.headers['if-none-match'] === etag) { res.writeHead(304); res.end(); return; }
+                if (!credentialBearing && req.headers['if-none-match'] === etag) { res.writeHead(304); res.end(); return; }
                 await sendResponse(req, res, bytes, 200, mime[extname(path)] || 'application/octet-stream'); return;
             }
             if (method === 'GET' && url.pathname === '/api/stream/system') {
-                res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
+                res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': credentialBearing || settings.view_mode !== 'public' ? 'private, no-store' : 'no-store', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
                 if (req.method === 'HEAD') { res.end(); return; }
                 res.write('event: message\ndata: {"type":"connected"}\n\n');
                 streams.add(res);
@@ -162,11 +189,17 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
                 if (allowed.length) { res.setHeader('Allow', allowed.join(', ')); throw new HttpError(405, 'Method not allowed'); }
                 throw new HttpError(404, 'Not found');
             }
-            if (method === 'POST' && url.pathname.startsWith('/api/')) requireAdmin(req, res);
-            await sendResponse(req, res, await route(url.searchParams, req, res, controller.signal));
+            if (method === 'POST' && url.pathname.startsWith('/api/')) {
+                if (url.pathname === '/api/view/verify') requireViewer(req, res);
+                else requireAdmin(req, res);
+            }
+            const result = await route(url.searchParams, req, res, controller.signal);
+            if (credentialBearing || (protectedRead && settings.view_mode !== 'public')) privateViewingResponse(res);
+            await sendResponse(req, res, result);
         } catch (error) {
             if (res.destroyed || controller.signal.aborted) return;
             if (res.headersSent) { res.destroy(); return; }
+            if (req.headers.authorization) privateViewingResponse(res);
             if (error instanceof RpcBusyError) {
                 res.setHeader('Retry-After', '1');
                 await sendResponse(req, res, { detail: 'Bitcoin RPC is busy; try again shortly', code: 'rpc_busy' }, 503);

@@ -9,6 +9,7 @@ import { type Data, errorMessage, nowSeconds, object } from '../types.ts';
 import { createFailureReporter, createLogger } from '../logging.ts';
 import { sleep } from '../tasks.ts';
 import { isValidGeoData, type ValidGeoData } from './geoip-validation.ts';
+import type { OutboundPolicy } from '../outbound-policy.ts';
 
 export { GEO_COLUMNS } from './geoip-schema.ts';
 export { isValidGeoData } from './geoip-validation.ts';
@@ -35,9 +36,11 @@ export class GeoDatabase {
     private updating = false;
     private controller = new AbortController();
     private saveFailures = createFailureReporter(createLogger('geoip'));
-    constructor(dataDir: string, enabled: boolean, signal?: AbortSignal) {
+    private readonly outbound?: OutboundPolicy;
+    constructor(dataDir: string, enabled: boolean, signal?: AbortSignal, outbound?: OutboundPolicy) {
         this.enabled = enabled; this.path = join(dataDir, 'geo.db'); this.tempDir = join(dataDir, 'tmp');
         this.signal = AbortSignal.any([this.controller.signal, ...(signal ? [signal] : [])]);
+        this.outbound = outbound;
     }
     initialize() {
         if (!this.enabled) return;
@@ -129,15 +132,18 @@ export class GeoDatabase {
     }
     async update(fetcher: typeof fetch = fetch, maxBytes = MAX_DOWNLOAD_BYTES): Promise<GeoUpdateResult> {
         if (!this.enabled) return { success: false, message: 'Geo database is disabled', skipped_rows: 0 };
+        if (this.outbound && !this.outbound.allowed('dataset')) return { success: false, message: 'Optional dataset downloads are disabled', skipped_rows: 0 };
         if (this.updating) return { success: false, message: 'Geo database update already in progress', skipped_rows: 0 };
         this.updating = true;
         const temporary = join(this.tempDir, `geo-download-${randomUUID()}.db`);
         const signal = AbortSignal.any([AbortSignal.timeout(60_000), this.signal]);
+        const downloadSignal = this.outbound ? AbortSignal.any([signal, this.outbound.signal('dataset')]) : signal;
         try {
-            signal.throwIfAborted();
+            downloadSignal.throwIfAborted();
             mkdirSync(this.tempDir, { recursive: true });
-            const response = await fetcher(GEOIP_DATASET_URL, { signal });
+            const response = await fetcher(GEOIP_DATASET_URL, { signal: downloadSignal, redirect: 'manual' });
             try {
+                downloadSignal.throwIfAborted();
                 if (response.status !== 200) throw new Error(`Download failed (HTTP ${response.status})`);
                 const length = response.headers.get('Content-Length');
                 if (length && (!/^\d+$/.test(length) || Number(length) > maxBytes)) throw new Error('Downloaded database exceeds the size limit or has an invalid Content-Length');
@@ -146,13 +152,14 @@ export class GeoDatabase {
                 let downloaded = 0;
                 try {
                     for await (const chunk of response.body) {
+                        downloadSignal.throwIfAborted();
                         downloaded += chunk.length;
                         if (downloaded > maxBytes) throw new Error('Downloaded database exceeds the 100 MiB size limit');
                         await output.writeFile(chunk);
                     }
                 } finally { await output.close(); }
             } finally { if (!response.bodyUsed) await response.body?.cancel(); }
-            signal.throwIfAborted();
+            downloadSignal.throwIfAborted();
             // Dataset validation and its potentially large transaction run off the HTTP event loop.
             const result = await new Promise<GeoUpdateResult>((resolve, reject) => {
                 const worker = new Worker(new URL('./geoip-merge.ts', import.meta.url), { workerData: { path: this.path, downloaded: temporary } });
@@ -169,7 +176,7 @@ export class GeoDatabase {
             });
             if (result.success) this.datasetChanged();
             return result;
-        } catch (error) { return { success: false, message: errorMessage(error), skipped_rows: 0 }; }
+        } catch (error) { return { success: false, message: downloadSignal.aborted && !signal.aborted ? 'Optional dataset download cancelled' : errorMessage(error), skipped_rows: 0 }; }
         finally {
             try {
                 // Reading a WAL-mode download can create sidecars even through a read-only connection.

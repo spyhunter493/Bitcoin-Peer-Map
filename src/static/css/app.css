@@ -2499,3 +2499,31 @@ button.fd-net-chip:focus-visible { outline: 2px solid var(--accent); outline-off
         scroll-behavior: auto !important;
     }
 }
+/* Protected pages start with a small access view and no monitoring requests. */
+body.view-locked > :not(#view-access):not(#view-reset-notice):not(script) { display: none !important; }
+.view-access {
+    box-sizing: border-box;
+    width: min(520px, calc(100vw - 32px));
+    max-height: calc(100dvh - 32px);
+    overflow: auto;
+    margin: 16px auto;
+    padding: 20px;
+    border: 1px solid var(--accent-dim);
+    border-radius: 8px;
+    background: var(--bg-surface);
+    color: var(--text-primary);
+}
+.view-access h1 { margin-top: 0; font-size: 24px; }
+.view-access p { line-height: 1.5; }
+.view-access label { display: block; margin-bottom: 8px; }
+.view-access dl { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.view-access dd { margin: 0; }
+.view-access .connect-btn { width: 100%; margin-top: 8px; }
+.internet-dot.disabled { background: var(--text-secondary); box-shadow: none; }
+@media (max-width: 720px) {
+    body.view-unlocked .logo,
+    body.view-unlocked .brand-primary,
+    body.view-unlocked .brand-accent { font-size: 16px; }
+    body.view-unlocked #admin-lock { display: none; }
+    body.view-unlocked #view-lock { font-size: 10px; padding: 4px 5px; }
+}

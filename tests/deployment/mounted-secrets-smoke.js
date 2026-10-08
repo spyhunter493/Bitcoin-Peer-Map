@@ -123,6 +123,8 @@ ${platform ? `    platform: ${JSON.stringify(platform)}\n` : ''}    network_mode
       BPM_LISTEN_ADDRESS: 127.0.0.1
       BPM_LISTEN_PORT: "${port}"
       BPM_ADMIN_TOKEN: ""
+      BPM_VIEW_MODE: public
+      BPM_OUTBOUND_ENABLED: "false"
       BPM_LOG_LEVEL: info
       BPM_GEOIP_ENABLED: "false"
       BPM_GEOIP_AUTO_UPDATE: "false"

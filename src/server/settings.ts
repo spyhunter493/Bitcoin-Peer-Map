@@ -57,13 +57,32 @@ function password(env: Environment) {
     return direct;
 }
 
-function adminToken(env: Environment) {
-    const value = env.BPM_ADMIN_TOKEN || '';
+function bearerSecret(env: Environment, name: 'BPM_ADMIN_TOKEN' | 'BPM_VIEW_TOKEN') {
+    let value = env[name] || '';
+    const fileName = `${name}_FILE`, file = env[fileName]?.trim();
+    if (value && file) throw new ConfigurationError(`set only one of ${name} or ${fileName}`);
+    if (file) {
+        try { value = readFileSync(file, 'utf8').replace(/[\r\n]+$/, ''); }
+        catch { throw new ConfigurationError(`${fileName} is not readable`); }
+        if (!value) throw new ConfigurationError(`${fileName} must contain a non-empty bearer token`);
+    }
     if (!value) return null;
     if (value.length > 256 || !/^[A-Za-z0-9._~+/-]+={0,2}$/.test(value)) {
-        throw new ConfigurationError('BPM_ADMIN_TOKEN must contain 1-256 bearer-token characters without whitespace');
+        throw new ConfigurationError(`${name} must contain 1-256 bearer-token characters without whitespace`);
     }
     return value;
+}
+
+export type ViewMode = 'public' | 'authenticated' | 'redacted';
+function viewing(env: Environment) {
+    const mode = env.BPM_VIEW_MODE?.trim().toLowerCase() || 'authenticated';
+    if (!['public', 'authenticated', 'redacted'].includes(mode)) throw new ConfigurationError('BPM_VIEW_MODE must be public, authenticated, or redacted');
+    const admin = bearerSecret(env, 'BPM_ADMIN_TOKEN'), viewer = bearerSecret(env, 'BPM_VIEW_TOKEN');
+    if (mode !== 'public' && !admin && !viewer) throw new ConfigurationError('BPM_VIEW_MODE requires BPM_VIEW_TOKEN(_FILE) or BPM_ADMIN_TOKEN(_FILE)');
+    if (viewer && admin === viewer) throw new ConfigurationError('BPM_VIEW_TOKEN and BPM_ADMIN_TOKEN must be different to separate viewing from management');
+    return { view_mode: mode as ViewMode, view_token: viewer, admin_token: admin,
+        view_token_file_configured: Boolean(env.BPM_VIEW_TOKEN_FILE?.trim()),
+        admin_token_file_configured: Boolean(env.BPM_ADMIN_TOKEN_FILE?.trim()) };
 }
 
 function logLevel(env: Environment): LogLevel {
@@ -99,8 +118,9 @@ export function loadSettings(env: Environment = process.env) {
         listen_port: integer(env, 'BPM_LISTEN_PORT', 58333, 1024, 65535),
         data_dir: resolve(dataDir), geoip_enabled: boolean(env, 'BPM_GEOIP_ENABLED', true),
         geoip_auto_update_override: env.BPM_GEOIP_AUTO_UPDATE?.trim() ? boolean(env, 'BPM_GEOIP_AUTO_UPDATE', true) : null,
+        outbound_enabled_override: env.BPM_OUTBOUND_ENABLED?.trim() ? boolean(env, 'BPM_OUTBOUND_ENABLED', false) : null,
         build_version: version(env), build_revision: revision(env),
-        admin_token: adminToken(env),
+        ...viewing(env),
         trusted_proxies: trustedProxies(env),
         log_level: logLevel(env),
     });

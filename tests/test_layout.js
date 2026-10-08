@@ -18,6 +18,7 @@ import assertMapGroups from './test_map_groups.js';
 import assertMapInput from './test_map_input.js';
 import assertDashboardPerformance from './test_dashboard_performance.js';
 import assertGeoIPSettings from './test_geoip_settings.js';
+import assertOutboundSettings from './test_outbound_settings.js';
 import assertNodeServices from './test_node_services.js';
 import assertNodeMetrics from './test_node_metrics.js';
 import assertSharedDialogs from './test_shared_dialogs.js';
@@ -919,6 +920,7 @@ const suites = [
     ['peer action pointer geometry', assertPeerActionGeometry],
     ['dashboard polling and reduced motion', assertDashboardLifecycle],
     ['GeoIP settings', assertGeoIPSettings],
+    ['optional outbound settings', assertOutboundSettings],
     ['distribution coverage', assertDistributionCoverage],
     ['distribution controller lifecycle', assertDistributionLifecycle],
     ['node services', assertNodeServices],

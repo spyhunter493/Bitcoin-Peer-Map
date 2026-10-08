@@ -97,6 +97,7 @@ const bodies: Record<string, unknown> = {
     '/api/peer/connect': { address: '8.8.8.8' }, '/api/peer/disconnect': { peer_id: '1' },
     '/api/peer/ban': { peer_id: 1 }, '/api/peer/unban': { address: '8.8.8.8' },
     '/api/geodb/db-only': { enabled: true }, '/api/geodb/auto-update': { enabled: true },
+    '/api/config/outbound': { preference: 'release_checks', enabled: false },
 };
 
 test('all documented JSON routes validate real serialized service responses and browser fixtures', async t => {
@@ -109,7 +110,7 @@ test('all documented JSON routes validate real serialized service responses and 
                 const validate = compile(operation.requestBody.content['application/json'].schema);
                 assert.equal(validate(bodies[path]), true, `${method} ${path} request: ${ajv.errorsText(validate.errors)}`);
             }
-            const result = await json(path, method, bodies[path]);
+            const result = await json(path, method, method === 'post' ? bodies[path] : undefined);
             assert.equal(result.response.status, 200, `${real ? 'real serializers' : 'fixture'} ${method} ${path}`);
         }
         await json('/api/peers?include_status=true');

@@ -1,4 +1,4 @@
-import { errorMessage, postJson } from '../core/api.js';
+import { errorMessage, getJson, postJson } from '../core/api.js';
 import { required } from '../core/dom.js';
 import * as modal from '../core/modal.js';
 import { formatGeoAge } from '../core/geo.js';
@@ -25,10 +25,11 @@ function renderStats(stats) {
     if (stats.db_path) html += modal.row('Path', stats.db_path, 'File system path to the database');
     html += modal.row('Local database', stats.auto_lookup ? 'On' : 'Off', 'Use the persistent GeoIP database. External API lookups are controlled separately.', undefined, stats.auto_lookup ? 'modal-val-ok' : 'modal-val-warn');
     html += toggleRow('Auto-update', 'geodb-autoupdate-toggle', stats.auto_update, 'Update the geolocation database at startup and hourly, even when the dashboard is closed');
-    html += toggleRow('API Lookup', 'geodb-dbonly-toggle', !stats.db_only_mode, 'Look up missing, stale, or unknown-age public IPs through ip-api.com');
+    html += toggleRow('API Lookup (HTTP)', 'geodb-dbonly-toggle', !stats.db_only_mode, 'Send missing, stale, or unknown-age public peer IPs to ip-api.com over unencrypted HTTP. Optional internet requests must also be enabled.');
     html += '<p style="color:var(--text-secondary);font-size:11px;line-height:1.5">Locations become stale after 30 days from their record timestamp. Cached locations stay visible during refresh. API Lookup sends missing, stale, or unknown-age public peer IPs to ip-api.com over unencrypted HTTP. Turn it off to keep peer lookups local. This choice survives restarts.</p>';
     html += '<div id="geodb-provider-health"></div>';
-    html += '<button class="geodb-update-btn" id="geodb-update-btn">Update Database</button><div class="geodb-result" id="geodb-result" role="status"></div>';
+    html += '<div id="geodb-outbound-controls" role="group" aria-label="Optional internet requests"><p>Loading optional-request settings…</p></div>';
+    html += '<button class="geodb-update-btn" id="geodb-update-btn" disabled>Update Database</button><div class="geodb-result" id="geodb-result" role="status"></div>';
     return html;
 }
 
@@ -69,6 +70,10 @@ export function create({ getNodeInfo, refreshInfo, document = globalThis.documen
         const healthTimer = clock.setInterval(renderProviderHealth, 1000);
         dialog.signal?.addEventListener('abort', () => clock.clearInterval(healthTimer), { once: true });
         const result = required('#geodb-result', dialog.body);
+        const outboundControls = required('#geodb-outbound-controls', dialog.body);
+        /** @type {import('../../../shared/api.generated').OutboundPolicyResponse | null} */
+        let outbound = null;
+        let outboundSaving = false;
 
         /** @param {string} message @param {boolean} success */
         function showResult(message, success) {
@@ -76,6 +81,71 @@ export function create({ getNodeInfo, refreshInfo, document = globalThis.documen
             result.textContent = message;
             result.style.color = success ? 'var(--ok)' : 'var(--err)';
         }
+
+        const outboundSelectors = { optional_outbound: '#geodb-outbound-toggle', geoip_dataset_downloads: '#geodb-dataset-toggle', release_checks: '#geodb-release-toggle', reachability_checks: '#geodb-probe-toggle' };
+        function renderOutboundStatus() {
+            if (!outbound || !dialog.isOpen()) return;
+            for (const [preference, selector] of Object.entries(outboundSelectors)) {
+                /** @type {HTMLInputElement} */
+                const input = required(selector, dialog.body);
+                input.checked = outbound.preferences[/** @type {keyof typeof outboundSelectors} */ (preference)];
+                input.disabled = outboundSaving || (preference === 'optional_outbound' && outbound.forced_disabled);
+            }
+            /** @type {HTMLInputElement} */
+            const globalToggle = required('#geodb-outbound-toggle', dialog.body);
+            globalToggle.disabled = outboundSaving || outbound.forced_disabled;
+            const { effective } = outbound;
+            required('#geodb-outbound-status', dialog.body).textContent = `${outbound.forced_disabled ? 'Deployment configuration blocks optional internet requests. ' : ''}Effective policy: external peer lookups ${effective.geoip_lookups ? 'on (unencrypted HTTP)' : 'off'}; dataset downloads ${effective.dataset_downloads ? 'on' : 'off'}; release checks ${effective.release_checks ? 'on' : 'off'}; reachability probes ${effective.reachability_probes ? 'on' : 'off'}. Configured Bitcoin RPC and local database reads/writes remain available.`;
+            update.disabled = !effective.dataset_downloads;
+        }
+        async function refreshOutbound() {
+            const data = await getJson('/api/config/outbound', { signal: dialog.signal });
+            if (!dialog.isOpen()) return;
+            outbound = /** @type {import('../../../shared/api.generated').OutboundPolicyResponse} */ (data);
+            renderOutboundStatus();
+        }
+        async function loadOutbound() {
+            const data = await getJson('/api/config/outbound', { signal: dialog.signal });
+            if (!dialog.isOpen()) return;
+            outbound = /** @type {import('../../../shared/api.generated').OutboundPolicyResponse} */ (data);
+            outboundControls.innerHTML = toggleRow('Optional internet requests', 'geodb-outbound-toggle', outbound.preferences.optional_outbound, 'Allow optional server requests. Peer lookup also requires API Lookup (HTTP). Bitcoin RPC remains independent.')
+                + toggleRow('Dataset downloads', 'geodb-dataset-toggle', outbound.preferences.geoip_dataset_downloads, 'Allow manual and automatic downloads of the GeoIP dataset.')
+                + toggleRow('Release checks', 'geodb-release-toggle', outbound.preferences.release_checks, 'Allow GitHub checks for new application releases.')
+                + toggleRow('Reachability probes', 'geodb-probe-toggle', outbound.preferences.reachability_checks, 'Allow Google reachability probes.')
+                + '<p id="geodb-outbound-status" role="status" style="color:var(--text-secondary);font-size:11px;line-height:1.5"></p>';
+            for (const [preference, selector] of Object.entries(outboundSelectors)) {
+                /** @type {HTMLInputElement} */
+                const input = required(selector, dialog.body);
+                input.addEventListener('change', async () => {
+                    outboundSaving = true;
+                    for (const selector of Object.values(outboundSelectors)) {
+                        /** @type {HTMLInputElement} */
+                        const toggle = required(selector, dialog.body);
+                        toggle.disabled = true;
+                    }
+                    let committed = false;
+                    try {
+                        const data = await postJson('/api/config/outbound', { preference, enabled: input.checked }, { signal: dialog.signal });
+                        if (!dialog.isOpen()) return;
+                        outbound = /** @type {import('../../../shared/api.generated').OutboundPolicyResponse} */ (data);
+                        committed = true;
+                        renderOutboundStatus();
+                        await refreshInfo(); renderProviderHealth();
+                    } catch (error) {
+                        renderOutboundStatus();
+                        showResult(`${committed ? 'Setting saved, but status could not be refreshed' : 'Setting was not saved'}: ${errorMessage(error)}`, false);
+                    } finally {
+                        outboundSaving = false;
+                        renderOutboundStatus();
+                    }
+                });
+            }
+            renderOutboundStatus();
+        }
+        void loadOutbound().catch(error => {
+            if (!dialog.isOpen()) return;
+            outboundControls.textContent = `Could not load optional-request settings: ${errorMessage(error)}`;
+        });
 
         /** @param {'auto-update' | 'db-only'} setting @param {string} selector @param {boolean} previous */
         function bindToggle(setting, selector, previous) {
@@ -85,6 +155,7 @@ export function create({ getNodeInfo, refreshInfo, document = globalThis.documen
             input.addEventListener('change', async () => {
                 input.disabled = true;
                 result.textContent = '';
+                let committed = false;
                 try {
                     const enabled = setting === 'auto-update' ? input.checked : !input.checked;
                     /** @type {{success: boolean; auto_update?: boolean; geo_db_only_mode?: boolean}} */
@@ -93,6 +164,7 @@ export function create({ getNodeInfo, refreshInfo, document = globalThis.documen
                     if (!data.success || typeof value !== 'boolean') throw new Error('Could not save setting');
                     saved = setting === 'auto-update' ? value : !value;
                     input.checked = saved;
+                    committed = true;
                     await refreshInfo();
                     const info = getNodeInfo();
                     if (info) {
@@ -102,9 +174,10 @@ export function create({ getNodeInfo, refreshInfo, document = globalThis.documen
                             info.geo_db_stats.db_only_mode = value;
                         }
                     }
+                    await refreshOutbound(); renderProviderHealth();
                 } catch (error) {
                     input.checked = saved;
-                    showResult(`Setting was not saved: ${errorMessage(error)}`, false);
+                    showResult(`${committed ? 'Setting saved, but status could not be refreshed' : 'Setting was not saved'}: ${errorMessage(error)}`, false);
                 } finally {
                     input.disabled = false;
                     if (dialog.isOpen() && document.activeElement === document.body) input.focus({ preventScroll: true });
@@ -128,7 +201,7 @@ export function create({ getNodeInfo, refreshInfo, document = globalThis.documen
             } catch (error) {
                 showResult(`Error: ${errorMessage(error)}`, false);
             } finally {
-                update.disabled = false;
+                update.disabled = !outbound?.effective.dataset_downloads;
                 if (dialog.isOpen() && document.activeElement === document.body) update.focus({ preventScroll: true });
             }
         });

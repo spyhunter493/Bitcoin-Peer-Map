@@ -564,6 +564,8 @@ function create() {
     let lastPeerFetchTime = 0;
     /** @type {number | null} */
     let countdownInterval = null;
+    /** @type {ReturnType<typeof setInterval> | null} */
+    let clockInterval = null;
     // Peer polling follows the visible or background interval.
     const peerPolling = BPMPolling.create({
         task: fetchPeers,
@@ -868,12 +870,26 @@ function create() {
      * @param {PageTransitionEvent} event */
     function handlePageHide(event) {
         if (event.persisted) return;
+        dispose();
+    }
+
+    let disposed = false;
+    function dispose() {
+        if (disposed) return;
+        disposed = true;
         finishInitialViewSelection();
         peerPolling.stop();
+        peerRefresh.dispose();
+        renderer.stop();
+        if (countdownInterval !== null) clearInterval(countdownInterval);
+        if (clockInterval !== null) clearInterval(clockInterval);
         peerTable.dispose();
         nodeDashboard.dispose();
         privateNetwork.dispose();
         BPMDistribution.dispose();
+        preferences.dispose();
+        mapView.nodes = [];
+        dashboard.clear();
         antDialog?.close(false);
         document.removeEventListener('visibilitychange', handleVisibilityChange);
         window.removeEventListener('pagehide', handlePageHide);
@@ -881,7 +897,7 @@ function create() {
 
     let started = false;
     function init() {
-        if (started) return;
+        if (started || disposed) return;
         started = true;
         // Capture dark theme CSS defaults before any overrides
         preferences.init();
@@ -924,7 +940,7 @@ function create() {
         renderer.start();
 
         updateClock();
-        setInterval(updateClock, 1000);
+        clockInterval = setInterval(updateClock, 1000);
 
         // [DISTRIBUTION] Initialize AS Distribution module (always-on donut)
         initAsDistribution();
@@ -936,6 +952,6 @@ function create() {
         peerTable.applyMaxPeerRows();
     }
 
-    return Object.freeze({ start: init });
+    return Object.freeze({ start: init, dispose });
 }
 export { create };
