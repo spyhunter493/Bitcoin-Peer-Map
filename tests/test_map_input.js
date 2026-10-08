@@ -72,9 +72,22 @@ export default async function assertMapInput(browser, baseUrl) {
         const zoomedOut = await hashes();
         assert.notDeepEqual(zoomedOut[0], zoomed[0], 'zoom-out changes the camera');
 
-        await page.mouse.move(100, 200);
+        const dragStart = await canvas.evaluate(element => {
+            const bounds = element.getBoundingClientRect();
+            for (const yFraction of [0.3, 0.4, 0.5]) {
+                for (const xFraction of [0.4, 0.5, 0.3]) {
+                    const x = bounds.x + bounds.width * xFraction;
+                    const y = bounds.y + bounds.height * yFraction;
+                    if (document.elementFromPoint(x, y) === element &&
+                        document.elementFromPoint(x + 150, y + 50) === element) return { x, y };
+                }
+            }
+            return null;
+        });
+        assert.ok(dragStart, 'a canvas location is available outside the dashboard controls');
+        await page.mouse.move(dragStart.x, dragStart.y);
         await page.mouse.down();
-        await page.mouse.move(250, 250, { steps: 4 });
+        await page.mouse.move(dragStart.x + 150, dragStart.y + 50, { steps: 4 });
         await page.waitForFunction(() => document.getElementById('basemap').style.transform !== 'none');
         assert.deepEqual(await dimensions(), { width: 1200, height: 900 },
             'dragging uses the interaction DPI cap');
@@ -84,8 +97,14 @@ export default async function assertMapInput(browser, baseUrl) {
         assert.deepEqual(await dimensions(), { width: 1800, height: 1350 });
         assert.equal(await page.locator('.peer-detail-popup').count(), 0, 'a drag does not select a peer');
 
-        await canvas.dispatchEvent('wheel', { clientX: 250, clientY: 250, deltaY: -100 });
-        assert.deepEqual(await dimensions(), { width: 1200, height: 900 });
+        const wheelDimensions = await canvas.evaluate(element => {
+            element.dispatchEvent(new WheelEvent('wheel', {
+                bubbles: true, cancelable: true, clientX: 250, clientY: 250, deltaY: -100,
+            }));
+            // Observe the transient DPI cap before its 140ms reset timer can run.
+            return { width: element.width, height: element.height };
+        });
+        assert.deepEqual(wheelDimensions, { width: 1200, height: 900 });
         const wheeled = await hashes();
         assert.notDeepEqual(wheeled[0], panned[0], 'wheel input zooms toward the cursor');
         assert.deepEqual(await dimensions(), { width: 1800, height: 1350 });
