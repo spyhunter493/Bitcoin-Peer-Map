@@ -18,6 +18,29 @@ const deny = { geoip: false, dataset: false, updates: false, probe: false };
 const location = () => Response.json({ status: 'success', country: 'NZ', lat: 1, lon: 2 });
 const release = () => Response.json({ draft: false, prerelease: false, tag_name: 'v1.2.0' });
 
+test('rejected GeoIP and release responses release their unread streams without following redirects', async t => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const policy = new OutboundPolicy(allow), directory = temporaryDirectory(t);
+    let calls = 0, cancelled = 0;
+    const fetcher: typeof fetch = async (_url, options) => {
+        calls++;
+        assert.equal(options?.redirect, 'manual');
+        return new Response(new ReadableStream<Uint8Array>({ cancel() { cancelled++; } }), {
+            status: 302, headers: { Location: 'https://redirect.invalid/SECRET-SENTINEL' },
+        });
+    };
+    const connectivity = new ConnectivityService(false, undefined, fetcher, policy);
+    const updates = new UpdateService(settings({ BPM_BUILD_VERSION: 'v1.1.0', BPM_DATA_DIR: directory }), undefined, fetcher, policy);
+    t.after(async () => { policy.close(); await connectivity.stop(); await updates.stop(); });
+    t.mock.method(console, 'warn', () => {});
+    assert.equal(await createGeoipLookup(connectivity, policy, fetcher)('8.8.8.8', new AbortController().signal), null);
+    updates.start(); t.mock.timers.tick(0); await flush();
+    assert.equal(calls, 2);
+    assert.equal(cancelled, 2, 'both rejected responses release the connection without consuming their payloads');
+    assert.equal(connectivity.snapshot().providers.geoip.last_error?.includes('SECRET-SENTINEL'), false);
+    assert.equal(updates.snapshot().check_failed, true);
+});
+
 test('enabling preferences does not start probing until the worker was explicitly started', async t => {
     const policy = new OutboundPolicy(deny); let calls = 0;
     const connectivity = new ConnectivityService(false, undefined, async () => { calls++; return new Response(null, { status: 204 }); }, policy);
