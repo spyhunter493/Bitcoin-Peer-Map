@@ -77,7 +77,7 @@ test('a successful lookup superseded by a future record cannot repeatedly refres
     const { geo, peers, advance } = setup(t, async () => { calls++; return response(); });
     const future = Math.floor(Date.now() / 1000) + 86400;
     await geo.save('8.8.8.8', { country: 'NZ', city: 'Future winner', lat: 1, lon: 2 }, future);
-    await peers.refreshOnce(); peers.geoQueue.shift(); await peers.resolveGeo('8.8.8.8', 'ipv4');
+    await peers.refreshOnce(); peers.geoQueue.shift(); await peers.resolveGeo('8.8.8.8', 'ipv4'); await peers.persistGeo('8.8.8.8');
     assert.equal(calls, 1); assert.equal(peers.cachedGeo('8.8.8.8')?.city, 'Future winner');
     assert.equal((peers.listPeers()[0].geo as { freshness: string }).freshness, 'unknown');
     assert.equal(peers.geoCache.get('8.8.8.8')?.refreshRetryAt, GEO_REFRESH_RETRY_MS);
@@ -91,11 +91,11 @@ test('delayed persistence superseded by an unknown-age winner starts its refresh
     let calls = 0;
     const { geo, peers, advance } = setup(t, async () => { calls++; return response(); });
     const save = t.mock.method(geo, 'save', async () => ({ status: 'failed' as const, message: 'Disk full' }));
-    await peers.refreshOnce(); peers.geoQueue.shift(); await peers.resolveGeo('8.8.8.8', 'ipv4');
+    await peers.refreshOnce(); peers.geoQueue.shift(); await peers.resolveGeo('8.8.8.8', 'ipv4'); await peers.persistGeo('8.8.8.8');
     assert.ok(peers.geoCache.get('8.8.8.8')?.pendingSave);
     save.mock.restore();
     await geo.save('8.8.8.8', { country: 'NZ', city: 'Future winner', lat: 1, lon: 2 }, Math.floor(Date.now() / 1000) + 86400);
-    advance(60_000); await peers.refreshOnce(); peers.geoQueue.shift(); await peers.resolveGeo('8.8.8.8', 'ipv4');
+    advance(60_000); await peers.refreshOnce(); assert.deepEqual(peers.saveQueue, ['8.8.8.8']); await peers.persistGeo('8.8.8.8');
     assert.equal(calls, 1); assert.equal(peers.geoCache.get('8.8.8.8')?.pendingSave, undefined);
     assert.equal(peers.geoCache.get('8.8.8.8')?.refreshRetryAt, 60_000 + GEO_REFRESH_RETRY_MS);
     await peers.refreshOnce(); assert.deepEqual(peers.geoQueue, []);
