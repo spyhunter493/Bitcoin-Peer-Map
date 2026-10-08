@@ -50,7 +50,7 @@ export default async function assertViewingPrivacy(browser) {
             for (const secret of [VIEW_TOKEN, FIXTURE_ADMIN_TOKEN]) assert.equal(stored.includes(secret), false, 'credentials must remain memory-only');
             assert.deepEqual(await context.cookies(), []);
         }
-        async function stalledReset(action, showEvent = false) {
+        async function stalledReset(action, showEvent = false, expectReadAbort = false) {
             let receiveWipe;
             const wiped = new Promise(resolve => { receiveWipe = resolve; });
             const binding = `privacyWiped${++resetNumber}`;
@@ -66,7 +66,8 @@ export default async function assertViewingPrivacy(browser) {
                     if (!document.getElementById('view-reset-notice')) return;
                     observer.disconnect();
                     window[binding]({ privateDom: document.body.textContent.includes(marker), peers: dashboard.peers.length,
-                        ids: dashboard.byId.size, group: dashboard.interaction.groupedNodes, selected: dashboard.distribution.selectedPeerId });
+                        ids: dashboard.byId.size, group: dashboard.interaction.groupedNodes, selected: dashboard.distribution.selectedPeerId,
+                        readAborted: window.privacyPendingReadSignal?.aborted ?? null });
                 });
                 observer.observe(document.body, { childList: true });
             }, { binding, marker: PRIVATE_MARKER });
@@ -74,7 +75,8 @@ export default async function assertViewingPrivacy(browser) {
             const state = await wiped;
             assert.equal(state.privateDom, false,
                 'locking wipes private DOM before a replacement document arrives');
-            assert.deepEqual(state, { privateDom: false, peers: 0, ids: 0, group: null, selected: null });
+            assert.deepEqual(state, { privateDom: false, peers: 0, ids: 0, group: null, selected: null,
+                readAborted: expectReadAbort ? true : null });
             if (showEvent) await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
             const route = await navigating;
             await route.continue();
@@ -123,11 +125,23 @@ export default async function assertViewingPrivacy(browser) {
             const pendingRead = new Promise(resolve => { receiveRead = resolve; });
             const holdPeerRead = async route => { receiveRead(route); };
             await page.route('**/api/peers?include_status=true', holdPeerRead);
-            const failedRead = page.waitForEvent('requestfailed', request => new URL(request.url()).pathname === '/api/peers');
+            await page.evaluate(() => {
+                const fetch = window.fetch.bind(window);
+                window.fetch = (input, options) => {
+                    const url = new URL(input instanceof Request ? input.url : input, location.href);
+                    if (url.pathname === '/api/peers') window.privacyPendingReadSignal = options?.signal;
+                    return fetch(input, options);
+                };
+            });
             await page.evaluate(() => window.privacyPeerPoll());
-            await pendingRead;
-            await stalledReset(() => page.locator('#view-lock').click({ noWaitAfter: true }));
-            await failedRead;
+            const heldRead = await pendingRead;
+            assert.equal(await page.evaluate(() => window.privacyPendingReadSignal?.aborted), false,
+                'the held detailed read is active before locking');
+            // Interception can defer Chromium's requestfailed event until this
+            // route is released. The wipe observer checks the actual fetch signal
+            // while replacement navigation is blocked, before the old context exits.
+            await stalledReset(() => page.locator('#view-lock').click({ noWaitAfter: true }), false, true);
+            await heldRead.abort().catch(() => {});
             await page.unroute('**/api/peers?include_status=true', holdPeerRead);
 
             await login();
