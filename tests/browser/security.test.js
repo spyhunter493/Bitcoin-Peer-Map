@@ -6,9 +6,10 @@ import { chromium, firefox, webkit } from 'playwright';
 import { createApplication } from '../../src/server/app.ts';
 import { FixtureRuntime, fixtureSettings, FIXTURE_ADMIN_TOKEN } from '../layout_server.ts';
 import assertSharedDialogs from '../test_shared_dialogs.js';
+import assertAdminAuthentication from '../test_admin_auth.js';
 
 for (const engine of [chromium, firefox, webkit]) {
-    test(`${engine.name()}: local assets, strict CSP, documentation, management dialogs, and framing`, { timeout: 120_000 }, async t => {
+    test(`${engine.name()}: local assets, strict CSP, documentation, management dialogs, and framing`, { timeout: 180_000 }, async t => {
         const settings = fixtureSettings(), app = createApplication(settings, new FixtureRuntime(settings));
         const address = await app.listen(0, '127.0.0.1');
         assert.ok(address && typeof address !== 'string');
@@ -17,6 +18,7 @@ for (const engine of [chromium, firefox, webkit]) {
         const browser = await engine.launch({ headless: true });
         t.after(() => browser.close());
         await assertSharedDialogs(browser, base);
+        await assertAdminAuthentication(browser, base);
         const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
         t.after(() => context.close());
         const external = [], requests = [], errors = [];
