@@ -72,7 +72,9 @@ export function createServer() {
             return;
         }
         let body = {};
-        if (pathname === '/api/peers') {
+        if (pathname === '/api/access') {
+            body = { mode: 'public', authentication_available: false };
+        } else if (pathname === '/api/peers') {
             peerRequests++;
             body = { peers, status: {
                 connected: true, last_success_at: Date.now() / 1000,

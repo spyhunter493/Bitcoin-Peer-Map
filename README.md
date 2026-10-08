@@ -66,10 +66,18 @@ Your node must allow RPC connections from the dashboard. See the
 For a node in another Compose project, see
 [shared Docker networks](docs/configuration.md#another-compose-project).
 
-Viewing is available without a login. To enable peer management and GeoIP setting
-changes, set `BPM_ADMIN_TOKEN` in `.env` to your chosen token. There is no minimum
-length. You will be prompted for it when managing the dashboard.
-Use HTTPS outside a trusted network; see [admin authentication](docs/configuration.md#admin-token-and-read-only-mode).
+Viewing is private by default. Set `BPM_VIEW_TOKEN` in `.env` to your chosen
+viewing token, or configure `BPM_ADMIN_TOKEN` for both viewing and management.
+Use distinct tokens if you configure both. The service refuses private-mode
+startup without a credential. To allow anonymous detailed viewing, explicitly
+set `BPM_VIEW_MODE=public`; `redacted` exposes only availability and count ranges.
+Use HTTPS when sending credentials; see [viewing access](docs/configuration.md#viewing-access).
+
+Optional server internet requests are disabled by default. Bitcoin RPC and local
+GeoIP records still work. An administrator can explicitly enable outbound work
+in **GEOIP-DB**, or set `BPM_OUTBOUND_ENABLED=false` to prohibit that opt-in.
+External peer lookups use the existing free ip-api endpoint over HTTP and have
+their own explicit control; no paid provider or subscription is required.
 
 ### 3. Start the dashboard
 
@@ -89,8 +97,9 @@ docker compose down
 ## Updating
 
 The header shows the installed release version. An update arrow links to the
-release notes when a newer stable GitHub Release is available; the server checks
-once every 24 hours. Unreleased commits on `main` do not trigger notices.
+release notes when a newer stable GitHub Release is available; when optional
+release checks are enabled, the server checks once every 24 hours. Unreleased
+commits on `main` do not trigger notices.
 Development builds show `dev` and skip release checks.
 
 Pull the latest image and recreate the service:

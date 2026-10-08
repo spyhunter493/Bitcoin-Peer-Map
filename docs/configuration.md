@@ -99,6 +99,11 @@ Set the RPC host and credentials. Configure an admin token to enable management.
 | `BITCOIN_NETWORK` | `main` | Node network: `main`, `test`, `testnet4`, `signet`, or `regtest` |
 | `BPM_RPC_STARTUP_TIMEOUT` | `30` | Time to wait for RPC during startup, in seconds |
 | `BPM_ADMIN_TOKEN` | Unset (read-only) | Shared secret required for peer management and server settings changes |
+| `BPM_ADMIN_TOKEN_FILE` | Unset | Mounted administrator-token file; use instead of the direct token |
+| `BPM_VIEW_MODE` | `authenticated` | `authenticated` requires a viewing/admin credential; `redacted` allows coarse anonymous aggregates; `public` allows anonymous detailed monitoring |
+| `BPM_VIEW_TOKEN` | Unset | Shared credential for detailed monitoring, with no management permission |
+| `BPM_VIEW_TOKEN_FILE` | Unset | Mounted viewing-token file; use instead of the direct token |
+| `BPM_OUTBOUND_ENABLED` | Unset | `false` prohibits optional internet requests; unset uses saved preferences with optional requests disabled by default; `true` seeds opt-in only if that preference is absent |
 | `BPM_TRUSTED_PROXIES` | Empty (trust none) | Comma-separated literal IP addresses or CIDRs allowed to supply client addresses for anonymous authentication throttling |
 | `BPM_LOG_LEVEL` | `info` | Minimum server log level: `debug`, `info`, `warn`, or `error` |
 | `BPM_IMAGE` | `ghcr.io/spyhunter493/bitcoin-peer-map:latest` | Published image reference; use a tag or digest to pin a build |
@@ -150,10 +155,10 @@ These network defaults apply to peer connections only.
 
 ### Host access and multiple instances
 
-The dashboard is readable without authentication. Management actions require the
-admin token described below. If peer addresses, ban lists, and node configuration
-should also be private, use an authenticated reverse proxy for the entire site.
-Use HTTPS for access outside a trusted network. For a reverse proxy on the same
+The dashboard requires viewing authentication by default. Management actions
+require the separate admin authorization described below. Configure
+`BPM_VIEW_MODE=public` explicitly for anonymous detailed monitoring. Use HTTPS
+when sending credentials. For a reverse proxy on the same
 host, set `BPM_HOST_BIND=127.0.0.1`; the application still listens on `0.0.0.0`
 inside its container. A proxy in another container can reach the service over a
 shared Docker network instead.
@@ -168,10 +173,47 @@ To run another instance, use a distinct Compose project name (`docker compose -p
 bpm-second ...`), `BPM_HOST_PORT`, and `BPM_DATA_VOLUME`. Changing the volume name
 selects different saved data, so keep its existing value during normal upgrades.
 
+### Viewing access
+
+The default `BPM_VIEW_MODE=authenticated` permits anonymous access only to the
+page shell, local assets, API documentation/schema, minimal `/api/access`
+bootstrap, and `/healthz`. Detailed GETs, normalized HEAD requests, and the
+metrics stream require a valid viewing or administrator bearer token. The browser
+does not start detailed polling before viewing authentication.
+
+Set `BPM_VIEW_TOKEN` or `BPM_VIEW_TOKEN_FILE` for viewing, or use a configured
+administrator token for both viewing and management. Private modes refuse startup
+without either credential. Viewing and administrator tokens must differ when both
+are configured, so a viewing credential cannot authorize management actions.
+
+`BPM_VIEW_MODE=redacted` also makes `/api/view/aggregate` and the coarse dashboard
+available anonymously. It exposes only cached availability and fixed
+network/direction count ranges of five (including 0-4), with no exact total,
+individual peer data, locations, providers, paths, credentials, timestamps, or raw
+errors. Counts over time can still reveal changes; this is not an anonymity guarantee.
+`BPM_VIEW_MODE=public` explicitly permits the complete anonymous monitoring view.
+
+The browser keeps credentials only in memory. Locking or an authentication failure
+cancels detailed reads, clears private rendered data, and returns to a fresh access
+screen. Reloads and protected back/forward-cache navigation clear credentials.
+Protected responses use private/no-store caching and vary by Authorization.
+
+Tokens are shared operator-configured secrets, with no account/session system or
+expiry. Change the configured token or mounted file, then recreate the service to
+revoke it. Restart closes existing streams; locking one tab does not revoke the
+server credential. Configure HTTPS at your reverse proxy and prevent clients from
+bypassing that transport boundary.
+
+When upgrading an implicit public configuration, configure a viewing/admin token
+before recreating the service, or explicitly select `BPM_VIEW_MODE=public`.
+The new authenticated default applies even when older deployments have no viewing
+mode configured. Missing new outbound preferences likewise default to denied.
+
 ### Admin token and read-only mode
 
-With `BPM_ADMIN_TOKEN` unset or empty, all management API requests are rejected
-with HTTP 403 and the dashboard remains available for viewing. This applies even
+With both administrator token sources unset or empty, all management API requests
+are rejected with HTTP 403. Viewing follows the selected mode and may use a
+separate viewing token. This applies even
 on a trusted network or behind an authenticated proxy.
 
 Set `BPM_ADMIN_TOKEN` in your local `.env` to the token you want to use, for example:
@@ -268,11 +310,18 @@ administrator credential, with no individual accounts or per-user permissions.
 The configuration endpoint reports settings without exposing RPC credentials:
 
 ```bash
-curl http://HOST_IP:58333/api/config
+curl -H 'Authorization: Bearer YOUR_VIEW_TOKEN' http://HOST_IP:58333/api/config
 ```
 
 Replace `HOST_IP` and the port with your deployment's address. The response
 includes the RPC endpoint, server settings, GeoIP settings, and installed build.
+`/api/config/outbound` reports saved preferences and the effective optional-request
+policy, including whether deployment configuration prohibits an override.
+
+Mounted viewing and administrator files use the same readability requirements as
+the RPC password below. Set only one direct/file source for each token. Files must
+contain one non-empty bearer token, optionally followed by a final newline; token
+values and secret-file paths are never returned by the monitoring APIs.
 
 ## Compose secrets
 

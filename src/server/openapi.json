@@ -1107,7 +1107,7 @@
             "$ref": "#/components/responses/ViewRateLimited"
           }
         },
-        "description": "Runtime configuration without credentials. build.version is the release tag or dev; build.revision is the exact source commit. build.updates contains cached release update status.\n\nAnonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management.",
+        "description": "Runtime configuration without credentials. build.version is the release tag or dev; build.revision is the exact source commit. build.updates contains cached release update status.\n\nAnonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management.\nIncludes saved and effective optional-server-request policy under outbound.",
         "security": [
           {},
           {
@@ -3648,6 +3648,9 @@
             "required": [
               "data_dir"
             ]
+          },
+          "outbound": {
+            "$ref": "#/components/schemas/OutboundPolicyResponse"
           }
         },
         "required": [
@@ -3657,7 +3660,8 @@
           "geoip",
           "build",
           "repository",
-          "data"
+          "data",
+          "outbound"
         ]
       },
       "HealthResponse": {

@@ -382,6 +382,7 @@ export interface paths {
          * @description Runtime configuration without credentials. build.version is the release tag or dev; build.revision is the exact source commit. build.updates contains cached release update status.
          *
          *     Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management.
+         *     Includes saved and effective optional-server-request policy under outbound.
          */
         get: operations["config_api_config_get"];
         put?: never;
@@ -1114,6 +1115,7 @@ export interface components {
             data: {
                 data_dir: string;
             };
+            outbound: components["schemas"]["OutboundPolicyResponse"];
         };
         HealthResponse: {
             /** @constant */
