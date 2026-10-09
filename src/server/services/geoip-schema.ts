@@ -1,4 +1,11 @@
+import { geoSqlStringSizePredicate } from './geoip-limits.ts';
+
 export const GEO_COLUMNS = ['ip', 'continent', 'continentCode', 'country', 'countryCode', 'region', 'regionName', 'city', 'district', 'zip', 'lat', 'lon', 'timezone', 'utc_offset', 'currency', 'isp', 'org', 'as_info', 'asname', 'mobile', 'proxy', 'hosting', 'last_updated'];
+// SQLite evaluates byte lengths before projecting large fields into JavaScript.
+const sizePredicate = (table: string) => GEO_COLUMNS.map(column => geoSqlStringSizePredicate(`${table}.${column}`)).join(' AND ');
+export const GEO_RECORD_SIZE_PREDICATE = sizePredicate('g');
+export const GEO_STORED_SIZE_PREDICATE = sizePredicate('geo_cache');
+export const GEO_OVERSIZED_RECORD_QUERY = `SELECT 1 AS oversized FROM geo_cache g WHERE g.ip = ? AND NOT (${GEO_RECORD_SIZE_PREDICATE})`;
 export const GEO_SCHEMA = `CREATE TABLE IF NOT EXISTS geo_cache (
     ip TEXT PRIMARY KEY, continent TEXT, continentCode TEXT, country TEXT, countryCode TEXT,
     region TEXT, regionName TEXT, city TEXT, district TEXT, zip TEXT, lat REAL, lon REAL,
@@ -18,6 +25,6 @@ export const GEO_PROVENANCE_SCHEMA = `CREATE TABLE IF NOT EXISTS geo_provenance 
 );`;
 export const GEO_RECORD_QUERY = `SELECT g.*, COALESCE(p.source, 'unknown') AS geo_source
     FROM geo_cache g LEFT JOIN geo_provenance p
-    ON p.ip = g.ip AND p.observed_at IS g.last_updated WHERE g.ip = ?`;
+    ON p.ip = g.ip AND p.observed_at IS g.last_updated WHERE g.ip = ? AND ${GEO_RECORD_SIZE_PREDICATE}`;
 export const GEO_PROVENANCE_WRITE = `INSERT INTO geo_provenance (ip, source, observed_at) VALUES (?, ?, ?)
     ON CONFLICT(ip) DO UPDATE SET source = excluded.source, observed_at = excluded.observed_at`;

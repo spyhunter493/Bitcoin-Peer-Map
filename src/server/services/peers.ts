@@ -8,6 +8,8 @@ import { parsePeerInfo, parseNodeAddresses, type PeerInfo } from '../rpc-types.t
 import { PeerBandwidthRates, PEER_SNAPSHOT_STALE_AFTER_SECONDS } from './peer-rates.ts';
 import { createFailureReporter, createLogger } from '../logging.ts';
 import type { ValidGeoData } from './geoip-validation.ts';
+import { hasOversizedGeoStrings } from './geoip-limits.ts';
+import { readGeoipJson } from './geoip-response.ts';
 
 const log = createLogger('peers');
 
@@ -192,12 +194,23 @@ export class PeerService {
         } catch { if (!this.signal.aborted) this.knownAddressesAvailable = false; /* Retain optional metadata without making current claims. */ }
     }
     cachedGeo(host: string): CachedGeoData | null {
-        const entry = this.geoCache.get(host);
+        let entry = this.geoCache.get(host);
+        if (entry && hasOversizedGeoStrings(entry.data)) {
+            this.rejectOversizedGeo(host);
+            entry = this.geoCache.get(host);
+        }
         if (!entry || (entry.data.status !== 'ok' && !entry.pendingSave &&
             (entry.generation !== this.geoDatabase.generation || (entry.retryAt !== null && performance.now() >= entry.retryAt)))) return null;
         return entry.data;
     }
     private current(owner: GeoHost) { return !this.signal.aborted && !owner.controller.signal.aborted && this.hosts.get(owner.host) === owner; }
+    private rejectOversizedGeo(host: string) {
+        const previous = this.geoCache.get(host);
+        // An independently validated API replacement remains usable while its write retries.
+        if (previous?.pendingSave && isValidGeoData(previous.pendingSave.data) && isValidGeoData(previous.data)) return;
+        this.geoCache.set(host, { data: emptyGeo('unavailable'), source: null, observedAt: null,
+            generation: this.geoDatabase.generation, retryAt: previous?.data.status === 'unavailable' ? previous.retryAt : null, refreshRetryAt: null });
+    }
     private hydrate(owner: GeoHost, force = false) {
         if (!this.current(owner) || !isPublicAddress(owner.network, owner.host)) return;
         if (!force && owner.generation === this.geoDatabase.generation && performance.now() < owner.readRetryAt) return;
@@ -205,6 +218,7 @@ export class PeerService {
         owner.generation = this.geoDatabase.generation;
         owner.readFailed = result.status === 'error';
         owner.readRetryAt = result.status === 'hit' ? Infinity : performance.now() + 60_000;
+        if (result.status === 'rejected' || (result.status === 'hit' && hasOversizedGeoStrings(result.row))) this.rejectOversizedGeo(owner.host);
         if (result.status === 'hit' && isValidGeoData(result.row)) this.cacheGeo(owner, result.row, true);
         const retained = this.geoCache.get(owner.host);
         if (retained) retained.generation = this.geoDatabase.generation;
@@ -228,19 +242,29 @@ export class PeerService {
     async fetchGeo(host: string, signal = this.signal): Promise<Data | null> {
         if (signal.aborted || !this.connectivity.providerReady('geoip')) return null;
         if (this.lookup) return this.lookup(host, signal);
+        const requestSignal = AbortSignal.any([signal, AbortSignal.timeout(10_000)]);
         let response: Response | undefined;
         try {
-            response = await this.fetcher(`http://ip-api.com/json/${encodeURIComponent(host)}?fields=${GEO_API_FIELDS}`, { signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]) });
-            if (!response.ok) { await response.body?.cancel(); throw new Error(`HTTP ${response.status}`); }
-            const data: unknown = await response.json();
-            if (signal.aborted) return null;
+            response = await this.fetcher(`http://ip-api.com/json/${encodeURIComponent(host)}?fields=${GEO_API_FIELDS}`, { signal: requestSignal, redirect: 'manual' });
+            requestSignal.throwIfAborted();
+            if (!response.ok) throw new Error(`GeoIP HTTP ${response.status}`);
+            const data = await readGeoipJson(response, requestSignal);
+            requestSignal.throwIfAborted();
+            if (object(data) && hasOversizedGeoStrings(data)) throw new Error('GeoIP record exceeds the string size limit');
             if (object(data) && data.status === 'fail' && (data.message === undefined || typeof data.message === 'string')) {
                 // A rejected address is a lookup miss, not a provider outage.
                 this.connectivity.providerSuccess('geoip', response); return null;
             }
             if (!object(data) || data.status !== 'success' || !isValidGeoData(data)) throw new Error('GeoIP response did not include valid geolocation data');
             this.connectivity.providerSuccess('geoip', response); return data;
-        } catch (error) { if (!signal.aborted) this.connectivity.providerFailure('geoip', error, response); }
+        } catch {
+            if (!signal.aborted) {
+                const message = response && !response.ok ? `GeoIP HTTP ${response.status}` : 'GeoIP request failed or returned invalid data';
+                this.connectivity.providerFailure('geoip', new Error(message), response);
+            }
+        } finally {
+            if (response && !response.bodyUsed) void response.body?.cancel().catch(() => {});
+        }
         return null;
     }
     resolveGeo(host: string, network: string): Promise<boolean> {
@@ -306,6 +330,7 @@ export class PeerService {
     }
     private cacheGeo(owner: GeoHost, data: ValidGeoData | null, fromDatabase: boolean, observation?: PendingGeoSave) {
         if (!this.current(owner)) return;
+        if (data && hasOversizedGeoStrings(data)) { this.rejectOversizedGeo(owner.host); return; }
         const previous = this.geoCache.get(owner.host);
         if (!data && previous?.data.status === 'ok') return;
         const source: GeoMetadata['source'] = !data ? null : !fromDatabase ? 'ip_api' :

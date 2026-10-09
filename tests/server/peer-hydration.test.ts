@@ -320,7 +320,10 @@ test('the provider retains its ten-second timeout and a timeout is an attempted 
     });
     f.cleanup.push(() => timeout.abort());
     const timeouts: number[] = [];
-    t.mock.method(AbortSignal, 'timeout', (milliseconds: number) => { timeouts.push(milliseconds); return timeout.signal; });
+    t.mock.method(AbortSignal, 'timeout', (milliseconds: number) => {
+        timeouts.push(milliseconds);
+        return timeouts.length === 1 ? timeout.signal : new AbortController().signal;
+    });
     f.rpc.values.getpeerinfo = [peer('8.8.8.8'), peer('1.1.1.1', 2)]; await f.peers.refreshOnce();
     const first = f.peers.resolveGeo('8.8.8.8', 'ipv4'); await flush(); assert.deepEqual(timeouts, [10_000]);
     await f.advance(10_000); timeout.abort(); await first; assert.equal(f.connectivity.apiConsecutiveFailures, 1);

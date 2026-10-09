@@ -405,11 +405,28 @@ to the setters. Dataset validation streams rows inside the merge worker, skips
 invalid records, and reports `added_rows`, `updated_rows`, and `skipped_rows`.
 An import with no valid records fails without changes.
 
+GeoIP lookups accept at most 65,536 decoded response bytes, counted while reading
+the stream before JSON parsing; compressed and chunked responses use the same
+limit. Each top-level string may contain at most 4,096 UTF-8 bytes, checked before
+trimming or coordinate conversion. Both lookup paths, API saves, cache hydration,
+and dataset imports apply these bounds. Oversized responses are cancelled and
+reported through the existing sanitized provider failure/backoff path; a failed
+lookup retains a previously valid cached location.
+
+An oversized stored record is rejected as a whole before its large fields enter
+JavaScript. Its location is unavailable until a valid bounded replacement arrives,
+and replacement lookup still follows the saved privacy settings. Rejected records
+stay on disk until replacement; there is no bulk deletion or schema migration.
+Both API saves and dataset imports can replace a size-rejected stored row despite
+its timestamp, updating provenance in the same transaction. Imports skip oversized
+incoming rows and report them in `skipped_rows`.
+
 API location saves return explicit saved, superseded, disabled, cancelled, or
 failed outcomes. SQLite writer contention retries asynchronously from 50 ms to
 500 ms for at most 65 seconds; individual synchronous attempts have zero busy
-timeout. Observation timestamps are captured once, and newer stored records win,
-including ties. Failed payloads remain in the active-peer cache and retry after
+timeout. Observation timestamps are captured once; valid bounded stored records
+with newer or equal timestamps win. Other corrupt-record handling is unchanged.
+Failed payloads remain in the active-peer cache and retry after
 60 seconds through the existing serial resolver, without another provider call.
 Dataset generation changes preserve those payloads. Shutdown cancels retry waits
 and drains the resolver before closing SQLite; pending memory-only payloads are
