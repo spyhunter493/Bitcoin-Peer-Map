@@ -41,14 +41,18 @@ test('application serves health, configuration without credentials, and revision
     assert.match(html, /<script type="module" src="\/static\/v\/abcdef0123456789\/js\/app.js"/);
     const header = html.match(/<header id="topbar">([\s\S]*?)<\/header>/)![1];
     assert.doesNotMatch(header, /abcdef0|View commit|\/commit\//);
-    assert.match(html, /class="revision build-version"[^>]*>dev<\/span>/);
+    const versionBadge = header.match(/<a\b[^>]*class="revision build-version"[^>]*>dev<\/a>/);
+    assert.ok(versionBadge);
+    assert.match(versionBadge[0], /href="https:\/\/github\.com\/spyhunter493\/Bitcoin-Peer-Map"/);
+    assert.match(versionBadge[0], /target="_blank"/);
+    assert.match(versionBadge[0], /rel="noopener"/);
     assert.match(html, /id="revision-update"[^>]*hidden/);
     assert.equal(html.includes('{{'), false);
     assert.equal((html.match(/<script/g) || []).length, 1);
 });
 test('header displays only the release version while internal source and cache metadata stay exact', async t => {
     const { get } = await application(t, 'v1.3.0');
-    assert.match(await (await get('/')).text(), /class="revision build-version"[^>]*>v1\.3\.0<\/span>/);
+    assert.match(await (await get('/')).text(), /<a\b[^>]*class="revision build-version"[^>]*>v1\.3\.0<\/a>/);
     const config = await (await get('/api/config')).json();
     assert.equal(config.build.version, 'v1.3.0');
     assert.equal(config.build.revision, 'abcdef0123456789');
