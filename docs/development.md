@@ -566,15 +566,34 @@ ghcr.io/spyhunter493/bitcoin-peer-map:latest
 ghcr.io/spyhunter493/bitcoin-peer-map:sha-<full-release-commit>
 ```
 
-Publication is serialized without cancelling an active registry push. Immediately
-before promotion, the workflow reads the existing GHCR `latest` version and
-compares stable semantic versions. It updates `latest` only for a higher version;
-an older maintenance release still receives its version and SHA tags, and equal
-versions leave `latest` unchanged. A confirmed missing manifest permits initial
+Publication is serialized without cancelling an active registry push. Its shared
+`release-publish` concurrency group uses `queue: max` and
+`cancel-in-progress: false`, retaining up to 100 pending publication or recovery
+runs instead of replacing the previous pending run. Additional runs beyond that
+limit are cancelled by GitHub, as described in the
+[GitHub concurrency documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#concurrency).
+Immediately before promotion, the workflow reads the existing GHCR `latest`
+version and compares stable semantic versions. It updates `latest` only for a
+higher version; an older maintenance release still receives its version and SHA
+tags, and equal versions leave `latest` unchanged. A confirmed missing manifest permits initial
 promotion. Authentication, network, malformed metadata, and other registry
 failures stop promotion rather than treating the current image as absent. The
 Actions summary records both tested architectures, the index digest, and why
 `latest` was promoted or skipped.
+
+For local workflow validation, parse the original release YAML and verify its
+concurrency mapping is exactly `group: release-publish`, `queue: max`, and
+`cancel-in-progress: false`. Actionlint 1.7.12 does not yet recognize `queue`;
+[upstream support](https://github.com/rhysd/actionlint/pull/654) is pending.
+Run it against the original release workflow, filtering only this diagnostic:
+
+```sh
+-ignore '^unexpected key "queue" for "concurrency" section\. expected one of "cancel-in-progress", "group"$'
+```
+
+All other diagnostics must still pass. Lint the CI workflow without that filter,
+and record the exception in PR validation. Remove the filter once the installed
+actionlint supports this GitHub setting.
 
 Never move/reuse published version tags or repurpose SHA tags. The workflow
 rejects existing tags with the wrong release version or source commit, or version
