@@ -477,7 +477,16 @@ The [release workflow](../.github/workflows/release.yml) uses
 [`release: published`](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#release).
 This supports publishing a reviewed draft in the GitHub UI. Only published stable
 releases in the canonical repository can publish; drafts and prereleases are
-excluded. There is no push, PR, tag-push, or manual-dispatch publish trigger.
+excluded. There is no push, PR, or tag-push publish trigger. A guarded manual
+dispatch can recover an existing published stable release; it does not create a
+release. Dispatch **Release** from `main` with its existing tag. The workflow
+rejects missing releases, drafts, prereleases, invalid tags, and commits outside
+`main`, and verifies a recorded full source SHA when one is available.
+
+The publisher runs on a native ARM runner because Node's TypeScript parser can
+crash under ARM64 emulation on x86 runners. It still builds one multi-platform
+index and runs the full smoke tests for both architectures; AMD64 runs under
+emulation. No architecture checks are skipped.
 
 1. Ensure the intended changes are merged into `main` with passing required PR
    checks. Merge this workflow implementation before using the release process.
@@ -507,7 +516,10 @@ excluded. There is no push, PR, tag-push, or manual-dispatch publish trigger.
    only the publish job has `packages: write`.
 6. Wait for **Release → Publish container image** to succeed before announcing
    the image or deploying it. If a build fails, fix the cause and rerun the failed
-   workflow from Actions without moving the published tag. If publication stopped
+   workflow from Actions without moving the published tag. If the original
+   workflow itself needs a fix, merge the fix and manually dispatch the current
+   **Release** workflow from `main` with the same published tag. It checks out the
+   original release source and retains its image version/revision. If publication stopped
    after either immutable image tag was written, the rerun skips rebuilding and
    pulls the original index by digest for both architectures. It verifies the
    release metadata and runs both smoke tests again before completing missing

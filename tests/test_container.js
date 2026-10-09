@@ -8,7 +8,10 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { runMountedSecretsSmoke } from './deployment/mounted-secrets-smoke.js';
 
 const execute = promisify(execFile);
-const docker = async (...args) => (await execute('docker', args, { timeout: 60000 })).stdout.trim();
+const docker = async (...args) => {
+    const result = await execute('docker', args, { timeout: 60000 });
+    return (result.stdout + (args[0] === 'logs' ? result.stderr : '')).trim();
+};
 const image = process.env.BPM_TEST_IMAGE || 'bitcoin-peer-map:test';
 const platform = process.env.BPM_TEST_PLATFORM;
 if (platform && !['linux/amd64', 'linux/arm64'].includes(platform)) throw new Error('BPM_TEST_PLATFORM must be linux/amd64 or linux/arm64');
@@ -54,6 +57,8 @@ async function start() {
         try { if ((await get('/healthz')).status === 'ok') return; } catch { /* Wait for startup. */ }
         await delay(100);
     }
+    console.error('Readiness timeout:', { image, platform, name, port, rpcPort });
+    console.error('Container state:', await docker('inspect', '--format', '{{json .State}}', name).catch(error => error.message));
     throw new Error('Container did not become ready');
 }
 async function stop() {
