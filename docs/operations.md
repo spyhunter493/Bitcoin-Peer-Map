@@ -122,6 +122,9 @@ A separate HEAD request to Google runs at startup and every 30 seconds while
 online, with two-second retries while offline. Any HTTP response proves
 reachability. Failed probes turn the status yellow, then red after ten seconds;
 four successful probes restore green.
+Brief yellow/green transitions are logged only at `debug`. Entering red logs one
+warning, and recovery from red logs one info message; repeated probes in the
+same state do not add transition messages.
 
 GeoIP honors `Retry-After` seconds or HTTP dates, plus `X-Rl: 0` and `X-Ttl`, including on
 successful responses, as described by [ip-api](https://ip-api.com/docs/api:json#usage_limits).

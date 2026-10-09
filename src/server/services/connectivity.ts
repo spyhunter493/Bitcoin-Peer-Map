@@ -50,8 +50,14 @@ export class ConnectivityService {
         this.unsubscribe = outbound?.subscribe((feature, allowed) => { if (feature === 'probe' && allowed && this.checkingRequested) this.ensureChecker(); }) ?? (() => {});
     }
     private setState(state: ConnectivityStatus['internet_state']) {
-        if (state !== this.internetState) log[state === 'green' ? 'info' : 'warn'](`Internet state changed from ${this.internetState} to ${state}`);
+        if (state === this.internetState) return;
+        const previous = this.internetState;
         this.internetState = state;
+        const message = `Internet state changed from ${previous} to ${state}`;
+        // Brief probe failures stay visible in the dashboard without filling normal logs.
+        if (state === 'red') log.warn(message);
+        else if (state === 'green' && previous === 'red') log.info(message);
+        else log.debug(message);
     }
     private updateProvider(provider: Provider) {
         const current = this.providers[provider], windows = this.retryWindows[provider], now = nowSeconds();

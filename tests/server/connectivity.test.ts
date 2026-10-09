@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { ConnectivityService } from '../../src/server/services/connectivity.ts';
 import { PeerService } from '../../src/server/services/peers.ts';
 import { GeoDatabase } from '../../src/server/services/geoip.ts';
+import { LOG_LEVELS, configureLogging } from '../../src/server/logging.ts';
 import { FakeRpc, temporaryDirectory, flush, deferred } from './helpers.ts';
 import type { TestContext } from 'node:test';
 
@@ -20,6 +21,13 @@ function clock(t: TestContext) {
     t.mock.method(Date, 'now', () => time);
     t.mock.method(performance, 'now', () => time);
     return (milliseconds: number) => { time += milliseconds; };
+}
+function captureLogs(t: TestContext, level: 'info' | 'debug' = 'info') {
+    const lines: { level: string; message: string }[] = [];
+    for (const severity of LOG_LEVELS) t.mock.method(console, severity, (message: string) => { lines.push({ level: severity, message }); });
+    configureLogging({ level });
+    t.after(() => configureLogging({ level: 'info' }));
+    return lines;
 }
 for (const failure of ['transport', 'outage', 'malformed'] as const) {
     test(`GeoIP ${failure} leaves internet status alone and recovers independently`, async t => {
@@ -118,6 +126,88 @@ test('internet probes run independently, recover after four successes, and stop 
     assert.equal(connectivity.snapshot().providers.geoip.state, 'unknown');
     await connectivity.stop(); const stoppedCalls = calls;
     t.mock.timers.tick(60_000); await flush(); assert.equal(calls, stoppedCalls);
+});
+test('brief internet probe failures remain quiet at the default info log level', async t => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1_000_000 });
+    const lines = captureLogs(t);
+    let available = true;
+    const { connectivity } = setup(t, async () => {
+        if (!available) throw new Error('brief probe failure');
+        return new Response(null, { status: 204 });
+    });
+    connectivity.ensureChecker(); await flush();
+    for (let episode = 0; episode < 2; episode++) {
+        available = false; t.mock.timers.tick(30_000); await flush();
+        assert.equal(connectivity.snapshot().internet_state, 'yellow');
+        assert.equal(lines.length, 0, 'a yellow transition should remain below the info threshold');
+        available = true;
+        for (let i = 0; i < 3; i++) {
+            t.mock.timers.tick(2000); await flush();
+            assert.equal(connectivity.snapshot().internet_state, 'yellow');
+        }
+        t.mock.timers.tick(2000); await flush();
+        assert.equal(connectivity.snapshot().internet_state, 'green');
+        assert.equal(lines.length, 0, 'recovery from yellow should remain below the info threshold');
+    }
+});
+test('debug logging preserves brief internet state transitions without repeated same-state messages', async t => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1_000_000 });
+    const lines = captureLogs(t, 'debug');
+    let available = true;
+    const { connectivity } = setup(t, async () => {
+        if (!available) throw new Error('brief probe failure');
+        return new Response(null, { status: 204 });
+    });
+    connectivity.ensureChecker(); await flush();
+    available = false; t.mock.timers.tick(30_000); await flush();
+    assert.equal(connectivity.snapshot().internet_state, 'yellow');
+    assert.equal(lines.length, 1);
+    assert.equal(lines[0].level, 'debug');
+    assert.match(lines[0].message, /DEBUG \[connectivity\] Internet state changed from green to yellow$/);
+    t.mock.timers.tick(2000); await flush();
+    assert.equal(connectivity.snapshot().internet_state, 'yellow');
+    assert.equal(lines.length, 1, 'another failed yellow probe should not repeat the transition');
+    available = true;
+    for (let i = 0; i < 4; i++) { t.mock.timers.tick(2000); await flush(); }
+    assert.equal(connectivity.snapshot().internet_state, 'green');
+    assert.equal(lines.length, 2);
+    assert.equal(lines[1].level, 'debug');
+    assert.match(lines[1].message, /DEBUG \[connectivity\] Internet state changed from yellow to green$/);
+    t.mock.timers.tick(30_000); await flush();
+    assert.equal(lines.length, 2, 'a successful green probe should not repeat the transition');
+});
+test('sustained internet failures warn once after ten seconds and log one recovery after four successes', async t => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1_000_000 });
+    const lines = captureLogs(t);
+    let available = true;
+    const { connectivity } = setup(t, async () => {
+        if (!available) throw new Error('sustained probe failure');
+        return new Response(null, { status: 204 });
+    });
+    connectivity.ensureChecker(); await flush();
+    available = false; t.mock.timers.tick(30_000); await flush();
+    for (let i = 0; i < 4; i++) { t.mock.timers.tick(2000); await flush(); }
+    assert.equal(connectivity.snapshot().internet_state, 'yellow');
+    assert.equal(lines.length, 0, 'failures before ten seconds should remain quiet');
+    t.mock.timers.tick(2000); await flush();
+    assert.equal(connectivity.snapshot().internet_state, 'red');
+    assert.equal(lines.length, 1);
+    assert.equal(lines[0].level, 'warn');
+    assert.match(lines[0].message, /WARN \[connectivity\] Internet state changed from yellow to red$/);
+    for (let i = 0; i < 5; i++) { t.mock.timers.tick(2000); await flush(); }
+    assert.equal(connectivity.snapshot().internet_state, 'red');
+    assert.equal(lines.length, 1, 'continued failed red probes should not repeat the warning');
+    available = true;
+    for (let i = 0; i < 3; i++) { t.mock.timers.tick(2000); await flush(); }
+    assert.equal(connectivity.snapshot().internet_state, 'red');
+    assert.equal(lines.length, 1, 'recovery still requires four consecutive successful probes');
+    t.mock.timers.tick(2000); await flush();
+    assert.equal(connectivity.snapshot().internet_state, 'green');
+    assert.equal(lines.length, 2);
+    assert.equal(lines[1].level, 'info');
+    assert.match(lines[1].message, /INFO \[connectivity\] Internet state changed from red to green$/);
+    for (let i = 0; i < 2; i++) { t.mock.timers.tick(30_000); await flush(); }
+    assert.equal(lines.length, 2, 'continued successful green probes should not repeat recovery');
 });
 test('shutdown does not count cancelled provider requests as failures', async t => {
     const { connectivity, peers } = setup(t, async (_url, options) => {
