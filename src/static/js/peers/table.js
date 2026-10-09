@@ -78,7 +78,9 @@ function create(options) {
         { key: 'isp', label: 'ISP', get: (p) => p.isp || '—', full: null, vis: true, w: 110 },
         { key: 'ping_ms', label: 'Ping', get: (p) => fmtPing(p.ping_ms), full: null, vis: true, w: 50 },
         { key: 'bytessent_fmt', label: 'Sent', get: (p) => p.bytessent_fmt || '—', full: null, vis: true, w: 60 },
+        { key: 'tx_bps', label: 'Send rate', get: (p) => BPMFormat.fmtBps(p.tx_bps), full: null, vis: true, w: 96 },
         { key: 'bytesrecv_fmt', label: 'Recv', get: (p) => p.bytesrecv_fmt || '—', full: null, vis: true, w: 60 },
+        { key: 'rx_bps', label: 'Recv rate', get: (p) => BPMFormat.fmtBps(p.rx_bps), full: null, vis: true, w: 96 },
         { key: 'in_addrman', label: 'Addrman', get: (p) => addrmanLabel(p.addrman_status), full: null, vis: true, w: 100 },
         // Advanced columns (hidden by default)
         {
@@ -130,6 +132,12 @@ function create(options) {
     /** @type {Set<string>} */
     const TABLE_COLUMN_KEYS = new Set(COLUMNS.map((c) => c.key));
 
+    /** Keep rate labels, sort arrows and units readable in narrow tables.
+     * @param {string} key @param {number} [fallback] */
+    function minimumColumnWidth(key, fallback = 30) {
+        return key === 'tx_bps' || key === 'rx_bps' ? 96 : fallback;
+    }
+
     /**
      * @param {unknown} columns
      */
@@ -155,7 +163,7 @@ function create(options) {
         for (const [key, rawWidth] of Object.entries(widths)) {
             if (!TABLE_COLUMN_KEYS.has(key)) continue;
             const width = Number(rawWidth);
-            if (Number.isFinite(width)) normalized[key] = Math.round(clamp(width, 30, 400));
+            if (Number.isFinite(width)) normalized[key] = Math.round(clamp(width, minimumColumnWidth(key), 400));
         }
         return normalized;
     }
@@ -316,12 +324,30 @@ function create(options) {
             // Scale proportionally to fill available width
             const totalNatural = naturalWidths.reduce((s, w) => s + w, 0);
             const scale = totalNatural > 0 ? Math.max(availW / totalNatural, 0.5) : 1;
-
-            for (const width of naturalWidths) widths.push(Math.round(width * scale));
+            let rateWidth = 0, otherNatural = 0, rateFloorBinds = false;
+            const rateWidths = naturalWidths.map((width, index) => {
+                const minimum = minimumColumnWidth(visibleColumns[index], 0);
+                if (!minimum) { otherNatural += width; return 0; }
+                const scaled = Math.round(width * scale);
+                const readable = Math.max(minimum, scaled);
+                rateWidth += readable;
+                if (readable > scaled) rateFloorBinds = true;
+                return readable;
+            });
+            // Reserve readable rates before sizing the other columns. Narrow
+            // tables keep the existing half-size floor and scroll inside the panel.
+            const otherScale = rateFloorBinds && otherNatural > 0
+                ? Math.max((availW - rateWidth) / otherNatural, 0.5) : scale;
+            naturalWidths.forEach((width, index) => {
+                const scaled = rateFloorBinds && otherScale > 0.5
+                    ? Math.max(Math.round(width * 0.5), Math.floor(width * otherScale))
+                    : Math.round(width * otherScale);
+                widths.push(rateWidths[index] || scaled);
+            });
         } else {
             for (const key of visibleColumns) {
                 const col = COLUMNS.find((c) => c.key === key);
-                widths.push(userColumnWidths[key] || (col ? col.w : 80));
+                widths.push(Math.max(minimumColumnWidth(key, 0), userColumnWidths[key] || (col ? col.w : 80)));
             }
         }
         widths.push(actionsWidth);
@@ -576,7 +602,7 @@ function create(options) {
             if (!resizeState) return;
             resizingColumn = true; // flag to suppress subsequent sort click
             const delta = me.clientX - resizeState.startX;
-            const newW = Math.max(30, resizeState.startW + delta);
+            const newW = Math.max(minimumColumnWidth(resizeState.colKey), resizeState.startW + delta);
             if (autoFitColumns) {
                 autoFitColumns = false;
                 const ths = queryAll('th[data-sort]', theadEl);

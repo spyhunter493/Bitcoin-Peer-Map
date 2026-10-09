@@ -34,6 +34,26 @@ function fmtBytes(bytes) {
     return (bytes / 1073741824).toFixed(2) + ' GB';
 }
 
+/** @param {unknown} value @returns {value is number} */
+function isMeasuredRate(value) {
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+/** @param {unknown} bytesPerSecond */
+function fmtBps(bytesPerSecond) {
+    if (!isMeasuredRate(bytesPerSecond)) return '\u2014';
+    if (bytesPerSecond === 0) return '0 B/s';
+    if (bytesPerSecond < 0.1) return '<0.1 B/s';
+    const units = ['B/s', 'KB/s', 'MB/s', 'GB/s', 'TB/s'];
+    let unit = 0, value = bytesPerSecond;
+    while (value >= 1024 && unit < units.length - 1) {
+        value /= 1024;
+        unit++;
+    }
+    const text = unit === 0 ? String(Number(value.toFixed(1))) : value.toFixed(1);
+    return text + ' ' + units[unit];
+}
+
 /**
  * @param {number | null | undefined} seconds
  */
@@ -81,6 +101,8 @@ function serviceHover(services) {
         .join('\n');
 }
 export { fmtBytes };
+export { fmtBps };
+export { isMeasuredRate };
 export { fmtBytesShort };
 export { fmtDuration };
 export { serviceAbbrev };

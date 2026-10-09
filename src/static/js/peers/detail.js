@@ -160,7 +160,9 @@ function renderPeerDetails(peer, options) {
         peer.last_transaction ? distributionData.fmtDuration(nowSeconds - peer.last_transaction) + ' ago' : '\u2014'
     );
     html += peerDetailRow('Bytes Sent', peer.bytessent_fmt || distributionData.fmtBytes(peer.bytessent));
+    html += peerDetailRow('Send rate', BPMFormat.fmtBps(peer.tx_bps));
     html += peerDetailRow('Bytes Recv', peer.bytesrecv_fmt || distributionData.fmtBytes(peer.bytesrecv));
+    html += peerDetailRow('Recv rate', BPMFormat.fmtBps(peer.rx_bps));
     html += peerDetailRow(
         'Time Offset',
         peer.timeoffset != null ? (peer.timeoffset === 0 ? '0s (synced)' : peer.timeoffset + 's') : '\u2014'

@@ -1476,10 +1476,10 @@ body.donut-focused .as-score-value.as-focused-provider {
 .peer-detail-popup {
     position: fixed;
     top: 180px;
-    left: 210px;
+    left: clamp(8px, calc(100vw - 318px), 210px);
     transform: scale(0.95);
     transform-origin: top left;
-    width: 310px;
+    width: min(310px, calc(100vw - 16px));
     max-height: min(420px, calc(100vh - 220px));
     z-index: 1200;
     background: rgba(13, 17, 23, 0.97);
@@ -1552,7 +1552,7 @@ body.donut-focused .as-score-value.as-focused-provider {
 
 /* When AS panel is open, keep popup offset from left */
 body.as-panel-open .peer-detail-popup {
-    left: 210px;
+    left: clamp(8px, calc(100vw - 318px), 210px);
 }
 .peer-detail-popup.peer-popup-previewing .peer-popup-name {
     font-style: italic;
@@ -2580,7 +2580,7 @@ body.private-net-mode .peer-popup {
 body.private-net-mode .pn-big-popup {
     display: flex !important;
     opacity: 0;
-    left: 260px;
+    left: clamp(8px, calc(100vw - 318px), 260px);
     top: 172px;
 }
 body.private-net-mode .pn-big-popup.visible {

@@ -336,6 +336,21 @@ The four P2P rate and total rows can be shown or hidden. These display choices a
 saved in your browser, and existing traffic-row preferences remain supported.
 Zoom controls stay below the visible statistics.
 
+The peer table adds **Send rate** and **Recv rate** beside the cumulative **Sent**
+and **Recv** columns. Rates are bytes per second sent to or received from that
+peer by your node, averaged between successful RPC snapshots (normally ten seconds
+apart). Sort these columns to find the peers currently using the most bandwidth.
+The same rates appear in public and private peer details, CSV downloads, and the
+JSON fields `tx_bps` and `rx_bps`.
+
+A measured idle connection shows `0 B/s`; an unavailable rate shows **—**.
+First observations, reconnections, missing or reset counters, failed polls, and
+samples more than thirty seconds apart require a new baseline. Stale or unavailable
+dashboard data clears rates while retaining peer details and cumulative totals.
+An unavailable direction does not hide a valid measurement for the other direction.
+Existing customized tables keep their chosen columns; enable rates in **Table
+Settings** or choose **Defaults** to restore the full default set.
+
 **Table Settings** (the peer-list gear) controls columns, transparency, and visible
 rows. **Show in Antarctica** switches map placeholders for private networks and
 peers without a location on or off; those peers remain in the table and network

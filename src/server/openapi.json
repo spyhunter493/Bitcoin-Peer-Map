@@ -1895,6 +1895,22 @@
           "bytesrecv": {
             "type": "number"
           },
+          "rx_bps": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "Average bytes received per second by the Bitcoin node from this peer between consecutive successful getpeerinfo observations, timed by a monotonic clock at RPC response arrival. Zero is a valid measured rate. Null means no valid baseline, a missing or reset receive counter, a changed connection identity, a failed poll, a nonpositive or greater-than-30-second observation interval, or a snapshot older than 30 seconds. Dashboard reads and GeoIP enrichment do not resample rates."
+          },
+          "tx_bps": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "Average bytes sent per second by the Bitcoin node to this peer between consecutive successful getpeerinfo observations, timed by a monotonic clock at RPC response arrival. Zero is a valid measured rate. Null means no valid baseline, a missing or reset send counter, a changed connection identity, a failed poll, a nonpositive or greater-than-30-second observation interval, or a snapshot older than 30 seconds. Dashboard reads and GeoIP enrichment do not resample rates."
+          },
           "bytessent_fmt": {
             "type": "string"
           },
@@ -2135,6 +2151,8 @@
           "subver",
           "bytessent",
           "bytesrecv",
+          "rx_bps",
+          "tx_bps",
           "bytessent_fmt",
           "bytesrecv_fmt",
           "ping_ms",

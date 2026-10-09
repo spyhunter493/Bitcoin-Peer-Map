@@ -78,7 +78,9 @@
       "timeoffset": 0,
       "addr_processed": 0,
       "addr_rate_limited": 0,
-      "permissions": []
+      "permissions": [],
+      "rx_bps": null,
+      "tx_bps": null
     },
     {
       "id": 2,
@@ -158,7 +160,9 @@
       "timeoffset": 0,
       "addr_processed": 0,
       "addr_rate_limited": 0,
-      "permissions": []
+      "permissions": [],
+      "rx_bps": null,
+      "tx_bps": null
     },
     {
       "id": 3,
@@ -238,7 +242,9 @@
       "timeoffset": 0,
       "addr_processed": 0,
       "addr_rate_limited": 0,
-      "permissions": []
+      "permissions": [],
+      "rx_bps": null,
+      "tx_bps": null
     },
     {
       "id": 4,
@@ -318,7 +324,9 @@
       "timeoffset": 0,
       "addr_processed": 0,
       "addr_rate_limited": 0,
-      "permissions": []
+      "permissions": [],
+      "rx_bps": null,
+      "tx_bps": null
     },
     {
       "id": 5,
@@ -398,7 +406,9 @@
       "timeoffset": 0,
       "addr_processed": 0,
       "addr_rate_limited": 0,
-      "permissions": []
+      "permissions": [],
+      "rx_bps": null,
+      "tx_bps": null
     },
     {
       "id": 6,
@@ -478,7 +488,9 @@
       "timeoffset": 0,
       "addr_processed": 0,
       "addr_rate_limited": 0,
-      "permissions": []
+      "permissions": [],
+      "rx_bps": null,
+      "tx_bps": null
     },
     {
       "id": 7,
@@ -558,7 +570,9 @@
       "timeoffset": 0,
       "addr_processed": 0,
       "addr_rate_limited": 0,
-      "permissions": []
+      "permissions": [],
+      "rx_bps": null,
+      "tx_bps": null
     },
     {
       "id": 8,
@@ -638,7 +652,9 @@
       "timeoffset": 0,
       "addr_processed": 0,
       "addr_rate_limited": 0,
-      "permissions": []
+      "permissions": [],
+      "rx_bps": null,
+      "tx_bps": null
     },
     {
       "id": 9,
@@ -718,7 +734,9 @@
       "timeoffset": 0,
       "addr_processed": 0,
       "addr_rate_limited": 0,
-      "permissions": []
+      "permissions": [],
+      "rx_bps": null,
+      "tx_bps": null
     },
     {
       "id": 10,
@@ -798,7 +816,9 @@
       "timeoffset": 0,
       "addr_processed": 0,
       "addr_rate_limited": 0,
-      "permissions": []
+      "permissions": [],
+      "rx_bps": null,
+      "tx_bps": null
     },
     {
       "id": 11,
@@ -878,7 +898,9 @@
       "timeoffset": 0,
       "addr_processed": 0,
       "addr_rate_limited": 0,
-      "permissions": []
+      "permissions": [],
+      "rx_bps": null,
+      "tx_bps": null
     },
     {
       "id": 12,
@@ -958,7 +980,9 @@
       "timeoffset": 0,
       "addr_processed": 0,
       "addr_rate_limited": 0,
-      "permissions": []
+      "permissions": [],
+      "rx_bps": null,
+      "tx_bps": null
     },
     {
       "id": 13,
@@ -1038,7 +1062,9 @@
       "timeoffset": 0,
       "addr_processed": 0,
       "addr_rate_limited": 0,
-      "permissions": []
+      "permissions": [],
+      "rx_bps": null,
+      "tx_bps": null
     },
     {
       "id": 14,
@@ -1118,7 +1144,9 @@
       "timeoffset": 0,
       "addr_processed": 0,
       "addr_rate_limited": 0,
-      "permissions": []
+      "permissions": [],
+      "rx_bps": null,
+      "tx_bps": null
     }
   ],
   "info": {
