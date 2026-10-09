@@ -8,6 +8,7 @@ import test from 'node:test';
 import { chromium } from 'playwright';
 import assertPeerViews from './test_peer_views.js';
 import assertPeerSearchExport from './test_peer_search_export.js';
+import assertPeerBandwidth from './test_peer_bandwidth.js';
 import assertPeerLifecycle from './test_peer_lifecycle.js';
 import assertTableDom from './test_peer_table_dom.js';
 import assertPeerAccuracy from './test_peer_accuracy.js';
@@ -921,6 +922,7 @@ const suites = [
     ['peer refresh reliability', assertPeerRefreshReliability],
     ['peer views and safe rendering', assertPeerViews],
     ['peer search and export', assertPeerSearchExport],
+    ['per-peer bandwidth rates', assertPeerBandwidth],
     ['peer lifecycle', assertPeerLifecycle],
     ['peer table DOM updates', assertTableDom],
     ['peer accuracy and coordinate sorting', assertPeerAccuracy],

@@ -31,4 +31,14 @@ const duration = { key: 'conntime_fmt', get: () => 'formatted duration' };
 assert.deepStrictEqual(ids(model.sortPeers(peers.slice(0, 3), duration, true)), [2, 1, 3]);
 assert.deepStrictEqual(ids(model.sortPeers(peers, undefined, true)), [1, 2, 3, 4]);
 assert.strictEqual(peers[0].subver, '<b>one</b>');
+for (const key of ['tx_bps', 'rx_bps']) {
+    test(`${key} sorts raw rates numerically with unavailable rates last in both directions`, () => {
+        const rates = [null, 1024, 999, undefined, 0, 0.04, -1, NaN, Infinity, '12'];
+        const records = rates.map((value, id) => ({ id, [key]: value }));
+        const column = { key, get: () => 'formatted value is not the numeric sort key' };
+        assert.deepStrictEqual(ids(model.sortPeers(records, column, true)), [4, 5, 2, 1, 0, 3, 6, 7, 8, 9]);
+        assert.deepStrictEqual(ids(model.sortPeers(records, column, false)), [1, 2, 5, 4, 0, 3, 6, 7, 8, 9]);
+        assert.deepStrictEqual(ids(records), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], 'sorting must not reorder the source snapshot');
+    });
+}
 console.log('Peer table model tests passed');

@@ -674,6 +674,10 @@ export interface components {
             subver: string;
             bytessent: number;
             bytesrecv: number;
+            /** @description Average bytes received per second by the Bitcoin node from this peer between consecutive successful getpeerinfo observations, timed by a monotonic clock at RPC response arrival. Zero is a valid measured rate. Null means no valid baseline, a missing or reset receive counter, a changed connection identity, a failed poll, a nonpositive or greater-than-30-second observation interval, or a snapshot older than 30 seconds. Dashboard reads and GeoIP enrichment do not resample rates. */
+            rx_bps: number | null;
+            /** @description Average bytes sent per second by the Bitcoin node to this peer between consecutive successful getpeerinfo observations, timed by a monotonic clock at RPC response arrival. Zero is a valid measured rate. Null means no valid baseline, a missing or reset send counter, a changed connection identity, a failed poll, a nonpositive or greater-than-30-second observation interval, or a snapshot older than 30 seconds. Dashboard reads and GeoIP enrichment do not resample rates. */
+            tx_bps: number | null;
             bytessent_fmt: string;
             bytesrecv_fmt: string;
             /** @description Measured ping in fractional milliseconds. Null means no valid measurement; measured zero is valid. */

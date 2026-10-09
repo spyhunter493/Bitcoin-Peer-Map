@@ -19,6 +19,13 @@ function create(options) {
     /** @type {number | null} */
     let receivedAt = null;
     let staleAfterSeconds = 30;
+    /** @type {import('../types').Peer[] | null} */
+    let appliedPeers = null;
+
+    /** @param {import('../types').Peer[]} peers */
+    function withoutRates(peers) {
+        return peers.map(peer => ({ ...peer, rx_bps: null, tx_bps: null }));
+    }
 
     /** @returns {import('../types').PeerDataStatus} */
     function getStatus() {
@@ -39,7 +46,13 @@ function create(options) {
 
     function renderStatus() {
         if (!active) return;
-        options.onStatus(getStatus());
+        const status = getStatus();
+        if (status.state !== 'live' && appliedPeers?.some(peer => peer.rx_bps != null || peer.tx_bps != null)) {
+            // Retain the last peer snapshot and totals, but stop presenting old rates as current.
+            appliedPeers = withoutRates(appliedPeers);
+            options.onPeers(appliedPeers);
+        }
+        options.onStatus(status);
     }
 
     function refresh() {
@@ -92,7 +105,10 @@ function create(options) {
                 } finally {
                     globalThis.clearTimeout(timeout);
                 }
-                if (active && peersToApply !== null) options.onPeers(peersToApply);
+                if (active && peersToApply !== null) {
+                    appliedPeers = getStatus().state === 'live' ? peersToApply : withoutRates(peersToApply);
+                    options.onPeers(appliedPeers);
+                }
                 renderStatus();
             })
             .finally(() => {
@@ -101,7 +117,7 @@ function create(options) {
         return pending;
     }
 
-    return Object.freeze({ refresh, getStatus, renderStatus, dispose() { active = false; requests.abort(); } });
+    return Object.freeze({ refresh, getStatus, renderStatus, dispose() { active = false; appliedPeers = null; requests.abort(); } });
 }
 
 export { create };

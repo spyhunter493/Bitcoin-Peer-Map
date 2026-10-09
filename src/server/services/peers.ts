@@ -5,6 +5,7 @@ import { setImmediate } from 'node:timers/promises';
 import { GeoDatabase, isValidGeoData } from './geoip.ts';
 import { ConnectivityService } from './connectivity.ts';
 import { parsePeerInfo, parseNodeAddresses, type PeerInfo } from '../rpc-types.ts';
+import { PeerBandwidthRates, PEER_SNAPSHOT_STALE_AFTER_SECONDS } from './peer-rates.ts';
 import { createFailureReporter, createLogger } from '../logging.ts';
 import type { ValidGeoData } from './geoip-validation.ts';
 
@@ -65,6 +66,7 @@ export class PeerService {
     private nextProviderAt = 0;
     private refreshFailures = createFailureReporter(log);
     private geoFailures = createFailureReporter(log);
+    private bandwidth = new PeerBandwidthRates();
     peers: PeerInfo[] = [];
     lastSuccessAt: number | null = null;
     lastAttemptAt: number | null = null;
@@ -101,6 +103,7 @@ export class PeerService {
         this.cancelProviderWork();
         for (const owner of this.hosts.values()) owner.controller.abort();
         this.hosts.clear(); this.activeHosts.clear(); this.geoCache.clear();
+        this.bandwidth.clear();
         this.saveJobs.clear(); this.saveQueue = [];
         await Promise.allSettled([this.startup, ...this.tasks, this.refreshTask, this.knownAddressesTask, this.providerTask, this.saveTask]);
     }
@@ -113,15 +116,20 @@ export class PeerService {
     }
     private async refreshPeers() {
         let peers: PeerInfo[];
+        let observedAt: number;
         try {
-            peers = parsePeerInfo(await this.rpc.call('getpeerinfo', [], undefined, this.signal));
+            const response = await this.rpc.call('getpeerinfo', [], undefined, this.signal);
+            observedAt = performance.now();
+            peers = parsePeerInfo(response);
         } catch (error) {
             if (this.signal.aborted) return false;
+            this.bandwidth.clear();
             this.lastAttemptAt = nowSeconds(); this.lastError = 'Could not refresh peers from the Bitcoin node';
             this.refreshFailures.failure(`Peer refresh failed: ${errorMessage(error)}`);
             return false;
         }
         if (this.signal.aborted) return false;
+        this.bandwidth.sample(peers, observedAt);
         this.peers = peers;
         this.refreshFailures.recovered('Peer refresh recovered');
         this.lastSuccessAt = nowSeconds(); this.lastAttemptAt = this.lastSuccessAt; this.lastError = null;
@@ -386,11 +394,13 @@ export class PeerService {
             connected: this.lastAttemptAt === null ? null : this.lastError === null,
             last_success_at: this.lastSuccessAt, last_attempt_at: this.lastAttemptAt,
             age_seconds: this.lastSuccessAt === null ? null : Math.max(0, nowSeconds() - this.lastSuccessAt),
-            error: this.lastError, stale_after_seconds: 30,
+            error: this.lastError, stale_after_seconds: PEER_SNAPSHOT_STALE_AFTER_SECONDS,
         } };
     }
     serializePeers(peers: PeerInfo[], observedAt: number): Peer[] {
         const serviceNames: Record<string, string> = { NETWORK: 'N', WITNESS: 'W', NETWORK_LIMITED: 'NL', P2P_V2: 'P', COMPACT_FILTERS: 'CF', BLOOM: 'B', 'BLAKE2B?': 'BL', BLAKE2B: 'BL' };
+        const rateNow = performance.now();
+        const ratesFresh = this.lastSuccessAt !== null && nowSeconds() - this.lastSuccessAt <= PEER_SNAPSHOT_STALE_AFTER_SECONDS;
         return peers.map(peer => {
             const address = peer.addr || '', network = peer.network ?? networkType(address);
             const [host, port] = splitPeerAddress(address), geo = this.cachedGeo(host);
@@ -408,10 +418,12 @@ export class PeerService {
             }
             else if (geo?.status === 'unavailable') { locationStatus = 'unavailable'; location = 'UNAVAILABLE'; }
             const services: string[] = peer.servicesnames || [];
+            const rates = ratesFresh ? this.bandwidth.get(peer, rateNow) : { rx_bps: null, tx_bps: null };
             const result: Peer = {
                 id: peer.id ?? null, network, ip: host, port, direction: peer.inbound ? 'IN' : 'OUT',
                 subver: (peer.subver || '').replaceAll('/', ''),
                 bytessent: peer.bytessent ?? 0, bytesrecv: peer.bytesrecv ?? 0,
+                ...rates,
                 bytessent_fmt: formatBytes(peer.bytessent ?? 0), bytesrecv_fmt: formatBytes(peer.bytesrecv ?? 0),
                 ping_ms: typeof peer.pingtime === 'number' && peer.pingtime >= 0 && Number.isFinite(peer.pingtime * 1000) ? peer.pingtime * 1000 : null, conntime: peer.conntime ?? 0,
                 conntime_fmt: peer.conntime ? formatDuration(Math.floor(observedAt) - peer.conntime) : '-',

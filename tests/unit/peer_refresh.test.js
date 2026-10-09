@@ -8,6 +8,61 @@ function snapshot(peers, connected, lastSuccess = 1000, age = 0) {
     } };
 }
 
+for (const failure of ['node', 'dashboard', 'delayed']) {
+    test(`peer ${failure} outage clears rates once while retaining peers and totals`, async () => {
+        let now = 0;
+        const peer = { id: 7, rx_bps: 0, tx_bps: 1024, bytesrecv: 2048, bytessent: 4096 };
+        let response = snapshot([peer], true);
+        const applied = [];
+        const client = BPMPeerRefresh.create({
+            now: () => now,
+            api: { getJson: async () => {
+                if (response instanceof Error) throw response;
+                return response;
+            } },
+            onPeers: peers => applied.push(peers), onStatus: () => {},
+        });
+        await client.refresh();
+        assert.strictEqual(applied[0][0].tx_bps, 1024);
+        if (failure === 'delayed') {
+            now = 31000;
+            client.renderStatus();
+        } else {
+            response = failure === 'node' ? snapshot([peer], false, 1000, 5) : new Error('HTTP 503');
+            await client.refresh();
+        }
+        assert.strictEqual(applied.length, 2);
+        assert.deepStrictEqual({ ...applied[1][0], rx_bps: 0, tx_bps: 1024 }, applied[0][0]);
+        assert.strictEqual(applied[1][0].rx_bps, null, 'expired measured zero also becomes unavailable');
+        assert.strictEqual(applied[1][0].tx_bps, null);
+        assert.strictEqual(peer.tx_bps, 1024, 'clearing browser rates must not mutate the API response');
+        client.renderStatus(); client.renderStatus();
+        assert.strictEqual(applied.length, 2, 'status ticks do not repeatedly replace cached peers');
+        response = snapshot([{ ...peer, rx_bps: null, tx_bps: null }], true, 1010);
+        await client.refresh();
+        assert.strictEqual(applied.at(-1)[0].tx_bps, null, 'the recovery baseline is unavailable');
+        response = snapshot([{ ...peer, rx_bps: 512, tx_bps: 2048 }], true, 1020);
+        await client.refresh();
+        assert.strictEqual(applied.at(-1)[0].rx_bps, 512);
+        assert.strictEqual(applied.at(-1)[0].tx_bps, 2048);
+        client.dispose();
+    });
+}
+
+test('an initial cached snapshot displays totals with unavailable rates', async () => {
+    const applied = [];
+    const client = BPMPeerRefresh.create({
+        api: { getJson: async () => snapshot([{ id: 8, bytessent: 2048, tx_bps: 1024, rx_bps: 512 }], false, 900, 100) },
+        onPeers: peers => applied.push(peers), onStatus: () => {},
+    });
+    await client.refresh();
+    assert.strictEqual(applied.length, 1);
+    assert.strictEqual(applied[0][0].bytessent, 2048);
+    assert.strictEqual(applied[0][0].tx_bps, null);
+    assert.strictEqual(applied[0][0].rx_bps, null);
+    client.dispose();
+});
+
 test('peer refresh', async () => {
     let now = 0;
     let response = snapshot([], null, null, null);
