@@ -3,6 +3,12 @@ name: Release
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing stable GitHub Release tag to recover
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -17,36 +23,51 @@ jobs:
     name: Publish container image
     if: >-
       github.repository == 'spyhunter493/Bitcoin-Peer-Map' &&
-      github.event_name == 'release' && github.event.action == 'published' &&
-      !github.event.release.draft && !github.event.release.prerelease
-    runs-on: ubuntu-latest
+      ((github.event_name == 'release' && github.event.action == 'published' &&
+      !github.event.release.draft && !github.event.release.prerelease) ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+    # Native ARM avoids Node's TypeScript parser failure under ARM emulation.
+    runs-on: ubuntu-24.04-arm
+    env:
+      RELEASE_VERSION: ${{ github.event.release.tag_name || inputs.tag }}
     timeout-minutes: 30
     permissions:
       contents: read
       packages: write
     steps:
-      - name: Validate release version
+      - name: Validate release version and recovery eligibility
+        id: version
         env:
-          RELEASE_VERSION: ${{ github.event.release.tag_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [[ ! "$RELEASE_VERSION" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || (( ${#RELEASE_VERSION} > 128 )); then
             echo "Release tags must use vMAJOR.MINOR.PATCH without leading zeros."
             exit 1
           fi
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            metadata="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_VERSION}")"
+            jq -e --arg tag "$RELEASE_VERSION" '.tag_name == $tag and .draft == false and .prerelease == false' <<< "$metadata" > /dev/null
+            target="$(jq -r '.target_commitish' <<< "$metadata")"
+            if [[ "$target" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "revision=$target" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "revision=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ steps.version.outputs.revision || format('refs/tags/{0}', env.RELEASE_VERSION) }}
           fetch-depth: 0
           persist-credentials: false
       - name: Verify release source
         id: source
         env:
-          RELEASE_VERSION: ${{ github.event.release.tag_name }}
+          EXPECTED_REVISION: ${{ steps.version.outputs.revision }}
         run: |
           revision="$(git rev-parse HEAD)"
           tag_revision="$(git rev-parse "refs/tags/${RELEASE_VERSION}^{commit}")"
-          if [[ "$revision" != "$GITHUB_SHA" || "$tag_revision" != "$revision" ]]; then
-            echo "The release tag must point to the exact release event commit."
+          if [[ "$tag_revision" != "$revision" || ( -n "$EXPECTED_REVISION" && "$revision" != "$EXPECTED_REVISION" ) ]]; then
+            echo "The release tag must point to the exact published release commit."
             exit 1
           fi
           git merge-base --is-ancestor "$revision" origin/main
@@ -58,7 +79,7 @@ jobs:
       - name: Find an existing verified release image
         id: existing
         env:
-          BPM_RELEASE_VERSION: ${{ github.event.release.tag_name }}
+          BPM_RELEASE_VERSION: ${{ env.RELEASE_VERSION }}
           BPM_RELEASE_REVISION: ${{ steps.source.outputs.revision }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/release-image.js --find-existing
@@ -88,7 +109,7 @@ jobs:
           push: false
           tags: bitcoin-peer-map:release-${{ github.run_id }}-${{ github.run_attempt }}
           build-args: |
-            BPM_BUILD_VERSION=${{ github.event.release.tag_name }}
+            BPM_BUILD_VERSION=${{ env.RELEASE_VERSION }}
             BPM_BUILD_REVISION=${{ steps.source.outputs.revision }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -96,7 +117,7 @@ jobs:
         env:
           BPM_RELEASE_IMAGE: ${{ steps.existing.outputs.image || format('bitcoin-peer-map:release-{0}-{1}', github.run_id, github.run_attempt) }}
           BPM_RELEASE_DIGEST: ${{ steps.existing.outputs.digest || steps.build.outputs.digest }}
-          BPM_RELEASE_VERSION: ${{ github.event.release.tag_name }}
+          BPM_RELEASE_VERSION: ${{ env.RELEASE_VERSION }}
           BPM_RELEASE_REVISION: ${{ steps.source.outputs.revision }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/release-image.js
