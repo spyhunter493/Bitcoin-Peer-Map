@@ -32,13 +32,25 @@ POST API route checks its bearer token before invoking the handler. The browser'
 shared API helper handles authentication challenges through the admin token dialog;
 all management callers should use `postJson`. See
 [admin authentication](configuration.md#admin-token-and-read-only-mode) for token
-generation, HTTPS deployment, revocation, and API responses. Viewing remains public.
+generation, HTTPS deployment, revocation, and API responses. Detailed viewing uses
+the separate [viewing access policy](configuration.md#viewing-access).
 
 Dashboard dialogs use `core/modal.js` for accessible naming, focus containment,
 stacking, Escape/backdrop dismissal, and focus restoration. Pass the dialog's
 abort signal to requests and check `isOpen()` before applying asynchronous
 results. Keep persistent controls mounted when refreshing dialog values. Peer
 details, settings panels, tooltips, and pinned lists remain nonmodal popovers.
+
+Peer actions own an abort signal and `dispose()` for their requests, dialogs,
+notifications, listeners, and delayed refreshes. Confirmed ban/disconnect actions
+use that owner signal because their confirmation dialog closes before dispatch;
+ban-list operations also use the list dialog's signal. `postJson` rejects cancelled
+results before returning data or handling an authentication challenge, even when
+a transport completes after cancellation. Every UI continuation also checks its
+owner remains active. Locking protected viewing disposes the dashboard and wipes
+private content before navigation; public BFCache suspension retains its view.
+Cancelling browser work cannot undo a node mutation already accepted by RPC. A
+later authorized read establishes its outcome; cancellation never retries it.
 
 ## Frontend component ownership
 
