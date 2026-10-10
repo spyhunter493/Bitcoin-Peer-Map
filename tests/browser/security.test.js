@@ -11,6 +11,7 @@ import assertPeerAccuracy from '../test_peer_accuracy.js';
 import assertNarrowManagementDialogs from '../test_narrow_management_dialogs.js';
 import assertPeerSearchExport from '../test_peer_search_export.js';
 import assertViewingPrivacy from '../test_viewing_privacy.js';
+import assertPersistentAuthentication from '../test_persistent_auth.js';
 import assertOutboundSettings from '../test_outbound_settings.js';
 
 for (const engine of [chromium, firefox, webkit]) {
@@ -18,6 +19,11 @@ for (const engine of [chromium, firefox, webkit]) {
         const browser = await engine.launch({ headless: true });
         t.after(() => browser.close());
         await assertViewingPrivacy(browser);
+    };
+    const persistentAuthentication = async t => {
+        const browser = await engine.launch({ headless: true });
+        t.after(() => browser.close());
+        await assertPersistentAuthentication(browser);
     };
     const outboundControls = async t => {
         const settings = fixtureSettings(), app = createApplication(settings, new FixtureRuntime(settings));
@@ -221,7 +227,8 @@ for (const engine of [chromium, firefox, webkit]) {
         // The longest case starts first; every case owns its app, browser and contexts.
         await Promise.all([
             t.test(`${engine.name()}: local assets, strict CSP, documentation, management dialogs, and framing`, { timeout: 180_000 }, localAssets),
-            t.test(`${engine.name()}: protected viewing, memory-only credentials, redaction and locking`, { timeout: 90_000 }, protectedViewing),
+            t.test(`${engine.name()}: protected viewing, private data cleanup, redaction and locking`, { timeout: 90_000 }, protectedViewing),
+            t.test(`${engine.name()}: persistent viewer and administrator sessions`, { timeout: 90_000 }, persistentAuthentication),
             t.test(`${engine.name()}: optional outbound controls and HTTP provider opt-in`, { timeout: 90_000 }, outboundControls),
         ]);
     });

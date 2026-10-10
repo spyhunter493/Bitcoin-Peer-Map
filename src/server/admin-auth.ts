@@ -8,19 +8,21 @@ const MAX_FAILURES = 10;
 const MAX_CLIENTS = 1024;
 const digest = (value: string) => createHash('sha256').update(value).digest();
 
-export function createAdminAuthentication(token: string | null, trustedProxies: readonly TrustedProxy[] = []) {
+export function createAdminAuthentication(token: string | null, trustedProxies: readonly TrustedProxy[] = [], authenticateSession: (req: IncomingMessage) => boolean = () => false) {
     const expected = token ? digest(token) : null;
     const failures = new Map<string, { count: number; expires: number }>();
 
-    return function requireAdmin(req: IncomingMessage, res: ServerResponse) {
+    return function requireAdmin(req: IncomingMessage, res: ServerResponse, allowSession = true) {
         res.setHeader('Cache-Control', 'no-store');
         if (!expected) throw new HttpError(403, 'Management is read-only because BPM_ADMIN_TOKEN is not configured.', 'management_disabled');
 
-        const header = req.headers.authorization || '';
+        const authorization = req.headers.authorization;
+        const header = authorization || '';
         const supplied = header.length <= 263 ? /^Bearer ([A-Za-z0-9._~+/-]+={0,2})$/i.exec(header)?.[1] || '' : '';
         // Hashes have a fixed length, including for missing or malformed tokens.
         // Valid credentials never consult or reset anonymous failure windows.
         if (timingSafeEqual(digest(supplied), expected)) return;
+        if (allowSession && authorization === undefined && authenticateSession(req)) return;
 
         const client = anonymousClientIdentity(req, trustedProxies);
         const now = Date.now();

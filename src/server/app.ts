@@ -8,7 +8,7 @@ import { once } from 'node:events';
 import { AppRuntime } from './runtime.ts';
 import type { Settings } from './settings.ts';
 import { type Data, errorMessage, object } from './types.ts';
-import { HttpError, readJsonBody, parseAddress, parseEnabled, parsePeerId, parseQueryBoolean, requireDashboardOrigin, sendResponse } from './http.ts';
+import { HttpError, readJsonBody, parseAddress, parseEnabled, parsePeerId, parseQueryBoolean, requireDashboardOrigin, requireBrowserOrigin, sendResponse } from './http.ts';
 import { GITHUB_REPOSITORY, REPOSITORY_URL } from './build.ts';
 import { NODE_METRICS_INTERVAL_MS } from './services/node-metrics.ts';
 import { createAdminAuthentication } from './admin-auth.ts';
@@ -19,6 +19,7 @@ import { createLogger } from './logging.ts';
 import { RpcBusyError } from './rpc.ts';
 import type { ApiRoutes, RouteHandler } from './api-routes.ts';
 import { setSecurityHeaders } from './security.ts';
+import { createBrowserSessions } from './browser-sessions.ts';
 
 const log = createLogger('http');
 
@@ -66,15 +67,30 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
     schema.info.version = version;
     const streams = new Set<ServerResponse>();
     let closeTask: Promise<void> | null = null;
-    const requireAdmin = createAdminAuthentication(settings.admin_token, settings.trusted_proxies);
-    const requireViewer = createViewingAuthentication(settings.view_token, settings.admin_token, settings.trusted_proxies);
+    const sessions = createBrowserSessions();
+    const requireAdmin = createAdminAuthentication(settings.admin_token, settings.trusted_proxies, req => sessions.has(req, 'admin'));
+    const requireViewer = createViewingAuthentication(settings.view_token, settings.admin_token, settings.trusted_proxies, sessions.hasViewer);
 
     const routes: Record<string, RouteHandler> = {
         'GET /healthz': () => ({ status: 'ok' }),
-        'GET /api/access': (_query, _req, res) => { if (!res.hasHeader('Cache-Control')) res.setHeader('Cache-Control', 'no-store'); return { mode: settings.view_mode, authentication_available: Boolean(settings.view_token || settings.admin_token) }; },
+        'GET /api/access': (_query, req, res) => {
+            privateViewingResponse(res);
+            return { mode: settings.view_mode, authentication_available: Boolean(settings.view_token || settings.admin_token),
+                viewing_authenticated: sessions.hasViewer(req), management_authenticated: sessions.has(req, 'admin') };
+        },
         'GET /api/view/aggregate': (_query, _req, res) => { if (!res.hasHeader('Cache-Control')) res.setHeader('Cache-Control', 'no-store'); return viewingAggregate(runtime.peers.snapshot()); },
-        'POST /api/view/verify': () => ({ success: true }),
-        'POST /api/admin/verify': () => ({ success: true }),
+        'POST /api/view/verify': (_query, req, res) => {
+            if (req.headers['x-bpm-remember'] !== '1') return { success: true };
+            sessions.issue(req, res, 'view');
+            return { success: true, remembered: true };
+        },
+        'POST /api/admin/verify': (_query, req, res) => {
+            if (req.headers['x-bpm-remember'] !== '1') return { success: true };
+            sessions.issue(req, res, 'admin');
+            return { success: true, remembered: true };
+        },
+        'POST /api/view/logout': (_query, req, res) => { privateViewingResponse(res); sessions.logout(req, res, 'view'); return { success: true }; },
+        'POST /api/admin/logout': (_query, req, res) => { privateViewingResponse(res); sessions.logout(req, res, 'admin'); return { success: true }; },
         'GET /api/peers': (query, _req, res) => { if (!res.hasHeader('Cache-Control')) res.setHeader('Cache-Control', 'no-store'); return parseQueryBoolean(query, 'include_status', false) ? runtime.peers.snapshot() : runtime.peers.listPeers(); },
         'GET /api/info': async (_query, _req, _res, signal) => ({ ...await runtime.node.dashboardInfo(signal), updates: runtime.updates.snapshot() }),
         'GET /api/mempool': (_query, _req, _res, signal) => runtime.node.mempool(signal),
@@ -131,13 +147,18 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
         try {
             const url = new URL(req.url || '/', 'http://localhost');
             const method = req.method === 'HEAD' ? 'GET' : req.method;
-            const credentialBearing = Boolean(req.headers.authorization);
+            const credentialBearing = req.headers.authorization !== undefined || sessions.hasCredentials(req);
+            const logout = ['/api/view/logout', '/api/admin/logout'].includes(url.pathname);
+            const rememberedLogin = ['/api/view/verify', '/api/admin/verify'].includes(url.pathname) && req.headers['x-bpm-remember'] === '1';
             const anonymousAggregate = url.pathname === '/api/view/aggregate' && settings.view_mode !== 'authenticated';
             const protectedRead = method === 'GET' && url.pathname.startsWith('/api/') && url.pathname !== '/api/access' && !anonymousAggregate;
             // Apply before direct streams, query parsing, RPC work, HEAD and errors.
             if (credentialBearing || (protectedRead && settings.view_mode !== 'public')) privateViewingResponse(res);
             if (protectedRead && settings.view_mode !== 'public') requireViewer(req, res);
-            if (method === 'POST' && url.pathname.startsWith('/api/')) requireDashboardOrigin(req);
+            if (method === 'POST' && url.pathname.startsWith('/api/')) {
+                if (logout || rememberedLogin || (req.headers.authorization === undefined && sessions.hasCredentials(req))) requireBrowserOrigin(req);
+                else requireDashboardOrigin(req);
+            }
             if (method === 'GET' && url.pathname === '/') { if (!credentialBearing) res.setHeader('Cache-Control', 'no-cache'); await sendResponse(req, res, html, 200, 'text/html'); return; }
             if (method === 'GET' && ['/docs', '/redoc'].includes(url.pathname)) {
                 await sendResponse(req, res, docs, 200, 'text/html'); return;
@@ -170,17 +191,22 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
                 res.write('event: message\ndata: {"type":"connected"}\n\n');
                 streams.add(res);
                 let pending = false;
+                const cookieProtected = settings.view_mode !== 'public' && req.headers.authorization === undefined;
                 const sample = async () => {
                     if (pending || res.destroyed || res.writableEnded) return;
+                    if (cookieProtected && !sessions.hasViewer(req)) { res.end(); return; }
                     pending = true;
                     try {
                         const snapshot = await runtime.metrics.summary();
+                        if (cookieProtected && !sessions.hasViewer(req)) { res.end(); return; }
                         if (!res.destroyed && !res.writableEnded && !res.write(`event: system\ndata: ${JSON.stringify(snapshot)}\n\n`)) res.end();
                     } catch { res.end(); }
                     finally { pending = false; }
                 };
                 const timer = setInterval(() => { void sample(); }, NODE_METRICS_INTERVAL_MS); void sample();
-                res.once('close', () => { clearInterval(timer); streams.delete(res); });
+                let stopWatching = () => {};
+                res.once('close', () => { clearInterval(timer); stopWatching(); streams.delete(res); });
+                if (cookieProtected) stopWatching = sessions.watchViewer(req, () => res.end());
                 return;
             }
             const route = routes[`${method} ${url.pathname}`];
@@ -189,9 +215,9 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
                 if (allowed.length) { res.setHeader('Allow', allowed.join(', ')); throw new HttpError(405, 'Method not allowed'); }
                 throw new HttpError(404, 'Not found');
             }
-            if (method === 'POST' && url.pathname.startsWith('/api/')) {
-                if (url.pathname === '/api/view/verify') requireViewer(req, res);
-                else requireAdmin(req, res);
+            if (method === 'POST' && url.pathname.startsWith('/api/') && !logout) {
+                if (url.pathname === '/api/view/verify') requireViewer(req, res, !rememberedLogin);
+                else requireAdmin(req, res, !rememberedLogin);
             }
             const result = await route(url.searchParams, req, res, controller.signal);
             if (credentialBearing || (protectedRead && settings.view_mode !== 'public')) privateViewingResponse(res);
@@ -199,7 +225,7 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
         } catch (error) {
             if (res.destroyed || controller.signal.aborted) return;
             if (res.headersSent) { res.destroy(); return; }
-            if (req.headers.authorization) privateViewingResponse(res);
+            if (req.headers.authorization !== undefined || sessions.hasCredentials(req)) privateViewingResponse(res);
             if (error instanceof RpcBusyError) {
                 res.setHeader('Retry-After', '1');
                 await sendResponse(req, res, { detail: 'Bitcoin RPC is busy; try again shortly', code: 'rpc_busy' }, 503);
@@ -221,6 +247,7 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
         },
         close() {
             closeTask ||= (async () => {
+                sessions.clear();
                 for (const res of streams) res.end();
                 const stopping = Promise.resolve(runtime.stop());
                 const closed = new Promise<void>(resolve => server.close(() => resolve()));

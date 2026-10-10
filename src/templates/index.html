@@ -63,7 +63,7 @@
             </span>
             <span class="topbar-sync-status" id="mo-status" title="Node sync status">&mdash;</span>
             <span id="clock" class="topbar-clock" title="Current local time"></span>
-            <button type="button" class="admin-lock" id="admin-lock" title="Lock management actions in this tab" hidden>Lock</button>
+            <button type="button" class="admin-lock" id="admin-lock" title="Sign out of management in this browser" hidden>Lock</button>
             <button class="topbar-gear" id="topbar-gear" title="Map Settings">&#9881;</button>
         </div>
     </header>
@@ -211,6 +211,7 @@
                         <input id="peer-search" type="search" placeholder="Search peers…" aria-label="Search peers" autocomplete="off" spellcheck="false">
                         <button id="peer-search-clear" type="button" aria-label="Clear peer search" hidden>&times;</button>
                     </div>
+                    <span id="peer-match-count" role="status" aria-live="polite" title="Peers matching the current search and filters, out of all connected peers">0 of 0 peers</span>
                 </div>
                 <div class="peer-toolbar-actions">
                     <button class="handle-btn handle-btn-green" id="btn-connect-peer" title="Connect to a peer">Connect Peer</button>
@@ -227,8 +228,7 @@
                     <button class="handle-btn handle-btn-dim" id="btn-table-settings" title="Table settings: columns, transparency">&#9881;</button>
                 </div>
             </div>
-            <div class="peer-filter-status" id="peer-filter-status">
-                <span id="peer-match-count" role="status" aria-live="polite">0 matching / 0 peers</span>
+            <div class="peer-filter-status" id="peer-filter-status" hidden>
                 <div id="peer-filter-chips" aria-label="Active peer filters"></div>
                 <button type="button" id="peer-clear-filters" hidden>Clear filters</button>
             </div>

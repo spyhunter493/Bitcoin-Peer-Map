@@ -41,7 +41,14 @@ export default async function assertAdminAuthentication(browser, baseUrl) {
             await route.fulfill({ status: 429, headers: { 'Retry-After': String(verificationCooldownSeconds) }, json: { detail: 'Authentication cooldown active.', code: 'admin_rate_limited' } });
             return;
         }
-        if (!rotated) { await route.continue(); return; }
+        if (!rotated) {
+            // This suite isolates bearer retries and cooldowns. Persistent cookie
+            // authentication is exercised against the real server separately.
+            const headers = { ...route.request().headers() };
+            delete headers['x-bpm-remember'];
+            await route.continue({ headers });
+            return;
+        }
         await route.fulfill({ status: valid ? 200 : 401, json: valid ? { success: true } : { detail: 'Enter the admin token', code: 'admin_required' } });
     });
 
@@ -190,7 +197,7 @@ export default async function assertAdminAuthentication(browser, baseUrl) {
         await page.reload({ waitUntil: 'domcontentloaded' });
         await page.waitForFunction(() => document.getElementById('mo-status')?.textContent === 'Synced');
         await trackCooldownIntervals();
-        assert.equal(await page.locator('#admin-lock').isVisible(), false, 'reload clears the token');
+        assert.equal(await page.locator('#admin-lock').isVisible(), false, 'reload clears a bearer-only fallback token');
         await requestConnection();
         await waitForPrompt();
         await page.locator('#admin-token-cancel').click();

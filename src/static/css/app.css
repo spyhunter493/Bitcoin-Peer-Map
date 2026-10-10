@@ -799,6 +799,7 @@ body.theme-light .fd-net-counts {
 .handle-row1 {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 8px;
     padding: 4px 12px;
     min-height: 32px;
@@ -812,13 +813,18 @@ body.theme-light .fd-net-counts {
 }
 .peer-toolbar-filters { min-width: 0; }
 .peer-search-tools {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     flex: 1;
-    min-width: 160px;
+    min-width: 280px;
     cursor: default;
 }
 .peer-search-field {
     display: flex;
     align-items: center;
+    flex: 1;
+    min-width: 0;
     min-height: 28px;
     border: 1px solid rgba(88, 166, 255, 0.25);
     border-radius: 5px;
@@ -905,7 +911,13 @@ body.theme-light .fd-net-counts {
     font-size: 10px;
     cursor: default;
 }
-#peer-match-count { flex-shrink: 0; }
+.peer-filter-status[hidden] { display: none; }
+#peer-match-count {
+    flex-shrink: 0;
+    color: var(--text-secondary);
+    font-size: 10px;
+    white-space: nowrap;
+}
 #peer-filter-chips {
     display: flex;
     align-items: center;
@@ -2452,7 +2464,7 @@ button.fd-net-chip:focus-visible { outline: 2px solid var(--accent); outline-off
 }
 
 /* The available panel width can also shrink beside distribution details. */
-@container peer-panel (max-width: 1440px) {
+@container peer-panel (max-width: 1600px) {
     .handle-row1 {
         flex-wrap: wrap;
         row-gap: 5px;

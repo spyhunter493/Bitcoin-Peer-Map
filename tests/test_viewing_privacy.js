@@ -27,13 +27,14 @@ export default async function assertViewingPrivacy(browser) {
             };
         });
         const page = await context.newPage(), requests = [], errors = [], publicPayloads = [];
+        let collectPublicPayloads = true;
         page.on('pageerror', error => errors.push(error.message));
         page.on('request', request => {
             const url = new URL(request.url());
             if (url.origin === base) requests.push({ path: url.pathname, method: request.method(), headers: request.headers(), url: request.url() });
         });
         page.on('response', response => {
-            if (['/api/access', '/api/view/aggregate'].includes(new URL(response.url()).pathname)) publicPayloads.push(response.json());
+            if (collectPublicPayloads && ['/api/access', '/api/view/aggregate'].includes(new URL(response.url()).pathname)) publicPayloads.push(response.json());
         });
         const input = () => page.locator('#view-token-input');
         let resetNumber = 0;
@@ -47,8 +48,14 @@ export default async function assertViewingPrivacy(browser) {
         }
         async function storageSafe() {
             const stored = await page.evaluate(() => JSON.stringify({ local: Object.entries(localStorage), session: Object.entries(sessionStorage), cookie: document.cookie, href: location.href }));
-            for (const secret of [VIEW_TOKEN, FIXTURE_ADMIN_TOKEN]) assert.equal(stored.includes(secret), false, 'credentials must remain memory-only');
-            assert.deepEqual(await context.cookies(), []);
+            for (const secret of [VIEW_TOKEN, FIXTURE_ADMIN_TOKEN]) assert.equal(stored.includes(secret), false, 'raw tokens must stay out of browser storage and URLs');
+            for (const cookie of await context.cookies()) {
+                assert.ok(['bpm_view_session', 'bpm_admin_session'].includes(cookie.name));
+                assert.equal(cookie.httpOnly, true);
+                assert.equal(cookie.sameSite, 'Strict');
+                assert.equal(cookie.path, '/api');
+                for (const secret of [VIEW_TOKEN, FIXTURE_ADMIN_TOKEN]) assert.equal(cookie.value.includes(secret), false);
+            }
         }
         async function stalledReset(action, showEvent = false, expectReadAbort = false, afterWipe) {
             let receiveWipe;
@@ -95,9 +102,15 @@ export default async function assertViewingPrivacy(browser) {
             if (afterWipe) await afterWipe(await completed);
             await route.continue();
             await page.unroute(base + '/', block);
-            await input().waitFor({ state: 'visible' });
-            assert.equal(await input().inputValue(), '');
-            assert.equal((await page.locator('body').textContent()).includes(PRIVATE_MARKER), false);
+            if (showEvent) {
+                await page.waitForSelector('#peer-tbody tr[data-id="1"]');
+                assert.ok((await page.locator('#peer-tbody').textContent()).includes(PRIVATE_MARKER),
+                    'BFCache restoration reloads private data using the remembered session');
+            } else {
+                await input().waitFor({ state: 'visible' });
+                assert.equal(await input().inputValue(), '');
+                assert.equal((await page.locator('body').textContent()).includes(PRIVATE_MARKER), false);
+            }
         }
         async function holdActionBody(path, response, method = 'POST') {
             const binding = `privacyActionReady${++resetNumber}`;
@@ -137,6 +150,7 @@ export default async function assertViewingPrivacy(browser) {
             assert.deepEqual(requests.filter(request => DETAIL_PATHS.has(request.path)), [], 'private polling must not start before authentication');
             assert.equal((await page.locator('body').textContent()).includes(PRIVATE_MARKER), false);
             for (const payload of await Promise.all(publicPayloads)) assert.equal(JSON.stringify(payload).includes(PRIVATE_MARKER), false);
+            collectPublicPayloads = false;
 
             await input().fill('incorrect-token');
             await page.locator('#view-token-submit').click();
@@ -144,7 +158,7 @@ export default async function assertViewingPrivacy(browser) {
             assert.equal(await input().inputValue(), '');
             assert.equal(requests.filter(request => DETAIL_PATHS.has(request.path)).length, 0);
             await login();
-            assert.ok(requests.some(request => request.path === '/api/peers' && request.headers.authorization === `Bearer ${VIEW_TOKEN}`));
+            assert.ok(requests.some(request => request.path === '/api/peers'));
             await storageSafe();
 
             // Reading with a viewer never gives it management privileges.
@@ -188,21 +202,22 @@ export default async function assertViewingPrivacy(browser) {
 
             await login();
             await page.reload({ waitUntil: 'domcontentloaded' });
-            await input().waitFor({ state: 'visible' });
-            assert.equal((await page.locator('body').textContent()).includes(PRIVATE_MARKER), false);
+            await page.waitForSelector('#peer-tbody tr[data-id="1"]');
+            assert.equal(await input().count(), 0, 'reload restores the remembered viewing session');
+            assert.ok((await page.locator('#peer-tbody').textContent()).includes(PRIVATE_MARKER));
             await storageSafe();
 
-            await login();
             await stalledReset(() => page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true }))), true);
 
             // A server-side rejection locks the complete view, rather than
             // retaining the last private snapshot as a normal polling error.
+            await stalledReset(() => page.locator('#view-lock').click({ noWaitAfter: true }));
             await login(FIXTURE_ADMIN_TOKEN);
             const rejectPeerRead = route => route.fulfill({ status: 401, json: { detail: 'Enter a token', code: 'view_required' } });
             await page.route('**/api/peers?include_status=true', rejectPeerRead);
             await stalledReset(() => page.evaluate(() => window.privacyPeerPoll()));
             await page.unroute('**/api/peers?include_status=true', rejectPeerRead);
-            assert.ok(requests.some(request => request.path === '/api/peers' && request.headers.authorization === `Bearer ${FIXTURE_ADMIN_TOKEN}`), 'an administrator can also authenticate for viewing');
+            assert.ok(requests.some(request => request.path === '/api/view/verify' && request.headers.authorization === `Bearer ${FIXTURE_ADMIN_TOKEN}`), 'an administrator can also authenticate for viewing');
 
             const lateActions = [
                 { path: '/api/peer/ban', choice: 'ban', status: 200, body: { success: true, banned_ip: PRIVATE_MARKER } },

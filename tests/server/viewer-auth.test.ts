@@ -23,7 +23,7 @@ for (const mode of ['public', 'authenticated', 'redacted'] as const) {
         t.after(() => app.close());
         const base = `http://127.0.0.1:${address.port}`;
         const access = await fetch(base + '/api/access');
-        assert.deepEqual(await access.json(), { mode, authentication_available: true });
+        assert.deepEqual(await access.json(), { mode, authentication_available: true, viewing_authenticated: false, management_authenticated: false });
         let anonymousFailures = 0;
         for (const path of READS) for (const method of ['GET', 'HEAD']) for (const token of [null, VIEW_TOKEN, FIXTURE_ADMIN_TOKEN]) {
             const response = await fetch(base + path, { method, headers: token ? { Authorization: `Bearer ${token}`, 'Accept-Encoding': 'gzip', 'If-None-Match': '*' } : { 'If-None-Match': '*' } });

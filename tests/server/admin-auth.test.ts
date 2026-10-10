@@ -92,7 +92,14 @@ test('token never appears in public responses and OpenAPI describes authenticati
     for (const [path, methods] of Object.entries(schema.paths)) {
         const post = (methods as { post?: { security: unknown; responses: Record<string, unknown> } }).post;
         if (!post) continue;
-        assert.deepEqual(post.security, path === '/api/view/verify' ? [{ ViewToken: [] }, { AdminToken: [] }] : [{ AdminToken: [] }], path);
+        if (path === '/api/view/logout' || path === '/api/admin/logout') {
+            assert.deepEqual(post.security, [], path);
+            assert.ok(post.responses['403'], `${path}: 403`);
+            continue;
+        }
+        assert.deepEqual(post.security, path === '/api/view/verify'
+            ? [{ ViewToken: [] }, { AdminToken: [] }, { ViewSession: [] }, { AdminSession: [] }]
+            : [{ AdminToken: [] }, { AdminSession: [] }], path);
         for (const status of ['401', '403', '429']) assert.ok(post.responses[status], `${path}: ${status}`);
     }
 });

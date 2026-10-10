@@ -17,6 +17,35 @@ test('locking wipes private DOM even if a component disposal callback throws', t
     assert.equal(JSON.stringify(children).includes('PRIVATE-PEER-ADDRESS'), false);
 });
 
+test('an explicit view lock waits for cookie revocation and leaves private data wiped when logout fails', async t => {
+    const originalDocument = globalThis.document, originalLocation = globalThis.location;
+    const children = [{ textContent: 'PRIVATE-PEER-ADDRESS' }], navigations = [], requests = [];
+    globalThis.document = { body: {
+        replaceChildren() { children.length = 0; }, append(child) { children.push(child); },
+    }, createElement() { return { textContent: '', addEventListener() {} }; },
+    getElementById(id) { return children.find(child => child.id === id); } };
+    globalThis.location = { replace(path) { navigations.push(path); } };
+    t.after(() => {
+        if (originalDocument === undefined) delete globalThis.document; else globalThis.document = originalDocument;
+        if (originalLocation === undefined) delete globalThis.location; else globalThis.location = originalLocation;
+    });
+    let failing = true;
+    t.mock.method(globalThis, 'fetch', async (url, options) => {
+        requests.push({ url, method: options.method });
+        assert.equal(JSON.stringify(children).includes('PRIVATE-PEER-ADDRESS'), false);
+        return Response.json({ success: !failing }, { status: failing ? 500 : 200 });
+    });
+    const viewing = createViewing({ onAuthorized() {}, onLock() {} });
+    await viewing.lock();
+    assert.deepEqual(navigations, []);
+    assert.ok(children.some(child => child.textContent === 'Retry lock'));
+    assert.equal(JSON.stringify(children).includes('PRIVATE-PEER-ADDRESS'), false);
+    failing = false;
+    await viewing.lock();
+    assert.deepEqual(navigations, ['/']);
+    assert.deepEqual(requests, [{ url: '/api/view/logout', method: 'POST' }, { url: '/api/view/logout', method: 'POST' }]);
+});
+
 test('dashboard clearing releases peer records and all public/private selection and insight references', () => {
     const dashboard = createDashboard();
     const peer = { id: 1, addr: 'PRIVATE-PEER' };

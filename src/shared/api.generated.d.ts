@@ -9,7 +9,7 @@ export interface paths {
         };
         /**
          * List Peers
-         * @description Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management.
+         * @description Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token or remembered browser session. Viewing tokens cannot authorize management.
          */
         get: operations["list_peers_api_peers_get"];
         put?: never;
@@ -97,7 +97,7 @@ export interface paths {
         };
         /**
          * List Bans
-         * @description Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management.
+         * @description Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token or remembered browser session. Viewing tokens cannot authorize management.
          */
         get: operations["list_bans_api_bans_get"];
         put?: never;
@@ -136,7 +136,7 @@ export interface paths {
          * Dashboard Info
          * @description Includes node_metrics: Bitcoin Knots uptime, P2P totals, and average P2P rates between RPC samples. Unavailable metrics and rates without a valid baseline are null. Includes services: the P2P service names advertised by this node, from getnetworkinfo.localservicesnames. An empty array means no services are advertised; null means service information is unavailable. Includes updates: the cached application update status. Dashboard reads do not trigger GitHub requests; the server checks once every 24 hours. Updates compare stable release versions, never unreleased main commits. Development builds skip checks. Blockchain ibd is true during initial block download, false only when explicitly complete, and null when unavailable. Includes bitcoin_network: configured chain and default peer connection port. Explicit peer ports are preserved; I2P requires :0. Blockchain txindex_status distinguishes disabled, syncing, ready, and unknown; txindex_height reports the indexed height. The legacy indexed boolean indicates index presence, not readiness.
          *
-         *     Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management.
+         *     Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token or remembered browser session. Viewing tokens cannot authorize management.
          */
         get: operations["dashboard_info_api_info_get"];
         put?: never;
@@ -156,7 +156,7 @@ export interface paths {
         };
         /**
          * Mempool
-         * @description Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management.
+         * @description Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token or remembered browser session. Viewing tokens cannot authorize management.
          */
         get: operations["mempool_api_mempool_get"];
         put?: never;
@@ -176,7 +176,7 @@ export interface paths {
         };
         /**
          * Blockchain
-         * @description Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management.
+         * @description Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token or remembered browser session. Viewing tokens cannot authorize management.
          */
         get: operations["blockchain_api_blockchain_get"];
         put?: never;
@@ -196,7 +196,7 @@ export interface paths {
         };
         /**
          * Recent Blocks
-         * @description Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management.
+         * @description Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token or remembered browser session. Viewing tokens cannot authorize management.
          */
         get: operations["recent_blocks_api_blocks_recent_get"];
         put?: never;
@@ -216,7 +216,7 @@ export interface paths {
         };
         /**
          * Rpc Info
-         * @description Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management.
+         * @description Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token or remembered browser session. Viewing tokens cannot authorize management.
          */
         get: operations["rpc_info_api_rpc_info_get"];
         put?: never;
@@ -238,7 +238,7 @@ export interface paths {
          * Chain Tips
          * @description Loads tips within 15 seconds including RPC queue time. Required tips have up to 10 seconds; optional blockchain metadata has up to 5 seconds concurrently. Up to 100 header ages are enriched by 4 workers for at most 5 seconds within the overall deadline. Optional timeouts preserve valid tips with null ages. Completed partial results are shared for 5 seconds; ages and generated_at are refreshed on independent returned copies.
          *
-         *     Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management.
+         *     Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token or remembered browser session. Viewing tokens cannot authorize management.
          */
         get: operations["chain_tips_api_chain_tips_get"];
         put?: never;
@@ -258,7 +258,7 @@ export interface paths {
         };
         /**
          * Connectivity
-         * @description Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management.
+         * @description Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token or remembered browser session. Viewing tokens cannot authorize management.
          */
         get: operations["connectivity_api_connectivity_get"];
         put?: never;
@@ -359,7 +359,7 @@ export interface paths {
          * Node Metrics
          * @description RPC-only node metrics from uptime and getnettotals, shared with /api/info.node_metrics. The legacy system_stats response key is retained; no dashboard host metrics are collected.
          *
-         *     Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management.
+         *     Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token or remembered browser session. Viewing tokens cannot authorize management.
          */
         get: operations["stats_api_stats_get"];
         put?: never;
@@ -381,7 +381,7 @@ export interface paths {
          * Config
          * @description Runtime configuration without credentials. build.version is the release tag or dev; build.revision is the exact source commit. build.updates contains cached release update status.
          *
-         *     Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management.
+         *     Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token or remembered browser session. Viewing tokens cannot authorize management.
          *     Includes saved and effective optional-server-request policy under outbound.
          */
         get: operations["config_api_config_get"];
@@ -402,7 +402,7 @@ export interface paths {
         };
         /**
          * Node Metrics Stream
-         * @description Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management.
+         * @description Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token or remembered browser session. Viewing tokens cannot authorize management.
          */
         get: operations["system_stream_api_stream_system_get"];
         put?: never;
@@ -441,7 +441,7 @@ export interface paths {
         put?: never;
         /**
          * Verify Admin Token
-         * @description Verify the shared token without changing node or dashboard settings. Does not create a server session.
+         * @description Verify an administrator credential. With X-BPM-Remember: 1, successful explicit bearer verification and a same-origin Origin issue a persistent HttpOnly browser cookie for 30 days. Verification without this opt-in remains cookie-free. Sessions expire absolutely and are revoked by logout or application restart.
          */
         post: operations["verify_admin_token"];
         delete?: never;
@@ -516,7 +516,7 @@ export interface paths {
         };
         /**
          * Viewing Access Mode
-         * @description Public minimal bootstrap used before detailed polling.
+         * @description Public minimal bootstrap used before detailed polling. Session status is private/no-store and varies by Cookie.
          */
         get: operations["viewing_access_mode"];
         put?: never;
@@ -538,7 +538,7 @@ export interface paths {
         put?: never;
         /**
          * Verify Viewing Token
-         * @description Verify a viewing or administrator credential without granting management permissions or creating a server session. Credentials remain required on every protected read.
+         * @description Verify a viewing or administrator credential without granting management permissions. With X-BPM-Remember: 1, successful explicit bearer verification and a same-origin Origin issue a persistent HttpOnly browser cookie for 30 days. Verification without this opt-in remains cookie-free. Sessions expire absolutely and are revoked by logout or application restart.
          */
         post: operations["verify_viewing_token"];
         delete?: never;
@@ -556,7 +556,7 @@ export interface paths {
         };
         /**
          * Optional Outbound Request Policy
-         * @description Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management.
+         * @description Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token or remembered browser session. Viewing tokens cannot authorize management.
          */
         get: operations["get_optional_outbound_policy"];
         put?: never;
@@ -585,6 +585,46 @@ export interface paths {
         get: operations["redacted_viewing_aggregate"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/view/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Lock Viewing and Management Browser Sessions
+         * @description Revoke and clear viewing and management browser session cookies. Requires an explicit same-origin Origin, including when no valid credential remains. Does not revoke configured bearer tokens.
+         */
+        post: operations["logout_view_sessions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Lock Management Browser Sessions
+         * @description Revoke and clear management browser session cookies. Requires an explicit same-origin Origin, including when no valid credential remains. Does not revoke configured bearer tokens.
+         */
+        post: operations["logout_admin_sessions"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1129,11 +1169,15 @@ export interface components {
             /** @constant */
             type: "connected";
         };
-        /** @description Minimal access-mode bootstrap. Contains no node details, tokens, paths, or peer data. */
+        /** @description Minimal access-mode and remembered-session bootstrap. Contains no node details, credentials, paths, or peer data. */
         AccessResponse: {
             /** @enum {string} */
             mode: "public" | "authenticated" | "redacted";
             authentication_available: boolean;
+            /** @description A remembered viewing or management browser session is active. */
+            viewing_authenticated: boolean;
+            /** @description A remembered management browser session is active. */
+            management_authenticated: boolean;
         };
         OutboundPreferences: {
             optional_outbound: boolean;
@@ -1183,6 +1227,11 @@ export interface components {
                 inbound: components["schemas"]["CountRange"];
                 outbound: components["schemas"]["CountRange"];
             };
+        };
+        AuthenticationResponse: {
+            success: boolean;
+            /** @description Present and true when a persistent browser session cookie was issued. */
+            remembered?: boolean;
         };
     };
     responses: {
@@ -1311,6 +1360,7 @@ export type OutboundPolicyResponse = components['schemas']['OutboundPolicyRespon
 export type OutboundPreferenceRequest = components['schemas']['OutboundPreferenceRequest'];
 export type CountRange = components['schemas']['CountRange'];
 export type ViewingAggregateResponse = components['schemas']['ViewingAggregateResponse'];
+export type AuthenticationResponse = components['schemas']['AuthenticationResponse'];
 export type ResponseCrossOriginRequest = components['responses']['CrossOriginRequest'];
 export type ResponseAdminRequired = components['responses']['AdminRequired'];
 export type ResponseAdminRateLimited = components['responses']['AdminRateLimited'];
@@ -2133,7 +2183,10 @@ export interface operations {
     verify_admin_token: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Set to 1 to create a remembered browser session; requires an explicit valid bearer credential and same-origin Origin. */
+                "X-BPM-Remember"?: "1";
+            };
             path?: never;
             cookie?: never;
         };
@@ -2142,10 +2195,12 @@ export interface operations {
             /** @description Token accepted */
             200: {
                 headers: {
+                    /** @description Issued only for successful opted-in browser login. Opaque host-only session cookie; Path=/api, Max-Age=2592000, HttpOnly, SameSite=Strict, Secure for HTTPS. */
+                    "Set-Cookie"?: string;
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SuccessResponse"];
+                    "application/json": components["schemas"]["AuthenticationResponse"];
                 };
             };
             401: components["responses"]["AdminRequired"];
@@ -2325,7 +2380,10 @@ export interface operations {
     verify_viewing_token: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Set to 1 to create a remembered browser session; requires an explicit valid bearer credential and same-origin Origin. */
+                "X-BPM-Remember"?: "1";
+            };
             path?: never;
             cookie?: never;
         };
@@ -2334,10 +2392,12 @@ export interface operations {
             /** @description Successful Response */
             200: {
                 headers: {
+                    /** @description Issued only for successful opted-in browser login. Opaque host-only session cookie; Path=/api, Max-Age=2592000, HttpOnly, SameSite=Strict, Secure for HTTPS. */
+                    "Set-Cookie"?: string;
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SuccessResponse"];
+                    "application/json": components["schemas"]["AuthenticationResponse"];
                 };
             };
             401: components["responses"]["ViewRequired"];
@@ -2458,6 +2518,66 @@ export interface operations {
             };
             401: components["responses"]["ViewRequired"];
             429: components["responses"]["ViewRateLimited"];
+            /** @description HTTP request failure. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    logout_view_sessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Browser sessions revoked and cookies cleared. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SuccessResponse"];
+                };
+            };
+            403: components["responses"]["CrossOriginRequest"];
+            /** @description HTTP request failure. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    logout_admin_sessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Browser sessions revoked and cookies cleared. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SuccessResponse"];
+                };
+            };
+            403: components["responses"]["CrossOriginRequest"];
             /** @description HTTP request failure. */
             default: {
                 headers: {

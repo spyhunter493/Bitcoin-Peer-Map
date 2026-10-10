@@ -30,6 +30,65 @@ test('tokens are confined to same-origin management requests and never added to 
     for (const headers of calls) assert.equal(headers.has('authorization'), false);
 });
 
+test('a remembered login retries the pending action using its cookie without an empty bearer header', async t => {
+    let prompts = 0;
+    const calls = [];
+    configureAdminAuthentication({ getToken: () => '', clearToken() {}, requestToken: async () => { prompts++; return ''; } });
+    t.after(() => configureAdminAuthentication(null));
+    t.mock.method(globalThis, 'fetch', async (_url, options) => {
+        calls.push({ headers: new Headers(options.headers), body: options.body });
+        return Response.json(calls.length === 1 ? { code: 'admin_required' } : { success: true }, { status: calls.length === 1 ? 401 : 200 });
+    });
+    await postJson('/api/peer/connect', { address: '8.8.8.8:8333' }, { headers: { 'X-Test': 'kept' } });
+    assert.equal(prompts, 1);
+    assert.equal(calls.length, 2);
+    assert.equal(calls[1].headers.has('authorization'), false);
+    assert.equal(calls[1].headers.get('x-test'), 'kept');
+    assert.equal(calls[0].body, calls[1].body);
+});
+
+test('a remembered authentication cooldown preserves the session without prompting or retrying', async t => {
+    let calls = 0;
+    configureAdminAuthentication({ getToken: () => '', isAuthenticated: () => true,
+        clearToken: () => assert.fail('Cooldown cleared the session'), requestToken: async () => assert.fail('Cooldown opened a prompt') });
+    t.after(() => configureAdminAuthentication(null));
+    t.mock.method(globalThis, 'fetch', async () => {
+        calls++;
+        return Response.json({ code: 'admin_rate_limited' }, { status: 429 });
+    });
+    await assert.rejects(postJson('/api/peer/connect'), { status: 429 });
+    assert.equal(calls, 1);
+});
+
+test('late cookie challenges do not clear a replacement remembered login', async t => {
+    let revision = 1, calls = 0, release;
+    const body = new Promise(resolve => { release = resolve; });
+    configureAdminAuthentication({ getToken: () => '', getRevision: () => revision,
+        clearToken: () => assert.fail('A stale response cleared the replacement session'), requestToken: async () => '' });
+    t.after(() => configureAdminAuthentication(null));
+    let receiveRequest;
+    const requested = new Promise(resolve => { receiveRequest = resolve; });
+    t.mock.method(globalThis, 'fetch', async () => {
+        if (++calls > 1) return Response.json({ success: true });
+        receiveRequest();
+        return { ok: false, status: 401, headers: new Headers(), json: () => body };
+    });
+    const pending = postJson('/api/peer/connect');
+    await requested;
+    revision++;
+    release({ code: 'admin_required' });
+    await pending;
+    assert.equal(calls, 2);
+});
+
+test('an incomplete logout blocks cookie-authenticated actions before fetch', async t => {
+    configureAdminAuthentication({ getToken: () => '', clearToken() {}, requestToken: async () => '',
+        beforeRequest: async () => { throw new Error('Retry locking'); } });
+    t.after(() => configureAdminAuthentication(null));
+    t.mock.method(globalThis, 'fetch', async () => assert.fail('An action used the cookie after logout failed'));
+    await assert.rejects(postJson('/api/peer/connect'), { message: 'Retry locking' });
+});
+
 test('cancellation or source-dialog abort prevents a challenged action from being retried', async t => {
     let requests = 0;
     const controller = new AbortController();

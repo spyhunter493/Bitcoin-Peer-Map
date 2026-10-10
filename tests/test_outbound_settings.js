@@ -13,6 +13,13 @@ export default async function assertOutboundSettings(browser, baseUrl) {
     }
     page.on('pageerror', error => errors.push(error.message));
     await page.addInitScript(() => localStorage.setItem('bpm.antarcticaDisclaimerSeen', 'true'));
+    await page.route('**/api/admin/verify', async route => {
+        // Keep this mocked preference suite on the bearer fallback; real
+        // browser-session persistence is covered by test_persistent_auth.js.
+        const headers = { ...route.request().headers() };
+        delete headers['x-bpm-remember'];
+        await route.continue({ headers });
+    });
     await page.route('**/api/info', async route => {
         const response = await route.fetch(), info = await response.json(), effective = snapshot().effective;
         info.geo_db_stats.db_only_mode = dbOnly; info.geo_db_only_mode = dbOnly;
