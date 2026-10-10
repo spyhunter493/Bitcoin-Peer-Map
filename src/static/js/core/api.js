@@ -102,6 +102,7 @@ async function getJson(url, options, timeoutMs) {
  * @returns {Promise<T>}
  */
 async function postJson(url, body, options) {
+    options?.signal?.throwIfAborted();
     const requestOptions = Object.assign({}, options, { method: 'POST' });
     const headers = new Headers(options && options.headers);
     if (body !== undefined) {
@@ -114,8 +115,13 @@ async function postJson(url, body, options) {
     const previousToken = authentication?.getToken() || '';
     if (previousToken) headers.set('Authorization', `Bearer ${previousToken}`);
     try {
-        return await requestJson(url, requestOptions);
+        const result = await requestJson(url, requestOptions);
+        // A response may finish after its owner closes, even if fetch ignores abort.
+        options?.signal?.throwIfAborted();
+        return /** @type {T} */ (result);
     } catch (error) {
+        // A canceled action must not reopen authentication or alter a live token.
+        options?.signal?.throwIfAborted();
         if (!(error instanceof HttpError) || !authentication) throw error;
         const anonymousCooldown = error.status === 429 && !previousToken && error.data !== null && typeof error.data === 'object' && 'code' in error.data && error.data.code === 'admin_rate_limited';
         if (error.status !== 401 && !anonymousCooldown) throw error;
@@ -126,8 +132,11 @@ async function postJson(url, body, options) {
         headers.set('Authorization', `Bearer ${token}`);
         try {
             // Authentication failures execute no action. Retry only that request, once.
-            return await requestJson(url, requestOptions);
+            const result = await requestJson(url, requestOptions);
+            options?.signal?.throwIfAborted();
+            return /** @type {T} */ (result);
         } catch (retryError) {
+            options?.signal?.throwIfAborted();
             if (retryError instanceof HttpError && retryError.status === 401 && authentication.getToken() === token) authentication.clearToken();
             throw retryError;
         }

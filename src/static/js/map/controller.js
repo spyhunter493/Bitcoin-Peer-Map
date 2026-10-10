@@ -877,6 +877,7 @@ function create() {
     function dispose() {
         if (disposed) return;
         disposed = true;
+        peerActions.dispose();
         finishInitialViewSelection();
         peerPolling.stop();
         peerRefresh.dispose();

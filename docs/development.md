@@ -32,13 +32,25 @@ POST API route checks its bearer token before invoking the handler. The browser'
 shared API helper handles authentication challenges through the admin token dialog;
 all management callers should use `postJson`. See
 [admin authentication](configuration.md#admin-token-and-read-only-mode) for token
-generation, HTTPS deployment, revocation, and API responses. Viewing remains public.
+generation, HTTPS deployment, revocation, and API responses. Detailed viewing uses
+the separate [viewing access policy](configuration.md#viewing-access).
 
 Dashboard dialogs use `core/modal.js` for accessible naming, focus containment,
 stacking, Escape/backdrop dismissal, and focus restoration. Pass the dialog's
 abort signal to requests and check `isOpen()` before applying asynchronous
 results. Keep persistent controls mounted when refreshing dialog values. Peer
 details, settings panels, tooltips, and pinned lists remain nonmodal popovers.
+
+Peer actions own an abort signal and `dispose()` for their requests, dialogs,
+notifications, listeners, and delayed refreshes. Confirmed ban/disconnect actions
+use that owner signal because their confirmation dialog closes before dispatch;
+ban-list operations also use the list dialog's signal. `postJson` rejects cancelled
+results before returning data or handling an authentication challenge, even when
+a transport completes after cancellation. Every UI continuation also checks its
+owner remains active. Locking protected viewing disposes the dashboard and wipes
+private content before navigation; public BFCache suspension retains its view.
+Cancelling browser work cannot undo a node mutation already accepted by RPC. A
+later authorized read establishes its outcome; cancellation never retries it.
 
 ## Frontend component ownership
 
@@ -393,11 +405,28 @@ to the setters. Dataset validation streams rows inside the merge worker, skips
 invalid records, and reports `added_rows`, `updated_rows`, and `skipped_rows`.
 An import with no valid records fails without changes.
 
+GeoIP lookups accept at most 65,536 decoded response bytes, counted while reading
+the stream before JSON parsing; compressed and chunked responses use the same
+limit. Each top-level string may contain at most 4,096 UTF-8 bytes, checked before
+trimming or coordinate conversion. Both lookup paths, API saves, cache hydration,
+and dataset imports apply these bounds. Oversized responses are cancelled and
+reported through the existing sanitized provider failure/backoff path; a failed
+lookup retains a previously valid cached location.
+
+An oversized stored record is rejected as a whole before its large fields enter
+JavaScript. Its location is unavailable until a valid bounded replacement arrives,
+and replacement lookup still follows the saved privacy settings. Rejected records
+stay on disk until replacement; there is no bulk deletion or schema migration.
+Both API saves and dataset imports can replace a size-rejected stored row despite
+its timestamp, updating provenance in the same transaction. Imports skip oversized
+incoming rows and report them in `skipped_rows`.
+
 API location saves return explicit saved, superseded, disabled, cancelled, or
 failed outcomes. SQLite writer contention retries asynchronously from 50 ms to
 500 ms for at most 65 seconds; individual synchronous attempts have zero busy
-timeout. Observation timestamps are captured once, and newer stored records win,
-including ties. Failed payloads remain in the active-peer cache and retry after
+timeout. Observation timestamps are captured once; valid bounded stored records
+with newer or equal timestamps win. Other corrupt-record handling is unchanged.
+Failed payloads remain in the active-peer cache and retry after
 60 seconds through the existing serial resolver, without another provider call.
 Dataset generation changes preserve those payloads. Shutdown cancels retry waits
 and drains the resolver before closing SQLite; pending memory-only payloads are
@@ -537,15 +566,34 @@ ghcr.io/spyhunter493/bitcoin-peer-map:latest
 ghcr.io/spyhunter493/bitcoin-peer-map:sha-<full-release-commit>
 ```
 
-Publication is serialized without cancelling an active registry push. Immediately
-before promotion, the workflow reads the existing GHCR `latest` version and
-compares stable semantic versions. It updates `latest` only for a higher version;
-an older maintenance release still receives its version and SHA tags, and equal
-versions leave `latest` unchanged. A confirmed missing manifest permits initial
+Publication is serialized without cancelling an active registry push. Its shared
+`release-publish` concurrency group uses `queue: max` and
+`cancel-in-progress: false`, retaining up to 100 pending publication or recovery
+runs instead of replacing the previous pending run. Additional runs beyond that
+limit are cancelled by GitHub, as described in the
+[GitHub concurrency documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#concurrency).
+Immediately before promotion, the workflow reads the existing GHCR `latest`
+version and compares stable semantic versions. It updates `latest` only for a
+higher version; an older maintenance release still receives its version and SHA
+tags, and equal versions leave `latest` unchanged. A confirmed missing manifest permits initial
 promotion. Authentication, network, malformed metadata, and other registry
 failures stop promotion rather than treating the current image as absent. The
 Actions summary records both tested architectures, the index digest, and why
 `latest` was promoted or skipped.
+
+For local workflow validation, parse the original release YAML and verify its
+concurrency mapping is exactly `group: release-publish`, `queue: max`, and
+`cancel-in-progress: false`. Actionlint 1.7.12 does not yet recognize `queue`;
+[upstream support](https://github.com/rhysd/actionlint/pull/654) is pending.
+Run it against the original release workflow, filtering only this diagnostic:
+
+```sh
+-ignore '^unexpected key "queue" for "concurrency" section\. expected one of "cancel-in-progress", "group"$'
+```
+
+All other diagnostics must still pass. Lint the CI workflow without that filter,
+and record the exception in PR validation. Remove the filter once the installed
+actionlint supports this GitHub setting.
 
 Never move/reuse published version tags or repurpose SHA tags. The workflow
 rejects existing tags with the wrong release version or source commit, or version

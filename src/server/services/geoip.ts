@@ -4,11 +4,12 @@ import { open, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Worker } from 'node:worker_threads';
-import { GEO_COLUMNS, GEO_SCHEMA, GEO_UPDATES, GEO_PROVENANCE_SCHEMA, GEO_RECORD_QUERY, GEO_PROVENANCE_WRITE } from './geoip-schema.ts';
+import { GEO_COLUMNS, GEO_SCHEMA, GEO_UPDATES, GEO_PROVENANCE_SCHEMA, GEO_RECORD_QUERY, GEO_PROVENANCE_WRITE, GEO_OVERSIZED_RECORD_QUERY, GEO_STORED_SIZE_PREDICATE } from './geoip-schema.ts';
 import { type Data, errorMessage, nowSeconds, object } from '../types.ts';
 import { createFailureReporter, createLogger } from '../logging.ts';
 import { sleep } from '../tasks.ts';
 import { isValidGeoData, type ValidGeoData } from './geoip-validation.ts';
+import { hasOversizedGeoStrings, geoSqlStringSizePredicate, registerGeoipSqlLimits } from './geoip-limits.ts';
 import type { OutboundPolicy } from '../outbound-policy.ts';
 
 export { GEO_COLUMNS } from './geoip-schema.ts';
@@ -21,6 +22,7 @@ export type GeoSaveResult = { status: 'saved' | 'superseded'; row: ValidGeoData 
     | { status: 'failed'; message: string };
 export type GeoReadResult = { status: 'hit'; row: Data }
     | { status: 'miss' | 'disabled' }
+    | { status: 'rejected'; reason: 'oversized' }
     | { status: 'error'; message: string };
 export type { GeoUpdateResponse as GeoUpdateResult } from '../api-types.ts';
 import type { GeoUpdateResponse as GeoUpdateResult, GeoDatabaseStats } from '../api-types.ts';
@@ -48,6 +50,7 @@ export class GeoDatabase {
         mkdirSync(this.tempDir, { recursive: true });
         for (const entry of readdirSync(this.tempDir, { withFileTypes: true })) if (entry.isFile()) rmSync(join(this.tempDir, entry.name));
         this.database = new DatabaseSync(this.path);
+        registerGeoipSqlLimits(this.database);
         this.database.exec(GEO_SCHEMA);
         this.database.exec(GEO_PROVENANCE_SCHEMA);
     }
@@ -62,10 +65,15 @@ export class GeoDatabase {
         try {
             if (!this.database) {
                 this.database = new DatabaseSync(this.path);
+                registerGeoipSqlLimits(this.database);
                 this.database.exec(GEO_PROVENANCE_SCHEMA);
             }
             // SQLite COUNT is numeric and these two integer timestamp aggregates are nullable.
-            const stats = this.database.prepare('SELECT COUNT(*) AS entries, MAX(last_updated) AS last_updated, MIN(CASE WHEN last_updated > 0 THEN last_updated END) AS oldest_updated FROM geo_cache').get() as Pick<GeoDatabaseStats, 'entries' | 'last_updated' | 'oldest_updated'>;
+            const boundedTimestamp = geoSqlStringSizePredicate('last_updated');
+            const stats = this.database.prepare(`SELECT COUNT(*) AS entries,
+                MAX(CASE WHEN ${boundedTimestamp} THEN last_updated END) AS last_updated,
+                MIN(CASE WHEN ${boundedTimestamp} AND last_updated > 0 THEN last_updated END) AS oldest_updated
+                FROM geo_cache`).get() as Pick<GeoDatabaseStats, 'entries' | 'last_updated' | 'oldest_updated'>;
             this.cachedStats = { ...result, ...stats, status: 'ok', size_bytes: statSync(this.path).size };
             return { ...this.cachedStats };
         } catch (error) { return { ...result, status: 'error', error: errorMessage(error) }; }
@@ -80,10 +88,13 @@ export class GeoDatabase {
         try {
             if (!this.database) {
                 this.database = new DatabaseSync(this.path);
+                registerGeoipSqlLimits(this.database);
                 this.database.exec(GEO_PROVENANCE_SCHEMA);
             }
             const row = this.database.prepare(GEO_RECORD_QUERY).get(ip);
-            return row ? { status: 'hit', row: { ...row } } : { status: 'miss' };
+            if (row) return { status: 'hit', row: { ...row } };
+            return this.database.prepare(GEO_OVERSIZED_RECORD_QUERY).get(ip)
+                ? { status: 'rejected', reason: 'oversized' } : { status: 'miss' };
         } catch (error) { return { status: 'error', message: errorMessage(error) }; }
     }
     async save(ip: string, data: Data, observedAt = Math.floor(nowSeconds()), signal?: AbortSignal): Promise<GeoSaveResult> {
@@ -91,8 +102,9 @@ export class GeoDatabase {
         const cancellation = signal ? AbortSignal.any([this.signal, signal]) : this.signal;
         if (cancellation.aborted) return { status: 'cancelled' };
         if (!this.database || !isValidGeoData(data) || !Number.isSafeInteger(observedAt) || observedAt < 0) return { status: 'failed', message: 'Invalid geolocation data or database is not initialized' };
-        // Preserve the observation time across retries so a delayed write cannot replace newer data.
+        // Preserve observation ordering across retries; only oversized stored rows allow an older replacement.
         const record: Data = { ...data, ip, lat: Number(data.lat), lon: Number(data.lon), utc_offset: data.offset ?? 0, as_info: data.as ?? '', last_updated: observedAt };
+        if (hasOversizedGeoStrings(record)) return { status: 'failed', message: 'Geolocation record exceeds the string size limit' };
         const values: SQLInputValue[] = GEO_COLUMNS.map(key => {
             if (['mobile', 'proxy', 'hosting'].includes(key)) return Number(Boolean(record[key]));
             const value = record[key];
@@ -106,7 +118,8 @@ export class GeoDatabase {
                 try {
                     const result = this.database.prepare(`INSERT INTO geo_cache (${GEO_COLUMNS.join(',')}) VALUES (${GEO_COLUMNS.map(() => '?').join(',')})
                         ON CONFLICT(ip) DO UPDATE SET ${GEO_UPDATES}
-                        WHERE COALESCE(excluded.last_updated, 0) > COALESCE(geo_cache.last_updated, 0)`).run(...values);
+                        WHERE COALESCE(excluded.last_updated, 0) > COALESCE(geo_cache.last_updated, 0)
+                        OR NOT (${GEO_STORED_SIZE_PREDICATE})`).run(...values);
                     if (Number(result.changes)) this.database.prepare(GEO_PROVENANCE_WRITE).run(ip, 'ip_api', observedAt);
                     const row = this.database.prepare(GEO_RECORD_QUERY).get(ip);
                     if (!row) throw new Error('Geolocation write did not return a stored record');

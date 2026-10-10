@@ -1,11 +1,12 @@
 import { isIP } from 'node:net';
 import { type Data, object } from '../types.ts';
 import { GEO_COLUMNS } from './geoip-schema.ts';
+import { hasOversizedGeoStrings } from './geoip-limits.ts';
 
 /** Fields actually established by isValidGeoData; other provider metadata remains unknown. */
 export type ValidGeoData = Data & { country: string; lat: number | string; lon: number | string };
 export function isValidGeoData(data: unknown): data is ValidGeoData {
-    if (!object(data) || typeof data.country !== 'string' || !data.country.trim()) return false;
+    if (!object(data) || hasOversizedGeoStrings(data) || typeof data.country !== 'string' || !data.country.trim()) return false;
     if (![data.lat, data.lon].every(value => typeof value === 'number' || (typeof value === 'string' && value.trim().length > 0))) return false;
     const lat = Number(data.lat), lon = Number(data.lon);
     return Number.isFinite(lat) && Number.isFinite(lon) && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180;
@@ -13,7 +14,7 @@ export function isValidGeoData(data: unknown): data is ValidGeoData {
 
 // Older datasets permit nullable metadata, but only usable locations may replace local records.
 export function normalizeDatasetRow(row: Data): Data | null {
-    if (typeof row.ip !== 'string' || !isIP(row.ip.trim()) || !isValidGeoData(row)) return null;
+    if (hasOversizedGeoStrings(row) || typeof row.ip !== 'string' || !isIP(row.ip.trim()) || !isValidGeoData(row)) return null;
     const normalized: Data = { ip: row.ip.trim(), lat: Number(row.lat), lon: Number(row.lon) };
     for (const key of GEO_COLUMNS) {
         if (['ip', 'lat', 'lon'].includes(key)) continue;

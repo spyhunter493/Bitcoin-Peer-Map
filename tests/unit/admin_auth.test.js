@@ -145,3 +145,58 @@ test('a cooldown on the authenticated retry preserves the newly verified token',
     await assert.rejects(postJson('/api/peer/connect'), { status: 429, retryAfterSeconds: 5 });
     assert.equal(token, 'new'); assert.equal(prompts, 1); assert.equal(requests, 2);
 });
+
+test('an already canceled management action sends no request and opens no prompt', async t => {
+    const controller = new AbortController();
+    controller.abort();
+    configureAdminAuthentication({ getToken: () => '', clearToken: () => assert.fail('Unexpected token clear'), requestToken: async () => assert.fail('Unexpected prompt') });
+    t.after(() => configureAdminAuthentication(null));
+    t.mock.method(globalThis, 'fetch', async () => assert.fail('Canceled action reached fetch'));
+    await assert.rejects(postJson('/api/peer/ban', { peer_id: 1 }, { signal: controller.signal }), { name: 'AbortError' });
+});
+
+test('cancellation rejects late management bodies without prompting, retrying, or clearing tokens', async t => {
+    t.after(() => configureAdminAuthentication(null));
+    for (const status of [200, 401, 429, 500]) {
+        const controller = new AbortController();
+        let release, calls = 0;
+        const body = new Promise(resolve => { release = resolve; });
+        configureAdminAuthentication({ getToken: () => status === 429 ? '' : 'stored', clearToken: () => assert.fail('Canceled response cleared token'), requestToken: async () => assert.fail('Canceled response opened prompt') });
+        t.mock.method(globalThis, 'fetch', async () => {
+            calls++;
+            // Deliberately ignore abort, as a late parsed body must still be rejected.
+            return { ok: status === 200, status, headers: new Headers(), json: () => body };
+        });
+        const pending = postJson('/api/peer/ban', { peer_id: 1 }, { signal: controller.signal });
+        controller.abort();
+        release({ success: true, banned_ip: 'PRIVATE-ADDRESS', code: 'admin_rate_limited' });
+        await assert.rejects(pending, { name: 'AbortError' });
+        assert.equal(calls, 1);
+    }
+});
+
+test('cancellation rejects late authenticated retries without clearing the replacement token', async t => {
+    t.after(() => configureAdminAuthentication(null));
+    for (const status of [200, 401, 500]) {
+        const controller = new AbortController();
+        let release, calls = 0, prompts = 0, token = 'old', clears = 0;
+        const body = new Promise(resolve => { release = resolve; });
+        configureAdminAuthentication({ getToken: () => token, clearToken() { token = ''; clears++; }, requestToken: async () => { prompts++; return token = 'replacement'; } });
+        let receivedRetry;
+        const retry = new Promise(resolve => { receivedRetry = resolve; });
+        t.mock.method(globalThis, 'fetch', async () => {
+            if (++calls === 1) return Response.json({ detail: 'Token required' }, { status: 401 });
+            receivedRetry();
+            return { ok: status === 200, status, headers: new Headers(), json: () => body };
+        });
+        const pending = postJson('/api/peer/disconnect', { peer_id: 1 }, { signal: controller.signal });
+        await retry;
+        controller.abort();
+        release({ success: true, detail: 'PRIVATE-RETRY-ERROR' });
+        await assert.rejects(pending, { name: 'AbortError' });
+        assert.equal(token, 'replacement');
+        assert.equal(clears, 1, 'only the active initial authentication challenge clears a token');
+        assert.equal(prompts, 1);
+        assert.equal(calls, 2);
+    }
+});

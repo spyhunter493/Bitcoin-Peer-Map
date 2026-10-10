@@ -2,6 +2,8 @@ import { isPublicAddress } from '../network.ts';
 import { object, type Data } from '../types.ts';
 import type { OutboundPolicy } from '../outbound-policy.ts';
 import { isValidGeoData } from './geoip-validation.ts';
+import { hasOversizedGeoStrings } from './geoip-limits.ts';
+import { readGeoipJson } from './geoip-response.ts';
 import type { ConnectivityService } from './connectivity.ts';
 
 const fields = 'status,message,continent,continentCode,country,countryCode,region,regionName,city,district,zip,lat,lon,timezone,offset,currency,isp,org,as,asname,mobile,proxy,hosting';
@@ -17,9 +19,10 @@ export function createGeoipLookup(connectivity: ConnectivityService, outbound: O
             signal.throwIfAborted();
             response = await fetcher(`http://ip-api.com/json/${encodeURIComponent(host)}?fields=${fields}`, { signal, redirect: 'manual' });
             signal.throwIfAborted();
-            if (!response.ok) { await response.body?.cancel(); throw new Error(`GeoIP HTTP ${response.status}`); }
-            const data: unknown = await response.json();
+            if (!response.ok) throw new Error(`GeoIP HTTP ${response.status}`);
+            const data = await readGeoipJson(response, signal);
             signal.throwIfAborted();
+            if (object(data) && hasOversizedGeoStrings(data)) throw new Error('GeoIP record exceeds the string size limit');
             if (object(data) && data.status === 'fail' && (data.message === undefined || typeof data.message === 'string')) {
                 connectivity.providerSuccess('geoip', response);
                 return null;
@@ -34,7 +37,7 @@ export function createGeoipLookup(connectivity: ConnectivityService, outbound: O
             }
             return null;
         } finally {
-            if (response && !response.bodyUsed) await response.body?.cancel().catch(() => {});
+            if (response && !response.bodyUsed) void response.body?.cancel().catch(() => {});
         }
     };
 }
