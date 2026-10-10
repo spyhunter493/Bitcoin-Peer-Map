@@ -61,3 +61,5 @@ The security browser suite runs captured API fixtures in Chromium, Firefox, and
 WebKit. It checks local requests, font loading, dashboard rendering, authenticated
 dialogs, Swagger authorization and execution, authorization clearing, blocked script
 and stylesheet injection, and frame rejection without contacting a Bitcoin node.
+It also checks remembered viewing and management sessions across reloads, tab closes,
+restored browser state, explicit locks, and service restarts.

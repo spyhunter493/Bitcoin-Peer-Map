@@ -1,6 +1,6 @@
 import { configureViewingAuthentication, requestJson, errorMessage } from './api.js';
 
-/** @param {{onAuthorized(): void | Promise<void>, onLock(): void}} options */
+/** @param {{onAuthorized(): void | Promise<void>, onLock(): void, onAccess?(access: {management_authenticated?: boolean}): void}} options */
 export function create(options) {
     let token = '', mode = 'authenticated', resetting = false;
     let reads = new AbortController();
@@ -11,10 +11,12 @@ export function create(options) {
     let accessPanel = null;
     /** @type {HTMLInputElement | null} */
     let tokenInput = null;
+    /** @type {Promise<void> | null} */
+    let locking = null;
 
     /** Locking destroys the detailed document rather than reviving its old state.
      * @param {boolean} [navigate] */
-    function lock(navigate = true) {
+    function reset(navigate = true) {
         if (resetting && navigate) { location.replace('/'); return; }
         if (resetting) return;
         resetting = true;
@@ -37,9 +39,31 @@ export function create(options) {
         }
     }
 
+    /** @param {boolean} [navigate] */
+    async function lock(navigate = true) {
+        reset(false);
+        if (!navigate || locking) return locking;
+        locking = (async () => {
+            try {
+                await requestJson('/api/view/logout', { method: 'POST' }, 10000);
+                location.replace('/');
+            } catch {
+                const notice = document.getElementById('view-reset-notice');
+                if (notice) notice.textContent = 'Viewing is hidden, but sign-out could not be completed.';
+                const retry = document.createElement('button');
+                retry.className = 'connect-btn';
+                retry.type = 'button';
+                retry.textContent = 'Retry lock';
+                retry.addEventListener('click', () => { retry.remove(); void lock(); });
+                document.body.append(retry);
+            } finally { locking = null; }
+        })();
+        return locking;
+    }
+
     async function authorize() {
         configureViewingAuthentication({ getToken: () => token, getSignal: () => reads.signal,
-            onAuthenticationFailure: () => lock() });
+            onAuthenticationFailure: () => { void lock(); } });
         accessPanel?.remove();
         accessPanel = null;
         document.body.classList.remove('view-locked');
@@ -49,7 +73,7 @@ export function create(options) {
         lockButton.className = 'admin-lock';
         lockButton.type = 'button';
         lockButton.textContent = 'Lock view';
-        lockButton.addEventListener('click', () => lock());
+        lockButton.addEventListener('click', () => { void lock(); });
         document.querySelector('.topbar-right')?.append(lockButton);
         if (aggregateTimer !== null) clearInterval(aggregateTimer);
         aggregateTimer = null;
@@ -63,7 +87,7 @@ export function create(options) {
         accessPanel.id = 'view-access';
         accessPanel.className = 'view-access';
         accessPanel.setAttribute('aria-labelledby', 'view-access-title');
-        accessPanel.innerHTML = '<h1 id="view-access-title">Bitcoin Peer Map</h1><p id="view-access-description">Enter a viewing or administrator token to view this dashboard.</p><div id="view-aggregate" hidden></div><form id="view-token-form"><label for="view-token-input">Viewing token</label><input id="view-token-input" type="password" class="connect-input" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="256" required><div id="view-token-error" class="connect-result err" role="alert"></div><button id="view-token-submit" class="connect-btn" type="submit">Unlock view</button></form>';
+        accessPanel.innerHTML = '<h1 id="view-access-title">Bitcoin Peer Map</h1><p id="view-access-description">Enter a viewing or administrator token to view this dashboard. This browser remembers access for 30 days, or until you lock the view.</p><div id="view-aggregate" hidden></div><form id="view-token-form"><label for="view-token-input">Viewing token</label><input id="view-token-input" type="password" class="connect-input" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="256" required><div id="view-token-error" class="connect-result err" role="alert"></div><button id="view-token-submit" class="connect-btn" type="submit">Unlock view</button></form>';
         document.body.append(accessPanel);
         tokenInput = /** @type {HTMLInputElement} */ (accessPanel.querySelector('#view-token-input'));
         const input = tokenInput;
@@ -82,9 +106,10 @@ export function create(options) {
             input.value = '';
             error.textContent = '';
             try {
-                await requestJson('/api/view/verify', { method: 'POST', headers: { Authorization: `Bearer ${supplied}` }, signal: requests.signal });
+                /** @type {{success: boolean, remembered?: boolean}} */
+                const verified = await requestJson('/api/view/verify', { method: 'POST', headers: { Authorization: `Bearer ${supplied}`, 'X-BPM-Remember': '1' }, signal: requests.signal });
                 requests.signal.throwIfAborted();
-                token = supplied;
+                token = verified.remembered ? '' : supplied;
                 await authorize();
             } catch (failure) {
                 if (requests.signal.aborted) return;
@@ -126,15 +151,17 @@ export function create(options) {
     }
 
     async function start() {
-        globalThis.addEventListener('pagehide', () => { if (mode !== 'public') lock(false); });
-        globalThis.addEventListener('pageshow', event => { if (event.persisted && mode !== 'public') lock(); });
+        globalThis.addEventListener('pagehide', () => { if (mode !== 'public') reset(false); });
+        globalThis.addEventListener('pageshow', event => { if (event.persisted && mode !== 'public') reset(); });
         try {
-            /** @type {{mode:'public'|'authenticated'|'redacted',authentication_available:boolean}} */
+            /** @type {{mode:'public'|'authenticated'|'redacted',authentication_available:boolean,viewing_authenticated?:boolean,management_authenticated?:boolean}} */
             const access = await requestJson('/api/access', { signal: requests.signal, cache: 'no-store' });
             requests.signal.throwIfAborted();
             if (!access || !['public', 'authenticated', 'redacted'].includes(access.mode)) throw new Error('Invalid access mode');
             mode = access.mode;
+            options.onAccess?.(access);
             if (mode === 'public') { await options.onAuthorized(); return; }
+            if (access.viewing_authenticated) { await authorize(); return; }
             showAccess(access.authentication_available);
             if (mode === 'redacted') {
                 await refreshAggregate();

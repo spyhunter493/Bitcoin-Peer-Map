@@ -151,7 +151,7 @@ export default async function assertPeerBandwidth(browser, baseUrl) {
         }));
         await poll();
         await page.locator('#peer-search').fill('Bandwidth Bulk');
-        await page.waitForFunction(() => document.querySelector('#peer-match-count').textContent.trim() === '500 matching / 500 peers');
+        await page.waitForFunction(() => document.querySelector('#peer-match-count').textContent.trim() === '500 of 500 peers');
         assert.ok((await ids()).length < 40, 'downloads must include unmounted peers');
         await page.locator('th[data-sort="tx_bps"] button').click();
         await page.locator('th[data-sort="tx_bps"] button').click();

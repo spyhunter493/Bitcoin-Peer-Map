@@ -31,6 +31,13 @@ export function requireDashboardOrigin(req: IncomingMessage) {
     throw new HttpError(403, 'Cross-origin requests are not allowed');
 }
 
+/** Cookies are ambient credentials, so browser session mutations also require
+ * an explicit Origin. Bearer-authenticated CLI requests keep their own guard. */
+export function requireBrowserOrigin(req: IncomingMessage) {
+    if (!req.headers.origin) throw new HttpError(403, 'A same-origin browser request is required');
+    requireDashboardOrigin(req);
+}
+
 export async function readJsonBody(req: IncomingMessage): Promise<Data> {
     if (Number(req.headers['content-length']) > MAX_REQUEST_BYTES) {
         throw new HttpError(413, 'Request body is too large');

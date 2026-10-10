@@ -6,6 +6,11 @@ import { required } from './dom.js';
 
 export function create() {
     let token = '';
+    let authenticated = false, revision = 0;
+    /** @type {Promise<void> | null} */
+    let locking = null;
+    /** @type {Error | null} */
+    let lockFailure = null;
     /** @type {import('../types').ModalController | null} */
     let dialog = null;
     /** @type {((deadline: number) => void) | null} */
@@ -17,6 +22,8 @@ export function create() {
 
     function clearToken() {
         token = '';
+        authenticated = false;
+        revision++;
         if (lockButton) lockButton.hidden = true;
     }
 
@@ -24,9 +31,54 @@ export function create() {
         return new DOMException('Management action cancelled.', 'AbortError');
     }
 
-    function lock() {
+    function reset() {
         clearToken();
         dialog?.close();
+    }
+
+    async function lock() {
+        if (locking) return locking;
+        reset();
+        lockFailure = null;
+        if (lockButton) {
+            lockButton.hidden = false;
+            lockButton.disabled = true;
+            lockButton.textContent = 'Locking…';
+        }
+        locking = (async () => {
+            try {
+                await requestJson('/api/admin/logout', { method: 'POST' }, 10000);
+                if (lockButton) lockButton.hidden = true;
+            } catch (failure) {
+                lockFailure = new Error('Management could not be locked. Retry locking before using management actions.');
+                if (lockButton) {
+                    lockButton.hidden = false;
+                    lockButton.title = errorMessage(failure);
+                    lockButton.textContent = 'Retry lock';
+                }
+            } finally {
+                if (lockButton) {
+                    lockButton.disabled = false;
+                    if (!lockFailure) { lockButton.textContent = 'Lock'; lockButton.title = 'Sign out of management in this browser'; }
+                }
+                locking = null;
+            }
+        })();
+        return locking;
+    }
+
+    async function beforeRequest() {
+        if (locking) await locking;
+        if (lockFailure) throw lockFailure;
+    }
+
+    /** @param {boolean} restored */
+    function restore(restored) {
+        if (locking || lockFailure) return;
+        token = '';
+        authenticated = restored;
+        revision++;
+        if (lockButton) lockButton.hidden = !restored;
     }
 
     function openPrompt(initialCooldownDeadline = 0) {
@@ -42,7 +94,7 @@ export function create() {
         const current = modal.open({
             id: 'admin-token-modal', title: 'Unlock management', maxWidth: 440,
             initialFocusSelector: '#admin-token-input',
-            initialHtml: '<form id="admin-token-form"><p>Enter the admin token to allow management actions in this tab.</p><label for="admin-token-input">Admin token</label><input id="admin-token-input" class="connect-input" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" required maxlength="256"><div id="admin-token-error" class="connect-result err" role="alert"></div><div class="admin-token-actions"><button type="button" class="dialog-btn dialog-btn-cancel" id="admin-token-cancel">Cancel</button><button type="submit" class="connect-btn" id="admin-token-submit">Unlock</button></div></form>',
+            initialHtml: '<form id="admin-token-form"><p>Enter the admin token to allow management actions. This browser remembers access for 30 days, or until you lock management.</p><label for="admin-token-input">Admin token</label><input id="admin-token-input" class="connect-input" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" required maxlength="256"><div id="admin-token-error" class="connect-result err" role="alert"></div><div class="admin-token-actions"><button type="button" class="dialog-btn dialog-btn-cancel" id="admin-token-cancel">Cancel</button><button type="submit" class="connect-btn" id="admin-token-submit">Unlock</button></div></form>',
             onClose: () => {
                 if (countdown !== null) clearInterval(countdown);
                 rejectedToken = '';
@@ -91,9 +143,12 @@ export function create() {
             error.textContent = '';
             const supplied = input.value;
             try {
-                await requestJson('/api/admin/verify', { method: 'POST', headers: { Authorization: `Bearer ${supplied}` }, signal: current.signal });
+                /** @type {{success: boolean, remembered?: boolean}} */
+                const verified = await requestJson('/api/admin/verify', { method: 'POST', headers: { Authorization: `Bearer ${supplied}`, 'X-BPM-Remember': '1' }, signal: current.signal });
                 if (!current.isOpen()) return;
-                token = supplied;
+                token = verified.remembered ? '' : supplied;
+                authenticated = true;
+                revision++;
                 input.value = '';
                 if (lockButton) lockButton.hidden = false;
                 for (const waiter of waiters) { waiter.cleanup(); waiter.resolve(token); }
@@ -117,7 +172,8 @@ export function create() {
     /** @param {AbortSignal} [signal] @param {number} [cooldownDeadline] @returns {Promise<string>} */
     function requestToken(signal, cooldownDeadline) {
         if (signal?.aborted) return Promise.reject(cancelled());
-        if (token) return Promise.resolve(token);
+        if (lockFailure) return Promise.reject(lockFailure);
+        if (authenticated) return Promise.resolve(token);
         return new Promise((resolve, reject) => {
             /** @type {Waiter} */
             const waiter = { resolve, reject, cleanup: () => signal?.removeEventListener('abort', abort) };
@@ -135,10 +191,18 @@ export function create() {
 
     function init() {
         lockButton = required('#admin-lock');
-        lockButton.addEventListener('click', lock);
-        globalThis.addEventListener('pagehide', lock);
-        configureAdminAuthentication({ getToken: () => token, clearToken, requestToken });
+        lockButton.addEventListener('click', () => { void lock(); });
+        globalThis.addEventListener('pagehide', reset);
+        globalThis.addEventListener('pageshow', event => {
+            if (!event.persisted) return;
+            const current = revision;
+            void requestJson('/api/access', { cache: 'no-store' }).then(access => {
+                if (revision === current && access && typeof access.management_authenticated === 'boolean') restore(access.management_authenticated);
+            }).catch(() => {});
+        });
+        configureAdminAuthentication({ getToken: () => token, isAuthenticated: () => authenticated, getRevision: () => revision,
+            beforeRequest, clearToken, requestToken });
     }
 
-    return Object.freeze({ init, lock });
+    return Object.freeze({ init, lock, reset, restore });
 }

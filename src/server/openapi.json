@@ -80,9 +80,15 @@
           },
           {
             "AdminToken": []
+          },
+          {
+            "ViewSession": []
+          },
+          {
+            "AdminSession": []
           }
         ],
-        "description": "Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management."
+        "description": "Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token or remembered browser session. Viewing tokens cannot authorize management."
       }
     },
     "/api/peer/connect": {
@@ -156,6 +162,9 @@
         "security": [
           {
             "AdminToken": []
+          },
+          {
+            "AdminSession": []
           }
         ]
       }
@@ -231,6 +240,9 @@
         "security": [
           {
             "AdminToken": []
+          },
+          {
+            "AdminSession": []
           }
         ]
       }
@@ -306,6 +318,9 @@
         "security": [
           {
             "AdminToken": []
+          },
+          {
+            "AdminSession": []
           }
         ]
       }
@@ -381,6 +396,9 @@
         "security": [
           {
             "AdminToken": []
+          },
+          {
+            "AdminSession": []
           }
         ]
       }
@@ -427,9 +445,15 @@
           },
           {
             "AdminToken": []
+          },
+          {
+            "ViewSession": []
+          },
+          {
+            "AdminSession": []
           }
         ],
-        "description": "Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management."
+        "description": "Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token or remembered browser session. Viewing tokens cannot authorize management."
       }
     },
     "/api/bans/clear": {
@@ -473,6 +497,9 @@
         "security": [
           {
             "AdminToken": []
+          },
+          {
+            "AdminSession": []
           }
         ]
       }
@@ -480,7 +507,7 @@
     "/api/info": {
       "get": {
         "summary": "Dashboard Info",
-        "description": "Includes node_metrics: Bitcoin Knots uptime, P2P totals, and average P2P rates between RPC samples. Unavailable metrics and rates without a valid baseline are null. Includes services: the P2P service names advertised by this node, from getnetworkinfo.localservicesnames. An empty array means no services are advertised; null means service information is unavailable. Includes updates: the cached application update status. Dashboard reads do not trigger GitHub requests; the server checks once every 24 hours. Updates compare stable release versions, never unreleased main commits. Development builds skip checks. Blockchain ibd is true during initial block download, false only when explicitly complete, and null when unavailable. Includes bitcoin_network: configured chain and default peer connection port. Explicit peer ports are preserved; I2P requires :0. Blockchain txindex_status distinguishes disabled, syncing, ready, and unknown; txindex_height reports the indexed height. The legacy indexed boolean indicates index presence, not readiness.\n\nAnonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management.",
+        "description": "Includes node_metrics: Bitcoin Knots uptime, P2P totals, and average P2P rates between RPC samples. Unavailable metrics and rates without a valid baseline are null. Includes services: the P2P service names advertised by this node, from getnetworkinfo.localservicesnames. An empty array means no services are advertised; null means service information is unavailable. Includes updates: the cached application update status. Dashboard reads do not trigger GitHub requests; the server checks once every 24 hours. Updates compare stable release versions, never unreleased main commits. Development builds skip checks. Blockchain ibd is true during initial block download, false only when explicitly complete, and null when unavailable. Includes bitcoin_network: configured chain and default peer connection port. Explicit peer ports are preserved; I2P requires :0. Blockchain txindex_status distinguishes disabled, syncing, ready, and unknown; txindex_height reports the indexed height. The legacy indexed boolean indicates index presence, not readiness.\n\nAnonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token or remembered browser session. Viewing tokens cannot authorize management.",
         "operationId": "dashboard_info_api_info_get",
         "responses": {
           "200": {
@@ -530,6 +557,12 @@
           },
           {
             "AdminToken": []
+          },
+          {
+            "ViewSession": []
+          },
+          {
+            "AdminSession": []
           }
         ]
       }
@@ -576,9 +609,15 @@
           },
           {
             "AdminToken": []
+          },
+          {
+            "ViewSession": []
+          },
+          {
+            "AdminSession": []
           }
         ],
-        "description": "Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management."
+        "description": "Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token or remembered browser session. Viewing tokens cannot authorize management."
       }
     },
     "/api/blockchain": {
@@ -623,9 +662,15 @@
           },
           {
             "AdminToken": []
+          },
+          {
+            "ViewSession": []
+          },
+          {
+            "AdminSession": []
           }
         ],
-        "description": "Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management."
+        "description": "Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token or remembered browser session. Viewing tokens cannot authorize management."
       }
     },
     "/api/blocks/recent": {
@@ -694,9 +739,15 @@
           },
           {
             "AdminToken": []
+          },
+          {
+            "ViewSession": []
+          },
+          {
+            "AdminSession": []
           }
         ],
-        "description": "Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management."
+        "description": "Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token or remembered browser session. Viewing tokens cannot authorize management."
       }
     },
     "/api/rpc-info": {
@@ -741,9 +792,15 @@
           },
           {
             "AdminToken": []
+          },
+          {
+            "ViewSession": []
+          },
+          {
+            "AdminSession": []
           }
         ],
-        "description": "Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management."
+        "description": "Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token or remembered browser session. Viewing tokens cannot authorize management."
       }
     },
     "/api/chain-tips": {
@@ -781,7 +838,7 @@
             "$ref": "#/components/responses/ViewRateLimited"
           }
         },
-        "description": "Loads tips within 15 seconds including RPC queue time. Required tips have up to 10 seconds; optional blockchain metadata has up to 5 seconds concurrently. Up to 100 header ages are enriched by 4 workers for at most 5 seconds within the overall deadline. Optional timeouts preserve valid tips with null ages. Completed partial results are shared for 5 seconds; ages and generated_at are refreshed on independent returned copies.\n\nAnonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management.",
+        "description": "Loads tips within 15 seconds including RPC queue time. Required tips have up to 10 seconds; optional blockchain metadata has up to 5 seconds concurrently. Up to 100 header ages are enriched by 4 workers for at most 5 seconds within the overall deadline. Optional timeouts preserve valid tips with null ages. Completed partial results are shared for 5 seconds; ages and generated_at are refreshed on independent returned copies.\n\nAnonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token or remembered browser session. Viewing tokens cannot authorize management.",
         "security": [
           {},
           {
@@ -789,6 +846,12 @@
           },
           {
             "AdminToken": []
+          },
+          {
+            "ViewSession": []
+          },
+          {
+            "AdminSession": []
           }
         ]
       }
@@ -835,9 +898,15 @@
           },
           {
             "AdminToken": []
+          },
+          {
+            "ViewSession": []
+          },
+          {
+            "AdminSession": []
           }
         ],
-        "description": "Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management."
+        "description": "Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token or remembered browser session. Viewing tokens cannot authorize management."
       }
     },
     "/api/connectivity/api-prompt-ack": {
@@ -881,6 +950,9 @@
         "security": [
           {
             "AdminToken": []
+          },
+          {
+            "AdminSession": []
           }
         ]
       }
@@ -926,6 +998,9 @@
         "security": [
           {
             "AdminToken": []
+          },
+          {
+            "AdminSession": []
           }
         ],
         "deprecated": true,
@@ -973,6 +1048,9 @@
         "security": [
           {
             "AdminToken": []
+          },
+          {
+            "AdminSession": []
           }
         ],
         "deprecated": true,
@@ -1020,6 +1098,9 @@
         "security": [
           {
             "AdminToken": []
+          },
+          {
+            "AdminSession": []
           }
         ],
         "description": "Validates streamed IPv4/IPv6 location rows in a worker and merges valid rows transactionally using timestamp precedence. Invalid rows are skipped and cannot replace local records. If no valid rows remain, the import fails without changing local records."
@@ -1028,7 +1109,7 @@
     "/api/stats": {
       "get": {
         "summary": "Node Metrics",
-        "description": "RPC-only node metrics from uptime and getnettotals, shared with /api/info.node_metrics. The legacy system_stats response key is retained; no dashboard host metrics are collected.\n\nAnonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management.",
+        "description": "RPC-only node metrics from uptime and getnettotals, shared with /api/info.node_metrics. The legacy system_stats response key is retained; no dashboard host metrics are collected.\n\nAnonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token or remembered browser session. Viewing tokens cannot authorize management.",
         "operationId": "stats_api_stats_get",
         "responses": {
           "200": {
@@ -1068,6 +1149,12 @@
           },
           {
             "AdminToken": []
+          },
+          {
+            "ViewSession": []
+          },
+          {
+            "AdminSession": []
           }
         ]
       }
@@ -1107,7 +1194,7 @@
             "$ref": "#/components/responses/ViewRateLimited"
           }
         },
-        "description": "Runtime configuration without credentials. build.version is the release tag or dev; build.revision is the exact source commit. build.updates contains cached release update status.\n\nAnonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management.\nIncludes saved and effective optional-server-request policy under outbound.",
+        "description": "Runtime configuration without credentials. build.version is the release tag or dev; build.revision is the exact source commit. build.updates contains cached release update status.\n\nAnonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token or remembered browser session. Viewing tokens cannot authorize management.\nIncludes saved and effective optional-server-request policy under outbound.",
         "security": [
           {},
           {
@@ -1115,6 +1202,12 @@
           },
           {
             "AdminToken": []
+          },
+          {
+            "ViewSession": []
+          },
+          {
+            "AdminSession": []
           }
         ]
       }
@@ -1157,9 +1250,15 @@
           },
           {
             "AdminToken": []
+          },
+          {
+            "ViewSession": []
+          },
+          {
+            "AdminSession": []
           }
         ],
-        "description": "Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management."
+        "description": "Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token or remembered browser session. Viewing tokens cannot authorize management."
       }
     },
     "/": {
@@ -1183,7 +1282,7 @@
     "/api/admin/verify": {
       "post": {
         "summary": "Verify Admin Token",
-        "description": "Verify the shared token without changing node or dashboard settings. Does not create a server session.",
+        "description": "Verify an administrator credential. With X-BPM-Remember: 1, successful explicit bearer verification and a same-origin Origin issue a persistent HttpOnly browser cookie for 30 days. Verification without this opt-in remains cookie-free. Sessions expire absolutely and are revoked by logout or application restart.",
         "operationId": "verify_admin_token",
         "responses": {
           "200": {
@@ -1191,7 +1290,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessResponse"
+                  "$ref": "#/components/schemas/AuthenticationResponse"
+                }
+              }
+            },
+            "headers": {
+              "Set-Cookie": {
+                "description": "Issued only for successful opted-in browser login. Opaque host-only session cookie; Path=/api, Max-Age=2592000, HttpOnly, SameSite=Strict, Secure for HTTPS.",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -1222,6 +1329,23 @@
         "security": [
           {
             "AdminToken": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-BPM-Remember",
+            "in": "header",
+            "required": false,
+            "description": "Set to 1 to create a remembered browser session; requires an explicit valid bearer credential and same-origin Origin.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ]
+            }
           }
         ]
       }
@@ -1298,6 +1422,9 @@
         "security": [
           {
             "AdminToken": []
+          },
+          {
+            "AdminSession": []
           }
         ]
       }
@@ -1374,6 +1501,9 @@
         "security": [
           {
             "AdminToken": []
+          },
+          {
+            "AdminSession": []
           }
         ]
       }
@@ -1400,7 +1530,7 @@
       "get": {
         "summary": "Viewing Access Mode",
         "operationId": "viewing_access_mode",
-        "description": "Public minimal bootstrap used before detailed polling.",
+        "description": "Public minimal bootstrap used before detailed polling. Session status is private/no-store and varies by Cookie.",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -1429,13 +1559,19 @@
       "post": {
         "summary": "Verify Viewing Token",
         "operationId": "verify_viewing_token",
-        "description": "Verify a viewing or administrator credential without granting management permissions or creating a server session. Credentials remain required on every protected read.",
+        "description": "Verify a viewing or administrator credential without granting management permissions. With X-BPM-Remember: 1, successful explicit bearer verification and a same-origin Origin issue a persistent HttpOnly browser cookie for 30 days. Verification without this opt-in remains cookie-free. Sessions expire absolutely and are revoked by logout or application restart.",
         "security": [
           {
             "ViewToken": []
           },
           {
             "AdminToken": []
+          },
+          {
+            "ViewSession": []
+          },
+          {
+            "AdminSession": []
           }
         ],
         "responses": {
@@ -1444,7 +1580,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessResponse"
+                  "$ref": "#/components/schemas/AuthenticationResponse"
+                }
+              }
+            },
+            "headers": {
+              "Set-Cookie": {
+                "description": "Issued only for successful opted-in browser login. Opaque host-only session cookie; Path=/api, Max-Age=2592000, HttpOnly, SameSite=Strict, Secure for HTTPS.",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -1475,7 +1619,21 @@
               }
             }
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "X-BPM-Remember",
+            "in": "header",
+            "required": false,
+            "description": "Set to 1 to create a remembered browser session; requires an explicit valid bearer credential and same-origin Origin.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ]
+            }
+          }
+        ]
       }
     },
     "/api/config/outbound": {
@@ -1517,9 +1675,15 @@
           },
           {
             "AdminToken": []
+          },
+          {
+            "ViewSession": []
+          },
+          {
+            "AdminSession": []
           }
         ],
-        "description": "Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token. Viewing tokens cannot authorize management."
+        "description": "Anonymous access is available in public viewing mode. In authenticated or redacted mode, this detailed endpoint requires a valid viewing or administrator bearer token or remembered browser session. Viewing tokens cannot authorize management."
       },
       "post": {
         "summary": "Change Optional Outbound Preference",
@@ -1538,6 +1702,9 @@
         "security": [
           {
             "AdminToken": []
+          },
+          {
+            "AdminSession": []
           }
         ],
         "responses": {
@@ -1595,6 +1762,12 @@
           },
           {
             "AdminToken": []
+          },
+          {
+            "ViewSession": []
+          },
+          {
+            "AdminSession": []
           }
         ],
         "responses": {
@@ -1613,6 +1786,72 @@
           },
           "429": {
             "$ref": "#/components/responses/ViewRateLimited"
+          },
+          "default": {
+            "description": "HTTP request failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/view/logout": {
+      "post": {
+        "summary": "Lock Viewing and Management Browser Sessions",
+        "operationId": "logout_view_sessions",
+        "description": "Revoke and clear viewing and management browser session cookies. Requires an explicit same-origin Origin, including when no valid credential remains. Does not revoke configured bearer tokens.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Browser sessions revoked and cookies cleared.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
+          },
+          "default": {
+            "description": "HTTP request failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/logout": {
+      "post": {
+        "summary": "Lock Management Browser Sessions",
+        "operationId": "logout_admin_sessions",
+        "description": "Revoke and clear management browser session cookies. Requires an explicit same-origin Origin, including when no valid credential remains. Does not revoke configured bearer tokens.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Browser sessions revoked and cookies cleared.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
           },
           "default": {
             "description": "HTTP request failure.",
@@ -3710,7 +3949,9 @@
         "type": "object",
         "required": [
           "mode",
-          "authentication_available"
+          "authentication_available",
+          "viewing_authenticated",
+          "management_authenticated"
         ],
         "properties": {
           "mode": {
@@ -3723,10 +3964,18 @@
           },
           "authentication_available": {
             "type": "boolean"
+          },
+          "viewing_authenticated": {
+            "type": "boolean",
+            "description": "A remembered viewing or management browser session is active."
+          },
+          "management_authenticated": {
+            "type": "boolean",
+            "description": "A remembered management browser session is active."
           }
         },
         "additionalProperties": false,
-        "description": "Minimal access-mode bootstrap. Contains no node details, tokens, paths, or peer data."
+        "description": "Minimal access-mode and remembered-session bootstrap. Contains no node details, credentials, paths, or peer data."
       },
       "OutboundPreferences": {
         "type": "object",
@@ -3922,6 +4171,22 @@
         },
         "additionalProperties": false,
         "description": "Explicit anonymous aggregate allowlist, with cached peer counts grouped into ranges of five. No exact total, peer identifiers, endpoints, precise locations, providers, paths, credentials, timestamps, or raw errors. Retained counts during a monitoring gap are marked unavailable or unknown; bucketing is not an anonymity guarantee."
+      },
+      "AuthenticationResponse": {
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "remembered": {
+            "type": "boolean",
+            "description": "Present and true when a persistent browser session cookie was issued."
+          }
+        },
+        "additionalProperties": false
       }
     },
     "responses": {
@@ -4032,6 +4297,18 @@
         "type": "http",
         "scheme": "bearer",
         "description": "Shared viewing token configured with BPM_VIEW_TOKEN or BPM_VIEW_TOKEN_FILE. A valid administrator token may also read detailed monitoring. Use HTTPS; viewing credentials do not authorize management."
+      },
+      "ViewSession": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "bpm_view_session",
+        "description": "Opaque browser viewing session, issued by opted-in token verification. HttpOnly; absolute 30-day expiry. Never authorizes management."
+      },
+      "AdminSession": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "bpm_admin_session",
+        "description": "Opaque browser management session, issued by opted-in administrator-token verification. HttpOnly; absolute 30-day expiry. Also authorizes detailed monitoring. Cookie-authenticated mutations require a same-origin Origin."
       }
     }
   }

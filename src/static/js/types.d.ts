@@ -1,6 +1,9 @@
 /** Browser contract for /api/peers. Strings remain raw until rendered into HTML. */
 export interface AdminAuthentication {
     getToken(): string;
+    isAuthenticated?(): boolean;
+    getRevision?(): number;
+    beforeRequest?(): Promise<void>;
     clearToken(): void;
     requestToken(signal?: AbortSignal, cooldownDeadline?: number): Promise<string>;
 }

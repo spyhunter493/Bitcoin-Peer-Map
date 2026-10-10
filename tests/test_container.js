@@ -100,7 +100,10 @@ try {
     `);
     await start();
     const access = await (await fetch(base + '/api/access')).json();
-    assert.deepEqual(access, { mode: 'authenticated', authentication_available: true });
+    assert.deepEqual(access, {
+        mode: 'authenticated', authentication_available: true,
+        viewing_authenticated: false, management_authenticated: false,
+    });
     for (const path of ['/api/peers?include_status=true', '/api/info', '/api/config', '/api/stream/system']) {
         const anonymous = await fetch(base + path);
         assert.equal(anonymous.status, 401, `${path}: default private viewing blocks anonymous reads`);

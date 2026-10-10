@@ -27,6 +27,7 @@ import assertPrivateNodeComponents from './test_private_node_components.js';
 import assertNavigation from './test_navigation.js';
 import assertPrivateViewNavigation from './test_private_view_navigation.js';
 import assertAdminAuthentication from './test_admin_auth.js';
+import assertPersistentAuthentication from './test_persistent_auth.js';
 import assertManagementFeedback from './test_management_feedback.js';
 import assertNetworkExamples from './test_network_examples.js';
 import assertTableSettings from './test_table_settings.js';
@@ -945,6 +946,7 @@ const suites = [
     ['private view navigation', assertPrivateViewNavigation],
     ['keyboard exploration', assertKeyboardNavigation],
     ['admin authentication', assertAdminAuthentication],
+    ['persistent authentication', assertPersistentAuthentication],
     ['management feedback', assertManagementFeedback],
     ['network connection examples', assertNetworkExamples],
 ];

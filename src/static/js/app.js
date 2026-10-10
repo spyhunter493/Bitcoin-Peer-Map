@@ -7,6 +7,7 @@ management.init();
 let dashboard = null;
 let generation = 0;
 const viewing = createViewingAuthentication({
+    onAccess(access) { management.restore(Boolean(access.management_authenticated)); },
     async onAuthorized() {
         const current = ++generation;
         const { create } = await import('./map/controller.js');
@@ -16,7 +17,7 @@ const viewing = createViewingAuthentication({
     },
     onLock() {
         generation++;
-        management.lock();
+        management.reset();
         dashboard?.dispose();
         dashboard = null;
     },

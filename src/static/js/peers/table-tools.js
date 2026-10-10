@@ -20,6 +20,7 @@ export function create(options) {
     const clearSearch = required('#peer-search-clear', document);
     const chips = required('#peer-filter-chips', document);
     const count = required('#peer-match-count', document);
+    const filterStatus = required('#peer-filter-status', document);
     /** @type {HTMLButtonElement} */
     const clearFilters = required('#peer-clear-filters', document);
     const exportButton = required('#btn-export-peers', document);
@@ -85,7 +86,7 @@ export function create(options) {
     }
 
     lifecycle.listen(required('#peer-search-tools', document), 'click', event => event.stopPropagation());
-    lifecycle.listen(required('#peer-filter-status', document), 'click', event => event.stopPropagation());
+    lifecycle.listen(filterStatus, 'click', event => event.stopPropagation());
     lifecycle.listen(input, 'input', changeQuery);
     lifecycle.listen(input, 'keydown', event => {
         if (event.key === 'Escape') {
@@ -150,7 +151,7 @@ export function create(options) {
     /** @param {Snapshot} next */
     function update(next) {
         snapshot = next;
-        const text = `${next.peers.length} matching / ${next.total} peers`;
+        const text = `${next.peers.length} of ${next.total} peers`;
         if (count.textContent !== text) count.textContent = text;
         clearSearch.hidden = !query;
         const active = query.trim() ? [{key: 'search', label: `Search: ${query.trim()}`}, ...next.scopes] : next.scopes;
@@ -169,6 +170,7 @@ export function create(options) {
             }));
         }
         clearFilters.hidden = active.length === 0;
+        filterStatus.hidden = active.length === 0;
         positionExport();
     }
 

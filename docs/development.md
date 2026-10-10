@@ -27,13 +27,19 @@ Dashboard and legacy metrics endpoints share reads cached for five seconds. P2P
 rates are averaged between valid samples and reset after outages or node restarts;
 unavailable values are null. No dashboard host or container metrics are collected.
 
-Management is read-only unless `BPM_ADMIN_TOKEN` is configured. Every registered
-POST API route checks its bearer token before invoking the handler. The browser's
+Management is read-only unless `BPM_ADMIN_TOKEN` is configured. Every management
+POST API route checks its bearer token or management session before
+invoking the handler. Session logout is separately guarded by an explicit matching
+Origin. Cookie-authenticated POSTs also require that Origin. The browser's
 shared API helper handles authentication challenges through the admin token dialog;
 all management callers should use `postJson`. See
 [admin authentication](configuration.md#admin-token-and-read-only-mode) for token
 generation, HTTPS deployment, revocation, and API responses. Detailed viewing uses
-the separate [viewing access policy](configuration.md#viewing-access).
+the separate [viewing access policy](configuration.md#viewing-access). Browser
+verification opts into 30-day HttpOnly session cookies with `X-BPM-Remember: 1`;
+`/api/access` reports viewing and management session state before detailed polling.
+Page lifecycle cleanup preserves sessions, while explicit Lock revokes them on the
+server. Session records are held in memory and expire on service restart.
 
 Dashboard dialogs use `core/modal.js` for accessible naming, focus containment,
 stacking, Escape/backdrop dismissal, and focus restoration. Pass the dialog's

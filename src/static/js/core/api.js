@@ -112,7 +112,11 @@ async function postJson(url, body, options) {
     requestOptions.headers = headers;
     const target = new URL(url, globalThis.location?.href || 'http://localhost/');
     const authentication = target.origin === (globalThis.location?.origin || 'http://localhost') && target.pathname.startsWith('/api/') ? adminAuthentication : null;
+    if (authentication?.beforeRequest) await authentication.beforeRequest();
+    options?.signal?.throwIfAborted();
     const previousToken = authentication?.getToken() || '';
+    const previousRevision = authentication?.getRevision?.();
+    const previouslyAuthenticated = Boolean(previousToken || authentication?.isAuthenticated?.());
     if (previousToken) headers.set('Authorization', `Bearer ${previousToken}`);
     try {
         const result = await requestJson(url, requestOptions);
@@ -123,13 +127,15 @@ async function postJson(url, body, options) {
         // A canceled action must not reopen authentication or alter a live token.
         options?.signal?.throwIfAborted();
         if (!(error instanceof HttpError) || !authentication) throw error;
-        const anonymousCooldown = error.status === 429 && !previousToken && error.data !== null && typeof error.data === 'object' && 'code' in error.data && error.data.code === 'admin_rate_limited';
+        const anonymousCooldown = error.status === 429 && !previouslyAuthenticated && error.data !== null && typeof error.data === 'object' && 'code' in error.data && error.data.code === 'admin_rate_limited';
         if (error.status !== 401 && !anonymousCooldown) throw error;
-        if (error.status === 401 && authentication.getToken() === previousToken) authentication.clearToken();
+        if (error.status === 401 && (previousRevision === undefined ? authentication.getToken() === previousToken : authentication.getRevision?.() === previousRevision)) authentication.clearToken();
         const cooldownDeadline = anonymousCooldown ? Date.now() + (error.retryAfterSeconds ?? 60) * 1000 : undefined;
         const token = await authentication.requestToken(options?.signal || undefined, cooldownDeadline);
         options?.signal?.throwIfAborted();
-        headers.set('Authorization', `Bearer ${token}`);
+        if (token) headers.set('Authorization', `Bearer ${token}`);
+        else headers.delete('Authorization');
+        const retryRevision = authentication.getRevision?.();
         try {
             // Authentication failures execute no action. Retry only that request, once.
             const result = await requestJson(url, requestOptions);
@@ -137,7 +143,7 @@ async function postJson(url, body, options) {
             return /** @type {T} */ (result);
         } catch (retryError) {
             options?.signal?.throwIfAborted();
-            if (retryError instanceof HttpError && retryError.status === 401 && authentication.getToken() === token) authentication.clearToken();
+            if (retryError instanceof HttpError && retryError.status === 401 && (retryRevision === undefined ? authentication.getToken() === token : authentication.getRevision?.() === retryRevision)) authentication.clearToken();
             throw retryError;
         }
     }

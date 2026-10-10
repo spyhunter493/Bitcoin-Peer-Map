@@ -167,7 +167,9 @@ Browser management requests are rejected with HTTP 403 when their `Origin` host
 does not match the request's `Host`. Reverse proxies should preserve the external
 `Host` header. HTTP and HTTPS origins on that host are accepted for TLS termination.
 Command-line clients without `Origin` remain supported, but must supply the admin
-token for management requests. Origin checking remains separate from token authentication.
+token for management requests. Cookie-authenticated browser POSTs, session creation,
+and logout require an explicit matching Origin. Origin checking remains separate
+from authentication.
 
 To run another instance, use a distinct Compose project name (`docker compose -p
 bpm-second ...`), `BPM_HOST_PORT`, and `BPM_DATA_VOLUME`. Changing the volume name
@@ -178,8 +180,9 @@ selects different saved data, so keep its existing value during normal upgrades.
 The default `BPM_VIEW_MODE=authenticated` permits anonymous access only to the
 page shell, local assets, API documentation/schema, minimal `/api/access`
 bootstrap, and `/healthz`. Detailed GETs, normalized HEAD requests, and the
-metrics stream require a valid viewing or administrator bearer token. The browser
-does not start detailed polling before viewing authentication.
+metrics stream require a valid viewing or administrator bearer token or remembered
+browser session. The browser does not start detailed polling before viewing
+authentication.
 
 Set `BPM_VIEW_TOKEN` or `BPM_VIEW_TOKEN_FILE` for viewing, or use a configured
 administrator token for both viewing and management. Private modes refuse startup
@@ -193,15 +196,27 @@ individual peer data, locations, providers, paths, credentials, timestamps, or r
 errors. Counts over time can still reveal changes; this is not an anonymity guarantee.
 `BPM_VIEW_MODE=public` explicitly permits the complete anonymous monitoring view.
 
-The browser keeps credentials only in memory. Locking or an authentication failure
-cancels detailed reads, clears private rendered data, and returns to a fresh access
-screen. Reloads and protected back/forward-cache navigation clear credentials.
-Protected responses use private/no-store caching and vary by Authorization.
+Successful browser logins are remembered for 30 days, including reloads and closing
+and reopening tabs or browser windows. The browser stores an opaque session cookie,
+not the configured token. Cookies are host-only, scoped to `/api`, `HttpOnly`, and
+`SameSite=Strict`; HTTPS logins also use `Secure`. JavaScript cannot read the session
+cookie. The server stores a hash of each session identifier in memory and enforces
+an absolute expiry without extending it during polling.
+Up to 1,024 remembered sessions are kept at once. When full, new remembered logins
+return HTTP 503 with `session_capacity`; existing sessions remain valid.
 
-Tokens are shared operator-configured secrets, with no account/session system or
-expiry. Change the configured token or mounted file, then recreate the service to
-revoke it. Restart closes existing streams; locking one tab does not revoke the
-server credential. Configure HTTPS at your reverse proxy and prevent clients from
+**Lock view** revokes that browser's viewing and management sessions, cancels
+detailed reads, clears private rendered data, and returns to a fresh access screen.
+Closing a tab still clears its private document and requests, but preserves the
+remembered session. Protected back/forward-cache navigation reloads and verifies
+the session before rendering private data. Protected responses use private/no-store
+caching and vary by Authorization and Cookie.
+
+Tokens remain shared operator-configured secrets without individual accounts or
+token expiry. Change the configured token or mounted file, then recreate the service
+to revoke it. Restarting the service also invalidates remembered sessions and closes
+existing streams. Locking revokes the browser session rather than the operator's
+shared token. Configure HTTPS at your reverse proxy and prevent clients from
 bypassing that transport boundary.
 
 When upgrading an implicit public configuration, configure a viewing/admin token
@@ -236,13 +251,20 @@ Protect your `.env` with `chmod 600 .env` and recreate the service with
 `docker compose up -d bpm` after changing the token.
 
 The first management action opens an **Unlock management** dialog. The token is
-verified before that action runs, then held only in the current tab's memory.
-Reloading, leaving the page, or clicking **Lock** clears it. Cancelling the dialog
-does not execute the pending action. Peer connect/disconnect/ban/unban, clearing
-bans, GeoIP changes/updates, and the server's connectivity acknowledgement all
+verified before that action runs, then management is remembered in a separate
+30-day session cookie. Reopening the dashboard retains that authorization.
+Clicking **Lock** revokes management for that browser while preserving a separate
+viewing session. Viewing login alone does not grant management, even when an administrator
+token is used to unlock the view. Cancelling the dialog does not execute the pending
+action. Peer connect/disconnect/ban/unban, clearing bans, GeoIP changes/updates,
+and the server's connectivity acknowledgement all
 require authentication. Merely viewing a connectivity notice is handled locally.
 
 API clients send `Authorization: Bearer <token>` on each management request.
+The verification endpoints create remembered sessions only when the browser opts
+in with `X-BPM-Remember: 1` and supplies a matching Origin. Normal bearer-token API
+verification remains cookie-free. Explicit bearer credentials take precedence over
+cookies; an incorrect bearer token cannot fall back to an existing session.
 GeoIP preferences use `POST /api/geodb/db-only` and
 `POST /api/geodb/auto-update`, each with a JSON `{ "enabled": boolean }` body.
 Database-only `enabled: true` disables external peer location lookups. Repeated
@@ -301,7 +323,8 @@ Use HTTPS when sending this token over an untrusted network, including browser
 access. A TLS proxy does not need to implement login if public viewing is intended;
 bind the backend to loopback or a private Docker network so clients cannot bypass
 TLS. The token is never included in dashboard HTML, configuration responses, or
-browser storage. Changing it and recreating the service revokes the previous token;
+browser storage; remembered cookies contain independent session identifiers.
+Changing it and recreating the service revokes the previous token and all sessions;
 open tabs are prompted again on their next management action. This is one shared
 administrator credential, with no individual accounts or per-user permissions.
 

@@ -203,7 +203,7 @@ test('unknown revisions hash dependencies and known revisions remain stable', t 
     assert.equal(assetRevision(dir, 'abcdef0'), 'abcdef0');
 });
 test('all documented JSON endpoints are wired and removed endpoints stay absent', async t => {
-    const { get } = await application(t);
+    const { get, base } = await application(t);
     const schema = await (await get('/openapi.json')).json();
     for (const [path, methods] of Object.entries(schema.paths)) {
         if (!path.startsWith('/api/') || path === '/api/stream/system') continue;
@@ -211,7 +211,7 @@ test('all documented JSON endpoints are wired and removed endpoints stay absent'
             const body = path === '/api/config/outbound'
                 ? { preference: 'release_checks', enabled: false }
                 : { address: '8.8.8.8', peer_id: 1, enabled: true };
-            const response = await get(path, { method: method.toUpperCase(), ...(method === 'post' ? { body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } } : {}) });
+            const response = await get(path, { method: method.toUpperCase(), ...(method === 'post' ? { body: JSON.stringify(body), headers: { 'Content-Type': 'application/json', ...(path.endsWith('/logout') ? { Origin: base } : {}) } } : {}) });
             assert.equal(response.status, (methods as Record<string, {deprecated?: boolean}>)[method].deprecated ? 410 : 200, `${method} ${path}`); assert.ok(await response.json());
         }
     }

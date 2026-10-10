@@ -88,7 +88,7 @@ export default async function assertPeerSearchExport(browser, baseUrl) {
             await page.waitForFunction(({ count, total }) => {
                 const tbody = document.getElementById('peer-tbody');
                 return tbody.dataset.peerCount === String(count) &&
-                    document.getElementById('peer-match-count').textContent.trim() === `${count} matching / ${total} peers`;
+                    document.getElementById('peer-match-count').textContent.trim() === `${count} of ${total} peers`;
             }, { count: expected.length, total: peers.length }, { timeout: 10000 });
         } catch (error) {
             const actual = await page.evaluate(() => ({
@@ -97,7 +97,7 @@ export default async function assertPeerSearchExport(browser, baseUrl) {
                 chips: document.getElementById('peer-filter-chips').textContent,
                 ids: [...document.querySelectorAll('#peer-tbody tr[data-id]')].map(row => Number(row.dataset.id)),
             }));
-            throw new Error(`Expected ${expected.length} matching / ${peers.length} peers; actual ${JSON.stringify(actual)}; page errors ${JSON.stringify(errors)}`, { cause: error });
+            throw new Error(`Expected ${expected.length} of ${peers.length} peers; actual ${JSON.stringify(actual)}; page errors ${JSON.stringify(errors)}`, { cause: error });
         }
         if (expected.length < 20) assert.deepEqual(await ids(), expected);
     }

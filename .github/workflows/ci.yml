@@ -121,9 +121,9 @@ jobs:
       - name: Run browser security tests
         run: |
           case "$BPM_TEST_SUITE" in
-            all) set --; expected=4 ;;
-            policy) set -- --test-skip-pattern 'protected viewing|optional outbound'; expected=2 ;;
-            controls) set -- --test-skip-pattern 'local assets'; expected=3 ;;
+            all) set --; expected=5 ;;
+            policy) set -- --test-skip-pattern 'protected viewing|persistent viewer|optional outbound'; expected=2 ;;
+            controls) set -- --test-skip-pattern 'local assets'; expected=4 ;;
             *) echo "Unknown browser security suite: $BPM_TEST_SUITE"; exit 1 ;;
           esac
           report=$(mktemp)

@@ -11,24 +11,26 @@ const digest = (value: string) => createHash('sha256').update(value).digest();
 export function privateViewingResponse(res: ServerResponse) {
     res.setHeader('Cache-Control', 'private, no-store');
     const vary = String(res.getHeader('Vary') || '').split(',').map(value => value.trim()).filter(Boolean);
-    if (!vary.some(value => value.toLowerCase() === 'authorization' || value === '*')) vary.push('Authorization');
+    for (const name of ['Authorization', 'Cookie']) if (!vary.some(value => value.toLowerCase() === name.toLowerCase() || value === '*')) vary.push(name);
     res.setHeader('Vary', vary.join(', '));
 }
 
 /** Viewing credentials never authorize mutations. Valid credentials bypass
  * anonymous throttling without consulting or resetting its identity windows. */
-export function createViewingAuthentication(viewToken: string | null, adminToken: string | null, trustedProxies: readonly TrustedProxy[] = []) {
+export function createViewingAuthentication(viewToken: string | null, adminToken: string | null, trustedProxies: readonly TrustedProxy[] = [], authenticateSession: (req: IncomingMessage) => boolean = () => false) {
     const expected = [viewToken, adminToken].filter((value): value is string => Boolean(value)).map(digest);
     const failures = new Map<string, { count: number; expires: number }>();
-    return function requireViewer(req: IncomingMessage, res: ServerResponse) {
+    return function requireViewer(req: IncomingMessage, res: ServerResponse, allowSession = true) {
         privateViewingResponse(res);
         if (!expected.length) throw new HttpError(403, 'Viewing authentication is not configured.', 'viewing_disabled');
-        const header = req.headers.authorization || '';
+        const authorization = req.headers.authorization;
+        const header = authorization || '';
         const supplied = header.length <= 263 ? /^Bearer ([A-Za-z0-9._~+/-]+={0,2})$/i.exec(header)?.[1] || '' : '';
         const candidate = digest(supplied);
         let valid = false;
         for (const token of expected) valid = timingSafeEqual(candidate, token) || valid;
         if (valid) return;
+        if (allowSession && authorization === undefined && authenticateSession(req)) return;
 
         const client = anonymousClientIdentity(req, trustedProxies);
         const now = Date.now();

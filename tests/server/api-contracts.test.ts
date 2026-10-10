@@ -85,6 +85,7 @@ async function application(t: TestContext, real = false, token = FIXTURE_ADMIN_T
     async function json(path: string, method: 'get' | 'post' = 'get', body?: unknown, options: RequestInit = {}) {
         const headers = new Headers(options.headers);
         if (method === 'post' && !headers.has('Authorization')) headers.set('Authorization', `Bearer ${FIXTURE_ADMIN_TOKEN}`);
+        if (path.endsWith('/logout') && !headers.has('Origin')) headers.set('Origin', base);
         if (body !== undefined) headers.set('Content-Type', 'application/json');
         const response = await fetch(base + path, { ...options, method: method.toUpperCase(), headers, body: body === undefined ? undefined : JSON.stringify(body) });
         const value: unknown = await response.json();
