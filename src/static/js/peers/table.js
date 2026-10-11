@@ -950,7 +950,7 @@ function create(options) {
             const topbarBottom = document.getElementById('topbar')?.getBoundingClientRect().bottom || 0;
             const available = Math.max(headerHeight + 44, viewportHeight - topbarBottom - 40);
             const h = Math.min(headerHeight + 22 + maxPeerRows * 22 + 4, available);
-            const finalPanelTop = viewportHeight - 28 - h;
+            const finalPanelTop = viewportHeight - h;
             const currentPanelTop = panel.getBoundingClientRect().top;
             panel.style.maxHeight = h + 'px';
             if (finalPanelTop < currentPanelTop) {
