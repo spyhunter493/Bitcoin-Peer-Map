@@ -193,6 +193,27 @@ body.map-camera-moving .peer-panel-body {
 .update-indicator[hidden] { display: none; }
 .update-indicator:hover,
 .update-indicator:focus-visible { color: var(--text-primary); border-color: var(--warn); }
+.support-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 7px;
+    margin-bottom: 2px;
+    border: 1px solid rgba(88, 166, 255, 0.15);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 11px;
+    line-height: 1.2;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: color var(--transition), border-color var(--transition);
+}
+.support-button:hover {
+    color: var(--accent);
+    border-color: rgba(88, 166, 255, 0.3);
+}
 
 /* --- Top bar right section --- */
 .topbar-right {
@@ -1718,6 +1739,23 @@ button.fd-net-chip:focus-visible { outline: 2px solid var(--accent); outline-off
     background: rgba(88, 166, 255, 0.18);
     border-color: var(--accent);
 }
+.dsp-support-btn {
+    display: none;
+    width: 100%;
+    margin-top: 8px;
+    padding: 6px 8px;
+    border: 1px solid rgba(88, 166, 255, 0.2);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+}
+.dsp-support-btn:hover {
+    color: var(--accent);
+    border-color: rgba(88, 166, 255, 0.3);
+}
 .dsp-feedback-link {
     display: inline-block;
     margin-top: 6px;
@@ -2346,41 +2384,84 @@ button.fd-net-chip:focus-visible { outline: 2px solid var(--accent); outline-off
 .ban-table .ban-unban:hover { background: rgba(88, 166, 255, 0.1); border-color: var(--accent); }
 
 /* ==========================================================
-   19. FOOTER
+   19. SUPPORT
    ========================================================== */
-.footer {
-    position: fixed;
-    bottom: 0; left: 0; right: 0;
-    height: 28px;
+.support-dialog {
     display: flex;
+    flex-direction: column;
     align-items: center;
-    justify-content: space-between;
-    padding: 0 20px;
-    background: rgba(var(--surface-overlay-rgb), 0.88);
-    border-top: 1px solid rgba(88, 166, 255, 0.06);
+    gap: 16px;
+    text-align: center;
+}
+.support-description {
+    margin: 0;
+    color: var(--text-secondary);
     font-size: 12px;
-    color: var(--text-muted);
-    z-index: 70;
-    user-select: none;
+    line-height: 1.6;
 }
-.footer .footer-btc { user-select: text; }
-.footer-btc {
-    cursor: default;
+.support-qr {
+    display: block;
+    width: 220px;
+    height: 220px;
+    max-width: 100%;
+    object-fit: contain;
+    background: #fff;
+}
+.support-address {
+    width: 100%;
+    margin: 0;
+    padding: 10px 12px;
+    border: 1px solid rgba(88, 166, 255, 0.15);
+    border-radius: 5px;
+    background: rgba(88, 166, 255, 0.04);
+    color: var(--text-primary);
+    font: 12px/1.6 var(--font-data);
+    text-align: left;
+    overflow-wrap: anywhere;
+    resize: none;
     user-select: text;
-    transition: color var(--transition);
 }
-.footer-btc-addr {
-    font-family: var(--font-data);
-    color: var(--text-dim);
-    font-size: 10px;
-    transition: color var(--transition);
-    user-select: text;
-    cursor: text;
+.support-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
 }
-.footer-btc:hover .footer-btc-addr { color: var(--accent); }
-
-/* Push peer panel above footer */
-.peer-panel { bottom: 28px; }
+.support-copy,
+.support-wallet {
+    flex: 1 1 140px;
+    padding: 9px 12px;
+    border: 1px solid rgba(88, 166, 255, 0.3);
+    border-radius: 5px;
+    background: rgba(88, 166, 255, 0.08);
+    color: var(--accent);
+    font: inherit;
+    font-size: 12px;
+    text-decoration: none;
+    text-align: center;
+    cursor: pointer;
+}
+.support-copy:hover,
+.support-wallet:hover {
+    background: rgba(88, 166, 255, 0.16);
+    border-color: var(--accent);
+}
+.support-status {
+    min-height: 18px;
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 11px;
+    line-height: 1.6;
+}
+.support-button:focus-visible,
+.dsp-support-btn:focus-visible,
+.support-address:focus-visible,
+.support-copy:focus-visible,
+.support-wallet:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
 
 /* ==========================================================
    21. SCROLLBAR
@@ -2402,7 +2483,12 @@ button.fd-net-chip:focus-visible { outline: 2px solid var(--accent); outline-off
    23. RESPONSIVE LAYOUT
    ========================================================== */
 /* Keep the branded top bar readable as horizontal space tightens. */
-@media (max-width: 1350px) {
+@media (max-width: 1600px) {
+    .support-button { display: none; }
+    .dsp-support-btn { display: block; }
+}
+
+@media (max-width: 1700px) {
     #topbar {
         padding: 0 12px;
     }
@@ -2436,10 +2522,13 @@ button.fd-net-chip:focus-visible { outline: 2px solid var(--accent); outline-off
     }
 }
 
-@media (max-width: 1120px) {
+@media (max-width: 1280px) {
     .topbar-center {
         display: none;
     }
+}
+
+@media (max-width: 1120px) {
     .handle-row1 {
         gap: 4px;
         padding-inline: 8px;
@@ -2487,6 +2576,12 @@ button.fd-net-chip:focus-visible { outline: 2px solid var(--accent); outline-off
     .peer-filter-status { padding-inline: 8px; }
 }
 
+@media (max-width: 800px) {
+    .topbar-right > :not(.topbar-dots):not(.topbar-gear):not(.admin-lock) {
+        display: none !important;
+    }
+}
+
 @media (max-width: 720px) {
     #topbar {
         padding: 0 10px;
@@ -2496,8 +2591,7 @@ button.fd-net-chip:focus-visible { outline: 2px solid var(--accent); outline-off
     .brand-accent {
         font-size: 24px;
     }
-    .revision,
-    .topbar-right > :not(.topbar-dots):not(.topbar-gear):not(.admin-lock) {
+    .revision {
         display: none !important;
     }
     .handle-title {

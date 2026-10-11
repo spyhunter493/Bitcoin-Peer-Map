@@ -36,9 +36,6 @@ export function create(options) {
     const closeTimers = new Set();
 
     function renderCenter() {
-        const coverage = distributionData.distributionCoverage(dashboard.peers, model.isCountryLens() ? 'country' : 'provider');
-        const coverageEl = document.getElementById('as-coverage');
-        if (coverageEl) coverageEl.textContent = distributionData.coverageLabel(coverage);
         var activePeerTotal = model.getActiveTotalPeers();
         donut.clearLegendHover();
         if (state.peerDetailActive) return;

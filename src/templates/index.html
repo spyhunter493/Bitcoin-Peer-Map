@@ -18,6 +18,7 @@
             <a id="revision-update" class="revision update-indicator" target="_blank" rel="noopener" aria-label="Update available — view release notes" title="Update available — view release notes" hidden>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6"/></svg>
             </a>
+            <button type="button" class="support-button" id="support-button" aria-label="Support Bitcoin Peer Map" title="Support Bitcoin Peer Map" aria-haspopup="dialog" aria-controls="support-modal"><svg width="12" height="14" viewBox="22 16 24 32" fill="currentColor" aria-hidden="true" focusable="false"><path d="M27 17h3v8h-3zm7 0h3v8h-3zm-7 22h3v8h-3zm7 0h3v8h-3z"/><path d="M24 22h12c4.9 0 7.8 2.5 7.8 6.3 0 2.4-1.4 4.3-3.8 5.1 2.9.8 4.6 2.8 4.6 5.8 0 4.3-3.2 6.8-8.5 6.8H24V22Zm6 4.8v4.8h5.1c1.8 0 2.8-.9 2.8-2.4s-1-2.4-2.9-2.4H30Zm0 9.1v5.3h5.8c2 0 3.1-.9 3.1-2.6s-1.1-2.7-3.2-2.7H30Z"/></svg>Support</button>
         </div>
         <!-- [DISTRIBUTION] Flight deck moved to topbar center -->
         <div class="topbar-center" id="topbar-center">
@@ -106,7 +107,6 @@
             <button class="as-lens-btn" type="button" data-lens="country" role="tab" aria-selected="false">Countries</button>
         </div>
         <div class="as-donut-title" id="as-donut-title" title="Autonomous System Peer Distribution Analysis"><span class="as-title-peer">Peer</span> <span class="as-title-provider">Service Providers</span><span class="as-title-subtitle" id="as-title-subtitle">(IPv4/IPv6)</span></div>
-        <div id="as-coverage" class="as-coverage"></div>
         <button type="button" id="as-overview-trigger" class="as-overview-trigger" aria-controls="as-detail-panel" aria-expanded="false">Explore distribution</button>
         <button type="button" class="as-focused-close" id="as-focused-close" title="Back" aria-label="Exit distribution exploration">&#x2192;</button>
         <div class="as-donut-wrap" id="as-donut-wrap">
@@ -266,11 +266,6 @@
         </div>
         <div class="as-detail-body"></div>
     </div>
-
-    <!-- Footer -->
-    <footer id="footer" class="footer">
-        <span class="footer-btc" id="footer-btc">Support (xbt): <span class="footer-btc-addr">bc1qnngus06lk0e60e05yq902e9edx7kt4kcuuuy72</span></span>
-    </footer>
 
     <script type="module" src="/static/v/{{ asset_revision }}/js/app.js"></script>
 </body>

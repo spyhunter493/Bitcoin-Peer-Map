@@ -39,7 +39,6 @@ function fixture() {
         getDonutCenterPosition: () => geometry.center,
         getLegendDotPosition: id => geometry.dots.get(id) || null,
     };
-    const coverage = { textContent: '' };
     const panelClasses = new Set();
     const classList = values => ({
         add: value => values.add(value),
@@ -47,7 +46,7 @@ function fixture() {
         contains: value => values.has(value),
     });
     const panel = { classList: classList(panelClasses), offsetWidth: 10 };
-    const document = { body: { classList: classList(new Set()) }, getElementById: id => id === 'as-coverage' ? coverage : null };
+    const document = { body: { classList: classList(new Set()) } };
     let navigation;
     let legendsHidden = false;
     const presentation = createPresentation({
@@ -64,7 +63,7 @@ function fixture() {
         summaryView: {}, document,
     });
     return {
-        dashboard, state: dashboard.distribution, model, presentation, geometry, coverage, calls, panelClasses,
+        dashboard, state: dashboard.distribution, model, presentation, geometry, calls, panelClasses,
         setNavigation: value => { navigation = value; },
         hideLegends: () => { legendsHidden = true; },
         get last() { return calls.at(-1); },
@@ -79,7 +78,7 @@ test('provider and country centers show their own known public population and co
     assert.equal(f.last.args[1], 3);
     assert.equal(f.last.args[2].countryLens, false);
     assert.match(f.last.args[2].tooltip, /known provider only/);
-    assert.match(f.coverage.textContent, /Provider known for 3\/4 public peers/);
+    assert.match(f.last.args[2].tooltip, /Provider known for 3\/4 public peers/);
 
     f.state.setLens('country');
     f.presentation.renderCenter();
@@ -87,8 +86,8 @@ test('provider and country centers show their own known public population and co
     assert.equal(f.last.args[1], 4);
     assert.equal(f.last.args[2].countryLens, true);
     assert.match(f.last.args[2].tooltip, /known country only/);
-    assert.match(f.coverage.textContent, /Country known for 4\/4 public peers/);
-    assert.doesNotMatch(f.coverage.textContent, /5\/5/);
+    assert.match(f.last.args[2].tooltip, /Country known for 4\/4 public peers/);
+    assert.doesNotMatch(f.last.args[2].tooltip, /5\/5/);
 
     f.state.selectedProvider = 'country:NZ';
     f.presentation.renderCenter();
@@ -107,7 +106,6 @@ test('peer detail, focused hover and active insight take priority over summary f
     });
     f.presentation.renderCenter();
     assert.equal(f.calls.length, 0, 'the peer detail retains ownership of the center');
-    assert.match(f.coverage.textContent, /Provider known for 3\/4 public peers/, 'coverage still refreshes above the detail');
 
     f.state.peerDetailActive = false;
     f.presentation.renderCenter();

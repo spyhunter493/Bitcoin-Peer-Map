@@ -23,6 +23,7 @@ import assertOutboundSettings from './test_outbound_settings.js';
 import assertNodeServices from './test_node_services.js';
 import assertNodeMetrics from './test_node_metrics.js';
 import assertSharedDialogs from './test_shared_dialogs.js';
+import assertSupport from './test_support.js';
 import assertPrivateNodeComponents from './test_private_node_components.js';
 import assertNavigation from './test_navigation.js';
 import assertPrivateViewNavigation from './test_private_view_navigation.js';
@@ -949,6 +950,7 @@ const suites = [
     ['persistent authentication', assertPersistentAuthentication],
     ['management feedback', assertManagementFeedback],
     ['network connection examples', assertNetworkExamples],
+    ['Support dialog and responsive entry points', assertSupport],
 ];
 
 // Assign every suite to exactly one shard before applying a focused-run filter.

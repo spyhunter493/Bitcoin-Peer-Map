@@ -2,6 +2,7 @@ import { queryAll, required } from '../core/dom.js';
 import * as BPMModal from '../core/modal.js';
 import * as BPMWorldMap from '../map/geometry.js';
 import * as BPMDisplaySettings from './advanced.js';
+import * as BPMSupport from '../core/support.js';
 /**
  * @param {{distribution: ReturnType<typeof import('../distribution/controller.js').create>; config: import('../types').DashboardConfig; onAction: (type: 'theme' | 'map-style' | 'intervals' | 'peer-interval' | 'private-show' | 'private-hide') => void}} options
  */
@@ -583,10 +584,17 @@ function create({ distribution: BPMDistribution, config: CFG, onAction }) {
         });
         html += `<div class="dsp-row"><span class="dsp-label" title="Animate donuts to display top 8 ISP or anonymous networks on hover">Display Top ISP/Net</span><label class="dsp-toggle"><input type="checkbox" id="dsp-donut-legends" ${advSettings.showDonutLegends ? 'checked' : ''}><span class="dsp-toggle-slider"></span></label></div>`;
         html += '<button class="dsp-advanced-btn" id="dsp-advanced-btn">Advanced &#9881;</button>';
+        html += '<button type="button" class="dsp-support-btn" id="dsp-support-btn" aria-haspopup="dialog" aria-controls="support-modal">Support with Bitcoin</button>';
         html += `<a class="dsp-feedback-link" href="${escapeHtml(repositoryDiscussionsUrl)}" target="_blank" rel="noopener" title="Open the project discussions">Suggestions &amp; Bug Reports &#8599;</a>`;
         popup.innerHTML = html;
         document.body.appendChild(popup);
         displaySettingsEl = popup;
+
+        popup.querySelector('#dsp-support-btn')?.addEventListener('click', () => {
+            closeDisplaySettingsPopup();
+            (anchorEl || document.getElementById('topbar-gear'))?.focus({ preventScroll: true });
+            BPMSupport.open();
+        });
 
         // Bind Advanced button
         const advBtn = document.getElementById('dsp-advanced-btn');
