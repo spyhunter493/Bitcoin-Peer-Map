@@ -1,44 +1,61 @@
-# Local browser assets and response policy
+# Browser security and assets
 
-The dashboard and interactive documentation load their scripts, stylesheets, and
-Cinzel fonts from this application. `/docs` and `/redoc` use the same local Swagger
-UI and `/openapi.json`. Documentation disables the external validator, query-based
-configuration, and persisted authorization. Tokens entered in the documentation
-are cleared when the page reloads.
+[README](../README.md) · [Dashboard](dashboard.md) · [Configuration](configuration.md) · [Operations](operations.md) · [Development](development.md)
 
-All application responses carry an enforced Content Security Policy,
-`X-Frame-Options: DENY`, and `X-Content-Type-Options: nosniff`. The application cannot
-be embedded in frames. Scripts and stylesheet elements must come from the same
-origin; inline scripts and evaluated code are disallowed. Inline style attributes
-remain allowed because the dashboard uses them for generated views and positioning.
-Embedded image data remains allowed for Swagger UI's bundled CSS icons. Browser
-API requests, map geometry, and fonts remain restricted to this origin.
+This page covers browser response policy and vendored asset maintenance.
+Deployment credentials, viewing modes and HTTPS are described in
+[Access control](access-control.md).
 
-The server's GeoIP, update, and connectivity requests are separate from this browser
-policy. Existing HTTP deployments continue to work; TLS configuration stays with
-the deployment or reverse proxy.
+## Response policy
 
-## Reproduce and update vendor artifacts
+The dashboard and interactive API documentation load scripts, stylesheets and
+Cinzel fonts from BPM. `/docs` and `/redoc` use the same local Swagger UI and
+`/openapi.json`. Documentation disables the external validator, query-based
+configuration and persisted authorization; entered tokens clear on reload.
 
-Use Node 26 and install development dependencies without running upstream installer
+All application responses enforce Content Security Policy,
+`X-Frame-Options: DENY` and `X-Content-Type-Options: nosniff`. Frames, inline
+scripts and evaluated code are blocked. Scripts, stylesheet elements, fonts,
+API requests and map geometry are restricted to this origin. Inline style
+attributes remain allowed for generated views/positioning, and embedded image
+data is allowed for Swagger's bundled CSS icons.
+
+Server GeoIP, release and connectivity requests follow a separate
+[optional outbound policy](operations.md). TLS is configured by the deployment
+or reverse proxy; the browser policy also works for HTTP deployments.
+
+## Verify checked-in assets
+
+Use Node 26 and install development dependencies without upstream installer
 scripts:
 
-```sh
+```bash
 npm ci --ignore-scripts
 npm run check:assets
 ```
 
-The pinned development packages are `swagger-ui-dist@5.33.1` (Apache-2.0) and
-`@fontsource-variable/cinzel@5.3.0` (OFL-1.1). Their original files, licenses, Swagger
-NOTICE, and bundled third-party license notices are
-checked into `src/static/vendor`, together with package archive integrity and per-file
-SHA-256 hashes in `manifest.json`. The runtime container copies these files from
-`src` and requires no npm dependencies or asset downloads.
+| Pinned package | License |
+| --- | --- |
+| `swagger-ui-dist@5.33.1` | Apache-2.0 |
+| `@fontsource-variable/cinzel@5.3.0` | OFL-1.1 |
 
-To update a package, review its release and license, update its exact development
-dependency and the matching definition in `scripts/vendor-assets.js`, then run:
+Original files, licenses, Swagger NOTICE and third-party notices are checked into
+`src/static/vendor`. Its `manifest.json` records package archive integrity and
+per-file SHA-256 hashes. The container copies these files from source and needs
+no runtime npm dependencies or asset downloads. `check:assets` writes nothing
+and rejects modified, missing or unexpected vendor files.
 
-```sh
+Cinzel retains its `Cinzel Variable` CSS family, normal weights 400–900, and
+Latin/Latin-ext subsets. Versioned stylesheets also version their relative font
+URLs for immutable caching.
+
+## Update vendored assets
+
+Review the package release and license. Update its exact development dependency,
+lockfile and matching definition in `scripts/vendor-assets.js`; reinstall with
+`npm ci --ignore-scripts`, then run:
+
+```bash
 npm run sync:assets
 npm run check:assets
 npm run check:js
@@ -49,17 +66,11 @@ npm run test:layout
 npm run test:browser-security
 ```
 
-Review the generated artifact and manifest diff. `check:assets` performs no writes
-and rejects modified, missing, or unexpected vendor files. Synchronization reports
-unexpected old files rather than removing them silently.
+Review the artifact and manifest diff. Synchronization reports unexpected old
+files rather than removing them silently.
 
-Cinzel uses the original variable-font CSS family `Cinzel Variable`, normal weights
-400–900, and both Latin and Latin-ext subsets. Versioned stylesheet URLs also version
-the relative font URLs, so font files receive the same immutable caching behavior.
-
-The security browser suite runs captured API fixtures in Chromium, Firefox, and
-WebKit. It checks local requests, font loading, dashboard rendering, authenticated
-dialogs, Swagger authorization and execution, authorization clearing, blocked script
-and stylesheet injection, and frame rejection without contacting a Bitcoin node.
-It also checks remembered viewing and management sessions across reloads, tab closes,
-restored browser state, explicit locks, and service restarts.
+Browser security tests use local API fixtures in Chromium, Firefox and WebKit.
+They cover local requests/fonts, rendering, authenticated dialogs, Swagger
+execution and authorization clearing, blocked script/style injection, frame
+rejection, and remembered viewing/management sessions across reloads, tab closes,
+restored browser state, locks and service restarts. They need no Bitcoin node.
