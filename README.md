@@ -31,23 +31,56 @@ images support Linux AMD64 and ARM64.
 
 ## Quick start
 
-### 1. Get the deployment files
+### 1. Create a Compose configuration
 
-Clone the repository and copy the example configuration:
+Create `compose.yaml` in a directory of your choice:
 
-```bash
-git clone https://github.com/spyhunter493/bitcoin-peer-map.git
-cd bitcoin-peer-map
-cp .env.example .env
-chmod 600 .env
+```yaml
+name: bitcoin-peer-map
+
+services:
+  bpm:
+    image: ${BPM_IMAGE:-ghcr.io/spyhunter493/bitcoin-peer-map:latest}
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    env_file: .env
+    environment:
+      BPM_LISTEN_ADDRESS: 0.0.0.0
+      BPM_LISTEN_PORT: ${BPM_LISTEN_PORT:-58333}
+      BPM_DATA_DIR: /var/lib/bitcoin-peer-map
+    ports:
+      - target: ${BPM_LISTEN_PORT:-58333}
+        published: "${BPM_HOST_PORT:-58333}"
+        host_ip: ${BPM_HOST_BIND:-0.0.0.0}
+        protocol: tcp
+    volumes:
+      - bpm-data:/var/lib/bitcoin-peer-map
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,mode=1777
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    stop_grace_period: 15s
+
+volumes:
+  bpm-data:
+    name: ${BPM_DATA_VOLUME:-bitcoin-peer-map-data}
 ```
 
-Compose uses the published image from
-[GitHub Container Registry](https://github.com/spyhunter493/Bitcoin-Peer-Map/pkgs/container/bitcoin-peer-map).
+This uses the published image from
+[GitHub Container Registry](https://github.com/spyhunter493/Bitcoin-Peer-Map/pkgs/container/bitcoin-peer-map)
+and keeps saved data in a named volume. No repository checkout or local build is
+needed.
 
 ### 2. Configure RPC and viewing access
 
-Edit these values in `.env`. Choose a long, random viewing token:
+Create `.env` next to `compose.yaml` with your node's RPC settings and a long,
+random viewing token:
 
 ```env
 BITCOIN_RPC_HOST=192.168.1.10
@@ -55,6 +88,9 @@ BITCOIN_RPC_USER=bpm
 BITCOIN_RPC_PASSWORD=replace-with-a-long-random-password
 BPM_VIEW_TOKEN=replace-with-a-long-random-viewing-token
 ```
+
+Protect the file with `chmod 600 .env`. Add other settings to this file as needed;
+see [configuration](docs/configuration.md).
 
 Your node must allow RPC connections from the dashboard. See the
 [RPC setup guide](docs/configuration.md#bitcoin-rpc) if RPC is not configured yet.
@@ -73,10 +109,11 @@ public peers. An administrator can enable these in **GEOIP-DB**. External peer
 lookups use free ip-api over unencrypted HTTP and require a separate opt-in. See
 [GeoIP and outbound settings](docs/operations.md#geoip-updates-and-privacy).
 
-### 3. Start the dashboard
+### 3. Pull the image and start the dashboard
 
 ```bash
-docker compose up -d
+docker compose pull bpm
+docker compose up -d bpm
 ```
 
 Open **`http://HOST_IP:58333`**, replacing `HOST_IP` with the Docker host's address,
