@@ -10,12 +10,16 @@ for implementation ownership, [API](api.md) for contract changes, and
 
 ## Set up your checkout
 
-Run commands from the repository root. `.nvmrc` selects the Node version used by
-CI; production and the Docker browser fixture use `node:26-alpine`.
+Clone the source repository, then run commands from its root. `.nvmrc` selects
+the Node version used by CI; production and the Docker browser fixture use
+`node:26-alpine`.
 
 ```bash
+git clone https://github.com/spyhunter493/bitcoin-peer-map.git
+cd bitcoin-peer-map
 npm ci --ignore-scripts
 cp .env.example .env
+chmod 600 .env
 ```
 
 Configure your Bitcoin Knots RPC endpoint and a viewing or administrator token
