@@ -168,6 +168,14 @@ PR-only CI depends on enforcing these requirements; mandatory reviews or a merge
 queue are optional maintainer choices.
 
 [Dependabot](../.github/dependabot.yml) checks npm, Docker and GitHub Actions on
-Mondays at 09:00 UTC. npm and Actions minor/patch changes are grouped; major
-upgrades and Docker changes get separate PRs. Review passing checks and related
-runtime, type or documentation changes before merging.
+Mondays at 09:00 UTC. Routine version-update PRs are limited to major upgrades;
+minor and patch releases are ignored. These SemVer ignore rules do not block
+security-update PRs, including minor or patch fixes. Keep Dependabot security
+updates enabled in the repository settings; the YAML configuration does not
+enable them.
+
+Dependabot's [security-update coverage](https://docs.github.com/en/code-security/reference/supply-chain-security/supported-ecosystems-and-repositories)
+excludes Docker images. GitHub also does not generate Dependabot alerts for
+[SHA-pinned Actions](https://docs.github.com/en/code-security/reference/supply-chain-security/dependency-graph-supported-package-ecosystems).
+Review security fixes for those dependencies separately. Review passing checks
+and related runtime, type or documentation changes before merging any update.
