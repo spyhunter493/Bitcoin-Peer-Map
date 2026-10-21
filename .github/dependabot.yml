@@ -8,13 +8,12 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "UTC"
-    groups:
-      npm-minor-and-patch:
-        patterns:
-          - "*"
+    # SemVer ignores apply to version updates; security fixes remain eligible.
+    ignore:
+      - dependency-name: "*"
         update-types:
-          - "minor"
-          - "patch"
+          - "version-update:semver-minor"
+          - "version-update:semver-patch"
 
   - package-ecosystem: "docker"
     directory: "/"
@@ -23,6 +22,11 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "UTC"
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-minor"
+          - "version-update:semver-patch"
 
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -31,10 +35,8 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "UTC"
-    groups:
-      actions-minor-and-patch:
-        patterns:
-          - "*"
+    ignore:
+      - dependency-name: "*"
         update-types:
-          - "minor"
-          - "patch"
+          - "version-update:semver-minor"
+          - "version-update:semver-patch"
