@@ -57,6 +57,8 @@ export function create({ management, document = globalThis.document }) {
     let rotationSeconds = 0;
     /** @type {ResizeObserver | null} */
     let resizeObserver = null;
+    /** @type {number | null} */
+    let fitFrame = null;
     const motion = view?.matchMedia('(prefers-reduced-motion: reduce)');
     /** @type {Map<string, {element: HTMLLabelElement; input: HTMLInputElement; name: HTMLElement; balance: HTMLElement; pending: HTMLElement; status: HTMLElement}>} */
     const rows = new Map();
@@ -115,6 +117,14 @@ export function create({ management, document = globalThis.document }) {
         right.classList.toggle('wallet-header-tight', compact && naturalLeft - (26 - buttonWidth) < minimumLeft && clockWidth > 0);
         button.classList.toggle('compact', compact);
         positionPopup();
+    }
+
+    function queueHeaderFit() {
+        if (!initialized || !view || fitFrame !== null) return;
+        fitFrame = view.requestAnimationFrame(() => {
+            fitFrame = null;
+            if (initialized) fitHeader();
+        });
     }
 
     function renderButton() {
@@ -487,7 +497,7 @@ export function create({ management, document = globalThis.document }) {
         view?.addEventListener('pageshow', onVisibility);
         motion?.addEventListener('change', renderButton);
         if (view?.ResizeObserver) {
-            resizeObserver = new view.ResizeObserver(fitHeader);
+            resizeObserver = new view.ResizeObserver(queueHeaderFit);
             for (const element of document.querySelectorAll('.topbar-left, .topbar-right, .topbar-center')) resizeObserver.observe(element);
         }
         unsubscribe = management.subscribe(onManagement);
@@ -498,6 +508,8 @@ export function create({ management, document = globalThis.document }) {
         initialized = false;
         unsubscribe?.(); unsubscribe = null;
         resizeObserver?.disconnect(); resizeObserver = null;
+        if (fitFrame !== null) view?.cancelAnimationFrame(fitFrame);
+        fitFrame = null;
         button?.removeEventListener('click', click);
         button?.removeEventListener('mouseenter', onHover);
         button?.removeEventListener('mouseleave', onLeave);
