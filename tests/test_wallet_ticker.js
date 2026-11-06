@@ -127,6 +127,10 @@ export default async function assertWalletTicker(browser) {
         // The compact mobile button remains reachable and the options stay onscreen.
         for (const width of [1366, 1280, 800, 375, 320]) {
             await second.setViewportSize({ width, height: 900 });
+            await second.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+            const header = await second.evaluate(() => ({ left: document.querySelector('.topbar-left').getBoundingClientRect().right,
+                right: document.querySelector('.topbar-right').getBoundingClientRect().left }));
+            assert.ok(header.left <= header.right + 1, `unlocked wallet header fits ${width}px: ${JSON.stringify(header)}`);
             await second.locator('#wallet-ticker').click();
             await second.locator('#wallet-options').waitFor({ state: 'visible' });
             const bounds = await second.locator('#wallet-options').boundingBox();

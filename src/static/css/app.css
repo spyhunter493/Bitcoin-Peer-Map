@@ -2670,6 +2670,9 @@ button.fd-net-chip:focus-visible { outline: 2px solid var(--accent); outline-off
 }
 
 @media (max-width: 720px) {
+    .wallet-header-admin .logo,
+    .wallet-header-admin .brand-primary,
+    .wallet-header-admin .brand-accent { font-size: 16px; }
     #topbar {
         padding: 0 10px;
     }

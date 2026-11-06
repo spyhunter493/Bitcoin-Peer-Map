@@ -130,6 +130,7 @@ export function create({ management, document = globalThis.document }) {
     function renderButton() {
         if (!button || !amount) return;
         button.hidden = !state.available;
+        button.closest('#topbar')?.classList.toggle('wallet-header-admin', state.authenticated && !masked);
         button.classList.toggle('is-locked', !state.authenticated || masked);
         button.classList.toggle('is-empty', !preferences?.selected_wallets.length);
         const ready = available();
@@ -523,6 +524,7 @@ export function create({ management, document = globalThis.document }) {
         view?.removeEventListener('pageshow', onVisibility);
         motion?.removeEventListener('change', renderButton);
         wipe();
+        button?.closest('#topbar')?.classList.remove('wallet-header-admin');
         if (button) button.hidden = true;
     }
 
