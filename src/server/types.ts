@@ -3,6 +3,9 @@ export type Data = Record<string, unknown>;
 export interface Rpc {
     call(method: string, params?: unknown[], timeoutSeconds?: number, signal?: AbortSignal): Promise<unknown>;
 }
+export interface WalletRpc extends Rpc {
+    callWallet(wallet: string, method: string, params?: unknown[], timeoutSeconds?: number, signal?: AbortSignal): Promise<unknown>;
+}
 export function object(value: unknown): value is Data {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
 }

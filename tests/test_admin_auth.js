@@ -12,6 +12,15 @@ export default async function assertAdminAuthentication(browser, baseUrl) {
     const replacement = 'replacement-browser-token-'.padEnd(64, 'y');
     page.on('pageerror', error => errors.push(error.message));
     await page.addInitScript(() => localStorage.setItem('bpm.antarcticaDisclaimerSeen', 'true'));
+    // This suite simulates a server-side token rotation for every management
+    // surface. Wallet preferences must accept that same replacement identity.
+    await page.route('**/api/wallets/preferences', async route => {
+        if (!rotated) { await route.continue(); return; }
+        const valid = route.request().headers().authorization === `Bearer ${replacement}`;
+        await route.fulfill({ status: valid ? 200 : 401, json: valid
+            ? { preferences: { selected_wallets: [], unit: 'BTC', rotation_seconds: 8, paused: false }, revision: 0 }
+            : { detail: 'Enter the admin token', code: 'admin_required' } });
+    });
     await page.route('**/api/peer/**', async route => {
         const request = route.request();
         const authorization = request.headers().authorization;

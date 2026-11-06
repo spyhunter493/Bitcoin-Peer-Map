@@ -20,6 +20,42 @@ the view with an administrator token does not automatically unlock management.
 See [access control](access-control.md) for public/redacted modes and deployment
 requirements.
 
+## Watch-only wallet balances
+
+The wallet control sits between the refresh countdown and map/sync indicators.
+Click it to open **Wallets**, an anchored options panel. While locked, clicking
+the generic wallet control opens **Unlock management**. Wallet access requires
+`BPM_ADMIN_TOKEN` and the optional [wallet RPC permissions](configuration.md#optional-watch-only-wallet-ticker).
+
+Tick the wallets to display. New wallets start unchecked, and shared selections
+and display settings survive service restarts. Each available selected wallet
+shows its amount and unit in turn; names appear inside the options panel. The
+panel highlights the current wallet and shows its **Balance**, **Pending incoming**,
+and availability. **Balance** is the node-reported trusted amount, including
+qualifying unconfirmed own change; it is not a strictly confirmed-output total.
+Wallets are shown individually, so overlapping watch-only wallets are not summed.
+
+Choose BTC or sats, a 5/8/15/30-second rotation interval, or **Pause rotation**.
+Pausing rotation does not stop balance refreshes. Rotation also pauses while the
+panel is open, while hovering or focusing the control, and when the tab is hidden.
+Reduced motion keeps the active amount still; use the panel's previous/next
+controls to move through selected wallets. The active entry stays stable during
+ordinary refreshes.
+
+Settings and balances refresh every thirty seconds while management is unlocked
+and the tab is visible. Wallet RPC reads start only while wallets are selected or
+options are open. **—** means no currently available selected balance, not zero.
+Scanning, unloaded, ineligible, and failed wallets show their state in options and
+do not rotate. Saved unavailable selections remain available to uncheck or resume
+after the wallet recovers. Checkboxes affect display choices; they do not load or
+unload node wallets.
+
+On narrow headers the control compacts to a wallet button; its panel still shows
+the complete list. Escape or clicking outside closes the panel and restores
+focus. **Lock**, **Lock view**, and session expiry clear its contents immediately.
+Wallet names and balances are kept out of browser storage and public dashboard
+responses. Without administrator access configured, the wallet control is hidden.
+
 ## Find and export peers
 
 Search beside **Connect Peer** matches every word, ignoring case, across peer

@@ -26,6 +26,34 @@ test('RPC sends authenticated JSON with parameters and unique IDs', async t => {
     assert.deepEqual(await rpc.call('getblock', ['abc', 1]), { hash: 'abc' });
     await rpc.call('getblock', ['abc', 1]); assert.equal(ids.size, 2);
 });
+
+test('wallet RPC preserves exact encoded names and numeric upstream error codes', async t => {
+    const received: string[] = [];
+    const rpc = await rpcServer(t, (req, res) => {
+        received.push(req.url!);
+        if (req.url === '/wallet/failure') res.end('{"error":{"code":-18,"message":"Wallet unavailable"}}');
+        else res.end('{"result":{"ok":true}}');
+    });
+    const names = ['', '.', '..', 'nested/wallet', ' spaces %?#雪 '];
+    for (const name of names) assert.deepEqual(await rpc.callWallet(name, 'getwalletinfo'), { ok: true });
+    assert.deepEqual(received, names.map(name => `/wallet/${encodeURIComponent(name)}`));
+    await assert.rejects(rpc.callWallet('failure', 'getbalances'), error => error instanceof RpcError && error.code === -18);
+    await rpc.call('getnetworkinfo'); assert.equal(received.at(-1), '/');
+});
+
+test('wallet requests share the root RPC concurrency gate and queue deadlines', async t => {
+    const responses: ServerResponse[] = [], received: string[] = [], full = deferred<void>();
+    const rpc = await rpcServer(t, (req, res) => {
+        responses.push(res); received.push(req.url!);
+        if (responses.length === RPC_CONCURRENCY) full.resolve();
+    });
+    const root = Array.from({ length: RPC_CONCURRENCY }, () => rpc.call('root'));
+    await full.promise;
+    await assert.rejects(rpc.callWallet('queued', 'getbalances', [], 0.02), RpcTransportError);
+    assert.equal(received.length, RPC_CONCURRENCY, 'the wallet call never bypasses the existing shared gate');
+    for (const response of responses) response.end('{"result":null}');
+    await Promise.all(root);
+});
 test('RPC debug messages show method, status, and timing without parameters or response contents', async t => {
     const rpc = await rpcServer(t, (_req, res) => res.end('{"result":{"private":"response-only-value"},"error":null}'));
     const lines: string[] = [];

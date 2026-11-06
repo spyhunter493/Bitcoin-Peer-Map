@@ -60,12 +60,45 @@ accounts.
 
 The whitelist grants methods, not particular arguments: for example, `setban`
 permits adding and removing bans. It does not authenticate dashboard users or
-replace the BPM admin token. No wallet or node shutdown methods are required.
+replace the BPM admin token. Ordinary peer monitoring needs no wallet methods;
+node shutdown methods are never required.
 After restarting, check `getnetworkinfo` using the BPM credentials and verify
 that an unlisted method such as `getrpcinfo` returns HTTP 403. Knots also returns
 403 for a required method omitted from the whitelist; BPM currently reports
 that as an RPC authentication failure, so check the whitelist as well as the
 credentials when troubleshooting.
+
+### Optional watch-only wallet ticker
+
+Configure `BPM_ADMIN_TOKEN` (or its mounted-file equivalent) to enable the wallet
+control. Wallet names, balances, and ticker settings require a management unlock,
+including when `BPM_VIEW_MODE=public`. A viewing login made with the administrator
+token still needs the separate management unlock.
+
+Add `getbalances`, `getwalletinfo`, and `listwallets` to the BPM account's existing
+whitelist line. For peer management plus wallet monitoring, the complete line is:
+
+```ini
+rpcwhitelist=bpm:addnode,clearbanned,disconnectnode,getbalances,getbestblockhash,getblock,getblockchaininfo,getblockheader,getchaintips,getindexinfo,getmempoolinfo,getnettotals,getnetworkinfo,getnodeaddresses,getpeerinfo,getwalletinfo,listbanned,listwallets,setban,uptime
+```
+
+Replace the existing line rather than adding a second whitelist for the same
+account, retain your explicit `rpcwhitelistdefault`, and restart Knots after a
+configuration change. These optional methods are read-only. BPM discovers only
+already-loaded wallets with private keys disabled and no external signer; wallet
+loading, importing, rescanning, signing, and spending remain node operations.
+
+Selections initially contain no wallets. Wallet RPCs are lazy: opening wallet
+options or displaying selected wallets starts reads after management unlock.
+Existing peer monitoring and startup work without wallet RPC permissions. Missing
+methods or permissions appear as wallet availability problems in the options
+panel and do not sign the administrator out.
+
+The ticker follows the node's trusted balance, which can include trusted
+unconfirmed change. **Pending incoming** is the node's separate untrusted-pending
+amount. Balances refresh independently of peer polling. See
+[wallet controls](dashboard.md#watch-only-wallet-balances) and
+[saved wallet preferences](operations.md#wallet-ticker-preferences).
 
 ### Another Compose project
 

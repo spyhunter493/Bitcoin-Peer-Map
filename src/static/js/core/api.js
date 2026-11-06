@@ -95,6 +95,69 @@ async function getJson(url, options, timeoutMs) {
 }
 
 /**
+ * Management reads and wallet selections never invoke the viewing challenge or
+ * replay a request. Only an explicit unlock can grant this generation access.
+ * @template T
+ * @param {string} url
+ * @param {RequestInit} options
+ * @param {number} [timeoutMs]
+ * @returns {Promise<T>}
+ */
+async function requestAdminJson(url, options, timeoutMs) {
+    const target = new URL(url, globalThis.location?.href || 'http://localhost/');
+    if (target.origin !== (globalThis.location?.origin || 'http://localhost') || !target.pathname.startsWith('/api/')) {
+        throw new TypeError('Management requests must use a dashboard API endpoint.');
+    }
+    const authentication = adminAuthentication;
+    options.signal?.throwIfAborted();
+    if (authentication?.beforeRequest) await authentication.beforeRequest();
+    options.signal?.throwIfAborted();
+    if (!authentication || !(authentication.isAuthenticated?.() || authentication.getToken())) {
+        throw new HttpError('Unlock management to view wallet balances.', 401, { code: 'admin_required' });
+    }
+    const revision = authentication.getRevision?.();
+    const token = authentication.getToken();
+    const managementSignal = authentication.getSignal?.();
+    const signals = [options.signal, managementSignal].filter(/** @returns {signal is AbortSignal} */ signal => Boolean(signal));
+    const signal = signals.length ? AbortSignal.any(signals) : undefined;
+    signal?.throwIfAborted();
+    const headers = new Headers(options.headers);
+    headers.delete('Authorization');
+    if (token) headers.set('Authorization', `Bearer ${token}`);
+    function checkGeneration() {
+        signal?.throwIfAborted();
+        if (revision === undefined ? authentication?.getToken() !== token : authentication?.getRevision?.() !== revision) {
+            throw new DOMException('Management access changed.', 'AbortError');
+        }
+    }
+    try {
+        const result = await requestJson(url, { ...options, signal, headers, credentials: 'same-origin', cache: 'no-store', redirect: 'error' }, timeoutMs);
+        checkGeneration();
+        return /** @type {T} */ (result);
+    } catch (error) {
+        checkGeneration();
+        if (error instanceof HttpError) {
+            const code = error.data && typeof error.data === 'object' && 'code' in error.data ? error.data.code : null;
+            if (error.status === 403 && code === 'management_disabled') authentication.clearToken('management-disabled');
+            else if (error.status === 401 || (error.status === 429 && code === 'admin_rate_limited')) authentication.clearToken();
+        }
+        throw error;
+    }
+}
+
+/** @template T @param {string} url @param {RequestInit} [options] @param {number} [timeoutMs] @returns {Promise<T>} */
+function getAdminJson(url, options, timeoutMs) {
+    return requestAdminJson(url, { ...options, method: 'GET' }, timeoutMs);
+}
+
+/** @template T @param {string} url @param {unknown} [body] @param {RequestInit} [options] @param {number} [timeoutMs] @returns {Promise<T>} */
+function postAdminJson(url, body, options, timeoutMs) {
+    const headers = new Headers(options?.headers);
+    if (body !== undefined) headers.set('Content-Type', 'application/json');
+    return requestAdminJson(url, { ...options, method: 'POST', headers, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }, timeoutMs);
+}
+
+/**
  * @template T
  * @param {string} url
  * @param {unknown} [body]
@@ -153,6 +216,7 @@ export { HttpError };
 export { requestJson };
 export { getJson };
 export { postJson };
+export { getAdminJson, postAdminJson };
 
 /** @param {unknown} error */
 export function errorMessage(error) {

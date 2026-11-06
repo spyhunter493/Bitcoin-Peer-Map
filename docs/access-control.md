@@ -28,6 +28,24 @@ administrator credential. Viewing credentials grant no management permission.
 Administrator credentials can authenticate both roles, but a browser viewing login
 creates only a viewing session. Management requires a separate unlock.
 
+### Wallet access
+
+`GET /api/wallets`, `GET /api/wallets/preferences`, and
+`POST /api/wallets/preferences` always require the administrator bearer token or
+an active management session. This requirement also applies to HEAD and public
+dashboards. A viewing token or viewing-only session cannot read wallet names,
+balances, or selections. Authentication runs before wallet cache, parsing, or
+RPC work. Wallet successes and errors are private, no-store responses varying by
+`Authorization` and `Cookie`; ordinary dashboard APIs and redacted summaries omit
+wallet information.
+
+Management **Lock** immediately clears the wallet ticker and options, stops reads,
+and invalidates pending results while preserving a separate viewing session.
+Expiry and explicit locks in another tab using the same browser session also
+clear wallet content. Closing or navigating one tab preserves other tabs' access.
+Background wallet requests never open an unlock prompt. Bitcoin node wallet-RPC
+permission failures report wallet unavailability rather than changing BPM access.
+
 ## Credentials
 
 Configure `BPM_VIEW_TOKEN` and/or `BPM_ADMIN_TOKEN`, or their corresponding `_FILE`
@@ -59,6 +77,10 @@ Viewing and management use separate cookies. Cookies are host-only, scoped to
 `/api`, `HttpOnly`, and `SameSite=Strict`; HTTPS login also sets `Secure`. JavaScript
 cannot read them. The server stores hashes of the session identifiers in memory.
 Sessions expire after an absolute 30 days; polling does not extend their lifetime.
+The access bootstrap reports management availability and the session's remaining
+lifetime, without wallet data. Remembered administrator verification also returns
+the lifetime so the browser can clear wallet data at expiry, including sessions
+longer than a single browser timer can represent.
 Up to 1,024 sessions are retained across both roles. At capacity, new remembered
 logins return HTTP 503 with `session_capacity`; existing sessions remain valid.
 

@@ -1865,6 +1865,152 @@
           }
         }
       }
+    },
+    "/api/wallets": {
+      "get": {
+        "summary": "Watch-only Wallet Balances",
+        "operationId": "get_wallet_balances",
+        "description": "Requires administrator bearer authentication or a remembered management session in every viewing mode, including public. Viewing credentials do not authorize wallet access. HEAD uses the same authorization as GET. Responses and errors are private, no-store and vary by Authorization and Cookie. Authentication precedes wallet data, cache, and RPC work. Node wallet RPC permission or capability failures are wallet availability states, not BPM authentication failures. Lazily reads loaded watch-only wallets. Descriptor balances use mine; legacy watch-only balances use watchonly. External-signer and private-key wallets are excluded. Per-wallet failures remain separate from node monitoring. No wallet loading, imports, signing, rescans, or spending are performed.",
+        "security": [
+          {
+            "AdminToken": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful administrator-only response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletSnapshot"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/AdminRateLimited"
+          },
+          "default": {
+            "description": "Wallet availability, preference validation, or HTTP request failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/wallets/preferences": {
+      "get": {
+        "summary": "Shared Wallet Ticker Preferences",
+        "operationId": "get_wallet_ticker_preferences",
+        "description": "Requires administrator bearer authentication or a remembered management session in every viewing mode, including public. Viewing credentials do not authorize wallet access. HEAD uses the same authorization as GET. Responses and errors are private, no-store and vary by Authorization and Cookie. Authentication precedes wallet data, cache, and RPC work. Node wallet RPC permission or capability failures are wallet availability states, not BPM authentication failures. Reads saved settings without contacting Bitcoin wallet RPCs.",
+        "security": [
+          {
+            "AdminToken": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful administrator-only response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletPreferencesResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/AdminRateLimited"
+          },
+          "default": {
+            "description": "Wallet availability, preference validation, or HTTP request failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Save Shared Wallet Ticker Preferences",
+        "operationId": "set_wallet_ticker_preferences",
+        "description": "Requires administrator bearer authentication or a remembered management session in every viewing mode, including public. Viewing credentials do not authorize wallet access. HEAD uses the same authorization as GET. Responses and errors are private, no-store and vary by Authorization and Cookie. Authentication precedes wallet data, cache, and RPC work. Node wallet RPC permission or capability failures are wallet availability states, not BPM authentication failures. Atomically saves shared selections and display settings before changing memory. Newly selected wallets must be verified eligible; existing unavailable selections may be retained or removed. Returns committed preferences and revision.",
+        "security": [
+          {
+            "AdminToken": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful administrator-only response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletPreferencesResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/AdminRateLimited"
+          },
+          "default": {
+            "description": "Wallet availability, preference validation, or HTTP request failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WalletTickerPreferences"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3951,7 +4097,9 @@
           "mode",
           "authentication_available",
           "viewing_authenticated",
-          "management_authenticated"
+          "management_authenticated",
+          "management_available",
+          "management_expires_in_seconds"
         ],
         "properties": {
           "mode": {
@@ -3972,6 +4120,18 @@
           "management_authenticated": {
             "type": "boolean",
             "description": "A remembered management browser session is active."
+          },
+          "management_available": {
+            "type": "boolean",
+            "description": "Administrator management access is configured. This flag reveals no wallet information."
+          },
+          "management_expires_in_seconds": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "Remaining absolute lifetime of the remembered management session, in seconds; null when no management session is active. Reads never extend this lifetime."
           }
         },
         "additionalProperties": false,
@@ -4184,9 +4344,187 @@
           "remembered": {
             "type": "boolean",
             "description": "Present and true when a persistent browser session cookie was issued."
+          },
+          "management_expires_in_seconds": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Remaining management-session lifetime in seconds; present only when remembered administrator verification issued a session."
           }
         },
         "additionalProperties": false
+      },
+      "WalletTickerPreferences": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "selected_wallets",
+          "unit",
+          "rotation_seconds",
+          "paused"
+        ],
+        "properties": {
+          "selected_wallets": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string"
+            },
+            "description": "Exact selected wallet names. Names and selections require administrator access and never appear in URLs or ordinary dashboard configuration.",
+            "maxItems": 128
+          },
+          "unit": {
+            "type": "string",
+            "enum": [
+              "BTC",
+              "sats"
+            ]
+          },
+          "rotation_seconds": {
+            "type": "integer",
+            "enum": [
+              5,
+              8,
+              15,
+              30
+            ]
+          },
+          "paused": {
+            "type": "boolean",
+            "description": "Pause rotation while balances continue to refresh."
+          }
+        }
+      },
+      "WalletPreferencesResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "preferences",
+          "revision"
+        ],
+        "properties": {
+          "preferences": {
+            "$ref": "#/components/schemas/WalletTickerPreferences"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Revision incremented after successful preference writes. Compare only within the current application process."
+          }
+        }
+      },
+      "WalletRow": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "state",
+          "balance_sats",
+          "pending_incoming_sats",
+          "immature_sats",
+          "scanning_progress",
+          "updated_at"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Exact node wallet name; an empty string identifies the default wallet."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "scanning",
+              "unloaded",
+              "ineligible",
+              "unavailable"
+            ]
+          },
+          "balance_sats": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 2100000000000000,
+            "description": "Node-reported trusted balance in integer satoshis, including qualifying unconfirmed own change. Not a strictly confirmed-output total."
+          },
+          "pending_incoming_sats": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 2100000000000000,
+            "description": "Raw untrusted_pending amount in integer satoshis, separate from trusted self-change."
+          },
+          "immature_sats": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 2100000000000000,
+            "description": "Immature coinbase amount, separate from the displayed balance."
+          },
+          "scanning_progress": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1
+          },
+          "updated_at": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Unix timestamp in seconds of the successful row read; null when no current balance is available."
+          }
+        }
+      },
+      "WalletSnapshot": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "state",
+          "network",
+          "wallets",
+          "generated_at",
+          "reason"
+        ],
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "empty",
+              "partial",
+              "unsupported",
+              "unavailable"
+            ]
+          },
+          "network": {
+            "type": "string"
+          },
+          "wallets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WalletRow"
+            }
+          },
+          "generated_at": {
+            "type": "number",
+            "description": "Unix timestamp in seconds when this response was composed."
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Sanitized wallet capability or availability reason. Never contains wallet names, credentials, or raw node errors."
+          }
+        }
       }
     },
     "responses": {
