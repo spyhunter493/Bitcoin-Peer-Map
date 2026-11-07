@@ -103,6 +103,7 @@ try {
     assert.deepEqual(access, {
         mode: 'authenticated', authentication_available: true,
         viewing_authenticated: false, management_authenticated: false,
+        management_available: true, management_expires_in_seconds: null,
     });
     for (const path of ['/api/peers?include_status=true', '/api/info', '/api/config', '/api/stream/system']) {
         const anonymous = await fetch(base + path);

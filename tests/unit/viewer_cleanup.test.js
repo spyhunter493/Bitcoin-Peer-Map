@@ -35,7 +35,8 @@ test('an explicit view lock waits for cookie revocation and leaves private data 
         assert.equal(JSON.stringify(children).includes('PRIVATE-PEER-ADDRESS'), false);
         return Response.json({ success: !failing }, { status: failing ? 500 : 200 });
     });
-    const viewing = createViewing({ onAuthorized() {}, onLock() {} });
+    const phases = [];
+    const viewing = createViewing({ onAuthorized() {}, onLock() {}, onSignOut(phase) { phases.push(phase); } });
     await viewing.lock();
     assert.deepEqual(navigations, []);
     assert.ok(children.some(child => child.textContent === 'Retry lock'));
@@ -44,6 +45,7 @@ test('an explicit view lock waits for cookie revocation and leaves private data 
     await viewing.lock();
     assert.deepEqual(navigations, ['/']);
     assert.deepEqual(requests, [{ url: '/api/view/logout', method: 'POST' }, { url: '/api/view/logout', method: 'POST' }]);
+    assert.deepEqual(phases, ['start', 'failed', 'start', 'complete']);
 });
 
 test('dashboard clearing releases peer records and all public/private selection and insight references', () => {

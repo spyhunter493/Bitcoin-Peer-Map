@@ -20,6 +20,9 @@ for bearer tokens, browser sessions, HTTPS and errors.
 | `GET /api/info` | Node details, RPC metrics, provider health and cached update status |
 | `GET /api/config` | Effective settings and build information, without credentials |
 | `GET /api/config/outbound` | Saved and effective optional-request policy |
+| `GET /api/wallets/preferences` | Administrator-only shared wallet settings and revision; no wallet RPC |
+| `POST /api/wallets/preferences` | Administrator-only atomic replacement of wallet display settings |
+| `GET /api/wallets` | Administrator-only watch-only wallet catalog, trusted/pending amounts, and availability |
 | `POST /api/geodb/db-only` | Set database-only mode with `{ "enabled": boolean }` |
 | `POST /api/geodb/auto-update` | Set automatic dataset scheduling with `{ "enabled": boolean }` |
 
@@ -85,6 +88,51 @@ returning them refreshes ages and generation timestamps.
 Shared reads own their cancellation controller. Closing a response detaches its
 subscriber; losing the last subscriber cancels the work. A block-header read
 still needed by the dashboard survives closing a chain-tip dialog.
+
+## Wallet contracts and access
+
+All wallet endpoints require administrator authentication in every viewing mode,
+including public. GET and HEAD reject anonymous and viewing-only credentials
+before accessing wallet data or cache. Successful responses and errors use
+`Cache-Control: private, no-store` and vary by `Authorization` and `Cookie`.
+Node RPC permission failures are wallet availability states, not HTTP 401/403
+administrator-login failures. Session revocation cancels cookie-authorized wallet
+work and prevents delayed responses from returning wallet data.
+
+Wallet preferences are a full object with `selected_wallets`, `unit` (`BTC` or
+`sats`), `rotation_seconds` (5, 8, 15, or 30), and `paused`. GET/POST return
+`{ preferences, revision }`. Newly selected names must be verified eligible;
+already saved unavailable names may be kept or removed. Saves commit atomically,
+and clients compare revisions to ignore older preference responses.
+
+Wallet snapshots contain `state`, `network`, `generated_at`, `reason`, and
+`wallets`. Rows contain the exact wallet `name`, `state`, `balance_sats`,
+`pending_incoming_sats`, `immature_sats`, `scanning_progress`, and `updated_at`.
+Amounts are integer satoshis or null; timestamps are Unix seconds. Descriptor
+watch-only balances use `getbalances.mine`; legacy wallets use its `watchonly`
+branch. **Balance** means trusted balance, including qualifying unconfirmed own
+change. **Pending incoming** is raw `untrusted_pending`; it excludes trusted
+self-change and immature coinbase amounts. Missing or malformed data never
+becomes an invented zero.
+
+Snapshot states are `ready`, `empty`, `partial`, `unsupported`, or `unavailable`.
+Row states are `ready`, `scanning`, `unloaded`, `ineligible`, or `unavailable`.
+Saved unavailable names remain represented with null amounts. A complete catalog
+above 128 loaded wallets reports unavailability rather than truncating silently.
+
+Reads are lazy and share a thirty-second success cache from completion, with
+five-second failure caching. Two wallet workers use the existing global RPC gate,
+five-second per-call budgets, and a fifteen-second overall refresh deadline.
+Partial results remain explicit; refresh order advances to avoid starving later
+wallets. Closing the final reader cancels shared work. Reading preferences does
+not contact Bitcoin wallet RPCs, and startup never requires wallet permissions.
+
+`/api/access` additionally reports `management_available` and
+`management_expires_in_seconds`; the lifetime is null without a remembered
+management session. Remembered `/api/admin/verify` responses return the lifetime
+too. It derives from the original absolute deadline and is not extended by reads.
+No wallet names, balances, or choices appear in either bootstrap response or
+ordinary dashboard/configuration APIs.
 
 ## Interpret peer and node fields
 

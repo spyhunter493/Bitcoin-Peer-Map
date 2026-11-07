@@ -631,6 +631,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/wallets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Watch-only Wallet Balances
+         * @description Requires administrator bearer authentication or a remembered management session in every viewing mode, including public. Viewing credentials do not authorize wallet access. HEAD uses the same authorization as GET. Responses and errors are private, no-store and vary by Authorization and Cookie. Authentication precedes wallet data, cache, and RPC work. Node wallet RPC permission or capability failures are wallet availability states, not BPM authentication failures. Lazily reads loaded watch-only wallets. Descriptor balances use mine; legacy watch-only balances use watchonly. External-signer and private-key wallets are excluded. Per-wallet failures remain separate from node monitoring. No wallet loading, imports, signing, rescans, or spending are performed.
+         */
+        get: operations["get_wallet_balances"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/wallets/preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Shared Wallet Ticker Preferences
+         * @description Requires administrator bearer authentication or a remembered management session in every viewing mode, including public. Viewing credentials do not authorize wallet access. HEAD uses the same authorization as GET. Responses and errors are private, no-store and vary by Authorization and Cookie. Authentication precedes wallet data, cache, and RPC work. Node wallet RPC permission or capability failures are wallet availability states, not BPM authentication failures. Reads saved settings without contacting Bitcoin wallet RPCs.
+         */
+        get: operations["get_wallet_ticker_preferences"];
+        put?: never;
+        /**
+         * Save Shared Wallet Ticker Preferences
+         * @description Requires administrator bearer authentication or a remembered management session in every viewing mode, including public. Viewing credentials do not authorize wallet access. HEAD uses the same authorization as GET. Responses and errors are private, no-store and vary by Authorization and Cookie. Authentication precedes wallet data, cache, and RPC work. Node wallet RPC permission or capability failures are wallet availability states, not BPM authentication failures. Atomically saves shared selections and display settings before changing memory. Newly selected wallets must be verified eligible; existing unavailable selections may be retained or removed. Returns committed preferences and revision.
+         */
+        post: operations["set_wallet_ticker_preferences"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1178,6 +1222,10 @@ export interface components {
             viewing_authenticated: boolean;
             /** @description A remembered management browser session is active. */
             management_authenticated: boolean;
+            /** @description Administrator management access is configured. This flag reveals no wallet information. */
+            management_available: boolean;
+            /** @description Remaining absolute lifetime of the remembered management session, in seconds; null when no management session is active. Reads never extend this lifetime. */
+            management_expires_in_seconds: number | null;
         };
         OutboundPreferences: {
             optional_outbound: boolean;
@@ -1232,6 +1280,48 @@ export interface components {
             success: boolean;
             /** @description Present and true when a persistent browser session cookie was issued. */
             remembered?: boolean;
+            /** @description Remaining management-session lifetime in seconds; present only when remembered administrator verification issued a session. */
+            management_expires_in_seconds?: number;
+        };
+        WalletTickerPreferences: {
+            /** @description Exact selected wallet names. Names and selections require administrator access and never appear in URLs or ordinary dashboard configuration. */
+            selected_wallets: string[];
+            /** @enum {string} */
+            unit: "BTC" | "sats";
+            /** @enum {integer} */
+            rotation_seconds: 5 | 8 | 15 | 30;
+            /** @description Pause rotation while balances continue to refresh. */
+            paused: boolean;
+        };
+        WalletPreferencesResponse: {
+            preferences: components["schemas"]["WalletTickerPreferences"];
+            /** @description Revision incremented after successful preference writes. Compare only within the current application process. */
+            revision: number;
+        };
+        WalletRow: {
+            /** @description Exact node wallet name; an empty string identifies the default wallet. */
+            name: string;
+            /** @enum {string} */
+            state: "ready" | "scanning" | "unloaded" | "ineligible" | "unavailable";
+            /** @description Node-reported trusted balance in integer satoshis, including qualifying unconfirmed own change. Not a strictly confirmed-output total. */
+            balance_sats: number | null;
+            /** @description Raw untrusted_pending amount in integer satoshis, separate from trusted self-change. */
+            pending_incoming_sats: number | null;
+            /** @description Immature coinbase amount, separate from the displayed balance. */
+            immature_sats: number | null;
+            scanning_progress: number | null;
+            /** @description Unix timestamp in seconds of the successful row read; null when no current balance is available. */
+            updated_at: number | null;
+        };
+        WalletSnapshot: {
+            /** @enum {string} */
+            state: "ready" | "empty" | "partial" | "unsupported" | "unavailable";
+            network: string;
+            wallets: components["schemas"]["WalletRow"][];
+            /** @description Unix timestamp in seconds when this response was composed. */
+            generated_at: number;
+            /** @description Sanitized wallet capability or availability reason. Never contains wallet names, credentials, or raw node errors. */
+            reason: string | null;
         };
     };
     responses: {
@@ -1361,6 +1451,10 @@ export type OutboundPreferenceRequest = components['schemas']['OutboundPreferenc
 export type CountRange = components['schemas']['CountRange'];
 export type ViewingAggregateResponse = components['schemas']['ViewingAggregateResponse'];
 export type AuthenticationResponse = components['schemas']['AuthenticationResponse'];
+export type WalletTickerPreferences = components['schemas']['WalletTickerPreferences'];
+export type WalletPreferencesResponse = components['schemas']['WalletPreferencesResponse'];
+export type WalletRow = components['schemas']['WalletRow'];
+export type WalletSnapshot = components['schemas']['WalletSnapshot'];
 export type ResponseCrossOriginRequest = components['responses']['CrossOriginRequest'];
 export type ResponseAdminRequired = components['responses']['AdminRequired'];
 export type ResponseAdminRateLimited = components['responses']['AdminRateLimited'];
@@ -2579,6 +2673,106 @@ export interface operations {
             };
             403: components["responses"]["CrossOriginRequest"];
             /** @description HTTP request failure. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_wallet_balances: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful administrator-only response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WalletSnapshot"];
+                };
+            };
+            401: components["responses"]["AdminRequired"];
+            403: components["responses"]["CrossOriginRequest"];
+            429: components["responses"]["AdminRateLimited"];
+            /** @description Wallet availability, preference validation, or HTTP request failure. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_wallet_ticker_preferences: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful administrator-only response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WalletPreferencesResponse"];
+                };
+            };
+            401: components["responses"]["AdminRequired"];
+            403: components["responses"]["CrossOriginRequest"];
+            429: components["responses"]["AdminRateLimited"];
+            /** @description Wallet availability, preference validation, or HTTP request failure. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    set_wallet_ticker_preferences: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WalletTickerPreferences"];
+            };
+        };
+        responses: {
+            /** @description Successful administrator-only response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WalletPreferencesResponse"];
+                };
+            };
+            401: components["responses"]["AdminRequired"];
+            403: components["responses"]["CrossOriginRequest"];
+            429: components["responses"]["AdminRateLimited"];
+            /** @description Wallet availability, preference validation, or HTTP request failure. */
             default: {
                 headers: {
                     [name: string]: unknown;

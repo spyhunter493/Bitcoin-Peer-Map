@@ -105,6 +105,7 @@ The default volume `bitcoin-peer-map-data` mounts at `/var/lib/bitcoin-peer-map`
 | --- | --- |
 | `geo.db` | Cached peer locations in SQLite |
 | `settings.json` | Saved GeoIP and optional-outbound preferences |
+| `wallet-ticker.json` | Shared wallet selections and display preferences, scoped to the configured RPC node and network |
 | `update-check.json` | Application update status and last check time |
 | `tmp/` | Temporary GeoIP dataset downloads |
 
@@ -139,6 +140,32 @@ docker compose up -d bpm
 The previous volume remains available if you need to switch back. These commands
 preserve the container user's file ownership; they do not restore `.env` or
 browser preferences.
+
+### Wallet ticker preferences
+
+The optional wallet ticker saves its own `wallet-ticker.json` with mode 0600,
+separately from the boolean GeoIP/outbound settings. It contains exact selected
+wallet names, BTC/sats units, rotation interval, and pause state, plus format,
+node/network scope, and revision metadata. Include it in the data-volume backup
+if these choices should survive restoration. Wallet balances are never persisted.
+
+An absent file uses empty selections, BTC, an eight-second interval, and rotation
+enabled. Reads do not create the file. Successful changes save atomically before
+replacing live settings; the last successful administrator save wins across
+browsers. A change of RPC node or network starts with empty selections until an
+administrator explicitly saves choices for that node.
+
+An invalid or unreadable wallet file disables wallet options while ordinary
+monitoring continues. BPM leaves the file untouched. Back it up and repair its
+contents or ownership before restarting; removing it deliberately resets the
+wallet display defaults. An unwritable file keeps the previous disk and live
+preferences and reports the failed save in the panel. Existing `settings.json`
+startup validation remains independent.
+
+Wallet discovery supports up to 128 loaded wallets and selections, with at most
+two wallet workers. An exceeded capacity reports an explicit unavailable state;
+it never silently displays only the first wallets. Slow or unavailable wallet
+RPC calls produce partial availability without disrupting peer monitoring.
 
 ### Repair saved preferences
 
