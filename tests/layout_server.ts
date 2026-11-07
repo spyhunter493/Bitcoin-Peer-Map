@@ -8,6 +8,8 @@ import type { DashboardInfo, RecentBlocks, ChainTips, Peer, MempoolResponse, Blo
 import type { ConnectivityStatus } from '../src/server/services/connectivity.ts';
 import { BITCOIN_NETWORKS } from '../src/server/network.ts';
 import type { OutboundPreference } from '../src/server/preferences.ts';
+import type { WalletTickerPreferences, WalletSnapshot } from '../src/server/services/wallets.ts';
+import { HttpError } from '../src/server/http.ts';
 
 // Captured API fixtures keep browser regressions independent of external services.
 const fixtures: { peers: Peer[]; metrics: NodeMetricsSnapshot; info: DashboardInfo; mempool: MempoolResponse; blockchain: BlockchainResponse; blocks: RecentBlocks; tips: ChainTips } = JSON.parse(readFileSync(new URL('./fixtures/dashboard.json', import.meta.url), 'utf8'));
@@ -19,6 +21,8 @@ export class FixtureRuntime implements ApplicationRuntime {
     private dbOnly = false;
     private autoUpdate = false;
     private outboundPreferences = { optional_outbound: false, geoip_dataset_downloads: true, release_checks: true, reachability_checks: true };
+    private walletPreferences: WalletTickerPreferences = { selected_wallets: [], unit: 'BTC', rotation_seconds: 8, paused: false };
+    private walletPreferenceRevision = 0;
     constructor(settings: Settings) {
         this.settings = settings; this.rpc = new BitcoinRpcClient(settings);
         this.outboundPreferences.optional_outbound = settings.outbound_enabled_override === true;
@@ -51,6 +55,25 @@ export class FixtureRuntime implements ApplicationRuntime {
         acknowledgePrompt() {},
     };
     geoDatabase = { update: async () => this.outbound.snapshot().effective.dataset_downloads ? ({ success: true, message: 'DB already up to date', added_rows: 0, updated_rows: 0, skipped_rows: 0 }) : ({ success: false, message: 'Optional dataset downloads are disabled', skipped_rows: 0 }) };
+    wallets = {
+        preferences: () => ({ preferences: structuredClone(this.walletPreferences), revision: this.walletPreferenceRevision }),
+        setPreferences: async (value: unknown) => {
+            if (!value || typeof value !== 'object' || Array.isArray(value)) throw new HttpError(422, 'Invalid wallet preferences.', 'wallet_preferences_invalid');
+            const data = value as Record<string, unknown>;
+            if (Object.keys(data).length !== 4 || !Array.isArray(data.selected_wallets) || data.selected_wallets.some(name => typeof name !== 'string')
+                || new Set(data.selected_wallets).size !== data.selected_wallets.length || !['BTC', 'sats'].includes(String(data.unit))
+                || typeof data.rotation_seconds !== 'number' || ![5, 8, 15, 30].includes(data.rotation_seconds) || typeof data.paused !== 'boolean') throw new HttpError(422, 'Invalid wallet preferences.', 'wallet_preferences_invalid');
+            this.walletPreferences = structuredClone(data) as unknown as WalletTickerPreferences;
+            this.walletPreferenceRevision++;
+            return this.wallets.preferences();
+        },
+        snapshot: async (): Promise<WalletSnapshot> => ({ state: 'ready', network: this.settings.bitcoin_network, generated_at: Date.now() / 1000, reason: null,
+            wallets: [
+                { name: 'watch-descriptor', state: 'ready', balance_sats: 12345678, pending_incoming_sats: 10000, immature_sats: 0, scanning_progress: null, updated_at: Date.now() / 1000 },
+                { name: 'watch-legacy', state: 'ready', balance_sats: 0, pending_incoming_sats: 0, immature_sats: 0, scanning_progress: null, updated_at: Date.now() / 1000 },
+                { name: 'watch-scanning', state: 'scanning', balance_sats: null, pending_incoming_sats: null, immature_sats: null, scanning_progress: 0.5, updated_at: null },
+            ] }),
+    };
     node = {
         dashboardInfo: async (): Promise<DashboardInfo> => {
             const info = structuredClone(fixtures.info);

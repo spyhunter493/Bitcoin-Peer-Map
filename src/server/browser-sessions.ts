@@ -34,6 +34,10 @@ export function createBrowserSessions() {
         return session;
     }
     function has(req: IncomingMessage, role: Role) { return Boolean(entry(req, role)); }
+    function remainingSeconds(req: IncomingMessage, role: Role) {
+        const session = entry(req, role);
+        return session ? Math.max(0, (session.expires - Date.now()) / 1000) : null;
+    }
     function hasViewer(req: IncomingMessage) { return has(req, 'view') || has(req, 'admin'); }
     function hasCredentials(req: IncomingMessage) {
         const header = req.headers.cookie || '';
@@ -64,6 +68,7 @@ export function createBrowserSessions() {
         sessions.set(digest(value), { role, expires: now + BROWSER_SESSION_SECONDS * 1000 });
         setCookie(req, res, role, value, BROWSER_SESSION_SECONDS);
         notify();
+        return BROWSER_SESSION_SECONDS;
     }
     function logout(req: IncomingMessage, res: ServerResponse, role: Role) {
         requireBrowserOrigin(req);
@@ -72,7 +77,7 @@ export function createBrowserSessions() {
         for (const item of roles) setCookie(req, res, item, '', 0);
         notify();
     }
-    function watchViewer(req: IncomingMessage, onInvalid: () => void) {
+    function watch(req: IncomingMessage, roles: readonly Role[], onInvalid: () => void) {
         let timer: ReturnType<typeof setTimeout> | null = null;
         let stopped = false;
         function stop() {
@@ -85,7 +90,7 @@ export function createBrowserSessions() {
             if (stopped) return;
             if (timer !== null) clearTimeout(timer);
             timer = null;
-            const active = [entry(req, 'view'), entry(req, 'admin')].filter((session): session is Session => Boolean(session));
+            const active = roles.map(role => entry(req, role)).filter((session): session is Session => Boolean(session));
             if (!active.length) { stop(); onInvalid(); return; }
             const nextExpiry = Math.min(...active.map(session => session.expires));
             timer = setTimeout(check, Math.min(MAX_TIMER_MS, Math.max(1, nextExpiry - Date.now()))).unref();
@@ -94,7 +99,9 @@ export function createBrowserSessions() {
         check();
         return stop;
     }
+    function watchViewer(req: IncomingMessage, onInvalid: () => void) { return watch(req, ['view', 'admin'], onInvalid); }
+    function watchAdmin(req: IncomingMessage, onInvalid: () => void) { return watch(req, ['admin'], onInvalid); }
     function clear() { sessions.clear(); notify(); }
 
-    return { has, hasViewer, hasCredentials, issue, logout, watchViewer, clear };
+    return { has, hasViewer, hasCredentials, remainingSeconds, issue, logout, watchViewer, watchAdmin, clear };
 }

@@ -13,7 +13,7 @@
     <!-- Top bar -->
     <header id="topbar">
         <div class="topbar-left">
-            <a href="{{ repository_url }}" target="_blank" rel="noopener" class="logo" title="Peer map, service provider distribution analysis, and tools for your Bitcoin node - View on GitHub"><span class="brand-primary">Bitcoin</span> <span class="brand-accent">Peer</span> <span class="brand-primary">Map</span></a>
+            <a href="/" class="logo" title="Refresh dashboard" aria-label="Bitcoin Peer Map — refresh dashboard"><span class="brand-primary">Bitcoin</span> <span class="brand-accent">Peer</span> <span class="brand-primary">Map</span></a>
             <a href="{{ repository_url }}" target="_blank" rel="noopener" class="revision build-version" title="Installed application version — View repository on GitHub" aria-label="Installed version {{ version }} — View repository on GitHub">{{ version }}</a>
             <a id="revision-update" class="revision update-indicator" target="_blank" rel="noopener" aria-label="Update available — view release notes" title="Update available — view release notes" hidden>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6"/></svg>
@@ -57,6 +57,10 @@
                 <span class="tb-label">Update in</span>
                 <span class="tb-value" id="mo-countdown">&mdash;</span>
             </span>
+            <button type="button" class="wallet-ticker" id="wallet-ticker" aria-label="Unlock wallet balances" aria-haspopup="dialog" aria-controls="wallet-options" aria-expanded="false" title="Wallets" hidden>
+                <span class="wallet-ticker-amount">&mdash;</span>
+                <svg class="wallet-ticker-symbol" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M20 8V5H5a2 2 0 0 0 0 4h16v11H5a2 2 0 0 1-2-2V7"/><path d="M21 12h-6v5h6"/><path d="M17 14.5h1"/></svg>
+            </button>
             <span class="topbar-status-msg" id="mo-status-msg" title="Peer geolocation progress">Loading...</span>
             <span class="topbar-dots" title="Internet &amp; service status">
                 <span class="internet-dot green" id="internet-dot" title="Internet connection status"></span>

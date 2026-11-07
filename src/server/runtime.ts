@@ -9,6 +9,7 @@ import { PeerService } from './services/peers.ts';
 import { NodeService } from './services/node.ts';
 import type { NodeMetrics } from './services/node-metrics.ts';
 import { UpdateService } from './services/updates.ts';
+import { WalletService } from './services/wallets.ts';
 import { createFailureReporter, createLogger } from './logging.ts';
 import { errorMessage } from './types.ts';
 import { OutboundPolicy } from './outbound-policy.ts';
@@ -27,6 +28,7 @@ export class AppRuntime {
     readonly node: NodeService;
     readonly metrics: NodeMetrics;
     readonly updates: UpdateService;
+    readonly wallets: WalletService;
     readonly outboundPolicy: OutboundPolicy;
     readonly outbound = { snapshot: () => this.outboundSnapshot() };
     private updateTimer: ReturnType<typeof setTimeout> | null = null;
@@ -40,6 +42,7 @@ export class AppRuntime {
         if (settings.geoip_auto_update_override !== null) this.preferences.geoip_auto_update = settings.geoip_auto_update_override;
         this.outboundPolicy = new OutboundPolicy(this.outboundPermissions());
         this.rpc = new BitcoinRpcClient(settings, this.controller.signal);
+        this.wallets = new WalletService(settings, this.rpc, this.controller.signal);
         this.geoDatabase = new GeoDatabase(settings.data_dir, settings.geoip_enabled, this.controller.signal, this.outboundPolicy);
         this.connectivity = new ConnectivityService(this.preferences.geoip_db_only, this.controller.signal, fetch, this.outboundPolicy);
         this.peers = new PeerService(this.rpc, this.geoDatabase, this.connectivity, this.controller.signal, fetch, createGeoipLookup(this.connectivity, this.outboundPolicy));
@@ -63,6 +66,7 @@ export class AppRuntime {
     async stop() {
         this.started = false;
         this.controller.abort();
+        this.wallets.stop();
         this.outboundPolicy.close();
         if (this.updateTimer) clearTimeout(this.updateTimer);
         this.updateTimer = null;

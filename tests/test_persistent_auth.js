@@ -25,6 +25,20 @@ async function access(context, base) {
     return response.json();
 }
 
+async function refreshFromHeading(page, base) {
+    const context = page.context(), previous = await access(context, base), pages = context.pages().length;
+    await Promise.all([
+        page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
+        page.locator('.logo').click(),
+    ]);
+    await page.waitForSelector('#peer-tbody tr[data-id="1"]');
+    assert.equal(page.url(), base + '/', 'the heading reloads the dashboard in the same tab');
+    assert.equal(context.pages().length, pages, 'the heading never opens another tab');
+    const refreshed = await access(context, base);
+    assert.equal(refreshed.viewing_authenticated, previous.viewing_authenticated, 'heading refresh preserves viewing access');
+    assert.equal(refreshed.management_authenticated, previous.management_authenticated, 'heading refresh preserves management lock state');
+}
+
 async function unlockManagement(page) {
     await page.locator('#btn-connect-peer').click();
     await page.locator('#connect-addr-input').fill('8.8.8.8:8333');
@@ -106,7 +120,7 @@ export default async function assertPersistentAuthentication(browser) {
             assert.equal(denied.status(), 401, 'a remembered viewer has no management privileges');
             assert.equal(actions, 0);
 
-            await page.reload({ waitUntil: 'domcontentloaded' });
+            await refreshFromHeading(page, base);
             await page.waitForSelector('#peer-tbody tr[data-id="1"]');
             assert.equal(await page.locator('#view-token-input').count(), 0);
             const secondTab = await context.newPage();
@@ -124,7 +138,7 @@ export default async function assertPersistentAuthentication(browser) {
             await unlockManagement(page);
             assert.equal(actions, 1);
             const savedBoth = await assertSessionStorage(context, page, ['bpm_view_session', 'bpm_admin_session']);
-            await page.reload({ waitUntil: 'domcontentloaded' });
+            await refreshFromHeading(page, base);
             await page.waitForSelector('#peer-tbody tr[data-id="1"]');
             await connectWithoutPrompt(page);
             await dashboard(secondTab, base);
@@ -133,6 +147,7 @@ export default async function assertPersistentAuthentication(browser) {
             assert.equal(verificationRequests.length, 2, 'administrator login is also reused across reloads and tabs');
 
             await lockManagement(page);
+            await refreshFromHeading(page, base);
             assert.equal((await access(context, base)).viewing_authenticated, true, 'locking management preserves the separate viewer session');
             assert.equal((await access(context, base)).management_authenticated, false);
             const replay = await openContext(savedBoth);
@@ -183,12 +198,14 @@ export default async function assertPersistentAuthentication(browser) {
         let page = await context.newPage();
         await dashboard(page, base);
         await unlockManagement(page);
+        await refreshFromHeading(page, base);
         await assertSessionStorage(context, page, ['bpm_admin_session']);
         await page.close();
         page = await context.newPage();
         await dashboard(page, base);
         await connectWithoutPrompt(page);
         await lockManagement(page);
+        await refreshFromHeading(page, base);
         assert.equal((await access(context, base)).management_authenticated, false);
     } finally { await context.close(); await app.close(); }
 }

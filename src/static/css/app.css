@@ -253,6 +253,93 @@ body.map-camera-moving .peer-panel-body {
     cursor: pointer;
 }
 .topbar-status-msg.loaded { color: var(--ok); }
+
+/* Wallet amounts have a stable width; narrow headers keep the same options button. */
+.wallet-ticker {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    box-sizing: border-box;
+    width: calc(21ch + 12px);
+    padding: 2px 5px;
+    border: 1px solid rgba(88,166,255,0.14);
+    border-radius: 4px;
+    color: var(--text-primary);
+    background: transparent;
+    font: 11px/1.5 var(--font-data);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    cursor: pointer;
+}
+.wallet-ticker[hidden] { display: none !important; }
+.wallet-ticker:hover,
+.wallet-ticker:focus-visible { border-color: var(--accent); color: var(--accent); }
+.wallet-ticker-symbol { display: none; }
+.wallet-ticker.compact,
+.wallet-ticker.is-locked,
+.wallet-ticker.is-empty { width: 26px; }
+.wallet-ticker.compact .wallet-ticker-symbol,
+.wallet-ticker.is-locked .wallet-ticker-symbol { display: block; }
+.wallet-ticker.compact .wallet-ticker-amount,
+.wallet-ticker.is-locked .wallet-ticker-amount { display: none; }
+.wallet-header-tight .topbar-clock { display: none; }
+.wallet-options {
+    position: fixed;
+    z-index: 1200;
+    box-sizing: border-box;
+    padding: 14px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    color: var(--text-primary);
+    background: var(--bg-raised);
+    border: 1px solid rgba(88,166,255,0.22);
+    border-radius: 8px;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.35);
+    font-size: 12px;
+}
+.wallet-options-heading { display: flex; align-items: center; justify-content: space-between; }
+.wallet-options-heading strong { font-size: 14px; }
+.wallet-options button,
+.wallet-options select {
+    padding: 5px 8px;
+    border: 1px solid rgba(88,166,255,0.22);
+    border-radius: 4px;
+    color: var(--text-primary);
+    background: var(--bg-surface);
+    font: inherit;
+    cursor: pointer;
+}
+.wallet-options button:focus-visible,
+.wallet-options select:focus-visible,
+.wallet-options input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wallet-options button:disabled { opacity: 0.45; cursor: default; }
+.wallet-options .wallet-options-close { border: 0; background: transparent; font-size: 20px; line-height: 1; }
+.wallet-options-help,
+.wallet-options-empty { margin: 10px 0; color: var(--text-secondary); font-size: 11px; line-height: 1.5; }
+.wallet-options-list { max-height: 310px; overflow-y: auto; overscroll-behavior: contain; }
+.wallet-options-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    margin: 3px 0;
+    padding: 8px;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    cursor: pointer;
+}
+.wallet-options-row.current { border-color: var(--accent); background: rgba(88,166,255,0.07); }
+.wallet-options-row input { flex: 0 0 auto; margin-top: 3px; accent-color: var(--accent); }
+.wallet-options-details { display: flex; flex-direction: column; gap: 3px; min-width: 0; font-family: var(--font-data); }
+.wallet-options-name { overflow-wrap: anywhere; font-family: var(--font-ui); font-weight: 600; }
+.wallet-options-pending,
+.wallet-options-status { color: var(--text-secondary); font-size: 11px; }
+.wallet-options-status:empty { display: none; }
+.wallet-options-controls { display: grid; gap: 9px; padding-top: 12px; border-top: 1px solid rgba(88,166,255,0.18); }
+.wallet-options-controls > label { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.wallet-options-controls > .wallet-options-pause { justify-content: flex-start; }
+.wallet-options-navigation { display: flex; justify-content: space-between; margin-top: 12px; }
+.wallet-options-result { min-height: 1.3em; margin: 9px 0 0; color: var(--warn); font-size: 11px; overflow-wrap: anywhere; }
 /* Dots group (internet + running side by side) */
 .topbar-dots {
     display: inline-flex;
@@ -2577,12 +2664,15 @@ button.fd-net-chip:focus-visible { outline: 2px solid var(--accent); outline-off
 }
 
 @media (max-width: 800px) {
-    .topbar-right > :not(.topbar-dots):not(.topbar-gear):not(.admin-lock) {
+    .topbar-right > :not(.topbar-dots):not(.topbar-gear):not(.admin-lock):not(.wallet-ticker) {
         display: none !important;
     }
 }
 
 @media (max-width: 720px) {
+    .wallet-header-admin .logo,
+    .wallet-header-admin .brand-primary,
+    .wallet-header-admin .brand-accent { font-size: 16px; }
     #topbar {
         padding: 0 10px;
     }

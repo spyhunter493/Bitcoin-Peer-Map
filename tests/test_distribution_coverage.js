@@ -34,6 +34,11 @@ export default async function assertDistributionCoverage(browser, baseUrl) {
         await page.waitForSelector('#as-detail-panel.visible');
     };
     const assertTitleFitsExplore = async () => {
+        await page.waitForFunction(() => {
+            const title = document.getElementById('as-donut-title').getBoundingClientRect();
+            const trigger = document.getElementById('as-overview-trigger').getBoundingClientRect();
+            return title.bottom <= trigger.top + 1;
+        });
         const titleBounds = await page.locator('#as-donut-title').boundingBox();
         const triggerBounds = await page.locator('#as-overview-trigger').boundingBox();
         assert.ok(titleBounds.y + titleBounds.height <= triggerBounds.y + 1, 'the distribution title does not overlap Explore distribution');

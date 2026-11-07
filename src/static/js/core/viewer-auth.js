@@ -1,6 +1,6 @@
 import { configureViewingAuthentication, requestJson, errorMessage } from './api.js';
 
-/** @param {{onAuthorized(): void | Promise<void>, onLock(): void, onAccess?(access: {management_authenticated?: boolean}): void}} options */
+/** @param {{onAuthorized(): void | Promise<void>, onLock(): void, onAccess?(access: import('../types').ManagementAccess, elapsedMs: number): void, onSignOut?(phase: 'start'|'complete'|'failed'): void}} options */
 export function create(options) {
     let token = '', mode = 'authenticated', resetting = false;
     let reads = new AbortController();
@@ -41,13 +41,16 @@ export function create(options) {
 
     /** @param {boolean} [navigate] */
     async function lock(navigate = true) {
+        if (navigate && !locking) options.onSignOut?.('start');
         reset(false);
         if (!navigate || locking) return locking;
         locking = (async () => {
             try {
                 await requestJson('/api/view/logout', { method: 'POST' }, 10000);
+                options.onSignOut?.('complete');
                 location.replace('/');
             } catch {
+                options.onSignOut?.('failed');
                 const notice = document.getElementById('view-reset-notice');
                 if (notice) notice.textContent = 'Viewing is hidden, but sign-out could not be completed.';
                 const retry = document.createElement('button');
@@ -154,12 +157,13 @@ export function create(options) {
         globalThis.addEventListener('pagehide', () => { if (mode !== 'public') reset(false); });
         globalThis.addEventListener('pageshow', event => { if (event.persisted && mode !== 'public') reset(); });
         try {
-            /** @type {{mode:'public'|'authenticated'|'redacted',authentication_available:boolean,viewing_authenticated?:boolean,management_authenticated?:boolean}} */
+            const started = Date.now();
+            /** @type {{mode:'public'|'authenticated'|'redacted',authentication_available:boolean,viewing_authenticated?:boolean} & import('../types').ManagementAccess} */
             const access = await requestJson('/api/access', { signal: requests.signal, cache: 'no-store' });
             requests.signal.throwIfAborted();
             if (!access || !['public', 'authenticated', 'redacted'].includes(access.mode)) throw new Error('Invalid access mode');
             mode = access.mode;
-            options.onAccess?.(access);
+            options.onAccess?.(access, Date.now() - started);
             if (mode === 'public') { await options.onAuthorized(); return; }
             if (access.viewing_authenticated) { await authorize(); return; }
             showAccess(access.authentication_available);

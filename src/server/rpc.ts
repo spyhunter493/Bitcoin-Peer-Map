@@ -7,7 +7,10 @@ import { createLogger } from './logging.ts';
 
 const log = createLogger('rpc');
 
-export class RpcError extends Error {}
+export class RpcError extends Error {
+    readonly code: number | null;
+    constructor(message: string, code: number | null = null) { super(message); this.code = code; }
+}
 export class RpcTransportError extends RpcError {}
 export class RpcAuthenticationError extends RpcError {}
 export class RpcBusyError extends RpcError {
@@ -51,7 +54,15 @@ export class BitcoinRpcClient {
             next.resolve();
         }
     }
-    async call(method: string, params: unknown[] = [], timeoutSeconds = this.settings.rpc_timeout, callerSignal?: AbortSignal): Promise<unknown> {
+    call(method: string, params: unknown[] = [], timeoutSeconds = this.settings.rpc_timeout, callerSignal?: AbortSignal): Promise<unknown> {
+        return this.request('/', method, params, timeoutSeconds, callerSignal);
+    }
+    callWallet(wallet: string, method: string, params: unknown[] = [], timeoutSeconds = this.settings.rpc_timeout, callerSignal?: AbortSignal): Promise<unknown> {
+        // Pass the path directly to HTTP: URL constructors normalize dot segments,
+        // and a wallet name can itself contain slashes, dots, or URL punctuation.
+        return this.request(`/wallet/${encodeURIComponent(wallet)}`, method, params, timeoutSeconds, callerSignal);
+    }
+    private async request(path: string, method: string, params: unknown[], timeoutSeconds: number, callerSignal?: AbortSignal): Promise<unknown> {
         const started = performance.now();
         log.debug(`Calling ${method} (timeout ${timeoutSeconds}s)`);
         const payload = JSON.stringify({ jsonrpc: '1.0', id: ++this.id, method, params });
@@ -63,7 +74,7 @@ export class BitcoinRpcClient {
                 signal.throwIfAborted();
                 return await new Promise<{ status: number; text: string }>((resolve, reject) => {
                     const req = transport.request(this.settings.rpc_url, {
-                        method: 'POST', signal, rejectUnauthorized: this.settings.rpc_verify_tls,
+                        method: 'POST', path, signal, rejectUnauthorized: this.settings.rpc_verify_tls,
                         auth: `${this.settings.rpc_user}:${this.settings.rpc_password}`,
                         headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
                     }, res => {
@@ -91,7 +102,8 @@ export class BitcoinRpcClient {
         let body: unknown;
         try { body = JSON.parse(response.text); } catch { throw new RpcTransportError(`Bitcoin RPC returned HTTP ${response.status} without JSON`); }
         if (!object(body)) throw new RpcTransportError('Bitcoin RPC returned an unexpected response');
-        if (body.error) throw new RpcError(object(body.error) ? String(body.error.message || JSON.stringify(body.error)) : String(body.error));
+        if (body.error) throw new RpcError(object(body.error) ? String(body.error.message || JSON.stringify(body.error)) : String(body.error),
+            object(body.error) && Number.isSafeInteger(body.error.code) ? body.error.code as number : null);
         if (response.status >= 400) throw new RpcTransportError(`Bitcoin RPC returned HTTP ${response.status}`);
         return body.result ?? null;
     }

@@ -105,6 +105,7 @@ export async function sendResponse(
     value: unknown,
     status = 200,
     type = 'application/json',
+    beforeSend?: () => void,
 ) {
     if (res.destroyed) return;
 
@@ -113,16 +114,22 @@ export async function sendResponse(
     else if (type === 'application/json') bytes = Buffer.from(JSON.stringify(value));
     else bytes = Buffer.from(String(value));
 
+    let compressed = false;
+    if (bytes.length >= MIN_GZIP_BYTES && acceptsGzip(req.headers['accept-encoding'] || '')) {
+        bytes = await compress(bytes, { level: 6 });
+        compressed = true;
+    }
+    if (res.destroyed) return;
+    // Authorization may have changed while compression yielded. Run the final
+    // check before installing success headers so an error can still be sent.
+    beforeSend?.();
     const textContent = type.startsWith('text/') || type === 'application/json';
     res.statusCode = status;
     res.setHeader('Content-Type', textContent ? `${type}; charset=utf-8` : type);
     const vary = String(res.getHeader('Vary') || '').split(',').map(value => value.trim()).filter(Boolean);
     if (!vary.some(value => value.toLowerCase() === 'accept-encoding' || value === '*')) vary.push('Accept-Encoding');
     res.setHeader('Vary', vary.join(', '));
-    if (bytes.length >= MIN_GZIP_BYTES && acceptsGzip(req.headers['accept-encoding'] || '')) {
-        bytes = await compress(bytes, { level: 6 });
-        res.setHeader('Content-Encoding', 'gzip');
-    }
+    if (compressed) res.setHeader('Content-Encoding', 'gzip');
     res.setHeader('Content-Length', bytes.length);
     res.end(req.method === 'HEAD' ? undefined : bytes);
 }

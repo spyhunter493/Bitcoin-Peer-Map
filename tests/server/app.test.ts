@@ -210,8 +210,19 @@ test('all documented JSON endpoints are wired and removed endpoints stay absent'
         for (const method of Object.keys(methods as object)) {
             const body = path === '/api/config/outbound'
                 ? { preference: 'release_checks', enabled: false }
+                : path === '/api/wallets/preferences'
+                    ? { selected_wallets: [], unit: 'BTC', rotation_seconds: 8, paused: false }
                 : { address: '8.8.8.8', peer_id: 1, enabled: true };
-            const response = await get(path, { method: method.toUpperCase(), ...(method === 'post' ? { body: JSON.stringify(body), headers: { 'Content-Type': 'application/json', ...(path.endsWith('/logout') ? { Origin: base } : {}) } } : {}) });
+            if (method === 'get' && path.startsWith('/api/wallets')) {
+                const anonymous = await get(path);
+                assert.equal(anonymous.status, 401);
+                const denied = await anonymous.json();
+                assert.equal(denied.code, 'admin_required');
+                assert.equal('wallets' in denied || 'preferences' in denied, false);
+            }
+            const headers = { ...(path.startsWith('/api/wallets') ? { Authorization: `Bearer ${FIXTURE_ADMIN_TOKEN}` } : {}),
+                ...(method === 'post' ? { 'Content-Type': 'application/json', ...(path.endsWith('/logout') ? { Origin: base } : {}) } : {}) };
+            const response = await get(path, { method: method.toUpperCase(), headers, ...(method === 'post' ? { body: JSON.stringify(body) } : {}) });
             assert.equal(response.status, (methods as Record<string, {deprecated?: boolean}>)[method].deprecated ? 410 : 200, `${method} ${path}`); assert.ok(await response.json());
         }
     }

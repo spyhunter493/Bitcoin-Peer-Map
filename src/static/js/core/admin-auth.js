@@ -6,7 +6,19 @@ import { required } from './dom.js';
 
 export function create() {
     let token = '';
-    let authenticated = false, revision = 0;
+    let authenticated = false, available = false, revision = 0;
+    let access = new AbortController();
+    access.abort();
+    /** @type {Set<(state: import('../types').ManagementState) => void>} */
+    const listeners = new Set();
+    /** @type {ReturnType<typeof setTimeout> | null} */
+    let expiryTimer = null;
+    /** @type {Promise<boolean> | null} */
+    let validating = null;
+    /** @type {BroadcastChannel | null} */
+    let channel = null;
+    let remoteLockPending = false;
+    const eventKey = 'bpm.management-event';
     /** @type {Promise<void> | null} */
     let locking = null;
     /** @type {Error | null} */
@@ -20,11 +32,41 @@ export function create() {
     /** @type {HTMLButtonElement | null} */
     let lockButton = null;
 
-    function clearToken() {
+    function getState() {
+        return Object.freeze({ authenticated, available, revision, signal: access.signal });
+    }
+
+    function publish() {
+        const state = getState();
+        for (const listener of [...listeners]) {
+            try { listener(state); } catch { console.error('Management state listener failed.'); }
+        }
+    }
+
+    /** @param {(state: import('../types').ManagementState) => void} listener */
+    function subscribe(listener) {
+        listeners.add(listener);
+        listener(getState());
+        return () => { listeners.delete(listener); };
+    }
+
+    function endGeneration() {
+        if (expiryTimer !== null) clearTimeout(expiryTimer);
+        expiryTimer = null;
+        access.abort(cancelled());
+        access = new AbortController();
+        revision++;
+    }
+
+    /** @param {'management-disabled'} [reason] */
+    function clearToken(reason) {
+        endGeneration();
         token = '';
         authenticated = false;
-        revision++;
+        if (reason === 'management-disabled') available = false;
+        access.abort(cancelled());
         if (lockButton) lockButton.hidden = true;
+        publish();
     }
 
     function cancelled() {
@@ -36,9 +78,50 @@ export function create() {
         dialog?.close();
     }
 
+    /** @param {'lock'|'locked'|'lock-failed'|'unlock'} type */
+    function broadcast(type) {
+        const event = { type, nonce: `${Date.now()}-${Math.random()}` };
+        if (channel) channel.postMessage(event);
+        else {
+            try { localStorage.setItem(eventKey, JSON.stringify(event)); } catch { /* Other tabs revalidate when focused. */ }
+        }
+    }
+
+    /** Called only for an explicit viewing sign-out, never for pagehide/reset.
+     * @param {'start'|'complete'|'failed'} [phase] */
+    function signOutViewing(phase = 'start') {
+        remoteLockPending = phase === 'start';
+        if (phase === 'failed') lockFailure = new Error('Viewing could not be locked. Retry locking before using management actions.');
+        else lockFailure = null;
+        reset();
+        broadcast(phase === 'start' ? 'lock' : phase === 'complete' ? 'locked' : 'lock-failed');
+    }
+
+    /** @param {unknown} event */
+    function receive(event) {
+        if (!event || typeof event !== 'object' || !('type' in event)) return;
+        if (event.type === 'unlock') {
+            if (!locking && !lockFailure) { remoteLockPending = false; void revalidate(); }
+            return;
+        }
+        if (!['lock', 'locked', 'lock-failed'].includes(String(event.type))) return;
+        remoteLockPending = event.type === 'lock';
+        reset();
+        if (event.type === 'lock' && lockButton) {
+            lockButton.hidden = false;
+            lockButton.textContent = 'Lock';
+            lockButton.title = 'Finish locking management in this browser';
+        } else if (event.type === 'lock-failed') {
+            lockFailure = new Error('Management could not be locked. Retry locking before using management actions.');
+            if (lockButton) { lockButton.hidden = false; lockButton.textContent = 'Retry lock'; }
+        } else if (event.type === 'locked') lockFailure = null;
+    }
+
     async function lock() {
         if (locking) return locking;
         reset();
+        broadcast('lock');
+        remoteLockPending = false;
         lockFailure = null;
         if (lockButton) {
             lockButton.hidden = false;
@@ -49,8 +132,10 @@ export function create() {
             try {
                 await requestJson('/api/admin/logout', { method: 'POST' }, 10000);
                 if (lockButton) lockButton.hidden = true;
+                broadcast('locked');
             } catch (failure) {
                 lockFailure = new Error('Management could not be locked. Retry locking before using management actions.');
+                broadcast('lock-failed');
                 if (lockButton) {
                     lockButton.hidden = false;
                     lockButton.title = errorMessage(failure);
@@ -69,16 +154,54 @@ export function create() {
 
     async function beforeRequest() {
         if (locking) await locking;
+        if (validating) await validating;
         if (lockFailure) throw lockFailure;
+        if (remoteLockPending) throw new Error('Management is being locked in another tab. Retry locking before using management actions.');
     }
 
-    /** @param {boolean} restored */
-    function restore(restored) {
-        if (locking || lockFailure) return;
+    /** @param {number | null | undefined} seconds @param {number} elapsedMs */
+    function armExpiry(seconds, elapsedMs) {
+        if (typeof seconds !== 'number' || !Number.isFinite(seconds)) return;
+        const deadline = Date.now() + Math.max(0, seconds * 1000 - elapsedMs);
+        function check() {
+            expiryTimer = null;
+            const remaining = deadline - Date.now();
+            if (remaining <= 0) { reset(); return; }
+            expiryTimer = setTimeout(check, Math.min(2 ** 31 - 1, remaining));
+        }
+        check();
+    }
+
+    /** @param {boolean | import('../types').ManagementAccess} restored @param {number} [elapsedMs] */
+    function restore(restored, elapsedMs = 0) {
+        if (locking || lockFailure || remoteLockPending) return;
+        endGeneration();
         token = '';
-        authenticated = restored;
-        revision++;
-        if (lockButton) lockButton.hidden = !restored;
+        authenticated = typeof restored === 'boolean' ? restored : Boolean(restored.management_authenticated);
+        available = typeof restored === 'boolean' ? true : restored.management_available !== false;
+        if (!available) authenticated = false;
+        if (!authenticated) access.abort(cancelled());
+        if (lockButton) lockButton.hidden = !authenticated;
+        if (authenticated && typeof restored !== 'boolean') armExpiry(restored.management_expires_in_seconds, elapsedMs);
+        publish();
+    }
+
+    async function revalidate() {
+        if (locking || lockFailure || remoteLockPending) return false;
+        if (validating) return validating;
+        clearToken();
+        const current = revision, started = Date.now();
+        validating = (async () => {
+            try {
+                /** @type {import('../types').ManagementAccess} */
+                const result = await requestJson('/api/access', { cache: 'no-store' }, 10000);
+                if (revision !== current || locking || lockFailure || remoteLockPending) return false;
+                restore(result, Date.now() - started);
+                return authenticated;
+            } catch { return false; }
+            finally { validating = null; }
+        })();
+        return validating;
     }
 
     function openPrompt(initialCooldownDeadline = 0) {
@@ -142,15 +265,20 @@ export function create() {
             updateSubmission();
             error.textContent = '';
             const supplied = input.value;
+            const started = Date.now();
             try {
-                /** @type {{success: boolean, remembered?: boolean}} */
+                /** @type {{success: boolean, remembered?: boolean, management_expires_in_seconds?: number | null}} */
                 const verified = await requestJson('/api/admin/verify', { method: 'POST', headers: { Authorization: `Bearer ${supplied}`, 'X-BPM-Remember': '1' }, signal: current.signal });
                 if (!current.isOpen()) return;
+                endGeneration();
                 token = verified.remembered ? '' : supplied;
-                authenticated = true;
-                revision++;
+                authenticated = available = true;
+                if (verified.remembered) armExpiry(verified.management_expires_in_seconds, Date.now() - started);
+                if (!authenticated) return;
                 input.value = '';
                 if (lockButton) lockButton.hidden = false;
+                publish();
+                broadcast('unlock');
                 for (const waiter of waiters) { waiter.cleanup(); waiter.resolve(token); }
                 waiters.clear();
                 current.close();
@@ -167,6 +295,13 @@ export function create() {
                 updateSubmission();
             }
         });
+    }
+
+    /** @param {AbortSignal} [signal] */
+    async function unlock(signal) {
+        await beforeRequest();
+        if (!available) throw new HttpError('Management is not configured.', 403, { code: 'management_disabled' });
+        await requestToken(signal);
     }
 
     /** @param {AbortSignal} [signal] @param {number} [cooldownDeadline] @returns {Promise<string>} */
@@ -195,14 +330,24 @@ export function create() {
         globalThis.addEventListener('pagehide', reset);
         globalThis.addEventListener('pageshow', event => {
             if (!event.persisted) return;
-            const current = revision;
-            void requestJson('/api/access', { cache: 'no-store' }).then(access => {
-                if (revision === current && access && typeof access.management_authenticated === 'boolean') restore(access.management_authenticated);
-            }).catch(() => {});
+            void revalidate();
+        });
+        globalThis.addEventListener('blur', () => { if (authenticated) clearToken(); });
+        globalThis.addEventListener('focus', () => { if (!document.hidden && available) void revalidate(); });
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) { if (authenticated) clearToken(); }
+            else if (available) void revalidate();
+        });
+        if (typeof BroadcastChannel === 'function') {
+            try { channel = new BroadcastChannel('bpm-management'); channel.onmessage = event => receive(event.data); } catch { /* Storage events remain available. */ }
+        }
+        globalThis.addEventListener('storage', event => {
+            if (event.key !== eventKey || !event.newValue) return;
+            try { receive(JSON.parse(event.newValue)); } catch { /* Ignore unrelated invalid data. */ }
         });
         configureAdminAuthentication({ getToken: () => token, isAuthenticated: () => authenticated, getRevision: () => revision,
-            beforeRequest, clearToken, requestToken });
+            getSignal: () => access.signal, beforeRequest, clearToken, requestToken });
     }
 
-    return Object.freeze({ init, lock, reset, restore });
+    return Object.freeze({ init, lock, reset, restore, getState, subscribe, unlock, revalidate, signOutViewing });
 }

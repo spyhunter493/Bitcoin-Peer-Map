@@ -4,8 +4,26 @@ export interface AdminAuthentication {
     isAuthenticated?(): boolean;
     getRevision?(): number;
     beforeRequest?(): Promise<void>;
-    clearToken(): void;
+    getSignal?(): AbortSignal;
+    clearToken(reason?: 'management-disabled'): void;
     requestToken(signal?: AbortSignal, cooldownDeadline?: number): Promise<string>;
+}
+export interface ManagementState {
+    authenticated: boolean;
+    available: boolean;
+    revision: number;
+    signal: AbortSignal;
+}
+export interface ManagementAccess {
+    management_authenticated?: boolean;
+    management_available?: boolean;
+    management_expires_in_seconds?: number | null;
+}
+export interface ManagementController {
+    getState(): ManagementState;
+    subscribe(listener: (state: ManagementState) => void): () => void;
+    unlock(signal?: AbortSignal): Promise<void>;
+    revalidate(): Promise<boolean>;
 }
 export interface ViewingAuthentication {
     getToken(): string;

@@ -13,6 +13,7 @@ import assertPeerSearchExport from '../test_peer_search_export.js';
 import assertViewingPrivacy from '../test_viewing_privacy.js';
 import assertPersistentAuthentication from '../test_persistent_auth.js';
 import assertOutboundSettings from '../test_outbound_settings.js';
+import assertWalletTicker from '../test_wallet_ticker.js';
 
 for (const engine of [chromium, firefox, webkit]) {
     const protectedViewing = async t => {
@@ -223,6 +224,11 @@ for (const engine of [chromium, firefox, webkit]) {
         await assertFrameDenied(hostBase, 'cross-origin framing must not render the document');
         assert.deepEqual(external, []);
     };
+    const walletBalances = async t => {
+        const browser = await engine.launch({ headless: true });
+        t.after(() => browser.close());
+        await assertWalletTicker(browser);
+    };
     await test(`${engine.name()}: browser security regressions`, { concurrency: 2 }, async t => {
         // The longest case starts first; every case owns its app, browser and contexts.
         await Promise.all([
@@ -230,6 +236,7 @@ for (const engine of [chromium, firefox, webkit]) {
             t.test(`${engine.name()}: protected viewing, private data cleanup, redaction and locking`, { timeout: 90_000 }, protectedViewing),
             t.test(`${engine.name()}: persistent viewer and administrator sessions`, { timeout: 90_000 }, persistentAuthentication),
             t.test(`${engine.name()}: optional outbound controls and HTTP provider opt-in`, { timeout: 90_000 }, outboundControls),
+            t.test(`${engine.name()}: administrator wallet ticker and shared preferences`, { timeout: 120_000 }, walletBalances),
         ]);
     });
 }

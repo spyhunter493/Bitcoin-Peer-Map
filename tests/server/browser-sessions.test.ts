@@ -30,7 +30,7 @@ async function application(t: TestContext, adminToken = FIXTURE_ADMIN_TOKEN) {
     async function login(role: Role, token = role === 'view' ? VIEW_TOKEN : adminToken) {
         const response = await fetch(`${base}/api/${role}/verify`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, Origin: base, 'X-BPM-Remember': '1' } });
         assert.equal(response.status, 200);
-        assert.deepEqual(await response.json(), { success: true, remembered: true });
+        assert.deepEqual(await response.json(), { success: true, remembered: true, ...(role === 'admin' ? { management_expires_in_seconds: BROWSER_SESSION_SECONDS } : {}) });
         return response.headers.getSetCookie()[0].split(';')[0];
     }
     const access = async (cookie = '') => (await fetch(base + '/api/access', { headers: { Cookie: cookie } })).json();
@@ -122,9 +122,9 @@ test('HTTPS reverse-proxy origins issue Secure cookies without trusting forwarde
 
 test('session bootstrap flags and cookies authorize the correct viewing and management roles', async t => {
     const { base, login, access } = await application(t);
-    assert.deepEqual(await access(), { mode: 'authenticated', authentication_available: true, viewing_authenticated: false, management_authenticated: false });
+    assert.deepEqual(await access(), { mode: 'authenticated', authentication_available: true, viewing_authenticated: false, management_authenticated: false, management_available: true, management_expires_in_seconds: null });
     const view = await login('view');
-    assert.deepEqual(await access(view), { mode: 'authenticated', authentication_available: true, viewing_authenticated: true, management_authenticated: false });
+    assert.deepEqual(await access(view), { mode: 'authenticated', authentication_available: true, viewing_authenticated: true, management_authenticated: false, management_available: true, management_expires_in_seconds: null });
     const privateRead = await fetch(base + '/api/peers', { headers: { Cookie: view } });
     assert.equal(privateRead.status, 200); privateHeaders(privateRead);
     const viewerMutation = await fetch(base + '/api/peer/connect', { method: 'POST', headers: { Cookie: view, Origin: base, 'Content-Type': 'application/json' }, body: '{"address":"8.8.8.8"}' });
