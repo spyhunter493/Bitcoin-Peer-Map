@@ -26,9 +26,11 @@ const values = {
     getpeerinfo: [{ id: 1, addr: '8.8.8.8:8333', network: 'ipv4', subver: '/Satoshi:30/' }],
     getnodeaddresses: [{ address: '8.8.8.8', port: 8333 }],
 };
+const nodeMutations = [];
 const rpc = createServer(async (req, res) => {
     const chunks = []; for await (const chunk of req) chunks.push(chunk);
     const body = JSON.parse(Buffer.concat(chunks).toString());
+    if (['addnode', 'disconnectnode', 'setban', 'clearbanned'].includes(body.method)) nodeMutations.push(body.method);
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({ id: body.id, error: null, result: values[body.method] ?? null }));
 });
@@ -120,6 +122,22 @@ try {
         body: JSON.stringify({ enabled: false }),
     });
     assert.equal(viewerMutation.status, 401, 'the viewing credential cannot change settings');
+    const viewerPolicy = await fetch(base + '/api/peer-policy', { headers: { Authorization: `Bearer ${viewToken}` } });
+    assert.equal(viewerPolicy.status, 401, 'viewing credentials cannot inspect policy state');
+    assert.equal((await viewerPolicy.json()).code, 'admin_required');
+    const policy = await get('/api/peer-policy');
+    assert.equal(policy.config.mode, 'off');
+    const previewPolicy = await get('/api/peer-policy', 'POST', { expected_revision: policy.revision,
+        config: { mode: 'preview', listener_allowance: 0, keep_addresses: ['198.51.100.8:18333'] } });
+    assert.equal(previewPolicy.config.mode, 'preview');
+    assert.deepEqual(previewPolicy.config.keep_addresses, ['198.51.100.8']);
+    await docker('exec', name, 'node', '--input-type=module', '-e', `
+        import assert from 'node:assert/strict';
+        import { readFileSync, statSync } from 'node:fs';
+        const path = '/var/lib/bitcoin-peer-map/peer-policy.json';
+        assert.equal(statSync(path).mode & 0o777, 0o600);
+        assert.equal(JSON.parse(readFileSync(path, 'utf8')).config.mode, 'preview');
+    `);
     const outbound = await get('/api/config/outbound');
     assert.equal(outbound.preferences.optional_outbound, false, 'legacy files lacking the new preference default to local-only');
     assert.deepEqual(outbound.effective, { geoip_lookups: false, dataset_downloads: false, release_checks: false, reachability_probes: false });
@@ -190,10 +208,22 @@ try {
     const health = JSON.parse(await docker('inspect', '--format', '{{json .Config.Healthcheck.Test}}', name));
     await docker('exec', name, 'sh', '-c', health[1]);
     await stop(); await start();
+    const restoredPolicy = await get('/api/peer-policy');
+    assert.equal(restoredPolicy.config.mode, 'preview');
+    assert.deepEqual(restoredPolicy.config.keep_addresses, ['198.51.100.8']);
+    assert.equal(restoredPolicy.preview_remaining_seconds, 1800, 'recreation requires fresh observations');
+    const earlyAutomatic = await fetch(base + '/api/peer-policy', { method: 'POST', headers: {
+        Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json',
+    }, body: JSON.stringify({ expected_revision: restoredPolicy.revision, config: { ...restoredPolicy.config, mode: 'automatic' } }) });
+    assert.equal(earlyAutomatic.status, 409);
+    assert.equal((await earlyAutomatic.json()).code, 'peer_policy_preview_required');
+    assert.equal((await get('/api/peer-policy', 'POST', { expected_revision: restoredPolicy.revision,
+        config: { ...restoredPolicy.config, mode: 'off' } })).config.mode, 'off');
     assert.equal((await get('/api/connectivity')).geo_db_only_mode, true);
     assert.equal((await get('/api/info')).geo_db_stats.entries, 1);
     await stop();
-    console.log('Production container smoke test passed: private viewing, viewer/admin separation, local-only defaults, local browser assets, no Python, non-root/read-only operation, existing SQLite/preferences, health check, recreation, and clean shutdown');
+    assert.deepEqual(nodeMutations, [], 'Preview and restart never mutate the node');
+    console.log('Production container smoke test passed: private viewing, viewer/admin separation, local-only defaults, inbound policy persistence, local browser assets, no Python, non-root/read-only operation, existing SQLite/preferences, health check, recreation, and clean shutdown');
 } catch (error) {
     console.error(await docker('logs', name).catch(() => 'Container unavailable'));
     throw error;

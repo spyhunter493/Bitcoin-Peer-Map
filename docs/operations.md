@@ -106,6 +106,7 @@ The default volume `bitcoin-peer-map-data` mounts at `/var/lib/bitcoin-peer-map`
 | `geo.db` | Cached peer locations in SQLite |
 | `settings.json` | Saved GeoIP and optional-outbound preferences |
 | `wallet-ticker.json` | Shared wallet selections and display preferences, scoped to the configured RPC node and network |
+| `peer-policy.json` | Inbound policy settings, Keep addresses, reserved action budgets and bounded recent decisions, scoped to the RPC node and network |
 | `update-check.json` | Application update status and last check time |
 | `tmp/` | Temporary GeoIP dataset downloads |
 
@@ -166,6 +167,37 @@ Wallet discovery supports up to 128 loaded wallets and selections, with at most
 two wallet workers. An exceeded capacity reports an explicit unavailable state;
 it never silently displays only the first wallets. Slow or unavailable wallet
 RPC calls produce partial availability without disrupting peer monitoring.
+
+### Inbound policy state
+
+Inbound cleanup starts Off and does not create a policy file until settings are
+saved. The administrator-only [Inbound policy panel](dashboard.md#inbound-listener-policy)
+controls Preview, Automatic, the listener allowance, and Keep exceptions. No
+additional environment variable enables it. Automatic requires the existing peer
+management RPC permission, including `disconnectnode`; Preview uses monitoring
+methods and never sends that mutation.
+
+The separate, versioned `peer-policy.json` has owner-only mode 0600 and a 1 MiB
+limit. Configuration, revision, reserved attempts, and outcomes share one atomic
+write so a restart cannot discard an active budget. Up to 200 recent events are
+shown for up to seven days; expired disk entries are pruned when enabled
+evaluation resumes, while Off adds no maintenance timer. The bounded observer
+session map stays in memory.
+The saved file contains peer/Keep addresses and belongs in private backups. RPC
+credentials and raw peer snapshots are never stored in it.
+
+Restart restores the requested mode and action limits, but session evidence and
+the fresh Preview trial start again. Switching the configured RPC endpoint or
+Bitcoin network starts Off for that scope until an explicit administrator save.
+Reconnections start new grace periods; address cooldowns only suppress repeated
+attempts and do not create a reputation score.
+
+Corrupt, oversized, insufficiently private, or unwritable policy storage disables
+new policy actions while ordinary monitoring continues. The panel reports the
+problem. Stop BPM and privately back up the file before repairing ownership or
+contents. Do not delete active attempt reservations to clear a cooldown. If you
+deliberately reset the policy file, the absent-file default is Off; complete a
+new Preview trial before reactivating Automatic.
 
 ### Repair saved preferences
 

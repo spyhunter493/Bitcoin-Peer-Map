@@ -46,6 +46,19 @@ clear wallet content. Closing or navigating one tab preserves other tabs' access
 Background wallet requests never open an unlock prompt. Bitcoin node wallet-RPC
 permission failures report wallet unavailability rather than changing BPM access.
 
+### Inbound policy access
+
+`GET`/`HEAD` and `POST /api/peer-policy` require a management credential in every
+viewing mode. Evidence, Keep addresses, and recent decisions are private/no-store
+and excluded from ordinary dashboard APIs. Revoking management clears the open
+panel and invalidates pending responses and saves.
+
+Explicitly selecting Automatic authorizes a server-owned policy; management
+session expiry, locking, and browser closure do not cancel that saved authority.
+Use Off in the policy panel to stop new actions. Automatic starts disabled and
+requires a fresh Preview trial, guarded connection revalidation, health checks,
+and persisted action limits. See [Inbound policy](dashboard.md#inbound-listener-policy).
+
 ## Credentials
 
 Configure `BPM_VIEW_TOKEN` and/or `BPM_ADMIN_TOKEN`, or their corresponding `_FILE`

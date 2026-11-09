@@ -1,7 +1,8 @@
 # Plan: optional inbound listener cleanup
 
-Status: planning only. This PR proposes behavior and review criteria; it does not
-implement a policy, disconnect peers, change node settings, or enable automation.
+Status: implementation in draft review. The policy remains Off by default and
+requires an explicit management activation. Validation uses synthetic RPC data;
+no live node trial or automatic peer removal has been performed for this PR.
 
 ## Problem and intended result
 
@@ -266,10 +267,12 @@ depend on someone opening the Node dashboard. Off adds no health-polling work.
 ## Persistence and sensitive data
 
 Use a dedicated versioned `peer-policy.json` for settings, revision, normalized
-Keep entries, and non-secret node/network scope. Use separate bounded policy state
-for attempt reservations, cooldowns, and history; retain action budgets across
-restart. Store files under the configured application data directory with atomic
-replacement and owner-only permissions. A node-scope fingerprint must exclude
+Keep entries, non-secret node/network scope, and bounded policy state for attempt
+reservations, cooldowns, and history. The implementation commits these together
+in one atomic document so configuration changes cannot lose an attempt budget.
+Retain action budgets across restart. Store the file under the configured
+application data directory with atomic replacement and owner-only permissions.
+A node-scope fingerprint must exclude
 credentials and wallet paths; endpoint/network change requires fresh Preview.
 
 Do not persist raw peer snapshots, transaction contents, or arbitrary RPC errors.
@@ -329,8 +332,9 @@ Proposed future acceptance checks:
 Use Node 26 and the repository's relevant server/unit tests, API-generation check,
 JavaScript/type checks, and scoped browser/layout tests when implementation exists.
 Container/compose validation becomes relevant if persistence or deployment contracts
-change. This Markdown-only draft needs document, privacy, and diff checks; runtime
-tests would not validate an unimplemented design.
+change. The original planning commit contained only this document. The
+implementation draft must pass those checks against the actual policy and UI;
+an operator-approved observation-only live trial remains a separate review step.
 
 ## Primary references
 

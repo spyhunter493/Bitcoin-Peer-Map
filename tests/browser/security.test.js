@@ -14,6 +14,7 @@ import assertViewingPrivacy from '../test_viewing_privacy.js';
 import assertPersistentAuthentication from '../test_persistent_auth.js';
 import assertOutboundSettings from '../test_outbound_settings.js';
 import assertWalletTicker from '../test_wallet_ticker.js';
+import assertPeerPolicy from '../test_peer_policy.js';
 
 for (const engine of [chromium, firefox, webkit]) {
     const protectedViewing = async t => {
@@ -48,6 +49,7 @@ for (const engine of [chromium, firefox, webkit]) {
         await assertPeerAccuracy(browser, base);
         await assertNarrowManagementDialogs(browser, base);
         await assertPeerSearchExport(browser, base);
+        await assertPeerPolicy(browser, base);
         const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
         t.after(() => context.close());
         const external = [], requests = [], errors = [];

@@ -69,6 +69,7 @@ export class PeerService {
     private refreshFailures = createFailureReporter(log);
     private geoFailures = createFailureReporter(log);
     private bandwidth = new PeerBandwidthRates();
+    private observationListeners = new Set<(peers: PeerInfo[] | null, observedAt: number) => void>();
     peers: PeerInfo[] = [];
     lastSuccessAt: number | null = null;
     lastAttemptAt: number | null = null;
@@ -116,6 +117,17 @@ export class PeerService {
         this.refreshTask = task;
         return task;
     }
+    /** Canonical RPC observations, independent of page reads and GeoIP completion. */
+    onObservation(listener: (peers: PeerInfo[] | null, observedAt: number) => void) {
+        this.observationListeners.add(listener);
+        return () => { this.observationListeners.delete(listener); };
+    }
+    private publishObservation(peers: PeerInfo[] | null, observedAt: number) {
+        for (const listener of this.observationListeners) {
+            try { listener(peers, observedAt); }
+            catch { log.error('Peer policy could not process an observation'); }
+        }
+    }
     private async refreshPeers() {
         let peers: PeerInfo[];
         let observedAt: number;
@@ -126,6 +138,7 @@ export class PeerService {
         } catch (error) {
             if (this.signal.aborted) return false;
             this.bandwidth.clear();
+            this.publishObservation(null, performance.now());
             this.lastAttemptAt = nowSeconds(); this.lastError = 'Could not refresh peers from the Bitcoin node';
             this.refreshFailures.failure(`Peer refresh failed: ${errorMessage(error)}`);
             return false;
@@ -135,6 +148,7 @@ export class PeerService {
         this.peers = peers;
         this.refreshFailures.recovered('Peer refresh recovered');
         this.lastSuccessAt = nowSeconds(); this.lastAttemptAt = this.lastSuccessAt; this.lastError = null;
+        this.publishObservation(peers, observedAt);
         const unique = new Map<string, string>();
         for (const peer of peers) {
             const address = peer.addr || '', network = peer.network ?? networkType(address);

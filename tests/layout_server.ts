@@ -10,6 +10,9 @@ import { BITCOIN_NETWORKS } from '../src/server/network.ts';
 import type { OutboundPreference } from '../src/server/preferences.ts';
 import type { WalletTickerPreferences, WalletSnapshot } from '../src/server/services/wallets.ts';
 import { HttpError } from '../src/server/http.ts';
+import { object } from '../src/server/types.ts';
+import { DEFAULT_POLICY_CONFIG, POLICY_LIMITS, type PolicyConfig, type PolicySnapshot } from '../src/server/peer-policy/types.ts';
+import { parsePolicyConfig } from '../src/server/peer-policy/store.ts';
 
 // Captured API fixtures keep browser regressions independent of external services.
 const fixtures: { peers: Peer[]; metrics: NodeMetricsSnapshot; info: DashboardInfo; mempool: MempoolResponse; blockchain: BlockchainResponse; blocks: RecentBlocks; tips: ChainTips } = JSON.parse(readFileSync(new URL('./fixtures/dashboard.json', import.meta.url), 'utf8'));
@@ -23,6 +26,8 @@ export class FixtureRuntime implements ApplicationRuntime {
     private outboundPreferences = { optional_outbound: false, geoip_dataset_downloads: true, release_checks: true, reachability_checks: true };
     private walletPreferences: WalletTickerPreferences = { selected_wallets: [], unit: 'BTC', rotation_seconds: 8, paused: false };
     private walletPreferenceRevision = 0;
+    private policyConfig: PolicyConfig = structuredClone(DEFAULT_POLICY_CONFIG);
+    private policyRevision = 0;
     constructor(settings: Settings) {
         this.settings = settings; this.rpc = new BitcoinRpcClient(settings);
         this.outboundPreferences.optional_outbound = settings.outbound_enabled_override === true;
@@ -73,6 +78,22 @@ export class FixtureRuntime implements ApplicationRuntime {
                 { name: 'watch-legacy', state: 'ready', balance_sats: 0, pending_incoming_sats: 0, immature_sats: 0, scanning_progress: null, updated_at: Date.now() / 1000 },
                 { name: 'watch-scanning', state: 'scanning', balance_sats: null, pending_incoming_sats: null, immature_sats: null, scanning_progress: 0.5, updated_at: null },
             ] }),
+    };
+    peerPolicy = {
+        snapshot: (): PolicySnapshot => ({ available: Boolean(this.settings.admin_token), config: structuredClone(this.policyConfig), revision: this.policyRevision,
+            effective_state: this.policyConfig.mode === 'off' ? 'disabled' : 'observing',
+            reason: this.policyConfig.mode === 'off' ? 'Inbound policy is off.' : 'Collecting fresh observations.',
+            preview_remaining_seconds: 1800, next_action_at: null, counts: { inbound: 0, candidates: 0, exempt: 0 },
+            limits: POLICY_LIMITS, peers: [], events: [], as_diversity_available: false }),
+        configure: (payload: unknown): PolicySnapshot => {
+            if (!object(payload) || Object.keys(payload).length !== 2 || !Number.isSafeInteger(payload.expected_revision)
+                || !object(payload.config)) throw new HttpError(422, 'Invalid inbound policy configuration.', 'peer_policy_invalid');
+            if (payload.expected_revision !== this.policyRevision) throw new HttpError(409, 'Inbound policy changed. Refresh before saving.', 'peer_policy_conflict');
+            const config = parsePolicyConfig(payload.config);
+            if (config.mode === 'automatic') throw new HttpError(409, 'Complete a fresh Preview trial first.', 'peer_policy_preview_required');
+            this.policyConfig = config; this.policyRevision++;
+            return this.peerPolicy.snapshot();
+        },
     };
     node = {
         dashboardInfo: async (): Promise<DashboardInfo> => {

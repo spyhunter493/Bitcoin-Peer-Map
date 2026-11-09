@@ -920,6 +920,15 @@ body.theme-light .fd-net-counts {
     flex-shrink: 0;
 }
 .peer-toolbar-filters { min-width: 0; }
+.peer-toolbar-management {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    flex: 1 1 max-content;
+    min-width: 0;
+    max-width: 100%;
+}
 .peer-search-tools {
     display: flex;
     align-items: center;

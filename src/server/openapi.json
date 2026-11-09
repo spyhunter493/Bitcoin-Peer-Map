@@ -2011,6 +2011,116 @@
           }
         }
       }
+    },
+    "/api/peer-policy": {
+      "get": {
+        "summary": "Inspect Inbound Policy",
+        "operationId": "get_peer_policy",
+        "description": "Administrator-only configuration, evidence and recent decisions, including in public viewing mode. No-store responses; reads never collect evidence or trigger node actions.",
+        "security": [
+          {
+            "AdminToken": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful administrator-only response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PeerPolicySnapshot"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/AdminRateLimited"
+          },
+          "default": {
+            "description": "Wallet availability, preference validation, or HTTP request failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Configure Inbound Policy",
+        "operationId": "configure_peer_policy",
+        "description": "Apply the complete policy configuration with an expected revision. Off is the default. Automatic requires a fresh Preview trial; explicit activation grants browser-independent node automation. Origin protection and administrator authentication apply.",
+        "security": [
+          {
+            "AdminToken": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful administrator-only response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PeerPolicySnapshot"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/AdminRateLimited"
+          },
+          "default": {
+            "description": "Wallet availability, preference validation, or HTTP request failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Configuration revision conflict. Refresh before making another change.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PeerPolicyRequest"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -4523,6 +4633,299 @@
               "null"
             ],
             "description": "Sanitized wallet capability or availability reason. Never contains wallet names, credentials, or raw node errors."
+          }
+        }
+      },
+      "PeerPolicyConfig": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "mode",
+          "listener_allowance",
+          "keep_addresses"
+        ],
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "off",
+              "preview",
+              "automatic"
+            ]
+          },
+          "listener_allowance": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 20
+          },
+          "keep_addresses": {
+            "type": "array",
+            "maxItems": 128,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "maxLength": 512
+            }
+          }
+        }
+      },
+      "PeerPolicyPeer": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "peer_id",
+          "address",
+          "host",
+          "network",
+          "connection_age_seconds",
+          "observed_seconds",
+          "remaining_seconds",
+          "status",
+          "reason"
+        ],
+        "properties": {
+          "peer_id": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "address": {
+            "type": "string"
+          },
+          "host": {
+            "type": "string"
+          },
+          "network": {
+            "type": "string"
+          },
+          "connection_age_seconds": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "observed_seconds": {
+            "type": "number",
+            "minimum": 0
+          },
+          "remaining_seconds": {
+            "type": "number",
+            "minimum": 0
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "candidate",
+              "protected",
+              "observing",
+              "unknown"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "PeerPolicyEvent": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "time",
+          "peer_id",
+          "address",
+          "kind",
+          "reason"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "time": {
+            "type": "number",
+            "minimum": 0
+          },
+          "peer_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "address": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "would_disconnect",
+              "requested",
+              "succeeded",
+              "failed",
+              "uncertain",
+              "departure_observed",
+              "skipped"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "PeerPolicySnapshot": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "available",
+          "config",
+          "revision",
+          "effective_state",
+          "reason",
+          "preview_remaining_seconds",
+          "next_action_at",
+          "counts",
+          "limits",
+          "peers",
+          "events",
+          "as_diversity_available"
+        ],
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "config": {
+            "$ref": "#/components/schemas/PeerPolicyConfig"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "effective_state": {
+            "type": "string",
+            "enum": [
+              "disabled",
+              "observing",
+              "preview",
+              "running",
+              "paused"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "preview_remaining_seconds": {
+            "type": "number",
+            "minimum": 0
+          },
+          "next_action_at": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "counts": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "inbound",
+              "candidates",
+              "exempt"
+            ],
+            "properties": {
+              "inbound": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "candidates": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "exempt": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          "limits": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "grace_seconds",
+              "observation_seconds",
+              "attempt_interval_seconds",
+              "max_attempts_per_hour",
+              "address_cooldown_seconds",
+              "min_total_peers",
+              "min_outbound_peers"
+            ],
+            "properties": {
+              "grace_seconds": {
+                "type": "integer",
+                "const": 3600
+              },
+              "observation_seconds": {
+                "type": "integer",
+                "const": 1800
+              },
+              "attempt_interval_seconds": {
+                "type": "integer",
+                "const": 300
+              },
+              "max_attempts_per_hour": {
+                "type": "integer",
+                "const": 6
+              },
+              "address_cooldown_seconds": {
+                "type": "integer",
+                "const": 1800
+              },
+              "min_total_peers": {
+                "type": "integer",
+                "const": 12
+              },
+              "min_outbound_peers": {
+                "type": "integer",
+                "const": 4
+              }
+            }
+          },
+          "peers": {
+            "type": "array",
+            "maxItems": 2000,
+            "items": {
+              "$ref": "#/components/schemas/PeerPolicyPeer"
+            }
+          },
+          "events": {
+            "type": "array",
+            "maxItems": 200,
+            "items": {
+              "$ref": "#/components/schemas/PeerPolicyEvent"
+            }
+          },
+          "as_diversity_available": {
+            "type": "boolean"
+          }
+        }
+      },
+      "PeerPolicyRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "expected_revision",
+          "config"
+        ],
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "config": {
+            "$ref": "#/components/schemas/PeerPolicyConfig"
           }
         }
       }

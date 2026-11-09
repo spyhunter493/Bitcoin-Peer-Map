@@ -14,6 +14,9 @@ import { createFailureReporter, createLogger } from './logging.ts';
 import { errorMessage } from './types.ts';
 import { OutboundPolicy } from './outbound-policy.ts';
 import { createGeoipLookup } from './services/geoip-provider.ts';
+import { createHash } from 'node:crypto';
+import { PeerPolicyStore } from './peer-policy/store.ts';
+import { PeerPolicyCoordinator } from './peer-policy/coordinator.ts';
 
 export const GEOIP_UPDATE_INTERVAL_MS = 60 * 60 * 1000;
 export class AppRuntime {
@@ -29,6 +32,8 @@ export class AppRuntime {
     readonly metrics: NodeMetrics;
     readonly updates: UpdateService;
     readonly wallets: WalletService;
+    readonly peerPolicy: PeerPolicyCoordinator;
+    private stopPolicyObservations: () => void;
     readonly outboundPolicy: OutboundPolicy;
     readonly outbound = { snapshot: () => this.outboundSnapshot() };
     private updateTimer: ReturnType<typeof setTimeout> | null = null;
@@ -47,6 +52,15 @@ export class AppRuntime {
         this.connectivity = new ConnectivityService(this.preferences.geoip_db_only, this.controller.signal, fetch, this.outboundPolicy);
         this.peers = new PeerService(this.rpc, this.geoDatabase, this.connectivity, this.controller.signal, fetch, createGeoipLookup(this.connectivity, this.outboundPolicy));
         this.node = new NodeService(this.rpc, this.connectivity, this.geoDatabase, () => this.preferences.geoip_auto_update, settings.bitcoin_network);
+        const policyScope = createHash('sha256').update(JSON.stringify([settings.rpc_url, settings.bitcoin_network])).digest('hex');
+        this.peerPolicy = new PeerPolicyCoordinator(new PeerPolicyStore(settings.data_dir, policyScope), {
+            rpc: this.rpc, refreshPeers: () => this.peers.refreshOnce(), signal: this.controller.signal,
+            managementEnabled: Boolean(settings.admin_token), chain: settings.bitcoin_network,
+        });
+        this.stopPolicyObservations = this.peers.onObservation((peers, observedAt) => {
+            if (peers === null) this.peerPolicy.failed();
+            else this.peerPolicy.observe(peers, observedAt);
+        });
         this.metrics = this.node.metrics;
         this.updates = new UpdateService(settings, this.controller.signal, fetch, this.outboundPolicy);
     }
@@ -57,6 +71,7 @@ export class AppRuntime {
         this.preferencesStore.save(this.preferences);
         this.geoDatabase.initialize();
         this.started = true;
+        this.peerPolicy.start();
         this.connectivity.ensureChecker();
         await this.peers.start();
         this.controller.signal.throwIfAborted();
@@ -66,11 +81,12 @@ export class AppRuntime {
     async stop() {
         this.started = false;
         this.controller.abort();
+        this.stopPolicyObservations();
         this.wallets.stop();
         this.outboundPolicy.close();
         if (this.updateTimer) clearTimeout(this.updateTimer);
         this.updateTimer = null;
-        await Promise.allSettled([this.peers.stop(), this.connectivity.stop(), this.updates.stop(), this.updateTask]);
+        await Promise.allSettled([this.peerPolicy.stop(), this.peers.stop(), this.connectivity.stop(), this.updates.stop(), this.updateTask]);
         this.geoDatabase.close();
     }
     setGeoipAutoUpdate(enabled: boolean) {

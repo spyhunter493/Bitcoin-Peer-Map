@@ -675,6 +675,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/peer-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inspect Inbound Policy
+         * @description Administrator-only configuration, evidence and recent decisions, including in public viewing mode. No-store responses; reads never collect evidence or trigger node actions.
+         */
+        get: operations["get_peer_policy"];
+        put?: never;
+        /**
+         * Configure Inbound Policy
+         * @description Apply the complete policy configuration with an expected revision. Off is the default. Automatic requires a fresh Preview trial; explicit activation grants browser-independent node automation. Origin protection and administrator authentication apply.
+         */
+        post: operations["configure_peer_policy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1323,6 +1347,71 @@ export interface components {
             /** @description Sanitized wallet capability or availability reason. Never contains wallet names, credentials, or raw node errors. */
             reason: string | null;
         };
+        PeerPolicyConfig: {
+            /** @enum {string} */
+            mode: "off" | "preview" | "automatic";
+            listener_allowance: number;
+            keep_addresses: string[];
+        };
+        PeerPolicyPeer: {
+            peer_id: number;
+            address: string;
+            host: string;
+            network: string;
+            connection_age_seconds: number | null;
+            observed_seconds: number;
+            remaining_seconds: number;
+            /** @enum {string} */
+            status: "candidate" | "protected" | "observing" | "unknown";
+            reason: string;
+        };
+        PeerPolicyEvent: {
+            id: string;
+            time: number;
+            peer_id: number | null;
+            address: string | null;
+            /** @enum {string} */
+            kind: "would_disconnect" | "requested" | "succeeded" | "failed" | "uncertain" | "departure_observed" | "skipped";
+            reason: string;
+        };
+        PeerPolicySnapshot: {
+            available: boolean;
+            config: components["schemas"]["PeerPolicyConfig"];
+            revision: number;
+            /** @enum {string} */
+            effective_state: "disabled" | "observing" | "preview" | "running" | "paused";
+            reason: string;
+            preview_remaining_seconds: number;
+            next_action_at: number | null;
+            counts: {
+                inbound: number;
+                candidates: number;
+                exempt: number;
+            };
+            limits: {
+                /** @constant */
+                grace_seconds: 3600;
+                /** @constant */
+                observation_seconds: 1800;
+                /** @constant */
+                attempt_interval_seconds: 300;
+                /** @constant */
+                max_attempts_per_hour: 6;
+                /** @constant */
+                address_cooldown_seconds: 1800;
+                /** @constant */
+                min_total_peers: 12;
+                /** @constant */
+                min_outbound_peers: 4;
+            };
+            peers: components["schemas"]["PeerPolicyPeer"][];
+            events: components["schemas"]["PeerPolicyEvent"][];
+            as_diversity_available: boolean;
+        };
+        PeerPolicyRequest: {
+            expected_revision: number;
+            config: components["schemas"]["PeerPolicyConfig"];
+        };
     };
     responses: {
         /** @description Browser requests whose Origin host does not match Host are rejected. Reverse proxies must preserve the external Host header. Management is also rejected when BPM_ADMIN_TOKEN is not configured (code: management_disabled). */
@@ -1455,6 +1544,11 @@ export type WalletTickerPreferences = components['schemas']['WalletTickerPrefere
 export type WalletPreferencesResponse = components['schemas']['WalletPreferencesResponse'];
 export type WalletRow = components['schemas']['WalletRow'];
 export type WalletSnapshot = components['schemas']['WalletSnapshot'];
+export type PeerPolicyConfig = components['schemas']['PeerPolicyConfig'];
+export type PeerPolicyPeer = components['schemas']['PeerPolicyPeer'];
+export type PeerPolicyEvent = components['schemas']['PeerPolicyEvent'];
+export type PeerPolicySnapshot = components['schemas']['PeerPolicySnapshot'];
+export type PeerPolicyRequest = components['schemas']['PeerPolicyRequest'];
 export type ResponseCrossOriginRequest = components['responses']['CrossOriginRequest'];
 export type ResponseAdminRequired = components['responses']['AdminRequired'];
 export type ResponseAdminRateLimited = components['responses']['AdminRateLimited'];
@@ -2771,6 +2865,83 @@ export interface operations {
             };
             401: components["responses"]["AdminRequired"];
             403: components["responses"]["CrossOriginRequest"];
+            429: components["responses"]["AdminRateLimited"];
+            /** @description Wallet availability, preference validation, or HTTP request failure. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_peer_policy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful administrator-only response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PeerPolicySnapshot"];
+                };
+            };
+            401: components["responses"]["AdminRequired"];
+            403: components["responses"]["CrossOriginRequest"];
+            429: components["responses"]["AdminRateLimited"];
+            /** @description Wallet availability, preference validation, or HTTP request failure. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    configure_peer_policy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PeerPolicyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful administrator-only response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PeerPolicySnapshot"];
+                };
+            };
+            401: components["responses"]["AdminRequired"];
+            403: components["responses"]["CrossOriginRequest"];
+            /** @description Configuration revision conflict. Refresh before making another change. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             429: components["responses"]["AdminRateLimited"];
             /** @description Wallet availability, preference validation, or HTTP request failure. */
             default: {

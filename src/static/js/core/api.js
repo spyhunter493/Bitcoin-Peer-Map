@@ -113,7 +113,7 @@ async function requestAdminJson(url, options, timeoutMs) {
     if (authentication?.beforeRequest) await authentication.beforeRequest();
     options.signal?.throwIfAborted();
     if (!authentication || !(authentication.isAuthenticated?.() || authentication.getToken())) {
-        throw new HttpError('Unlock management to view wallet balances.', 401, { code: 'admin_required' });
+        throw new HttpError('Unlock management to access these controls.', 401, { code: 'admin_required' });
     }
     const revision = authentication.getRevision?.();
     const token = authentication.getToken();
