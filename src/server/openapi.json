@@ -4688,6 +4688,7 @@
           "address",
           "host",
           "network",
+          "subver",
           "connection_age_seconds",
           "observed_seconds",
           "remaining_seconds",
@@ -4707,6 +4708,14 @@
           },
           "network": {
             "type": "string"
+          },
+          "subver": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 512,
+            "description": "Peer-reported software user-agent string, preserved as untrusted display text. Null when unavailable, blank, containing control characters or outside the display bound. It does not determine listener eligibility."
           },
           "connection_age_seconds": {
             "type": [

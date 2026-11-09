@@ -85,8 +85,7 @@ export function create({ management, document = globalThis.document }) {
     }
 
     function build() {
-        return '<p class="peer-policy-intro">Reclaim slots from persistent inbound listeners, including while spare slots are available.</p>' +
-            '<div class="peer-policy-modes" role="group" aria-label="Inbound policy mode">' +
+        return '<div class="peer-policy-modes" role="group" aria-label="Inbound policy mode">' +
             '<button type="button" class="dialog-btn" id="peer-policy-mode-off" data-policy-mode="off" aria-pressed="true">Off</button>' +
             '<button type="button" class="dialog-btn" id="peer-policy-mode-preview" data-policy-mode="preview" aria-pressed="false">Preview</button>' +
             '<button type="button" class="dialog-btn" id="peer-policy-mode-automatic" data-policy-mode="automatic" aria-pressed="false">Automatic</button>' +
@@ -166,6 +165,7 @@ export function create({ management, document = globalThis.document }) {
         if (peerContainer) peerContainer.innerHTML = peers.length ? peers.slice(0, MAX_DISPLAYED_PEERS).map(peer => {
             const kept = data.config.keep_addresses.includes(peer.host);
             return `<article class="peer-policy-card" data-status="${escape(peer.status)}"><div class="peer-policy-card-heading"><strong>${escape(peer.address)}</strong><span>${escape(statuses[peer.status])}</span></div>` +
+                `<p class="peer-policy-software">Software: ${escape(peer.subver?.trim() || 'Unknown')}</p>` +
                 `<p>${escape(peer.reason)}</p><p class="peer-policy-note">Connection age ${peer.connection_age_seconds === null ? 'unknown' : escape(fmtDuration(peer.connection_age_seconds))}; observed ${escape(fmtDuration(peer.observed_seconds))}${peer.remaining_seconds > 0 ? `; needs ${escape(fmtDuration(peer.remaining_seconds))} more` : ''}.</p>` +
                 `<button type="button" class="dialog-btn" data-policy-action="keep" data-address="${escape(peer.host)}"${disabled || kept || !peer.host || data.config.keep_addresses.length >= 128 ? ' disabled' : ''}>${kept ? 'Kept' : 'Keep address'}</button></article>`;
         }).join('') + (peers.length > MAX_DISPLAYED_PEERS ? `<p class="peer-policy-note">Showing ${MAX_DISPLAYED_PEERS} of ${escape(peers.length)} observed connections, with candidates first.</p>` : '')

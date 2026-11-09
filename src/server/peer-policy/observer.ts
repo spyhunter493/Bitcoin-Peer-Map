@@ -165,6 +165,8 @@ export class ListenerObserver {
             const evidenceEnd = Math.min(now, this.lastObservedAt ?? now);
             const observed = row.quietSince === null || !validTime(evidenceEnd) || evidenceEnd < row.quietSince ? 0 : Math.max(0, (evidenceEnd - row.quietSince) / 1000);
             const view: PolicyPeer = { peer_id: peer.id, address: peer.addr, host: row.host, network: peer.network ?? 'unknown',
+                subver: typeof peer.subver === 'string' && peer.subver.length <= 512 && peer.subver.trim()
+                    && !/[\u0000-\u001f\u007f-\u009f]/.test(peer.subver) ? peer.subver : null,
                 connection_age_seconds: age, observed_seconds: observed,
                 remaining_seconds: Math.max(0, POLICY_LIMITS.grace_seconds - (age ?? 0), POLICY_LIMITS.observation_seconds - observed), status: 'unknown', reason: '' };
             const protect = (reason: string) => { view.status = 'protected'; view.reason = reason; return { row, view }; };

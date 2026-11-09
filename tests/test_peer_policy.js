@@ -25,11 +25,11 @@ export default async function assertPeerPolicy(browser, baseUrl) {
                 address_cooldown_seconds: 1800, min_total_peers: 12, min_outbound_peers: 4 },
             as_diversity_available: false,
             peers: config.mode === 'off' ? [] : [
-                { peer_id: 101, address: `${host}:45001`, host, network: 'ipv4', connection_age_seconds: 7200, observed_seconds: 1800, remaining_seconds: 0,
+                { peer_id: 101, address: `${host}:45001`, host, network: 'ipv4', subver: `/Satoshi:29.3.0/Knots:20260508/${malicious}`, connection_age_seconds: 7200, observed_seconds: 1800, remaining_seconds: 0,
                     status: kept ? 'protected' : 'candidate', reason: kept ? 'Operator Keep exception.' : `Only keepalive and address traffic. ${malicious}` },
-                { peer_id: 102, address: '203.0.113.10:45002', host: '203.0.113.10', network: 'ipv4', connection_age_seconds: 7200, observed_seconds: 60, remaining_seconds: 1740,
+                { peer_id: 102, address: '203.0.113.10:45002', host: '203.0.113.10', network: 'ipv4', subver: null, connection_age_seconds: 7200, observed_seconds: 60, remaining_seconds: 1740,
                     status: 'protected', reason: 'Serving historical blocks.' },
-                { peer_id: 103, address: '203.0.113.11:45003', host: '203.0.113.11', network: 'ipv4', connection_age_seconds: 60, observed_seconds: 60, remaining_seconds: 3540,
+                { peer_id: 103, address: '203.0.113.11:45003', host: '203.0.113.11', network: 'ipv4', subver: `/VeryLongSoftware:${'v'.repeat(480)}/`, connection_age_seconds: 60, observed_seconds: 60, remaining_seconds: 3540,
                     status: 'observing', reason: 'Connection grace has not elapsed.' },
             ],
             events: config.mode === 'off' ? [] : [{ id: 'synthetic-event', time: 1700000000, peer_id: 104, address: '203.0.113.12:45004', kind: 'uncertain', reason: 'RPC timed out; no retry was sent.' }],
@@ -84,6 +84,7 @@ export default async function assertPeerPolicy(browser, baseUrl) {
         await page.locator('#admin-token-input').fill(admin);
         await page.locator('#admin-token-submit').click();
         await page.locator('#peer-policy-mode-off').waitFor({ state: 'visible' });
+        assert.equal(await page.locator('.peer-policy-intro').count(), 0, 'the redundant introductory line is removed');
         await page.waitForFunction(() => !document.getElementById('peer-policy-mode-preview')?.disabled);
         assert.equal(await page.locator('#peer-policy-mode-off').getAttribute('aria-pressed'), 'true');
         assert.equal(await page.locator('#peer-policy-mode-automatic').isDisabled(), true);
@@ -97,10 +98,13 @@ export default async function assertPeerPolicy(browser, baseUrl) {
         assert.equal(await page.locator('#peer-policy-peers img').count(), 0, 'peer-supplied text is escaped');
         assert.match(await page.locator('#peer-policy-peers').textContent(), /<img src=x/);
         assert.match(await page.locator('#peer-policy-peers').textContent(), /Serving historical blocks/);
+        assert.equal(await page.locator('.peer-policy-card[data-status="candidate"] .peer-policy-software').textContent(),
+            `Software: /Satoshi:29.3.0/Knots:20260508/${malicious}`, 'the card shows the escaped software version reported by this peer');
+        assert.equal(await page.locator('.peer-policy-card[data-status="protected"] .peer-policy-software').textContent(), 'Software: Unknown');
         assert.match(await page.locator('#peer-policy-events').textContent(), /Outcome uncertain/);
         if (process.env.BPM_PEER_POLICY_ARTIFACT_DIR) {
             await mkdir(process.env.BPM_PEER_POLICY_ARTIFACT_DIR, { recursive: true });
-            const candidateReason = page.locator('.peer-policy-card[data-status="candidate"] > p').first();
+            const candidateReason = page.locator('.peer-policy-card[data-status="candidate"] > p:not(.peer-policy-software)').first();
             const originalReason = await candidateReason.textContent();
             await candidateReason.evaluate(element => { element.textContent = 'Only keepalive and address traffic observed during the quiet window.'; });
             await page.screenshot({ path: join(process.env.BPM_PEER_POLICY_ARTIFACT_DIR, 'inbound-policy-preview.png') });
@@ -183,6 +187,12 @@ export default async function assertPeerPolicy(browser, baseUrl) {
             width: window.innerWidth, overflow: box.scrollWidth > box.clientWidth + 1,
         }));
         assert.ok(geometry.left >= 0 && geometry.right <= geometry.width && !geometry.overflow, 'policy dialog fits narrow screens');
+        await page.locator('#peer-policy-mode-preview').click();
+        await waitSaved();
+        const softwareGeometry = await page.locator('.peer-policy-card[data-status="observing"] .peer-policy-software').evaluate(label => ({
+            clientWidth: label.clientWidth, scrollWidth: label.scrollWidth,
+        }));
+        assert.ok(softwareGeometry.scrollWidth <= softwareGeometry.clientWidth, 'long reported software versions wrap within narrow cards');
         if (process.env.BPM_PEER_POLICY_ARTIFACT_DIR) await page.screenshot({ path: join(process.env.BPM_PEER_POLICY_ARTIFACT_DIR, 'inbound-policy-narrow.png') });
         await page.keyboard.press('Escape');
         await page.locator('#peer-policy-modal').waitFor({ state: 'detached' });

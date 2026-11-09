@@ -3,7 +3,7 @@ import type { PeerInfo } from '../rpc-types.ts';
 export type PolicyMode = 'off' | 'preview' | 'automatic';
 export interface PolicyConfig { mode: PolicyMode; listener_allowance: number; keep_addresses: string[] }
 export interface PolicyPeer {
-    peer_id: number; address: string; host: string; network: string;
+    peer_id: number; address: string; host: string; network: string; subver: string | null;
     connection_age_seconds: number | null; observed_seconds: number; remaining_seconds: number;
     status: 'candidate' | 'protected' | 'observing' | 'unknown'; reason: string;
 }

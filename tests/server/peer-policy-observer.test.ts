@@ -55,6 +55,29 @@ test('connection grace cannot be replaced by a long local observation window', (
     assert.equal(observer.inspect(CONFIG, now, WALL + now / 1000).peers[0].status, 'observing');
 });
 
+test('policy cards expose reported software as bounded display metadata without changing eligibility', () => {
+    for (const [subver, expected] of [
+        ['/Satoshi:29.4.3/Knots:20260508/', '/Satoshi:29.4.3/Knots:20260508/'],
+        ['<img src=x onerror=alert(1)>', '<img src=x onerror=alert(1)>'],
+        ['x'.repeat(512), 'x'.repeat(512)], ['/Client:\u00001.0/', null],
+        [undefined, null], ['', null], ['   ', null], ['x'.repeat(513), null],
+    ] as const) {
+        const observer = new ListenerObserver(), peers = healthy([peer(1, { subver })]);
+        const now = window(observer, peers);
+        const evaluation = observer.inspect(CONFIG, now, WALL + now / 1000);
+        assert.equal(evaluation.peers[0].subver, expected);
+        assert.deepEqual(evaluation.eligible.map(item => item.peer.id), [1], 'reported software does not determine listener eligibility');
+    }
+    const observer = new ListenerObserver(), peers = healthy([peer(1, { subver: '/Client:1.0/' })]);
+    const now = window(observer, peers), identity = policyIdentity(peers[0]);
+    peers[0] = { ...peers[0], subver: '/Client:2.0/' };
+    observer.observe(peers, now + 10_000, WALL + now / 1000 + 10);
+    const updated = observer.inspect(CONFIG, now + 10_000, WALL + now / 1000 + 10);
+    assert.equal(updated.peers[0].subver, '/Client:2.0/');
+    assert.equal(updated.peers[0].observed_seconds, 1810);
+    assert.equal(updated.eligible[0].identity, identity, 'display metadata does not change connection identity');
+});
+
 test('page reads cannot finish the observation window before a new canonical arrival', () => {
     const observer = new ListenerObserver(), peers = healthy();
     const now = window(observer, peers, 1000, 1790);

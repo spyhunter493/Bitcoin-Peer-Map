@@ -1362,6 +1362,8 @@ export interface components {
             address: string;
             host: string;
             network: string;
+            /** @description Peer-reported software user-agent string, preserved as untrusted display text. Null when unavailable, blank, containing control characters or outside the display bound. It does not determine listener eligibility. */
+            subver: string | null;
             connection_age_seconds: number | null;
             observed_seconds: number;
             remaining_seconds: number;

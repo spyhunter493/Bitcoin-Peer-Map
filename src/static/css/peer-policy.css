@@ -1,6 +1,5 @@
 /* Administrator-only inbound-policy dialog. */
 .peer-policy-body { overflow-wrap: anywhere; }
-.peer-policy-intro { margin-bottom: 14px; color: var(--text-secondary); }
 .peer-policy-body .dialog-btn, #peer-policy-confirm .dialog-btn { color: var(--text-secondary); background: rgba(88, 166, 255, .04); border: 1px solid var(--accent-dim); }
 .peer-policy-body .dialog-btn:hover:not(:disabled), #peer-policy-confirm .dialog-btn:hover:not(:disabled) { color: var(--text-primary); border-color: var(--accent); background: rgba(88, 166, 255, .12); }
 .peer-policy-modes { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
@@ -33,6 +32,7 @@
 .peer-policy-card-heading strong { font: 12px var(--font-data); min-width: 0; }
 .peer-policy-card-heading span { color: var(--text-secondary); font-size: 12px; }
 .peer-policy-card > p { font-size: 12px; line-height: 1.6; }
+.peer-policy-software { color: var(--text-secondary); overflow-wrap: anywhere; }
 .peer-policy-card .dialog-btn { margin-top: 5px; }
 .peer-policy-kept-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 9px 0; border-bottom: 1px solid var(--text-dim); }
 .peer-policy-kept-row code, .peer-policy-event code { min-width: 0; font: 12px var(--font-data); }
