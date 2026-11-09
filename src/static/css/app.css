@@ -907,7 +907,7 @@ body.theme-light .fd-net-counts {
 .handle-row1 {
     display: flex;
     align-items: center;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 8px;
     padding: 4px 12px;
     min-height: 32px;
@@ -923,9 +923,9 @@ body.theme-light .fd-net-counts {
 .peer-toolbar-management {
     display: flex;
     align-items: center;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 8px;
-    flex: 1 1 max-content;
+    flex: 1 1 0;
     min-width: 0;
     max-width: 100%;
 }
@@ -934,7 +934,7 @@ body.theme-light .fd-net-counts {
     align-items: center;
     gap: 8px;
     flex: 1;
-    min-width: 280px;
+    min-width: 180px;
     cursor: default;
 }
 .peer-search-field {
@@ -1138,7 +1138,7 @@ button.fd-net-chip:focus-visible { outline: 2px solid var(--accent); outline-off
     border-radius: 4px;
     cursor: pointer;
     font-family: inherit;
-    transition: all var(--transition);
+    transition: color var(--transition), background-color var(--transition), border-color var(--transition);
     pointer-events: auto;
     text-transform: uppercase;
     letter-spacing: 0.3px;
@@ -2648,8 +2648,30 @@ button.fd-net-chip:focus-visible { outline: 2px solid var(--accent); outline-off
     }
 }
 
-/* The available panel width can also shrink beside distribution details. */
-@container peer-panel (max-width: 1600px) {
+/* Keep the search between filters and actions as the desktop panel narrows. */
+@container peer-panel (max-width: 1800px) {
+    .handle-row1,
+    .peer-toolbar-filters,
+    .peer-toolbar-management,
+    .peer-toolbar-actions { gap: 4px; }
+    .handle-btn { padding-inline: 4px; }
+    .handle-nets { gap: 3px; }
+    .handle-nets .net-badge {
+        gap: 2px;
+        padding-inline: 6px;
+        font-size: 11px;
+    }
+}
+
+@container peer-panel (max-width: 1400px) {
+    .handle-nets { gap: 2px; }
+    .handle-nets .net-badge { padding-inline: 4px; }
+    .peer-toolbar-actions { gap: 2px; }
+    .handle-btn { padding-inline: 2px; font-size: 10px; }
+}
+
+/* Small panels also occur beside distribution details on a wide screen. */
+@container peer-panel (width < 1280px) {
     .handle-row1 {
         flex-wrap: wrap;
         row-gap: 5px;
@@ -2664,6 +2686,7 @@ button.fd-net-chip:focus-visible { outline: 2px solid var(--accent); outline-off
         scrollbar-width: thin;
         padding-block: 2px;
     }
+    .peer-toolbar-management { flex-wrap: wrap; flex-basis: 100%; }
     .peer-toolbar-filters::-webkit-scrollbar,
     .peer-toolbar-actions::-webkit-scrollbar {
         height: 4px;

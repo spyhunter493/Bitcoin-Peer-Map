@@ -538,7 +538,7 @@ export interface paths {
         put?: never;
         /**
          * Verify Viewing Token
-         * @description Verify a viewing or administrator credential without granting management permissions. With X-BPM-Remember: 1, successful explicit bearer verification and a same-origin Origin issue a persistent HttpOnly browser cookie for 30 days. Verification without this opt-in remains cookie-free. Sessions expire absolutely and are revoked by logout or application restart.
+         * @description Verify a viewing or administrator credential. With X-BPM-Remember: 1, successful explicit bearer verification and a same-origin Origin issue persistent HttpOnly browser sessions for 30 days. An administrator token signs in to viewing and management together using separate cookies; a viewing token grants viewing only. The remembered response reports management access and its remaining lifetime. Verification without this opt-in remains cookie-free. Sessions expire absolutely and are revoked by logout or application restart.
          */
         post: operations["verify_viewing_token"];
         delete?: never;
@@ -1304,8 +1304,12 @@ export interface components {
             success: boolean;
             /** @description Present and true when a persistent browser session cookie was issued. */
             remembered?: boolean;
-            /** @description Remaining management-session lifetime in seconds; present only when remembered administrator verification issued a session. */
-            management_expires_in_seconds?: number;
+            /** @description Remaining management-session lifetime in seconds for remembered login; null when management is locked. Reads never extend the absolute lifetime. */
+            management_expires_in_seconds?: number | null;
+            /** @description Present after remembered dashboard sign-in; true when an administrator session is active. */
+            management_authenticated?: boolean;
+            /** @description Present after remembered dashboard sign-in; true when an administrator token is configured. */
+            management_available?: boolean;
         };
         WalletTickerPreferences: {
             /** @description Exact selected wallet names. Names and selections require administrator access and never appear in URLs or ordinary dashboard configuration. */
@@ -2580,7 +2584,7 @@ export interface operations {
             /** @description Successful Response */
             200: {
                 headers: {
-                    /** @description Issued only for successful opted-in browser login. Opaque host-only session cookie; Path=/api, Max-Age=2592000, HttpOnly, SameSite=Strict, Secure for HTTPS. */
+                    /** @description Issued only for successful opted-in browser login: a viewing session, plus a separate management session for administrator credentials. Opaque host-only cookies; Path=/api, Max-Age=2592000, HttpOnly, SameSite=Strict, Secure for HTTPS. */
                     "Set-Cookie"?: string;
                     [name: string]: unknown;
                 };

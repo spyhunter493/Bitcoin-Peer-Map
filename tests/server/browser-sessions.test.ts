@@ -30,8 +30,10 @@ async function application(t: TestContext, adminToken = FIXTURE_ADMIN_TOKEN) {
     async function login(role: Role, token = role === 'view' ? VIEW_TOKEN : adminToken) {
         const response = await fetch(`${base}/api/${role}/verify`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, Origin: base, 'X-BPM-Remember': '1' } });
         assert.equal(response.status, 200);
-        assert.deepEqual(await response.json(), { success: true, remembered: true, ...(role === 'admin' ? { management_expires_in_seconds: BROWSER_SESSION_SECONDS } : {}) });
-        return response.headers.getSetCookie()[0].split(';')[0];
+        assert.deepEqual(await response.json(), { success: true, remembered: true, ...(role === 'admin'
+            ? { management_expires_in_seconds: BROWSER_SESSION_SECONDS }
+            : { management_authenticated: token === adminToken, management_available: Boolean(adminToken), management_expires_in_seconds: token === adminToken ? BROWSER_SESSION_SECONDS : null }) });
+        return response.headers.getSetCookie().map(value => value.split(';')[0]).join('; ');
     }
     const access = async (cookie = '') => (await fetch(base + '/api/access', { headers: { Cookie: cookie } })).json();
     return { base, app, runtime, login, access };
@@ -82,6 +84,15 @@ test('session storage is bounded without evicting active logins and expires unus
     assert.doesNotThrow(() => issue(sessions, 'admin'));
 });
 
+test('paired administrator login checks capacity before replacing or issuing either session', () => {
+    const sessions = createBrowserSessions(), existing = issue(sessions, 'view');
+    for (let index = 1; index < 1024; index++) issue(sessions, 'view');
+    const { req, res, headers } = browser(existing);
+    assert.throws(() => sessions.issue(req, res, ['view', 'admin']), { status: 503, code: 'session_capacity' });
+    assert.equal(headers.has('Set-Cookie'), false, 'an unsuccessful login never sends partial session cookies');
+    assert.equal(sessions.hasViewer(req), true, 'capacity failure keeps the previous viewing session valid');
+});
+
 test('duplicate, oversized, malformed, tampered, and wrong-role cookies fail closed', () => {
     const sessions = createBrowserSessions(), cookie = issue(sessions, 'view');
     const value = cookie.slice(cookie.indexOf('=') + 1);
@@ -130,7 +141,15 @@ test('session bootstrap flags and cookies authorize the correct viewing and mana
     const viewerMutation = await fetch(base + '/api/peer/connect', { method: 'POST', headers: { Cookie: view, Origin: base, 'Content-Type': 'application/json' }, body: '{"address":"8.8.8.8"}' });
     assert.equal(viewerMutation.status, 401);
     const adminAsView = await login('view', FIXTURE_ADMIN_TOKEN);
-    assert.equal((await access(adminAsView)).management_authenticated, false, 'view login never grants management, even with an admin bearer');
+    assert.equal((await access(adminAsView)).management_authenticated, true, 'one administrator sign-in unlocks management and viewing');
+    assert.equal((await access(adminAsView)).viewing_authenticated, true);
+    assert.equal(adminAsView.split('; ').length, 2, 'administrator sign-in issues separate viewing and management cookies');
+    const policy = await fetch(base + '/api/peer-policy', { headers: { Cookie: adminAsView } });
+    assert.equal(policy.status, 200, 'management panels accept the session from initial administrator sign-in');
+    const lockManagement = await fetch(base + '/api/admin/logout', { method: 'POST', headers: { Cookie: adminAsView, Origin: base } });
+    assert.equal(lockManagement.status, 200);
+    assert.equal((await access(adminAsView)).management_authenticated, false);
+    assert.equal((await access(adminAsView)).viewing_authenticated, true, 'Lock management preserves viewing after a combined sign-in');
     const admin = await login('admin');
     assert.equal((await access(admin)).viewing_authenticated, true);
     assert.equal((await access(admin)).management_authenticated, true);

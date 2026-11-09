@@ -87,6 +87,76 @@ async function assertSessionStorage(context, page, expectedNames) {
     return JSON.parse(serialized);
 }
 
+async function assertSingleAdministratorSignIn(browser, mode) {
+    const settings = { ...fixtureSettings(), view_mode: mode, view_token: VIEW_TOKEN };
+    const runtime = new FixtureRuntime(settings);
+    let actions = 0;
+    runtime.node.connect = async address => { actions++; return { success: true, address }; };
+    const app = createApplication(settings, runtime);
+    const address = await app.listen(0, '127.0.0.1'), base = `http://127.0.0.1:${address.port}`;
+    const context = await newContext(browser), contexts = [context];
+    const verificationRequests = [], errors = [];
+    context.on('request', request => { if (/\/api\/(view|admin)\/verify$/.test(request.url())) verificationRequests.push(request); });
+    context.on('page', page => page.on('pageerror', error => errors.push(error.message)));
+    const page = await context.newPage();
+    try {
+        await page.goto(base, { waitUntil: 'domcontentloaded' });
+        await page.locator('#view-token-input').fill(FIXTURE_ADMIN_TOKEN);
+        await page.locator('#view-token-submit').click();
+        await page.waitForSelector('#peer-tbody tr[data-id="1"]');
+        await page.locator('#admin-lock').waitFor({ state: 'visible' });
+        assert.equal((await access(context, base)).management_authenticated, true, 'an administrator signs in to viewing and management together');
+        const saved = await assertSessionStorage(context, page, ['bpm_view_session', 'bpm_admin_session']);
+
+        await page.locator('#btn-inbound-policy').click();
+        await page.locator('#peer-policy-mode-off').waitFor({ state: 'visible' });
+        assert.equal(await page.locator('#admin-token-modal').count(), 0, 'opening private policy controls reuses the initial administrator login');
+        await page.keyboard.press('Escape');
+        await connectWithoutPrompt(page);
+        await refreshFromHeading(page, base);
+        await connectWithoutPrompt(page);
+
+        const secondTab = await context.newPage();
+        await dashboard(secondTab, base);
+        await connectWithoutPrompt(secondTab);
+        const restored = await newContext(browser, saved);
+        contexts.push(restored);
+        const restoredPage = await restored.newPage();
+        await dashboard(restoredPage, base);
+        await connectWithoutPrompt(restoredPage);
+        assert.equal(actions, 4);
+        assert.equal(verificationRequests.length, 1, 'navigation, reload, tabs and restored sessions require one token submission');
+        assert.ok(verificationRequests[0].url().endsWith('/api/view/verify'), 'single sign-in does not send a second administrator verification request');
+
+        await lockManagement(restoredPage);
+        await refreshFromHeading(restoredPage, base);
+        assert.equal((await access(restored, base)).viewing_authenticated, true, 'management Lock preserves viewing after a combined administrator login');
+        assert.equal((await access(restored, base)).management_authenticated, false);
+        await page.bringToFront();
+        await refreshFromHeading(page, base);
+        assert.equal(await page.locator('#admin-lock').isVisible(), false, 'navigation does not silently undo an explicit management Lock');
+        await page.locator('#btn-inbound-policy').click();
+        await page.locator('#admin-token-input').waitFor({ state: 'visible' });
+        await page.keyboard.press('Escape');
+        await page.locator('#admin-token-modal').waitFor({ state: 'detached' });
+        await page.keyboard.press('Escape');
+        await page.locator('#peer-policy-modal').waitFor({ state: 'detached' });
+        assert.equal(actions, 4);
+
+        await page.locator('#view-lock').click();
+        await page.locator('#view-token-input').waitFor({ state: 'visible' });
+        assert.equal((await access(context, base)).viewing_authenticated, false);
+        const replay = await newContext(browser, saved);
+        contexts.push(replay);
+        assert.equal((await access(replay, base)).viewing_authenticated, false, 'view Lock revokes the combined login session');
+        assert.equal((await access(replay, base)).management_authenticated, false);
+        assert.deepEqual(errors, []);
+    } finally {
+        for (const current of contexts) await current.close();
+        await app.close();
+    }
+}
+
 export default async function assertPersistentAuthentication(browser) {
     for (const mode of ['authenticated', 'redacted']) {
         const settings = { ...fixtureSettings(), view_mode: mode, view_token: VIEW_TOKEN };
@@ -189,6 +259,8 @@ export default async function assertPersistentAuthentication(browser) {
             await app.close();
         }
     }
+
+    for (const mode of ['authenticated', 'redacted']) await assertSingleAdministratorSignIn(browser, mode);
 
     // Public dashboards still remember management login without requiring a viewer.
     const settings = fixtureSettings(), app = createApplication(settings, new FixtureRuntime(settings));

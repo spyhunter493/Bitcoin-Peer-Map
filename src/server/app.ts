@@ -85,8 +85,11 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
         'GET /api/view/aggregate': (_query, _req, res) => { if (!res.hasHeader('Cache-Control')) res.setHeader('Cache-Control', 'no-store'); return viewingAggregate(runtime.peers.snapshot()); },
         'POST /api/view/verify': (_query, req, res) => {
             if (req.headers['x-bpm-remember'] !== '1') return { success: true };
-            sessions.issue(req, res, 'view');
-            return { success: true, remembered: true };
+            const administrator = requireViewer(req, res, false) === 'admin';
+            const lifetime = sessions.issue(req, res, administrator ? ['view', 'admin'] : 'view');
+            const managementLifetime = administrator ? lifetime : sessions.remainingSeconds(req, 'admin');
+            return { success: true, remembered: true, management_authenticated: managementLifetime !== null && managementLifetime > 0,
+                management_available: Boolean(settings.admin_token), management_expires_in_seconds: managementLifetime };
         },
         'POST /api/admin/verify': (_query, req, res) => {
             if (req.headers['x-bpm-remember'] !== '1') return { success: true };

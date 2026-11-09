@@ -1559,7 +1559,7 @@
       "post": {
         "summary": "Verify Viewing Token",
         "operationId": "verify_viewing_token",
-        "description": "Verify a viewing or administrator credential without granting management permissions. With X-BPM-Remember: 1, successful explicit bearer verification and a same-origin Origin issue a persistent HttpOnly browser cookie for 30 days. Verification without this opt-in remains cookie-free. Sessions expire absolutely and are revoked by logout or application restart.",
+        "description": "Verify a viewing or administrator credential. With X-BPM-Remember: 1, successful explicit bearer verification and a same-origin Origin issue persistent HttpOnly browser sessions for 30 days. An administrator token signs in to viewing and management together using separate cookies; a viewing token grants viewing only. The remembered response reports management access and its remaining lifetime. Verification without this opt-in remains cookie-free. Sessions expire absolutely and are revoked by logout or application restart.",
         "security": [
           {
             "ViewToken": []
@@ -1586,7 +1586,7 @@
             },
             "headers": {
               "Set-Cookie": {
-                "description": "Issued only for successful opted-in browser login. Opaque host-only session cookie; Path=/api, Max-Age=2592000, HttpOnly, SameSite=Strict, Secure for HTTPS.",
+                "description": "Issued only for successful opted-in browser login: a viewing session, plus a separate management session for administrator credentials. Opaque host-only cookies; Path=/api, Max-Age=2592000, HttpOnly, SameSite=Strict, Secure for HTTPS.",
                 "schema": {
                   "type": "string"
                 }
@@ -4456,9 +4456,20 @@
             "description": "Present and true when a persistent browser session cookie was issued."
           },
           "management_expires_in_seconds": {
-            "type": "number",
+            "type": [
+              "number",
+              "null"
+            ],
             "minimum": 0,
-            "description": "Remaining management-session lifetime in seconds; present only when remembered administrator verification issued a session."
+            "description": "Remaining management-session lifetime in seconds for remembered login; null when management is locked. Reads never extend the absolute lifetime."
+          },
+          "management_authenticated": {
+            "type": "boolean",
+            "description": "Present after remembered dashboard sign-in; true when an administrator session is active."
+          },
+          "management_available": {
+            "type": "boolean",
+            "description": "Present after remembered dashboard sign-in; true when an administrator token is configured."
           }
         },
         "additionalProperties": false

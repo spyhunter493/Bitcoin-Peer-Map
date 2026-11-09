@@ -58,15 +58,19 @@ export function createBrowserSessions() {
             if (value) sessions.delete(digest(value));
         }
     }
-    function issue(req: IncomingMessage, res: ServerResponse, role: Role) {
+    function issue(req: IncomingMessage, res: ServerResponse, role: Role | readonly Role[]) {
         requireBrowserOrigin(req);
+        const roles = [...new Set(typeof role === 'string' ? [role] : role)];
         const now = Date.now();
         for (const [key, session] of sessions) if (session.expires <= now) sessions.delete(key);
-        revoke(req, [role]);
-        if (sessions.size >= MAX_SESSIONS) throw new HttpError(503, 'Remembered session capacity is full. Try again after locking another browser session.', 'session_capacity');
-        const value = randomBytes(32).toString('base64url');
-        sessions.set(digest(value), { role, expires: now + BROWSER_SESSION_SECONDS * 1000 });
-        setCookie(req, res, role, value, BROWSER_SESSION_SECONDS);
+        const replacing = roles.filter(item => has(req, item)).length;
+        if (sessions.size - replacing + roles.length > MAX_SESSIONS) throw new HttpError(503, 'Remembered session capacity is full. Try again after locking another browser session.', 'session_capacity');
+        revoke(req, roles);
+        for (const item of roles) {
+            const value = randomBytes(32).toString('base64url');
+            sessions.set(digest(value), { role: item, expires: now + BROWSER_SESSION_SECONDS * 1000 });
+            setCookie(req, res, item, value, BROWSER_SESSION_SECONDS);
+        }
         notify();
         return BROWSER_SESSION_SECONDS;
     }

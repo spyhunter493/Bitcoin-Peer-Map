@@ -90,7 +90,7 @@ export function create(options) {
         accessPanel.id = 'view-access';
         accessPanel.className = 'view-access';
         accessPanel.setAttribute('aria-labelledby', 'view-access-title');
-        accessPanel.innerHTML = '<h1 id="view-access-title">Bitcoin Peer Map</h1><p id="view-access-description">Enter a viewing or administrator token to view this dashboard. This browser remembers access for 30 days, or until you lock the view.</p><div id="view-aggregate" hidden></div><form id="view-token-form"><label for="view-token-input">Viewing token</label><input id="view-token-input" type="password" class="connect-input" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="256" required><div id="view-token-error" class="connect-result err" role="alert"></div><button id="view-token-submit" class="connect-btn" type="submit">Unlock view</button></form>';
+        accessPanel.innerHTML = '<h1 id="view-access-title">Bitcoin Peer Map</h1><p id="view-access-description">Enter your access token once. An administrator token also unlocks management controls. This browser remembers access for 30 days, or until you lock it.</p><div id="view-aggregate" hidden></div><form id="view-token-form"><label for="view-token-input">Access token</label><input id="view-token-input" type="password" class="connect-input" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="256" required><div id="view-token-error" class="connect-result err" role="alert"></div><button id="view-token-submit" class="connect-btn" type="submit">Sign in</button></form>';
         document.body.append(accessPanel);
         tokenInput = /** @type {HTMLInputElement} */ (accessPanel.querySelector('#view-token-input'));
         const input = tokenInput;
@@ -108,11 +108,13 @@ export function create(options) {
             const supplied = input.value;
             input.value = '';
             error.textContent = '';
+            const started = Date.now();
             try {
-                /** @type {{success: boolean, remembered?: boolean}} */
+                /** @type {{success: boolean, remembered?: boolean} & import('../types').ManagementAccess} */
                 const verified = await requestJson('/api/view/verify', { method: 'POST', headers: { Authorization: `Bearer ${supplied}`, 'X-BPM-Remember': '1' }, signal: requests.signal });
                 requests.signal.throwIfAborted();
                 token = verified.remembered ? '' : supplied;
+                if (typeof verified.management_authenticated === 'boolean') options.onAccess?.(verified, Date.now() - started);
                 await authorize();
             } catch (failure) {
                 if (requests.signal.aborted) return;

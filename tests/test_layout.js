@@ -631,65 +631,85 @@ async function assertDistributionSummaryInteractions(page) {
 }
 
 async function assertPeerControlsResponsive(browser, baseUrl) {
-    const compactContext = await browser.newContext({ viewport: { width: 1080, height: 728 } });
-    await compactContext.addInitScript(() => {
+    const context = await browser.newContext({ viewport: { width: 3840, height: 728 } });
+    await context.addInitScript(() => {
         localStorage.setItem('bpm.antarcticaDisclaimerSeen', 'true');
     });
-    const compactPage = await compactContext.newPage();
-    await compactPage.goto(baseUrl, { waitUntil: 'domcontentloaded' });
-    await waitForDashboardReady(compactPage);
+    const page = await context.newPage();
+    try {
+        await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+        await waitForDashboardReady(page);
+        // A full node's three-digit totals must fit the compact desktop row too.
+        await page.evaluate(() => {
+            const counts = { all: 125, ipv4: 88, ipv6: 1, tor: 2, i2p: 34, cjdns: 0 };
+            for (const [network, count] of Object.entries(counts)) {
+                document.getElementById(`bc-${network}`).textContent = String(count);
+            }
+            document.getElementById('peer-match-count').textContent = '125 of 125 peers';
+        });
+        const searchWidths = new Map();
+        for (const width of [3840, 2048, 1920, 1440, 1366, 1280]) {
+            await page.setViewportSize({ width, height: 728 });
+            const layout = await page.evaluate(() => {
+                const row = document.querySelector('.handle-row1');
+                const rect = selector => document.querySelector(selector).getBoundingClientRect();
+                const filters = rect('.peer-toolbar-filters');
+                const search = rect('#peer-search');
+                const actions = rect('.peer-toolbar-actions');
+                return {
+                    clientWidth: row.clientWidth, scrollWidth: row.scrollWidth,
+                    filtersRight: filters.right, filtersCenter: filters.y + filters.height / 2,
+                    searchLeft: search.left, searchRight: search.right, searchWidth: search.width,
+                    searchCenter: search.y + search.height / 2,
+                    actionsLeft: actions.left, actionsCenter: actions.y + actions.height / 2,
+                    lastRight: rect('#btn-table-settings').right,
+                };
+            });
+            assert.ok(layout.scrollWidth <= layout.clientWidth, `${width}px peer toolbar must not overflow`);
+            assert.ok(Math.abs(layout.filtersCenter - layout.searchCenter) < 1 &&
+                Math.abs(layout.actionsCenter - layout.searchCenter) < 1,
+                `${width}px filters, search and actions must share one row`);
+            assert.ok(layout.searchLeft > layout.filtersRight && layout.searchRight < layout.actionsLeft,
+                `${width}px search must stay between the filters and Connect Peer`);
+            assert.ok(layout.searchWidth >= 86, `${width}px search must retain usable input space`);
+            assert.ok(layout.lastRight <= width, `${width}px final toolbar action must stay visible`);
+            searchWidths.set(width, layout.searchWidth);
+        }
+        assert.ok(searchWidths.get(1440) < searchWidths.get(1920) &&
+            searchWidths.get(1280) < searchWidths.get(1366), 'the middle search must shrink with the panel');
 
-    const compactLayout = await compactPage.evaluate(() => {
-        const row = document.querySelector('.handle-row1');
-        const actions = document.querySelector('.peer-toolbar-actions');
-        actions.scrollLeft = actions.scrollWidth;
-        const lastButton = document.getElementById('btn-table-settings');
-        const search = document.getElementById('peer-search').getBoundingClientRect();
-        return {
-            clientWidth: row.clientWidth,
-            scrollWidth: row.scrollWidth,
-            lastRight: lastButton.getBoundingClientRect().right,
-            searchLeft: search.left, searchRight: search.right,
-            viewportWidth: window.innerWidth,
-        };
-    });
-    assert.ok(
-        compactLayout.scrollWidth <= compactLayout.clientWidth,
-        `compact peer controls overflow: ${compactLayout.scrollWidth} > ${compactLayout.clientWidth}`
-    );
-    assert.ok(compactLayout.lastRight <= compactLayout.viewportWidth);
-    assert.ok(compactLayout.searchLeft >= 0 && compactLayout.searchRight <= compactLayout.viewportWidth,
-        'search should remain visible while the action row is scrolled');
-    await compactContext.close();
-
-    const narrowContext = await browser.newContext({ viewport: { width: 720, height: 728 } });
-    await narrowContext.addInitScript(() => {
-        localStorage.setItem('bpm.antarcticaDisclaimerSeen', 'true');
-    });
-    const narrowPage = await narrowContext.newPage();
-    await narrowPage.goto(baseUrl, { waitUntil: 'domcontentloaded' });
-    await waitForDashboardReady(narrowPage);
-
-    const narrowLayout = await narrowPage.evaluate(() => {
-        const actions = document.querySelector('.peer-toolbar-actions');
-        actions.scrollLeft = actions.scrollWidth;
-        const lastButton = document.getElementById('btn-table-settings');
-        const search = document.getElementById('peer-search').getBoundingClientRect();
-        return {
-            overflowX: getComputedStyle(actions).overflowX,
-            lastRight: lastButton.getBoundingClientRect().right,
-            searchLeft: search.left, searchRight: search.right,
-            viewportWidth: window.innerWidth,
-        };
-    });
-    assert.strictEqual(narrowLayout.overflowX, 'auto');
-    assert.ok(
-        narrowLayout.lastRight <= narrowLayout.viewportWidth,
-        'the final peer control should be reachable by scrolling'
-    );
-    assert.ok(narrowLayout.searchLeft >= 0 && narrowLayout.searchRight <= narrowLayout.viewportWidth,
-        'search should remain visible while the action row is scrolled');
-    await narrowContext.close();
+        async function assertNarrowPanel(label) {
+            const layout = await page.evaluate(() => {
+                const panel = document.getElementById('peer-panel').getBoundingClientRect();
+                const row = document.querySelector('.handle-row1');
+                const actions = document.querySelector('.peer-toolbar-actions');
+                actions.scrollLeft = actions.scrollWidth;
+                const last = document.getElementById('btn-table-settings').getBoundingClientRect();
+                const search = document.getElementById('peer-search').getBoundingClientRect();
+                return {
+                    clientWidth: row.clientWidth, scrollWidth: row.scrollWidth,
+                    overflowX: getComputedStyle(actions).overflowX,
+                    lastRight: last.right, panelLeft: panel.left, panelRight: panel.right,
+                    searchLeft: search.left, searchRight: search.right,
+                };
+            });
+            assert.ok(layout.scrollWidth <= layout.clientWidth, `${label} peer toolbar must not overflow`);
+            assert.strictEqual(layout.overflowX, 'auto');
+            assert.ok(layout.lastRight <= layout.panelRight, `${label} final action must be reachable by scrolling`);
+            assert.ok(layout.searchLeft >= layout.panelLeft && layout.searchRight <= layout.panelRight,
+                `${label} search must remain visible while actions are scrolled`);
+        }
+        for (const width of [1080, 768, 720, 375]) {
+            await page.setViewportSize({ width, height: 728 });
+            await assertNarrowPanel(`${width}px`);
+        }
+        await page.setViewportSize({ width: 1920, height: 728 });
+        await page.evaluate(() => { document.getElementById('peer-panel').style.right = '820px'; });
+        await page.waitForFunction(() => Math.abs(document.getElementById('peer-panel').getBoundingClientRect().width - 1100) < 1);
+        await assertNarrowPanel('1100px panel beside details');
+    } finally {
+        await context.close();
+    }
 }
 
 async function assertPeerRefreshReliability(browser, baseUrl) {

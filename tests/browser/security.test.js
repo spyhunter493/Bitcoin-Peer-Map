@@ -236,7 +236,7 @@ for (const engine of [chromium, firefox, webkit]) {
         await Promise.all([
             t.test(`${engine.name()}: local assets, strict CSP, documentation, management dialogs, and framing`, { timeout: 180_000 }, localAssets),
             t.test(`${engine.name()}: protected viewing, private data cleanup, redaction and locking`, { timeout: 90_000 }, protectedViewing),
-            t.test(`${engine.name()}: persistent viewer and administrator sessions`, { timeout: 90_000 }, persistentAuthentication),
+            t.test(`${engine.name()}: persistent viewer and administrator sessions`, { timeout: 180_000 }, persistentAuthentication),
             t.test(`${engine.name()}: optional outbound controls and HTTP provider opt-in`, { timeout: 90_000 }, outboundControls),
             t.test(`${engine.name()}: administrator wallet ticker and shared preferences`, { timeout: 120_000 }, walletBalances),
         ]);

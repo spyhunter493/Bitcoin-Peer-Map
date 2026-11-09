@@ -86,6 +86,11 @@ and an explicit matching Origin. Without that opt-in, bearer-token verification
 creates no cookie. For authenticated requests, explicit bearer credentials take
 precedence over cookies; an incorrect bearer token cannot fall back to a session.
 
+Entering an administrator token at the dashboard sign-in screen unlocks viewing
+and management together. A viewing token unlocks viewing only. Administrator
+sign-in issues both session cookies so locking management can preserve viewing
+access; navigating between panels or reloading does not require the token again.
+
 Viewing and management use separate cookies. Cookies are host-only, scoped to
 `/api`, `HttpOnly`, and `SameSite=Strict`; HTTPS login also sets `Secure`. JavaScript
 cannot read them. The server stores hashes of the session identifiers in memory.
