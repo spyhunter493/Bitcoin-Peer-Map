@@ -39,6 +39,7 @@ export interface ApplicationRuntime {
     geoDatabase: Pick<AppRuntime['geoDatabase'], 'update'>;
     rpc: Pick<AppRuntime['rpc'], 'connectionInfo'>;
     wallets: Pick<AppRuntime['wallets'], 'preferences' | 'setPreferences' | 'snapshot'>;
+    peerPolicy: Pick<AppRuntime['peerPolicy'], 'snapshot' | 'status' | 'configure'>;
 }
 const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const mime: Record<string, string> = { '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.html': 'text/html' };
@@ -84,8 +85,11 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
         'GET /api/view/aggregate': (_query, _req, res) => { if (!res.hasHeader('Cache-Control')) res.setHeader('Cache-Control', 'no-store'); return viewingAggregate(runtime.peers.snapshot()); },
         'POST /api/view/verify': (_query, req, res) => {
             if (req.headers['x-bpm-remember'] !== '1') return { success: true };
-            sessions.issue(req, res, 'view');
-            return { success: true, remembered: true };
+            const administrator = requireViewer(req, res, false) === 'admin';
+            const lifetime = sessions.issue(req, res, administrator ? ['view', 'admin'] : 'view');
+            const managementLifetime = administrator ? lifetime : sessions.remainingSeconds(req, 'admin');
+            return { success: true, remembered: true, management_authenticated: managementLifetime !== null && managementLifetime > 0,
+                management_available: Boolean(settings.admin_token), management_expires_in_seconds: managementLifetime };
         },
         'POST /api/admin/verify': (_query, req, res) => {
             if (req.headers['x-bpm-remember'] !== '1') return { success: true };
@@ -97,6 +101,13 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
         'GET /api/wallets/preferences': () => runtime.wallets.preferences(),
         'POST /api/wallets/preferences': async (_query, req, _res, signal) => runtime.wallets.setPreferences(await readJsonBody(req), signal),
         'GET /api/wallets': (_query, _req, _res, signal) => runtime.wallets.snapshot(signal),
+        'GET /api/peer-policy': () => runtime.peerPolicy.snapshot(),
+        'GET /api/peer-policy/status': () => runtime.peerPolicy.status(),
+        'POST /api/peer-policy': async (_query, req, _res, signal) => {
+            const payload = await readJsonBody(req);
+            signal.throwIfAborted();
+            return runtime.peerPolicy.configure(payload);
+        },
         'GET /api/peers': (query, _req, res) => { if (!res.hasHeader('Cache-Control')) res.setHeader('Cache-Control', 'no-store'); return parseQueryBoolean(query, 'include_status', false) ? runtime.peers.snapshot() : runtime.peers.listPeers(); },
         'GET /api/info': async (_query, _req, _res, signal) => ({ ...await runtime.node.dashboardInfo(signal), updates: runtime.updates.snapshot() }),
         'GET /api/mempool': (_query, _req, _res, signal) => runtime.node.mempool(signal),
@@ -148,29 +159,30 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
         // Set before routing so HEAD, errors, conditional assets, and streams agree.
         setSecurityHeaders(res);
         const controller = new AbortController();
-        const walletRevocation = new AbortController();
-        let walletRequest = false;
-        let stopWalletWatching = () => {};
+        const managementRevocation = new AbortController();
+        let managementRequest = false;
+        let policyRequest = false;
+        let stopManagementWatching = () => {};
         const disconnected = () => { if (!res.writableFinished) controller.abort(new DOMException('Client disconnected', 'AbortError')); };
         res.once('close', disconnected);
         try {
             const url = new URL(req.url || '/', 'http://localhost');
             const method = req.method === 'HEAD' ? 'GET' : req.method;
-            walletRequest = url.pathname === '/api/wallets' || url.pathname.startsWith('/api/wallets/');
+            policyRequest = url.pathname === '/api/peer-policy' || url.pathname === '/api/peer-policy/status';
+            managementRequest = url.pathname === '/api/wallets' || url.pathname.startsWith('/api/wallets/') || policyRequest;
             const credentialBearing = req.headers.authorization !== undefined || sessions.hasCredentials(req);
             const logout = ['/api/view/logout', '/api/admin/logout'].includes(url.pathname);
             const rememberedLogin = ['/api/view/verify', '/api/admin/verify'].includes(url.pathname) && req.headers['x-bpm-remember'] === '1';
             const anonymousAggregate = url.pathname === '/api/view/aggregate' && settings.view_mode !== 'authenticated';
             const protectedRead = method === 'GET' && url.pathname.startsWith('/api/') && url.pathname !== '/api/access' && !anonymousAggregate;
             // Apply before direct streams, query parsing, RPC work, HEAD and errors.
-            if (walletRequest || credentialBearing || (protectedRead && settings.view_mode !== 'public')) privateViewingResponse(res);
-            if (walletRequest) {
+            if (managementRequest || credentialBearing || (protectedRead && settings.view_mode !== 'public')) privateViewingResponse(res);
+            if (managementRequest) {
                 requireAdmin(req, res);
-                // requireAdmin sets its ordinary no-store policy; wallet reads are
-                // private even when the surrounding monitoring dashboard is public.
+                // Management details stay private even on a public monitoring dashboard.
                 privateViewingResponse(res);
-                if (req.headers.authorization === undefined) stopWalletWatching = sessions.watchAdmin(req, () => {
-                    walletRevocation.abort(new HttpError(401, 'Unlock management to access wallets.', 'admin_required'));
+                if (req.headers.authorization === undefined) stopManagementWatching = sessions.watchAdmin(req, () => {
+                    managementRevocation.abort(new HttpError(401, 'Unlock management to access these controls.', 'admin_required'));
                 });
             } else if (protectedRead && settings.view_mode !== 'public') requireViewer(req, res);
             if (method === 'POST' && url.pathname.startsWith('/api/')) {
@@ -237,36 +249,38 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
                 if (url.pathname === '/api/view/verify') requireViewer(req, res, !rememberedLogin);
                 else requireAdmin(req, res, !rememberedLogin);
             }
-            if (walletRequest) walletRevocation.signal.throwIfAborted();
-            const result = await route(url.searchParams, req, res, walletRequest ? AbortSignal.any([controller.signal, walletRevocation.signal]) : controller.signal);
-            if (walletRequest) {
-                walletRevocation.signal.throwIfAborted();
+            if (managementRequest) managementRevocation.signal.throwIfAborted();
+            const result = await route(url.searchParams, req, res, managementRequest ? AbortSignal.any([controller.signal, managementRevocation.signal]) : controller.signal);
+            if (managementRequest) {
+                managementRevocation.signal.throwIfAborted();
                 requireAdmin(req, res);
             }
-            if (walletRequest || credentialBearing || (protectedRead && settings.view_mode !== 'public')) privateViewingResponse(res);
-            await sendResponse(req, res, result, 200, 'application/json', walletRequest ? () => {
+            if (managementRequest || credentialBearing || (protectedRead && settings.view_mode !== 'public')) privateViewingResponse(res);
+            await sendResponse(req, res, result, 200, 'application/json', managementRequest ? () => {
                 controller.signal.throwIfAborted();
-                walletRevocation.signal.throwIfAborted();
+                managementRevocation.signal.throwIfAborted();
                 requireAdmin(req, res);
                 privateViewingResponse(res);
             } : undefined);
         } catch (caught) {
-            const error = walletRevocation.signal.aborted ? walletRevocation.signal.reason : caught;
+            const error = managementRevocation.signal.aborted ? managementRevocation.signal.reason : caught;
             if (res.destroyed || controller.signal.aborted) return;
             if (res.headersSent) { res.destroy(); return; }
-            if (walletRequest || req.headers.authorization !== undefined || sessions.hasCredentials(req)) privateViewingResponse(res);
+            if (managementRequest || req.headers.authorization !== undefined || sessions.hasCredentials(req)) privateViewingResponse(res);
             if (error instanceof RpcBusyError) {
                 res.setHeader('Retry-After', '1');
                 await sendResponse(req, res, { detail: 'Bitcoin RPC is busy; try again shortly', code: 'rpc_busy' }, 503);
                 return;
             }
-            if (walletRequest && !(error instanceof HttpError)) {
-                await sendResponse(req, res, { detail: 'Wallet data is unavailable. Check the node wallet RPC permissions and saved wallet settings.', code: 'wallet_unavailable' }, 503);
+            if (managementRequest && !(error instanceof HttpError)) {
+                await sendResponse(req, res, policyRequest
+                    ? { detail: 'Inbound policy is unavailable. Check its saved settings and file permissions.', code: 'peer_policy_unavailable' }
+                    : { detail: 'Wallet data is unavailable. Check the node wallet RPC permissions and saved wallet settings.', code: 'wallet_unavailable' }, 503);
                 return;
             }
             if (!(error instanceof HttpError)) log.error(`Request failed (${req.method} ${(req.url || '/').split('?')[0]}): ${errorMessage(error)}`);
             await sendResponse(req, res, { detail: error instanceof HttpError ? error.message : 'Internal server error', ...(error instanceof HttpError && error.code ? { code: error.code } : {}) }, error instanceof HttpError ? error.status : 500);
-        } finally { stopWalletWatching(); res.removeListener('close', disconnected); }
+        } finally { stopManagementWatching(); res.removeListener('close', disconnected); }
     });
     return {
         server, runtime, assetRevision: assets,

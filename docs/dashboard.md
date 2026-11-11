@@ -193,6 +193,80 @@ disconnection; a successful result refreshes peers after one second. Failed or
 malformed ban-list responses show an error. **No banned IPs** appears only after
 a successful empty response.
 
+## Inbound listener policy
+
+**Inbound policy**, beside **Banned Peers**, requires a management unlock even on
+a public dashboard. It starts **Off**. Opening the panel does not enable it.
+While management is unlocked, the toolbar shows the requested mode and effective
+state even with the panel closed. **Turn policy Off** stops new work without
+opening the panel. A failed status read shows an unknown state rather than a
+cached claim that automation is running or stopped.
+
+- **Preview** collects evidence and shows candidate reasons without changing node
+  connections. Complete a fresh 30-minute observation trial before Automatic.
+  Its conditional proposal shows the removal order and earliest permitted times,
+  listeners retained by the allowance, and connections blocked by evidence or
+  safety protections. Later steps assume the observed set stays unchanged; each
+  real action still requires fresh validation.
+- **Automatic** requires an explicit enable acknowledgment. It runs on the server
+  while the browser is closed or management is locked.
+- **Off** stops new automatic actions and policy observation. An RPC already
+  transmitted may still complete. Closing the panel only closes its display.
+
+The listener allowance applies to qualifying candidates, including when native
+connection slots remain free. Zero requests gradual removal of every eligible
+candidate. **Keep address** adds an exception across sessions; other connections
+sharing the same address are exempt too. Remove exceptions in the same panel.
+Changes refresh the observation window where necessary.
+
+A candidate must be inbound, at least an hour old, advertise no full or limited
+block-serving services, and have 30 uninterrupted minutes of complete, quiet
+evidence. Useful contributions, active or ambiguous transfers, missing metadata,
+and synchronization protect it. Outbound, manually configured, permissioned,
+pruned/full block-serving peers and Keep exceptions are exempt. The policy also
+preserves connectivity and transport/AS diversity floors.
+
+The panel shows connection age, observed quiet time, remaining grace, eligibility
+or protection reasons, effective state, pause reason, next permitted action, and
+recent outcomes. Search by address or reported software, filter by status or
+transport network, and select **10**, **20**, or **All** peers per page. The default
+is ten; Previous and Next reach every matching connection without rendering all
+cards. Candidates appear first. Evidence and conditional proposal details are
+available on each displayed connection.
+Automatic attempts are limited to one per five minutes, six per rolling hour,
+and one per address per 30 minutes. Failures and uncertain outcomes consume the
+budget. The policy disconnects connections; it never automatically bans addresses.
+
+Permission or unsupported-method failures from disconnect requests pause
+Automatic immediately. Three other definite disconnect failures without an
+accepted request also pause it. This pause survives
+a BPM restart; explicitly select Preview to clear it and collect a fresh trial
+before enabling Automatic again. Existing attempt budgets remain reserved.
+
+The results summary covers retained attempts from the last seven days: accepted
+requests, distinct attempted connections whose departure was observed, and those
+followed by a newly observed same-address connection. Repeated requests against
+one connection cannot inflate the departure or return counts.
+An accepted RPC is not confirmation of departure, and a same-address return may
+be another device behind the same address. These observations help assess churn;
+they do not establish identity, causation, or a better replacement connection.
+
+Failed/stale peer observations, node restart, clock anomalies, or changed node
+scope require fresh evidence. A BPM restart restores the requested mode but
+Automatic waits for a new trial. Missing required RPC fields leave peers
+ineligible. Reasons appear in the panel instead of treating missing values as
+zero. Outside clicks, window focus changes, and hiding the tab leave the panel
+open. When local management access is suspended, requests stop and private
+evidence clears until access is revalidated; form drafts remain. Explicit close,
+Escape, session expiry, and locking management close the panel and clear its
+private contents. None of those display changes revoke a saved server policy.
+
+These rules identify listener-like behavior, not intent. Quiet wallets may qualify;
+use Keep for known addresses. A tracker can request data, advertise services, or
+reconnect to avoid the heuristic. Disconnecting cannot prevent observation of a
+publicly reachable node. See [policy persistence](operations.md#inbound-policy-state)
+and the [design](plans/inbound-listener-cleanup.md) for the precise protections.
+
 ## Keyboard controls and Support
 
 Tab and Shift+Tab move through the complete sorted, filtered peer list, revealing

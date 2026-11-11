@@ -9,16 +9,25 @@ export default async function assertAdminAuthentication(browser, baseUrl) {
     let anonymousCooldownSeconds = 60;
     let verificationCooldownSeconds = 60;
     let verificationGate = Promise.resolve();
+    let rotatedStatusReads = 0;
     const replacement = 'replacement-browser-token-'.padEnd(64, 'y');
     page.on('pageerror', error => errors.push(error.message));
     await page.addInitScript(() => localStorage.setItem('bpm.antarcticaDisclaimerSeen', 'true'));
     // This suite simulates a server-side token rotation for every management
-    // surface. Wallet preferences must accept that same replacement identity.
+    // surface. Persistent administrator reads use that same replacement identity.
     await page.route('**/api/wallets/preferences', async route => {
         if (!rotated) { await route.continue(); return; }
         const valid = route.request().headers().authorization === `Bearer ${replacement}`;
         await route.fulfill({ status: valid ? 200 : 401, json: valid
             ? { preferences: { selected_wallets: [], unit: 'BTC', rotation_seconds: 8, paused: false }, revision: 0 }
+            : { detail: 'Enter the admin token', code: 'admin_required' } });
+    });
+    await page.route('**/api/peer-policy/status', async route => {
+        if (!rotated) { await route.continue(); return; }
+        const valid = route.request().headers().authorization === `Bearer ${replacement}`;
+        if (valid) rotatedStatusReads++;
+        await route.fulfill({ status: valid ? 200 : 401, json: valid
+            ? { available: true, revision: 0, mode: 'off', effective_state: 'disabled', reason: 'Policy is off.' }
             : { detail: 'Enter the admin token', code: 'admin_required' } });
     });
     await page.route('**/api/peer/**', async route => {
@@ -190,6 +199,8 @@ export default async function assertAdminAuthentication(browser, baseUrl) {
         await page.waitForFunction(() => document.getElementById('connect-result')?.classList.contains('ok'));
         assert.equal(completed.length, 3);
         assert.equal(completed[2].authorization, `Bearer ${replacement}`);
+        await page.waitForFunction(() => document.getElementById('peer-policy-badge')?.textContent === 'Off · disabled');
+        assert.ok(rotatedStatusReads > 0, 'compact policy polling shares the simulated replacement administrator identity');
         await page.locator('#connect-close').click();
 
         await page.locator('#admin-lock').click();

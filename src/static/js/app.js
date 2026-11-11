@@ -2,12 +2,15 @@ import { create as createAdminAuthentication } from './core/admin-auth.js';
 import { create as createViewingAuthentication } from './core/viewer-auth.js';
 import * as support from './core/support.js';
 import { create as createWalletTicker } from './wallets/ticker.js';
+import { create as createInboundPolicy } from './peers/policy.js';
 
 support.init();
 const management = createAdminAuthentication();
 management.init();
 const walletTicker = createWalletTicker({ management });
 walletTicker.init();
+const inboundPolicy = createInboundPolicy({ management });
+inboundPolicy.init();
 /** @type {ReturnType<typeof import('./map/controller.js').create> | null} */
 let dashboard = null;
 let generation = 0;
@@ -25,6 +28,7 @@ const viewing = createViewingAuthentication({
         generation++;
         support.close();
         management.reset();
+        inboundPolicy.close(false);
         walletTicker.dispose();
         dashboard?.dispose();
         dashboard = null;

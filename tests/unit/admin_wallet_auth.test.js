@@ -142,7 +142,7 @@ function browserEnvironment(t) {
         t.after(() => { if (previous) Object.defineProperty(globalThis, key, previous); else delete globalThis[key]; });
     }
     t.after(() => configureAdminAuthentication(null));
-    return { windowEvents, channels };
+    return { windowEvents, documentEvents, document: values.document, channels };
 }
 
 test('explicit locking invalidates other tabs before logout, while pagehide stays local and failed logout stays closed', async t => {
@@ -180,6 +180,7 @@ test('returning focus revalidates the management cookie before publishing an unl
     windowEvents.dispatchEvent(new Event('blur'));
     assert.equal(prior.signal.aborted, true);
     assert.equal(management.getState().authenticated, false);
+    assert.equal(management.getState().suspended, true, 'blur invalidates credentials while identifying temporary suspension');
     let release;
     t.mock.method(globalThis, 'fetch', async (url, options) => {
         assert.equal(url, '/api/access');
@@ -193,4 +194,59 @@ test('returning focus revalidates the management cookie before publishing an unl
     release(Response.json({ management_available: true, management_authenticated: true, management_expires_in_seconds: 3600 }));
     assert.equal(await validated, true);
     assert.equal(management.getState().authenticated, true);
+    assert.equal(management.getState().suspended, false);
+});
+
+
+test('hidden management preserves only suspension until revalidation; explicit reset and expiry end it', t => {
+    const { windowEvents, documentEvents, document } = browserEnvironment(t);
+    t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 1000 });
+    const management = createManagement();
+    management.init();
+    management.restore({ management_authenticated: true, management_available: true, management_expires_in_seconds: 5 });
+    document.hidden = true;
+    documentEvents.dispatchEvent(new Event('visibilitychange'));
+    assert.equal(management.getState().authenticated, false);
+    assert.equal(management.getState().suspended, true);
+    t.mock.timers.tick(5000);
+    assert.equal(management.getState().suspended, false, 'the original absolute expiry still invalidates a suspended shell');
+    management.restore(true);
+    windowEvents.dispatchEvent(new Event('blur'));
+    assert.equal(management.getState().suspended, true);
+    management.reset();
+    assert.equal(management.getState().suspended, false, 'explicit lock/reset is not a resumable suspension');
+});
+
+test('a second blur rejects in-flight revalidation and a later focus obtains a fresh generation', async t => {
+    const { windowEvents } = browserEnvironment(t);
+    const management = createManagement();
+    management.init(); management.restore(true);
+    t.after(() => management.reset());
+    const releases = [];
+    t.mock.method(globalThis, 'fetch', () => new Promise(resolve => releases.push(resolve)));
+    windowEvents.dispatchEvent(new Event('blur'));
+    windowEvents.dispatchEvent(new Event('focus'));
+    const first = management.revalidate();
+    windowEvents.dispatchEvent(new Event('blur'));
+    releases.shift()(Response.json({ management_available: true, management_authenticated: true }));
+    assert.equal(await first, false);
+    assert.equal(management.getState().authenticated, false, 'late focus response cannot restore access after another blur');
+    assert.equal(management.getState().suspended, true);
+    windowEvents.dispatchEvent(new Event('focus'));
+    const second = management.revalidate();
+    releases.shift()(Response.json({ management_available: true, management_authenticated: true }));
+    assert.equal(await second, true);
+    assert.equal(management.getState().suspended, false);
+});
+
+test('a failed focus revalidation ends suspension rather than retaining an authorized shell', async t => {
+    const { windowEvents } = browserEnvironment(t);
+    const management = createManagement();
+    management.init(); management.restore(true);
+    t.mock.method(globalThis, 'fetch', async () => { throw new Error('offline'); });
+    windowEvents.dispatchEvent(new Event('blur'));
+    assert.equal(management.getState().suspended, true);
+    assert.equal(await management.revalidate(), false);
+    assert.equal(management.getState().suspended, false);
+    management.reset();
 });

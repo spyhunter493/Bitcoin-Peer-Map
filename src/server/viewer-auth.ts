@@ -18,7 +18,8 @@ export function privateViewingResponse(res: ServerResponse) {
 /** Viewing credentials never authorize mutations. Valid credentials bypass
  * anonymous throttling without consulting or resetting its identity windows. */
 export function createViewingAuthentication(viewToken: string | null, adminToken: string | null, trustedProxies: readonly TrustedProxy[] = [], authenticateSession: (req: IncomingMessage) => boolean = () => false) {
-    const expected = [viewToken, adminToken].filter((value): value is string => Boolean(value)).map(digest);
+    const expected = ([['view', viewToken], ['admin', adminToken]] as const)
+        .flatMap(([role, token]) => token ? [{ role, hash: digest(token) }] : []);
     const failures = new Map<string, { count: number; expires: number }>();
     return function requireViewer(req: IncomingMessage, res: ServerResponse, allowSession = true) {
         privateViewingResponse(res);
@@ -27,10 +28,10 @@ export function createViewingAuthentication(viewToken: string | null, adminToken
         const header = authorization || '';
         const supplied = header.length <= 263 ? /^Bearer ([A-Za-z0-9._~+/-]+={0,2})$/i.exec(header)?.[1] || '' : '';
         const candidate = digest(supplied);
-        let valid = false;
-        for (const token of expected) valid = timingSafeEqual(candidate, token) || valid;
-        if (valid) return;
-        if (allowSession && authorization === undefined && authenticateSession(req)) return;
+        let role: 'view' | 'admin' | null = null;
+        for (const token of expected) if (timingSafeEqual(candidate, token.hash)) role = token.role;
+        if (role) return role;
+        if (allowSession && authorization === undefined && authenticateSession(req)) return 'session';
 
         const client = anonymousClientIdentity(req, trustedProxies);
         const now = Date.now();

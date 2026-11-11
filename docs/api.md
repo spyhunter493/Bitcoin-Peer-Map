@@ -23,6 +23,9 @@ for bearer tokens, browser sessions, HTTPS and errors.
 | `GET /api/wallets/preferences` | Administrator-only shared wallet settings and revision; no wallet RPC |
 | `POST /api/wallets/preferences` | Administrator-only atomic replacement of wallet display settings |
 | `GET /api/wallets` | Administrator-only watch-only wallet catalog, trusted/pending amounts, and availability |
+| `GET /api/peer-policy` | Administrator-only inbound policy configuration, evidence, effective state and recent decisions |
+| `GET /api/peer-policy/status` | Administrator-only compact mode and effective state; no peer evidence or addresses |
+| `POST /api/peer-policy` | Administrator-only revision-checked full policy replacement |
 | `POST /api/geodb/db-only` | Set database-only mode with `{ "enabled": boolean }` |
 | `POST /api/geodb/auto-update` | Set automatic dataset scheduling with `{ "enabled": boolean }` |
 
@@ -133,6 +136,64 @@ management session. Remembered `/api/admin/verify` responses return the lifetime
 too. It derives from the original absolute deadline and is not extended by reads.
 No wallet names, balances, or choices appear in either bootstrap response or
 ordinary dashboard/configuration APIs.
+
+## Inbound policy contracts
+
+GET, HEAD, and POST `/api/peer-policy`, and GET/HEAD `/api/peer-policy/status`,
+require administrator authentication in every viewing mode, before reading policy
+state or parsing a save. Viewing-only
+credentials never suffice. Successes and errors are private/no-store and vary by
+Authorization and Cookie; revocation prevents delayed responses and saves from
+crossing a management generation. Browser writes use the existing Origin checks.
+
+POST accepts a complete document, for example:
+
+```json
+{
+  "expected_revision": 0,
+  "config": { "mode": "preview", "listener_allowance": 0, "keep_addresses": [] }
+}
+```
+
+Modes are `off`, `preview`, and `automatic`; the allowance is an integer 0–20.
+Keep accepts up to 128 normalized exact IPv4, IPv6, onion, or I2P hosts, without
+DNS resolution or subnet rules. A stale revision returns 409
+`peer_policy_conflict`; clients refresh without replaying the write. Attempting
+Automatic without a fresh Preview trial returns 409
+`peer_policy_preview_required`. Invalid input is 422; unavailable storage is 503.
+
+The response describes `config`, `revision`, `effective_state`, `reason`,
+`preview_remaining_seconds`, `next_action_at`, `limits`, counts, connection
+evidence, and bounded recent events. Timestamps are Unix seconds; elapsed periods
+are seconds. Events distinguish proposed actions, requests, accepted RPCs,
+failures, uncertain outcomes, and subsequently observed departures. A departure
+after a request does not prove its cause.
+
+`proposal` describes a complete conditional sequence for observed inbound peers,
+including planned order/times, retained listeners, and blockers. Its compact
+entries join connection evidence in `peers` by `peer_id` and `address`. Proposed
+times assume no intervening changes and never authorize dispatch themselves.
+`results` summarizes accepted requests, observed departures, and later same-host
+returns among retained attempts in the last seven days. Returns do not establish
+peer identity, and outcomes remain separate from causation claims. Departure and
+return counts deduplicate the attempted connection identity; multiple requests
+against one connection do not count as multiple departures or returns.
+
+The compact status route returns only `available`, `revision`, `mode`,
+`effective_state`, and `reason`. It does not inspect the peer set, construct the
+proposal, or contact RPC. It uses the same management authentication, no-store,
+HEAD, and revocation protections as the full policy route.
+
+Persistent disconnect failures can pause Automatic. An explicit save of Preview
+clears the failure guard and starts a fresh trial; attempts and cooldowns survive.
+
+GET never contacts RPC or advances evidence. Observation follows canonical peer
+refreshes, independently of GeoIP and browser polling. Only an explicitly enabled
+server policy adds bounded health reads; Off adds none. Automatic revalidates
+the complete connection identity before targeting its numeric peer ID, persists
+an attempt before dispatch, and never retries a mutation blindly. The RPC has no
+atomic compare-identity-and-disconnect operation, leaving a small restart race
+between revalidation and dispatch.
 
 ## Interpret peer and node fields
 

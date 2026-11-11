@@ -84,7 +84,7 @@ async function application(t: TestContext, real = false, token = FIXTURE_ADMIN_T
     const base = `http://127.0.0.1:${address.port}`;
     async function json(path: string, method: 'get' | 'post' = 'get', body?: unknown, options: RequestInit = {}) {
         const headers = new Headers(options.headers);
-        if ((method === 'post' || path.startsWith('/api/wallets')) && !headers.has('Authorization')) headers.set('Authorization', `Bearer ${FIXTURE_ADMIN_TOKEN}`);
+        if ((method === 'post' || path.startsWith('/api/wallets') || path === '/api/peer-policy' || path === '/api/peer-policy/status') && !headers.has('Authorization')) headers.set('Authorization', `Bearer ${FIXTURE_ADMIN_TOKEN}`);
         if (path.endsWith('/logout') && !headers.has('Origin')) headers.set('Origin', base);
         if (body !== undefined) headers.set('Content-Type', 'application/json');
         const response = await fetch(base + path, { ...options, method: method.toUpperCase(), headers, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -100,6 +100,7 @@ const bodies: Record<string, unknown> = {
     '/api/geodb/db-only': { enabled: true }, '/api/geodb/auto-update': { enabled: true },
     '/api/config/outbound': { preference: 'release_checks', enabled: false },
     '/api/wallets/preferences': { selected_wallets: ['watch-descriptor'], unit: 'BTC', rotation_seconds: 8, paused: false },
+    '/api/peer-policy': { expected_revision: 0, config: { mode: 'preview', listener_allowance: 0, keep_addresses: [] } },
 };
 
 test('all documented JSON routes validate real serialized service responses and browser fixtures', async t => {

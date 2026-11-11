@@ -538,7 +538,7 @@ export interface paths {
         put?: never;
         /**
          * Verify Viewing Token
-         * @description Verify a viewing or administrator credential without granting management permissions. With X-BPM-Remember: 1, successful explicit bearer verification and a same-origin Origin issue a persistent HttpOnly browser cookie for 30 days. Verification without this opt-in remains cookie-free. Sessions expire absolutely and are revoked by logout or application restart.
+         * @description Verify a viewing or administrator credential. With X-BPM-Remember: 1, successful explicit bearer verification and a same-origin Origin issue persistent HttpOnly browser sessions for 30 days. An administrator token signs in to viewing and management together using separate cookies; a viewing token grants viewing only. The remembered response reports management access and its remaining lifetime. Verification without this opt-in remains cookie-free. Sessions expire absolutely and are revoked by logout or application restart.
          */
         post: operations["verify_viewing_token"];
         delete?: never;
@@ -669,6 +669,50 @@ export interface paths {
          * @description Requires administrator bearer authentication or a remembered management session in every viewing mode, including public. Viewing credentials do not authorize wallet access. HEAD uses the same authorization as GET. Responses and errors are private, no-store and vary by Authorization and Cookie. Authentication precedes wallet data, cache, and RPC work. Node wallet RPC permission or capability failures are wallet availability states, not BPM authentication failures. Atomically saves shared selections and display settings before changing memory. Newly selected wallets must be verified eligible; existing unavailable selections may be retained or removed. Returns committed preferences and revision.
          */
         post: operations["set_wallet_ticker_preferences"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/peer-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inspect Inbound Policy
+         * @description Administrator-only configuration, evidence and recent decisions, including in public viewing mode. No-store responses; reads never collect evidence or trigger node actions.
+         */
+        get: operations["get_peer_policy"];
+        put?: never;
+        /**
+         * Configure Inbound Policy
+         * @description Apply the complete policy configuration with an expected revision. Off is the default. Automatic requires a fresh Preview trial; explicit activation grants browser-independent node automation. Origin protection and administrator authentication apply. A persistent failure pause requires an explicit switch to Preview followed by a fresh trial; changing other settings or restarting does not resume automation.
+         */
+        post: operations["configure_peer_policy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/peer-policy/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inspect Compact Inbound Policy Status
+         * @description Administrator-only toolbar status, including on public dashboards. Private, no-store responses. Contains no connection evidence or addresses; reads never inspect the peer set, collect evidence, or contact RPC. HEAD has identical authentication rules.
+         */
+        get: operations["get_peer_policy_status"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1280,8 +1324,12 @@ export interface components {
             success: boolean;
             /** @description Present and true when a persistent browser session cookie was issued. */
             remembered?: boolean;
-            /** @description Remaining management-session lifetime in seconds; present only when remembered administrator verification issued a session. */
-            management_expires_in_seconds?: number;
+            /** @description Remaining management-session lifetime in seconds for remembered login; null when management is locked. Reads never extend the absolute lifetime. */
+            management_expires_in_seconds?: number | null;
+            /** @description Present after remembered dashboard sign-in; true when an administrator session is active. */
+            management_authenticated?: boolean;
+            /** @description Present after remembered dashboard sign-in; true when an administrator token is configured. */
+            management_available?: boolean;
         };
         WalletTickerPreferences: {
             /** @description Exact selected wallet names. Names and selections require administrator access and never appear in URLs or ordinary dashboard configuration. */
@@ -1322,6 +1370,111 @@ export interface components {
             generated_at: number;
             /** @description Sanitized wallet capability or availability reason. Never contains wallet names, credentials, or raw node errors. */
             reason: string | null;
+        };
+        PeerPolicyConfig: {
+            /** @enum {string} */
+            mode: "off" | "preview" | "automatic";
+            listener_allowance: number;
+            keep_addresses: string[];
+        };
+        PeerPolicyPeer: {
+            peer_id: number;
+            address: string;
+            host: string;
+            network: string;
+            /** @description Peer-reported software user-agent string, preserved as untrusted display text. Null when unavailable, blank, containing control characters or outside the display bound. It does not determine listener eligibility. */
+            subver: string | null;
+            connection_age_seconds: number | null;
+            observed_seconds: number;
+            remaining_seconds: number;
+            /** @enum {string} */
+            status: "candidate" | "protected" | "observing" | "unknown";
+            reason: string;
+        };
+        PeerPolicyEvent: {
+            id: string;
+            time: number;
+            peer_id: number | null;
+            address: string | null;
+            /** @enum {string} */
+            kind: "would_disconnect" | "requested" | "succeeded" | "failed" | "uncertain" | "departure_observed" | "skipped" | "same_host_return" | "paused";
+            reason: string;
+        };
+        PeerPolicySnapshot: {
+            available: boolean;
+            config: components["schemas"]["PeerPolicyConfig"];
+            revision: number;
+            /** @enum {string} */
+            effective_state: "disabled" | "observing" | "preview" | "running" | "paused";
+            reason: string;
+            preview_remaining_seconds: number;
+            next_action_at: number | null;
+            counts: {
+                inbound: number;
+                candidates: number;
+                exempt: number;
+            };
+            limits: {
+                /** @constant */
+                grace_seconds: 3600;
+                /** @constant */
+                observation_seconds: 1800;
+                /** @constant */
+                attempt_interval_seconds: 300;
+                /** @constant */
+                max_attempts_per_hour: 6;
+                /** @constant */
+                address_cooldown_seconds: 1800;
+                /** @constant */
+                min_total_peers: 12;
+                /** @constant */
+                min_outbound_peers: 4;
+            };
+            peers: components["schemas"]["PeerPolicyPeer"][];
+            events: components["schemas"]["PeerPolicyEvent"][];
+            as_diversity_available: boolean;
+            proposal: components["schemas"]["PeerPolicyProposal"];
+            results: components["schemas"]["PeerPolicyResults"];
+        };
+        PeerPolicyRequest: {
+            expected_revision: number;
+            config: components["schemas"]["PeerPolicyConfig"];
+        };
+        PeerPolicyProposalEntry: {
+            peer_id: number;
+            address: string;
+            /** @enum {string} */
+            action: "planned" | "retained" | "blocked";
+            order: number | null;
+            proposed_at: number | null;
+            reason: string;
+        };
+        /** @description Read-only conditional proposal for observed inbound connections. Proposed times and order assume no intervening activity, new peers, or health changes; each real request still requires fresh validation. Connection evidence is joined from peers by peer_id and address. */
+        PeerPolicyProposal: {
+            /** @constant */
+            conditional: true;
+            planned: number;
+            retained: number;
+            blocked: number;
+            entries: components["schemas"]["PeerPolicyProposalEntry"][];
+        };
+        /** @description Summary of retained attempts in the last seven days. Accepted requests count RPC acceptances; departure and return totals count distinct attempted connection identities. A later same-host connection may be another device behind a shared address and does not establish peer identity or causation. */
+        PeerPolicyResults: {
+            /** @description Retention window in seconds; currently seven days (604800). */
+            window_seconds: number;
+            accepted_requests: number;
+            observed_departures: number;
+            same_host_returns: number;
+        };
+        /** @description Administrator-only compact state for the policy toolbar. Contains no peer addresses, Keep list, connection evidence, or events. Reading it never inspects the peer set or triggers RPC. */
+        PeerPolicyStatus: {
+            available: boolean;
+            revision: number;
+            /** @enum {string} */
+            mode: "off" | "preview" | "automatic";
+            /** @enum {string} */
+            effective_state: "disabled" | "observing" | "preview" | "running" | "paused";
+            reason: string;
         };
     };
     responses: {
@@ -1455,6 +1608,15 @@ export type WalletTickerPreferences = components['schemas']['WalletTickerPrefere
 export type WalletPreferencesResponse = components['schemas']['WalletPreferencesResponse'];
 export type WalletRow = components['schemas']['WalletRow'];
 export type WalletSnapshot = components['schemas']['WalletSnapshot'];
+export type PeerPolicyConfig = components['schemas']['PeerPolicyConfig'];
+export type PeerPolicyPeer = components['schemas']['PeerPolicyPeer'];
+export type PeerPolicyEvent = components['schemas']['PeerPolicyEvent'];
+export type PeerPolicySnapshot = components['schemas']['PeerPolicySnapshot'];
+export type PeerPolicyRequest = components['schemas']['PeerPolicyRequest'];
+export type PeerPolicyProposalEntry = components['schemas']['PeerPolicyProposalEntry'];
+export type PeerPolicyProposal = components['schemas']['PeerPolicyProposal'];
+export type PeerPolicyResults = components['schemas']['PeerPolicyResults'];
+export type PeerPolicyStatus = components['schemas']['PeerPolicyStatus'];
 export type ResponseCrossOriginRequest = components['responses']['CrossOriginRequest'];
 export type ResponseAdminRequired = components['responses']['AdminRequired'];
 export type ResponseAdminRateLimited = components['responses']['AdminRateLimited'];
@@ -2486,7 +2648,7 @@ export interface operations {
             /** @description Successful Response */
             200: {
                 headers: {
-                    /** @description Issued only for successful opted-in browser login. Opaque host-only session cookie; Path=/api, Max-Age=2592000, HttpOnly, SameSite=Strict, Secure for HTTPS. */
+                    /** @description Issued only for successful opted-in browser login: a viewing session, plus a separate management session for administrator credentials. Opaque host-only cookies; Path=/api, Max-Age=2592000, HttpOnly, SameSite=Strict, Secure for HTTPS. */
                     "Set-Cookie"?: string;
                     [name: string]: unknown;
                 };
@@ -2773,6 +2935,115 @@ export interface operations {
             403: components["responses"]["CrossOriginRequest"];
             429: components["responses"]["AdminRateLimited"];
             /** @description Wallet availability, preference validation, or HTTP request failure. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_peer_policy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful administrator-only response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PeerPolicySnapshot"];
+                };
+            };
+            401: components["responses"]["AdminRequired"];
+            403: components["responses"]["CrossOriginRequest"];
+            429: components["responses"]["AdminRateLimited"];
+            /** @description Policy availability, validation, or HTTP request failure. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    configure_peer_policy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PeerPolicyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful administrator-only response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PeerPolicySnapshot"];
+                };
+            };
+            401: components["responses"]["AdminRequired"];
+            403: components["responses"]["CrossOriginRequest"];
+            /** @description Configuration revision conflict. Refresh before making another change. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["AdminRateLimited"];
+            /** @description Policy availability, validation, or HTTP request failure. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_peer_policy_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful administrator-only response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PeerPolicyStatus"];
+                };
+            };
+            401: components["responses"]["AdminRequired"];
+            403: components["responses"]["CrossOriginRequest"];
+            429: components["responses"]["AdminRateLimited"];
+            /** @description Policy availability or HTTP request failure. */
             default: {
                 headers: {
                     [name: string]: unknown;

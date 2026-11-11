@@ -6,6 +6,7 @@
     <title>Bitcoin Peer Map</title>
     <link rel="icon" type="image/svg+xml" href="/static/assets/favicon.svg?v={{ asset_revision }}">
     <link rel="stylesheet" href="/static/css/app.css?v={{ asset_revision }}">
+    <link rel="stylesheet" href="/static/css/peer-policy.css?v={{ asset_revision }}">
     <link rel="stylesheet" href="/static/css/distribution.css?v={{ asset_revision }}"><!-- [DISTRIBUTION] -->
     <link rel="stylesheet" href="/static/v/{{ asset_revision }}/vendor/cinzel/index.css">
 </head>
@@ -209,6 +210,7 @@
                         <button type="button" class="net-badge net-cjdns" data-net="cjdns" title="Click to filter by CJDNS" aria-pressed="true">CJDNS <span class="badge-count" id="bc-cjdns">0</span></button>
                     </div>
                 </div>
+                <div class="peer-toolbar-management">
                 <div class="peer-search-tools" id="peer-search-tools">
                     <div class="peer-search-field">
                         <label class="peer-search-label" for="peer-search">Search peers</label>
@@ -223,6 +225,7 @@
                         <button type="button" class="handle-btn handle-btn-accent" id="btn-export-peers" aria-expanded="false" aria-controls="peer-export-options">Export &#9662;</button>
                     </div>
                     <button class="handle-btn handle-btn-warn" id="btn-bans" title="View and manage banned peers">Banned Peers</button>
+                    <button type="button" class="handle-btn handle-btn-accent" id="btn-inbound-policy" aria-haspopup="dialog" aria-controls="peer-policy-modal" aria-expanded="false" title="Preview and configure inbound listener cleanup">Inbound policy</button>
                     <button class="handle-btn handle-btn-accent" id="btn-node-info-peer" title="View detailed node information">NODE-INFO</button>
                     <button class="handle-btn handle-btn-accent" id="btn-recent-blocks" title="View recently validated blocks">BLOCKS</button>
                     <button class="handle-btn handle-btn-accent" id="btn-geoip-db-peer" title="GeoIP database info and updates">GEOIP-DB</button>
@@ -231,7 +234,9 @@
                     <button type="button" class="handle-btn handle-btn-dim" id="btn-minimize" aria-expanded="true" aria-controls="peer-panel-body" aria-label="Hide peer list table" title="Toggle peer list table">&#9660;</button>
                     <button class="handle-btn handle-btn-dim" id="btn-table-settings" title="Table settings: columns, transparency">&#9881;</button>
                 </div>
+                </div>
             </div>
+            <div id="peer-policy-toolbar" class="peer-policy-toolbar" hidden><span id="peer-policy-badge" role="status" aria-live="polite">Policy status unknown</span><button type="button" class="handle-btn handle-btn-warn" id="peer-policy-quick-off">Turn policy Off</button></div>
             <div class="peer-filter-status" id="peer-filter-status" hidden>
                 <div id="peer-filter-chips" aria-label="Active peer filters"></div>
                 <button type="button" id="peer-clear-filters" hidden>Clear filters</button>

@@ -46,6 +46,19 @@ clear wallet content. Closing or navigating one tab preserves other tabs' access
 Background wallet requests never open an unlock prompt. Bitcoin node wallet-RPC
 permission failures report wallet unavailability rather than changing BPM access.
 
+### Inbound policy access
+
+`GET`/`HEAD` and `POST /api/peer-policy` require a management credential in every
+viewing mode. Evidence, Keep addresses, and recent decisions are private/no-store
+and excluded from ordinary dashboard APIs. Revoking management clears the open
+panel and invalidates pending responses and saves.
+
+Explicitly selecting Automatic authorizes a server-owned policy; management
+session expiry, locking, and browser closure do not cancel that saved authority.
+Use Off in the policy panel to stop new actions. Automatic starts disabled and
+requires a fresh Preview trial, guarded connection revalidation, health checks,
+and persisted action limits. See [Inbound policy](dashboard.md#inbound-listener-policy).
+
 ## Credentials
 
 Configure `BPM_VIEW_TOKEN` and/or `BPM_ADMIN_TOKEN`, or their corresponding `_FILE`
@@ -72,6 +85,11 @@ The browser opts into remembered login with `X-BPM-Remember: 1` on
 and an explicit matching Origin. Without that opt-in, bearer-token verification
 creates no cookie. For authenticated requests, explicit bearer credentials take
 precedence over cookies; an incorrect bearer token cannot fall back to a session.
+
+Entering an administrator token at the dashboard sign-in screen unlocks viewing
+and management together. A viewing token unlocks viewing only. Administrator
+sign-in issues both session cookies so locking management can preserve viewing
+access; navigating between panels or reloading does not require the token again.
 
 Viewing and management use separate cookies. Cookies are host-only, scoped to
 `/api`, `HttpOnly`, and `SameSite=Strict`; HTTPS login also sets `Secure`. JavaScript
