@@ -690,9 +690,29 @@ export interface paths {
         put?: never;
         /**
          * Configure Inbound Policy
-         * @description Apply the complete policy configuration with an expected revision. Off is the default. Automatic requires a fresh Preview trial; explicit activation grants browser-independent node automation. Origin protection and administrator authentication apply.
+         * @description Apply the complete policy configuration with an expected revision. Off is the default. Automatic requires a fresh Preview trial; explicit activation grants browser-independent node automation. Origin protection and administrator authentication apply. A persistent failure pause requires an explicit switch to Preview followed by a fresh trial; changing other settings or restarting does not resume automation.
          */
         post: operations["configure_peer_policy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/peer-policy/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inspect Compact Inbound Policy Status
+         * @description Administrator-only toolbar status, including on public dashboards. Private, no-store responses. Contains no connection evidence or addresses; reads never inspect the peer set, collect evidence, or contact RPC. HEAD has identical authentication rules.
+         */
+        get: operations["get_peer_policy_status"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1377,7 +1397,7 @@ export interface components {
             peer_id: number | null;
             address: string | null;
             /** @enum {string} */
-            kind: "would_disconnect" | "requested" | "succeeded" | "failed" | "uncertain" | "departure_observed" | "skipped";
+            kind: "would_disconnect" | "requested" | "succeeded" | "failed" | "uncertain" | "departure_observed" | "skipped" | "same_host_return" | "paused";
             reason: string;
         };
         PeerPolicySnapshot: {
@@ -1413,10 +1433,48 @@ export interface components {
             peers: components["schemas"]["PeerPolicyPeer"][];
             events: components["schemas"]["PeerPolicyEvent"][];
             as_diversity_available: boolean;
+            proposal: components["schemas"]["PeerPolicyProposal"];
+            results: components["schemas"]["PeerPolicyResults"];
         };
         PeerPolicyRequest: {
             expected_revision: number;
             config: components["schemas"]["PeerPolicyConfig"];
+        };
+        PeerPolicyProposalEntry: {
+            peer_id: number;
+            address: string;
+            /** @enum {string} */
+            action: "planned" | "retained" | "blocked";
+            order: number | null;
+            proposed_at: number | null;
+            reason: string;
+        };
+        /** @description Read-only conditional proposal for observed inbound connections. Proposed times and order assume no intervening activity, new peers, or health changes; each real request still requires fresh validation. Connection evidence is joined from peers by peer_id and address. */
+        PeerPolicyProposal: {
+            /** @constant */
+            conditional: true;
+            planned: number;
+            retained: number;
+            blocked: number;
+            entries: components["schemas"]["PeerPolicyProposalEntry"][];
+        };
+        /** @description Summary of retained attempts in the last seven days. Accepted requests count RPC acceptances; departure and return totals count distinct attempted connection identities. A later same-host connection may be another device behind a shared address and does not establish peer identity or causation. */
+        PeerPolicyResults: {
+            /** @description Retention window in seconds; currently seven days (604800). */
+            window_seconds: number;
+            accepted_requests: number;
+            observed_departures: number;
+            same_host_returns: number;
+        };
+        /** @description Administrator-only compact state for the policy toolbar. Contains no peer addresses, Keep list, connection evidence, or events. Reading it never inspects the peer set or triggers RPC. */
+        PeerPolicyStatus: {
+            available: boolean;
+            revision: number;
+            /** @enum {string} */
+            mode: "off" | "preview" | "automatic";
+            /** @enum {string} */
+            effective_state: "disabled" | "observing" | "preview" | "running" | "paused";
+            reason: string;
         };
     };
     responses: {
@@ -1555,6 +1613,10 @@ export type PeerPolicyPeer = components['schemas']['PeerPolicyPeer'];
 export type PeerPolicyEvent = components['schemas']['PeerPolicyEvent'];
 export type PeerPolicySnapshot = components['schemas']['PeerPolicySnapshot'];
 export type PeerPolicyRequest = components['schemas']['PeerPolicyRequest'];
+export type PeerPolicyProposalEntry = components['schemas']['PeerPolicyProposalEntry'];
+export type PeerPolicyProposal = components['schemas']['PeerPolicyProposal'];
+export type PeerPolicyResults = components['schemas']['PeerPolicyResults'];
+export type PeerPolicyStatus = components['schemas']['PeerPolicyStatus'];
 export type ResponseCrossOriginRequest = components['responses']['CrossOriginRequest'];
 export type ResponseAdminRequired = components['responses']['AdminRequired'];
 export type ResponseAdminRateLimited = components['responses']['AdminRateLimited'];
@@ -2904,7 +2966,7 @@ export interface operations {
             401: components["responses"]["AdminRequired"];
             403: components["responses"]["CrossOriginRequest"];
             429: components["responses"]["AdminRateLimited"];
-            /** @description Wallet availability, preference validation, or HTTP request failure. */
+            /** @description Policy availability, validation, or HTTP request failure. */
             default: {
                 headers: {
                     [name: string]: unknown;
@@ -2949,7 +3011,39 @@ export interface operations {
                 };
             };
             429: components["responses"]["AdminRateLimited"];
-            /** @description Wallet availability, preference validation, or HTTP request failure. */
+            /** @description Policy availability, validation, or HTTP request failure. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_peer_policy_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful administrator-only response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PeerPolicyStatus"];
+                };
+            };
+            401: components["responses"]["AdminRequired"];
+            403: components["responses"]["CrossOriginRequest"];
+            429: components["responses"]["AdminRateLimited"];
+            /** @description Policy availability or HTTP request failure. */
             default: {
                 headers: {
                     [name: string]: unknown;

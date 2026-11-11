@@ -192,6 +192,22 @@ Bitcoin network starts Off for that scope until an explicit administrator save.
 Reconnections start new grace periods; address cooldowns only suppress repeated
 attempts and do not create a reputation score.
 
+The failure guard is saved with the attempt budget. Definite authorization or
+unsupported-method errors pause automation immediately; three other definite
+disconnect failures without an accepted request also pause it. Restarting, editing an allowance, or
+changing Keep exceptions cannot clear that pause. Select Preview explicitly to
+clear the guard and start a fresh trial, then review before enabling Automatic.
+Neither this recovery nor switching Off deletes reserved attempts. Uncertain
+outcomes remain separately recorded and are never blindly retried.
+
+Later successful peer observations record departures and same-host returns once
+per retained attempt. These support the seven-day results summary without storing
+raw peer snapshots or claiming that two connections sharing an address belong to
+the same peer. Departure and return totals count distinct attempted connections,
+so repeated requests against one connection do not inflate them.
+The conditional Preview proposal is calculated from current
+evidence and does not create simulated attempt reservations on disk.
+
 Corrupt, oversized, insufficiently private, or unwritable policy storage disables
 new policy actions while ordinary monitoring continues. The panel reports the
 problem. Stop BPM and privately back up the file before repairing ownership or

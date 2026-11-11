@@ -215,7 +215,7 @@ test('all documented JSON endpoints are wired and removed endpoints stay absent'
                 : path === '/api/peer-policy'
                     ? { expected_revision: 0, config: { mode: 'preview', listener_allowance: 0, keep_addresses: [] } }
                 : { address: '8.8.8.8', peer_id: 1, enabled: true };
-            const managementRead = path.startsWith('/api/wallets') || path === '/api/peer-policy';
+            const managementRead = path.startsWith('/api/wallets') || path === '/api/peer-policy' || path === '/api/peer-policy/status';
             if (method === 'get' && managementRead) {
                 const anonymous = await get(path);
                 assert.equal(anonymous.status, 401);

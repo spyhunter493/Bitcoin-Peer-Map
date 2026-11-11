@@ -3,16 +3,17 @@ import { HttpError } from '../http.ts';
 import type { PeerInfo } from '../rpc-types.ts';
 import { RpcAuthenticationError, RpcBusyError, RpcError, RpcTransportError } from '../rpc.ts';
 import { object, type Rpc } from '../types.ts';
-import { ListenerObserver, policyIdentity } from './observer.ts';
+import { ListenerObserver, normalizePolicyAddress, policyIdentity } from './observer.ts';
+import { nextPolicyAttemptAt } from './proposal.ts';
 import { parsePolicyConfig, type PeerPolicyStore } from './store.ts';
 import {
     DEFAULT_POLICY_CONFIG, POLICY_LIMITS,
     type PolicyAttempt, type PolicyCandidate, type PolicyDocument, type PolicyEvaluation,
-    type PolicyEvent, type PolicyEventKind, type PolicySnapshot, type PolicyState,
+    type PolicyEvent, type PolicyEventKind, type PolicyFailureGuard, type PolicySnapshot, type PolicyState, type PolicyStatus,
 } from './types.ts';
 
 const MINUTE = 60_000;
-const RETENTION = 7 * 86_400;
+const RETENTION = 604_800;
 const MAX_EVENTS = 200;
 const MAX_ENTRIES = 2_000;
 const EMPTY_EVALUATION: PolicyEvaluation = {
@@ -92,7 +93,7 @@ export class PeerPolicyCoordinator {
     private schedule(): void {
         if (this.timer) clearInterval(this.timer);
         this.timer = null;
-        if (!this.started || this.stopped || !this.dependencies.managementEnabled || this.document.config.mode === 'off' || this.persistenceError) return;
+        if (!this.started || this.stopped || !this.dependencies.managementEnabled || this.document.config.mode === 'off' || this.persistenceError || this.document.state.failure_guard?.paused) return;
         this.timer = setInterval(() => { void this.evaluate(); }, MINUTE);
         this.timer.unref();
         void this.evaluate();
@@ -125,8 +126,9 @@ export class PeerPolicyCoordinator {
                 this.lastPreviewIdentity = null;
             }
             this.observationError = null;
+            const previousIdentities = this.latestIdentities;
             this.latestIdentities = new Set(peers.map(peer => policyIdentity(peer)));
-            this.reconcileDepartures(wall);
+            this.reconcileDepartures(peers.filter(peer => !previousIdentities.has(policyIdentity(peer))), wall);
         } catch {
             this.resetEvidence();
             this.observationError = 'Peer evidence is incomplete or exceeds policy limits; observing again.';
@@ -165,13 +167,19 @@ export class PeerPolicyCoordinator {
         if (config.mode !== 'off' && !this.dependencies.managementEnabled) {
             throw new HttpError(503, 'An administrator credential is required to enable the policy.', 'peer_policy_unavailable');
         }
+        if (config.mode === 'automatic' && this.document.state.failure_guard?.paused) {
+            throw new HttpError(409, 'Policy paused after RPC failures. Save Preview and complete a fresh trial before enabling Automatic.', 'peer_policy_preview_required');
+        }
         if (config.mode === 'automatic' && this.document.config.mode !== 'automatic' &&
             (this.document.config.mode !== 'preview' || this.previewRemaining(this.clock()) > 0 || !this.freshObservation(this.clock()))) {
             throw new HttpError(409, 'Complete 30 minutes of fresh Preview before enabling Automatic.', 'peer_policy_preview_required');
         }
         const previous = this.document.config;
+        const clearGuard = config.mode === 'preview' && this.document.state.failure_guard !== undefined;
         try {
-            this.store.configure(config, payload.expected_revision as number);
+            this.store.configure(config, payload.expected_revision as number, clearGuard ? {
+                ...this.document.state, failure_guard: { consecutive_failures: 0, paused: false, reason: null },
+            } : undefined);
             this.document = this.store.snapshot();
         } catch (error) {
             if (!(error instanceof HttpError) || error.status === 503) this.persistenceError = 'Policy storage is unavailable; automatic actions are disabled.';
@@ -181,7 +189,7 @@ export class PeerPolicyCoordinator {
         const next = this.document.config;
         const settingsChanged = previous.listener_allowance !== next.listener_allowance ||
             JSON.stringify(previous.keep_addresses) !== JSON.stringify(next.keep_addresses);
-        if (previous.mode === 'off' || next.mode === 'off' || settingsChanged) this.resetEvidence();
+        if (previous.mode === 'off' || next.mode === 'off' || settingsChanged || clearGuard) this.resetEvidence();
         this.schedule();
         return this.snapshot();
     }
@@ -204,6 +212,7 @@ export class PeerPolicyCoordinator {
         if (!this.dependencies.managementEnabled) return 'An administrator credential is required to enable the policy.';
         if (this.persistenceError) return this.persistenceError;
         if (this.stopped || this.dependencies.signal?.aborted) return 'Policy coordinator is stopped.';
+        if (this.document.state.failure_guard?.paused) return this.document.state.failure_guard.reason;
         if (this.observationError) return this.observationError;
         if (!this.freshObservation(now)) return 'Waiting for fresh peer observations.';
         if (this.previewRemaining(now) > 0) return 'Collecting a fresh 30-minute Preview trial.';
@@ -211,13 +220,28 @@ export class PeerPolicyCoordinator {
         return this.health.reason;
     }
 
-    snapshot(): PolicySnapshot {
-        const now = this.clock();
-        const wall = this.wallClock();
-        const evaluation = this.evaluation(now, wall);
+    private statusAt(now: number): PolicyStatus {
         const off = this.document.config.mode === 'off';
         const remaining = this.previewRemaining(now);
         const reason = this.persistenceError ?? (off ? 'Inbound policy is off.' : this.pauseReason(now));
+        return {
+            available: this.dependencies.managementEnabled && !this.persistenceError && !this.stopped,
+            revision: this.document.revision, mode: this.document.config.mode,
+            effective_state: off ? 'disabled' : reason ? (remaining > 0 && this.dependencies.managementEnabled && !this.stopped && !this.observationError && !this.persistenceError && !this.document.state.failure_guard?.paused ? 'observing' : 'paused') :
+                this.document.config.mode === 'preview' ? 'preview' : 'running',
+            reason: reason ?? (this.document.config.mode === 'preview' ? 'Preview only; no node changes.' : 'Automatic listener cleanup is active.'),
+        };
+    }
+
+    /** Cheap closed-panel status: no peer inspection, projection, persistence, or RPC. */
+    status(): PolicyStatus { return this.statusAt(this.clock()); }
+
+    snapshot(): PolicySnapshot {
+        const now = this.clock(), wall = this.wallClock();
+        const evaluation = this.evaluation(now, wall), status = this.statusAt(now);
+        const off = this.document.config.mode === 'off';
+        const reason = off ? status.reason : this.pauseReason(now);
+        const attempts = this.document.state.attempts.filter(attempt => wall - attempt.time < RETENTION);
         let nextAction = this.nextActionAt(wall);
         if (evaluation.eligible.length) {
             const hostReady = evaluation.eligible.map(candidate => this.document.state.attempts
@@ -226,22 +250,24 @@ export class PeerPolicyCoordinator {
             nextAction = Math.max(nextAction, Math.min(...hostReady));
         }
         return structuredClone({
-            available: this.dependencies.managementEnabled && !this.persistenceError && !this.stopped,
+            available: status.available,
             config: this.document.config, revision: this.document.revision,
-            effective_state: off ? 'disabled' : reason ? (remaining > 0 && this.dependencies.managementEnabled && !this.stopped && !this.observationError && !this.persistenceError ? 'observing' : 'paused') :
-                this.document.config.mode === 'preview' ? 'preview' : 'running',
-            reason: reason ?? (this.document.config.mode === 'preview' ? 'Preview only; no node changes.' : 'Automatic listener cleanup is active.'),
-            preview_remaining_seconds: off ? POLICY_LIMITS.observation_seconds : remaining,
+            effective_state: status.effective_state, reason: status.reason,
+            preview_remaining_seconds: off ? POLICY_LIMITS.observation_seconds : this.previewRemaining(now),
             next_action_at: off || (nextAction <= wall && (this.document.config.mode !== 'automatic' || reason || !evaluation.eligible.length)) ? null : nextAction,
             counts: evaluation.counts, limits: POLICY_LIMITS, peers: evaluation.peers,
             events: this.document.state.events.filter(event => wall - event.time < RETENTION).slice().reverse(), as_diversity_available: evaluation.as_diversity_available,
+            proposal: this.observer.proposal(this.document.config, evaluation, wall, attempts, reason),
+            results: { window_seconds: RETENTION, accepted_requests: attempts.filter(attempt => attempt.outcome === 'succeeded').length,
+                observed_departures: new Set(attempts.filter(attempt => attempt.departure_observed).map(attempt => attempt.identity)).size,
+                same_host_returns: new Set(attempts.filter(attempt => attempt.return_observed).map(attempt => attempt.identity)).size },
         });
     }
 
     /** Serialized and minute-throttled, including explicit invocations by tests. */
     evaluate(): Promise<void> {
         if (this.work) return this.work;
-        if (this.stopped || this.document.config.mode === 'off' || this.persistenceError || !this.dependencies.managementEnabled) return Promise.resolve();
+        if (this.stopped || this.document.config.mode === 'off' || this.persistenceError || !this.dependencies.managementEnabled || this.document.state.failure_guard?.paused) return Promise.resolve();
         const now = this.clock();
         if (this.lastEvaluate !== null && now >= this.lastEvaluate && now - this.lastEvaluate < MINUTE) return Promise.resolve();
         this.lastEvaluate = now;
@@ -330,21 +356,31 @@ export class PeerPolicyCoordinator {
         });
         if (this.persistenceError || signal.aborted || this.document.revision !== revision || this.epoch !== epoch || this.document.config.mode !== 'automatic') return;
         let outcome: PolicyAttempt['outcome'];
+        let immediatePause = false;
         try {
             await this.dependencies.rpc.call('disconnectnode', ['', current.peer.id], 10, signal);
             outcome = 'succeeded';
         } catch (error) {
             outcome = error instanceof RpcError && !(error instanceof RpcTransportError) ? 'failed' : 'uncertain';
             if (error instanceof RpcBusyError || error instanceof RpcAuthenticationError) outcome = 'failed';
+            immediatePause = error instanceof RpcAuthenticationError || (error instanceof RpcError && error.code === -32601);
         }
+        const previousGuard = this.document.state.failure_guard;
+        const failures = outcome === 'succeeded' ? 0 : Math.min(3, (previousGuard?.consecutive_failures ?? 0) + (outcome === 'failed' ? 1 : 0));
+        const paused = previousGuard?.paused === true || immediatePause || failures >= 3;
+        const guard: PolicyFailureGuard = { consecutive_failures: failures, paused,
+            reason: paused ? 'Automatic cleanup paused after definite RPC failures. Save Preview to start a fresh trial before resuming.' : null };
         this.writeState({ ...this.document.state,
             attempts: this.document.state.attempts.map(item => item.id === attempt.id ? { ...item, outcome } : item),
             events: [...this.document.state.events, this.event(outcome, attempt.peer_id, attempt.address,
                 outcome === 'succeeded' ? 'Disconnect RPC accepted; awaiting a later peer observation.' :
                     outcome === 'failed' ? 'Disconnect RPC failed; the attempt budget remains reserved.' :
-                        'Disconnect outcome is uncertain; the attempt will not be retried blindly.')],
+                        'Disconnect outcome is uncertain; the attempt will not be retried blindly.'),
+                ...(paused && !previousGuard?.paused ? [this.event('paused', null, null, guard.reason!)] : [])],
             last_wall_time: this.wallClock(),
+            failure_guard: guard,
         });
+        if (paused) { this.cancelPending(); this.schedule(); }
     }
 
     private inCooldown(candidate: PolicyCandidate, wall: number): boolean {
@@ -352,12 +388,7 @@ export class PeerPolicyCoordinator {
     }
 
     private nextActionAt(wall: number): number {
-        const attempts = this.document.state.attempts.filter(attempt => wall - attempt.time < 3_600).sort((a, b) => a.time - b.time);
-        let next = attempts.length ? attempts[attempts.length - 1]!.time + POLICY_LIMITS.attempt_interval_seconds : wall;
-        if (attempts.length >= POLICY_LIMITS.max_attempts_per_hour) {
-            next = Math.max(next, attempts[attempts.length - POLICY_LIMITS.max_attempts_per_hour]!.time + 3_600);
-        }
-        return Math.max(wall, next);
+        return nextPolicyAttemptAt(this.document.state.attempts, wall);
     }
 
     private event(kind: PolicyEventKind, peerId: number | null, address: string | null, reason: string, id: string = randomUUID()): PolicyEvent {
@@ -368,15 +399,29 @@ export class PeerPolicyCoordinator {
         this.writeState({ ...this.document.state, events: [...this.document.state.events, this.event(kind, peerId, address, reason)], last_wall_time: this.wallClock() });
     }
 
-    private reconcileDepartures(wall: number): void {
+    private reconcileDepartures(arrivals: PeerInfo[], wall: number): void {
         const departed = this.document.state.attempts.filter(attempt => !attempt.departure_observed &&
             attempt.identity.startsWith(`${this.epoch}:`) && !this.latestIdentities.has(attempt.identity.slice(this.epoch.length + 1)));
-        if (!departed.length) return;
         const ids = new Set(departed.map(item => item.id));
+        const hosts = new Map<string, Set<string>>();
+        for (const peer of arrivals) {
+            if (peer.inbound !== true || !Number.isSafeInteger(peer.id) || !Number.isSafeInteger(peer.conntime) || peer.conntime! <= 0) continue;
+            const host = normalizePolicyAddress(peer.addr);
+            if (!host) continue;
+            const identities = hosts.get(host) ?? new Set<string>();
+            identities.add(policyIdentity(peer)); hosts.set(host, identities);
+        }
+        const returned = this.document.state.attempts.filter(attempt => attempt.identity.startsWith(`${this.epoch}:`) && !attempt.return_observed && (attempt.departure_observed || ids.has(attempt.id)) &&
+            [...(hosts.get(attempt.address) ?? [])].some(identity => identity !== attempt.identity.slice(attempt.identity.indexOf(':') + 1)));
+        if (!departed.length && !returned.length) return;
+        const returnedIds = new Set(returned.map(attempt => attempt.id));
         this.writeState({ ...this.document.state,
-            attempts: this.document.state.attempts.map(attempt => ids.has(attempt.id) ? { ...attempt, departure_observed: true } : attempt),
+            attempts: this.document.state.attempts.map(attempt => ({ ...attempt,
+                ...(ids.has(attempt.id) ? { departure_observed: true } : {}), ...(returnedIds.has(attempt.id) ? { return_observed: true } : {}) })),
             events: [...this.document.state.events, ...departed.map(attempt => this.event('departure_observed', attempt.peer_id, attempt.address,
-                'Departure observed after request; its cause is not established.'))], last_wall_time: wall,
+                'Departure observed after request; its cause is not established.')),
+                ...returned.map(attempt => this.event('same_host_return', attempt.peer_id, attempt.address,
+                    'A different connection was observed at the same host after departure; shared addresses do not establish peer identity.'))], last_wall_time: wall,
         });
     }
 
@@ -385,7 +430,7 @@ export class PeerPolicyCoordinator {
         const attempts = state.attempts.filter(item => wall - item.time < RETENTION);
         const events = state.events.filter(item => wall - item.time < RETENTION).slice(-MAX_EVENTS);
         if (attempts.length !== state.attempts.length || events.length !== state.events.length) {
-            this.writeState({ attempts, events, last_wall_time: wall });
+            this.writeState({ ...state, attempts, events, last_wall_time: wall });
         }
     }
 

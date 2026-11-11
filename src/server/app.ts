@@ -39,7 +39,7 @@ export interface ApplicationRuntime {
     geoDatabase: Pick<AppRuntime['geoDatabase'], 'update'>;
     rpc: Pick<AppRuntime['rpc'], 'connectionInfo'>;
     wallets: Pick<AppRuntime['wallets'], 'preferences' | 'setPreferences' | 'snapshot'>;
-    peerPolicy: Pick<AppRuntime['peerPolicy'], 'snapshot' | 'configure'>;
+    peerPolicy: Pick<AppRuntime['peerPolicy'], 'snapshot' | 'status' | 'configure'>;
 }
 const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const mime: Record<string, string> = { '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.html': 'text/html' };
@@ -102,6 +102,7 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
         'POST /api/wallets/preferences': async (_query, req, _res, signal) => runtime.wallets.setPreferences(await readJsonBody(req), signal),
         'GET /api/wallets': (_query, _req, _res, signal) => runtime.wallets.snapshot(signal),
         'GET /api/peer-policy': () => runtime.peerPolicy.snapshot(),
+        'GET /api/peer-policy/status': () => runtime.peerPolicy.status(),
         'POST /api/peer-policy': async (_query, req, _res, signal) => {
             const payload = await readJsonBody(req);
             signal.throwIfAborted();
@@ -167,7 +168,7 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
         try {
             const url = new URL(req.url || '/', 'http://localhost');
             const method = req.method === 'HEAD' ? 'GET' : req.method;
-            policyRequest = url.pathname === '/api/peer-policy';
+            policyRequest = url.pathname === '/api/peer-policy' || url.pathname === '/api/peer-policy/status';
             managementRequest = url.pathname === '/api/wallets' || url.pathname.startsWith('/api/wallets/') || policyRequest;
             const credentialBearing = req.headers.authorization !== undefined || sessions.hasCredentials(req);
             const logout = ['/api/view/logout', '/api/admin/logout'].includes(url.pathname);

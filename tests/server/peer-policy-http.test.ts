@@ -30,20 +30,43 @@ function privateHeaders(response: Response) {
 test('policy reads, HEAD, and writes require management before parsing in every viewing mode', async t => {
     for (const mode of ['public', 'authenticated', 'redacted'] as const) {
         const { base, runtime } = await application(t, mode);
-        const inspect = t.mock.method(runtime.peerPolicy, 'snapshot'), save = t.mock.method(runtime.peerPolicy, 'configure');
+        const inspect = t.mock.method(runtime.peerPolicy, 'snapshot'), status = t.mock.method(runtime.peerPolicy, 'status'), save = t.mock.method(runtime.peerPolicy, 'configure');
         for (const token of [null, VIEW_TOKEN]) {
             const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
             for (const method of ['GET', 'HEAD', 'POST']) {
                 const response = await fetch(base + '/api/peer-policy', { method, headers, ...(method === 'POST' ? { body: '{' } : {}) });
                 assert.equal(response.status, 401); privateHeaders(response);
             }
+            for (const method of ['GET', 'HEAD']) {
+                const response = await fetch(base + '/api/peer-policy/status', { method, headers });
+                assert.equal(response.status, 401); privateHeaders(response);
+            }
         }
-        assert.equal(inspect.mock.callCount(), 0); assert.equal(save.mock.callCount(), 0);
+        assert.equal(inspect.mock.callCount(), 0); assert.equal(status.mock.callCount(), 0); assert.equal(save.mock.callCount(), 0);
         for (const method of ['GET', 'HEAD']) {
             const response = await fetch(base + '/api/peer-policy', { method, headers: { Authorization: `Bearer ${FIXTURE_ADMIN_TOKEN}` } });
             assert.equal(response.status, 200); privateHeaders(response);
         }
     }
+});
+
+test('compact policy status stays private and never builds connection evidence or returns addresses', async t => {
+    const { base, runtime, login } = await application(t);
+    const inspect = t.mock.method(runtime.peerPolicy, 'snapshot', () => { throw new Error('Full policy inspection must not run'); });
+    const cookie = await login('admin');
+    for (const headers of [new Headers({ Cookie: cookie }), new Headers({ Authorization: `Bearer ${FIXTURE_ADMIN_TOKEN}` })]) {
+        const response = await fetch(base + '/api/peer-policy/status', { headers });
+        assert.equal(response.status, 200); privateHeaders(response);
+        const body = await response.json();
+        assert.deepEqual(Object.keys(body).sort(), ['available', 'effective_state', 'mode', 'reason', 'revision']);
+        assert.equal(body.mode, 'off'); assert.equal(body.effective_state, 'disabled');
+        const head = await fetch(base + '/api/peer-policy/status', { method: 'HEAD', headers });
+        assert.equal(head.status, 200); privateHeaders(head); assert.equal(await head.text(), '');
+    }
+    assert.equal(inspect.mock.callCount(), 0);
+    await fetch(base + '/api/admin/logout', { method: 'POST', headers: { Cookie: cookie, Origin: base } });
+    const revoked = await fetch(base + '/api/peer-policy/status', { headers: { Cookie: cookie } });
+    assert.equal(revoked.status, 401); privateHeaders(revoked);
 });
 
 test('management cookies authorize policy updates, enforce Origin, and reject stale revisions', async t => {
@@ -95,6 +118,10 @@ test('policy failures are private and sanitized; ordinary monitoring never expos
     const response = await fetch(base + '/api/peer-policy', { headers: { Authorization: `Bearer ${FIXTURE_ADMIN_TOKEN}` } });
     assert.equal(response.status, 503); privateHeaders(response);
     const text = await response.text(); assert.match(text, /peer_policy_unavailable/); assert.doesNotMatch(text, /secret-peer|192\.0\.2|private-policy-path/);
+    t.mock.method(runtime.peerPolicy, 'status', () => { throw new Error('secret-peer 192.0.2.12 private-policy-path'); });
+    const statusFailure = await fetch(base + '/api/peer-policy/status', { headers: { Authorization: `Bearer ${FIXTURE_ADMIN_TOKEN}` } });
+    assert.equal(statusFailure.status, 503); privateHeaders(statusFailure);
+    assert.doesNotMatch(await statusFailure.text(), /secret-peer|192\.0\.2|private-policy-path/);
     for (const path of ['/api/config', '/api/info', '/api/peers', '/api/view/aggregate']) {
         const ordinary = await fetch(base + path);
         assert.doesNotMatch(await ordinary.text(), /keep_addresses|listener_allowance|would_disconnect|peer-policy\.json/);

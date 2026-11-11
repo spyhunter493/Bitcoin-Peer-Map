@@ -2,7 +2,8 @@ import { isIP } from 'node:net';
 import { HttpError } from '../http.ts';
 import { object } from '../types.ts';
 import type { PeerInfo } from '../rpc-types.ts';
-import { POLICY_LIMITS, type PolicyConfig, type PolicyEvaluation, type PolicyPeer } from './types.ts';
+import { buildPolicyProposal } from './proposal.ts';
+import { POLICY_LIMITS, type PolicyAttempt, type PolicyConfig, type PolicyEvaluation, type PolicyPeer, type PolicyProposal } from './types.ts';
 
 const MAX_SESSIONS = 2000;
 const BLOCK_SERVICES = 0x401n;
@@ -121,6 +122,9 @@ export class ListenerObserver {
     continuousSince: number | null = null;
     private lastWallSeconds: number | null = null;
     private frames = new Map<string, Frame>();
+    proposal(config: PolicyConfig, evaluation: PolicyEvaluation, wall: number, attempts: readonly PolicyAttempt[], reason: string | null): PolicyProposal {
+        return buildPolicyProposal([...this.frames.values()].map(row => row.peer), evaluation, config, attempts, wall, reason);
+    }
     reset(): void { this.frames.clear(); this.lastObservedAt = null; this.continuousSince = null; this.lastWallSeconds = null; }
     observe(peers: PeerInfo[], observedAt: number, wallSeconds: number): void {
         if (!Array.isArray(peers) || peers.length > MAX_SESSIONS || !validTime(observedAt) || !validTime(wallSeconds)) {
@@ -153,7 +157,10 @@ export class ListenerObserver {
     }
     inspect(config: PolicyConfig, now: number, wallSeconds: number): PolicyEvaluation {
         const frames = [...this.frames.values()];
-        const groups = new Set(frames.map(row => row.peer.mapped_as).filter((value): value is number => nonnegativeInteger(value) && value > 0));
+        const groups = new Map<number, number>();
+        for (const row of frames) if (nonnegativeInteger(row.peer.mapped_as) && row.peer.mapped_as > 0) {
+            groups.set(row.peer.mapped_as, (groups.get(row.peer.mapped_as) ?? 0) + 1);
+        }
         const networks = new Map<string, number>();
         for (const row of frames) if (row.peer.network && NETWORKS.has(row.peer.network)) networks.set(row.peer.network, (networks.get(row.peer.network) ?? 0) + 1);
         const outbound = frames.filter(row => row.peer.inbound === false && ['manual', 'outbound-full-relay', 'block-relay-only'].includes(row.peer.connection_type ?? '') && ((services(row.peer) ?? 0n) & BLOCK_SERVICES)).length;
@@ -184,8 +191,8 @@ export class ListenerObserver {
             if ((networks.get(view.network) ?? 0) <= 1) return protect('Last connection on this transport network');
             const candidateAs = peer.mapped_as;
             if (nonnegativeInteger(candidateAs) && candidateAs > 0) {
-                const remaining = new Set(frames.filter(other => other !== row).map(other => other.peer.mapped_as).filter((value): value is number => nonnegativeInteger(value) && value > 0));
-                if (remaining.size < Math.min(2, groups.size)) return protect('AS diversity floor prevents removal');
+                const remaining = groups.size - (groups.get(candidateAs) === 1 ? 1 : 0);
+                if (remaining < Math.min(2, groups.size)) return protect('AS diversity floor prevents removal');
             }
             view.status = 'candidate'; view.reason = 'No block-serving services; only listener traffic observed through the quiet window';
             return { row, view };

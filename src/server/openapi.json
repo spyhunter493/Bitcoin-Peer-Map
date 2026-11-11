@@ -2046,7 +2046,7 @@
             "$ref": "#/components/responses/AdminRateLimited"
           },
           "default": {
-            "description": "Wallet availability, preference validation, or HTTP request failure.",
+            "description": "Policy availability, validation, or HTTP request failure.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2060,7 +2060,7 @@
       "post": {
         "summary": "Configure Inbound Policy",
         "operationId": "configure_peer_policy",
-        "description": "Apply the complete policy configuration with an expected revision. Off is the default. Automatic requires a fresh Preview trial; explicit activation grants browser-independent node automation. Origin protection and administrator authentication apply.",
+        "description": "Apply the complete policy configuration with an expected revision. Off is the default. Automatic requires a fresh Preview trial; explicit activation grants browser-independent node automation. Origin protection and administrator authentication apply. A persistent failure pause requires an explicit switch to Preview followed by a fresh trial; changing other settings or restarting does not resume automation.",
         "security": [
           {
             "AdminToken": []
@@ -2090,7 +2090,7 @@
             "$ref": "#/components/responses/AdminRateLimited"
           },
           "default": {
-            "description": "Wallet availability, preference validation, or HTTP request failure.",
+            "description": "Policy availability, validation, or HTTP request failure.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2116,6 +2116,52 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/PeerPolicyRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/peer-policy/status": {
+      "get": {
+        "summary": "Inspect Compact Inbound Policy Status",
+        "operationId": "get_peer_policy_status",
+        "description": "Administrator-only toolbar status, including on public dashboards. Private, no-store responses. Contains no connection evidence or addresses; reads never inspect the peer set, collect evidence, or contact RPC. HEAD has identical authentication rules.",
+        "security": [
+          {
+            "AdminToken": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful administrator-only response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PeerPolicyStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/AdminRateLimited"
+          },
+          "default": {
+            "description": "Policy availability or HTTP request failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
               }
             }
           }
@@ -4787,7 +4833,9 @@
               "failed",
               "uncertain",
               "departure_observed",
-              "skipped"
+              "skipped",
+              "same_host_return",
+              "paused"
             ]
           },
           "reason": {
@@ -4810,7 +4858,9 @@
           "limits",
           "peers",
           "events",
-          "as_diversity_available"
+          "as_diversity_available",
+          "proposal",
+          "results"
         ],
         "properties": {
           "available": {
@@ -4929,6 +4979,12 @@
           },
           "as_diversity_available": {
             "type": "boolean"
+          },
+          "proposal": {
+            "$ref": "#/components/schemas/PeerPolicyProposal"
+          },
+          "results": {
+            "$ref": "#/components/schemas/PeerPolicyResults"
           }
         }
       },
@@ -4948,6 +5004,161 @@
             "$ref": "#/components/schemas/PeerPolicyConfig"
           }
         }
+      },
+      "PeerPolicyProposalEntry": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "peer_id",
+          "address",
+          "action",
+          "order",
+          "proposed_at",
+          "reason"
+        ],
+        "properties": {
+          "peer_id": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "address": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "planned",
+              "retained",
+              "blocked"
+            ]
+          },
+          "order": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "proposed_at": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "PeerPolicyProposal": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "conditional",
+          "planned",
+          "retained",
+          "blocked",
+          "entries"
+        ],
+        "properties": {
+          "conditional": {
+            "type": "boolean",
+            "const": true
+          },
+          "planned": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "retained": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "blocked": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "entries": {
+            "type": "array",
+            "maxItems": 2000,
+            "items": {
+              "$ref": "#/components/schemas/PeerPolicyProposalEntry"
+            }
+          }
+        },
+        "description": "Read-only conditional proposal for observed inbound connections. Proposed times and order assume no intervening activity, new peers, or health changes; each real request still requires fresh validation. Connection evidence is joined from peers by peer_id and address."
+      },
+      "PeerPolicyResults": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "window_seconds",
+          "accepted_requests",
+          "observed_departures",
+          "same_host_returns"
+        ],
+        "properties": {
+          "window_seconds": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Retention window in seconds; currently seven days (604800)."
+          },
+          "accepted_requests": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "observed_departures": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "same_host_returns": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "description": "Summary of retained attempts in the last seven days. Accepted requests count RPC acceptances; departure and return totals count distinct attempted connection identities. A later same-host connection may be another device behind a shared address and does not establish peer identity or causation."
+      },
+      "PeerPolicyStatus": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "available",
+          "revision",
+          "mode",
+          "effective_state",
+          "reason"
+        ],
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "off",
+              "preview",
+              "automatic"
+            ]
+          },
+          "effective_state": {
+            "type": "string",
+            "enum": [
+              "disabled",
+              "observing",
+              "preview",
+              "running",
+              "paused"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "description": "Administrator-only compact state for the policy toolbar. Contains no peer addresses, Keep list, connection evidence, or events. Reading it never inspects the peer set or triggers RPC."
       }
     },
     "responses": {

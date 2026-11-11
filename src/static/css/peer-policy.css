@@ -1,4 +1,9 @@
 /* Administrator-only inbound-policy dialog. */
+.peer-policy-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 2px 12px 5px; cursor: default; }
+.peer-policy-toolbar[hidden] { display: none; }
+#peer-policy-badge { color: var(--text-secondary); font-size: 11px; }
+#peer-policy-badge[data-state="running"] { color: var(--accent); }
+#peer-policy-badge[data-state="paused"], #peer-policy-badge[data-state="unknown"] { color: var(--warn); }
 .peer-policy-body { overflow-wrap: anywhere; }
 .peer-policy-body .dialog-btn, #peer-policy-confirm .dialog-btn { color: var(--text-secondary); background: rgba(88, 166, 255, .04); border: 1px solid var(--accent-dim); }
 .peer-policy-body .dialog-btn:hover:not(:disabled), #peer-policy-confirm .dialog-btn:hover:not(:disabled) { color: var(--text-primary); border-color: var(--accent); background: rgba(88, 166, 255, .12); }
@@ -17,7 +22,20 @@
 .peer-policy-counts strong { margin-left: 5px; font-family: var(--font-data); color: var(--text-primary); }
 .peer-policy-form { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 12px 0; }
 .peer-policy-form label { color: var(--text-secondary); }
-.peer-policy-form input { min-width: 0; color: var(--text-primary); border: 1px solid var(--accent-dim); background: var(--bg-deep); padding: 7px 9px; border-radius: var(--radius); }
+.peer-policy-form input, .peer-policy-filters input, .peer-policy-filters select { min-width: 0; color: var(--text-primary); border: 1px solid var(--accent-dim); background: var(--bg-deep); padding: 7px 9px; border-radius: var(--radius); }
+.peer-policy-filters { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0; }
+.peer-policy-filters label { display: grid; gap: 5px; flex: 1 1 120px; min-width: 0; color: var(--text-secondary); font-size: 12px; }
+.peer-policy-filters label:first-child { flex-basis: 200px; }
+.peer-policy-filters input, .peer-policy-filters select { width: 100%; box-sizing: border-box; }
+.peer-policy-pagination { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; color: var(--text-secondary); }
+#peer-policy-page-count { flex: 1 1 200px; }
+.peer-policy-proposed { color: var(--accent); }
+.peer-policy-evidence { margin: 10px 0; font-size: 12px; }
+.peer-policy-evidence summary { cursor: pointer; color: var(--text-secondary); }
+.peer-policy-evidence summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.peer-policy-evidence dl { display: grid; grid-template-columns: minmax(110px, 1fr) minmax(0, 2fr); gap: 6px 12px; margin: 10px 0; }
+.peer-policy-evidence dt { color: var(--text-muted); }
+.peer-policy-evidence dd { margin: 0; }
 #peer-policy-allowance { width: 74px; }
 #peer-policy-keep-address { flex: 1 1 210px; }
 .peer-policy-form input:focus-visible, .peer-policy-body button:focus-visible, #peer-policy-confirm button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }

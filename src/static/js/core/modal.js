@@ -124,6 +124,7 @@ function open(options) {
         contentHtml = '',
         ariaLabel,
         initialFocusSelector,
+        closeOnBackdrop = true,
         onClose,
     } = options;
 
@@ -245,7 +246,7 @@ function open(options) {
     document.addEventListener('keydown', handleKeydown, true);
     document.addEventListener('focusin', handleFocusin);
     overlay.addEventListener('click', (event) => {
-        if (modalStack[modalStack.length - 1] === controller && event.target === overlay) close();
+        if (closeOnBackdrop && modalStack[modalStack.length - 1] === controller && event.target === overlay) close();
     });
 
     const closeButton = showHeader ? query(`#${closeId}`, overlay) : null;

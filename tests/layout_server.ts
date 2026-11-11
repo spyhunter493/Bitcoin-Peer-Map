@@ -80,11 +80,16 @@ export class FixtureRuntime implements ApplicationRuntime {
             ] }),
     };
     peerPolicy = {
+        status: () => ({ available: Boolean(this.settings.admin_token), revision: this.policyRevision,
+            mode: this.policyConfig.mode, effective_state: this.policyConfig.mode === 'off' ? 'disabled' as const : 'observing' as const,
+            reason: this.policyConfig.mode === 'off' ? 'Inbound policy is off.' : 'Collecting fresh observations.' }),
         snapshot: (): PolicySnapshot => ({ available: Boolean(this.settings.admin_token), config: structuredClone(this.policyConfig), revision: this.policyRevision,
             effective_state: this.policyConfig.mode === 'off' ? 'disabled' : 'observing',
             reason: this.policyConfig.mode === 'off' ? 'Inbound policy is off.' : 'Collecting fresh observations.',
             preview_remaining_seconds: 1800, next_action_at: null, counts: { inbound: 0, candidates: 0, exempt: 0 },
-            limits: POLICY_LIMITS, peers: [], events: [], as_diversity_available: false }),
+            limits: POLICY_LIMITS, peers: [], events: [], as_diversity_available: false,
+            proposal: { conditional: true, planned: 0, retained: 0, blocked: 0, entries: [] },
+            results: { window_seconds: 604800, accepted_requests: 0, observed_departures: 0, same_host_returns: 0 } }),
         configure: (payload: unknown): PolicySnapshot => {
             if (!object(payload) || Object.keys(payload).length !== 2 || !Number.isSafeInteger(payload.expected_revision)
                 || !object(payload.config)) throw new HttpError(422, 'Invalid inbound policy configuration.', 'peer_policy_invalid');

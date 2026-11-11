@@ -7,6 +7,7 @@ import { required } from './dom.js';
 export function create() {
     let token = '';
     let authenticated = false, available = false, revision = 0;
+    let suspended = false;
     let access = new AbortController();
     access.abort();
     /** @type {Set<(state: import('../types').ManagementState) => void>} */
@@ -15,6 +16,7 @@ export function create() {
     let expiryTimer = null;
     /** @type {Promise<boolean> | null} */
     let validating = null;
+    let validatingRevision = -1;
     /** @type {BroadcastChannel | null} */
     let channel = null;
     let remoteLockPending = false;
@@ -32,8 +34,9 @@ export function create() {
     /** @type {HTMLButtonElement | null} */
     let lockButton = null;
 
+    /** @returns {import('../types').ManagementState} */
     function getState() {
-        return Object.freeze({ authenticated, available, revision, signal: access.signal });
+        return Object.freeze({ authenticated, suspended, available, revision, signal: access.signal });
     }
 
     function publish() {
@@ -50,17 +53,20 @@ export function create() {
         return () => { listeners.delete(listener); };
     }
 
-    function endGeneration() {
-        if (expiryTimer !== null) clearTimeout(expiryTimer);
-        expiryTimer = null;
+    function endGeneration(preserveExpiry = false) {
+        if (!preserveExpiry) {
+            if (expiryTimer !== null) clearTimeout(expiryTimer);
+            expiryTimer = null;
+        }
         access.abort(cancelled());
         access = new AbortController();
         revision++;
     }
 
-    /** @param {'management-disabled'} [reason] */
+    /** @param {'management-disabled' | 'blur' | 'hidden'} [reason] */
     function clearToken(reason) {
-        endGeneration();
+        suspended = reason === 'blur' || reason === 'hidden';
+        endGeneration(suspended);
         token = '';
         authenticated = false;
         if (reason === 'management-disabled') available = false;
@@ -176,6 +182,7 @@ export function create() {
     function restore(restored, elapsedMs = 0) {
         if (locking || lockFailure || remoteLockPending) return;
         endGeneration();
+        suspended = false;
         token = '';
         authenticated = typeof restored === 'boolean' ? restored : Boolean(restored.management_authenticated);
         available = typeof restored === 'boolean' ? true : restored.management_available !== false;
@@ -186,11 +193,20 @@ export function create() {
         publish();
     }
 
+    /** @returns {Promise<boolean>} */
     async function revalidate() {
         if (locking || lockFailure || remoteLockPending) return false;
-        if (validating) return validating;
-        clearToken();
+        if (validating) {
+            const current = revision;
+            const belongsToCurrentGeneration = validatingRevision === current;
+            const result = await validating;
+            if (belongsToCurrentGeneration) return result;
+            if (current !== revision || globalThis.document?.hidden) return false;
+            return revalidate();
+        }
+        clearToken(suspended ? 'blur' : undefined);
         const current = revision, started = Date.now();
+        validatingRevision = current;
         validating = (async () => {
             try {
                 /** @type {import('../types').ManagementAccess} */
@@ -198,7 +214,7 @@ export function create() {
                 if (revision !== current || locking || lockFailure || remoteLockPending) return false;
                 restore(result, Date.now() - started);
                 return authenticated;
-            } catch { return false; }
+            } catch { if (revision === current) clearToken(); return false; }
             finally { validating = null; }
         })();
         return validating;
@@ -332,10 +348,10 @@ export function create() {
             if (!event.persisted) return;
             void revalidate();
         });
-        globalThis.addEventListener('blur', () => { if (authenticated) clearToken(); });
+        globalThis.addEventListener('blur', () => { if (authenticated || suspended || validating) clearToken('blur'); });
         globalThis.addEventListener('focus', () => { if (!document.hidden && available) void revalidate(); });
         document.addEventListener('visibilitychange', () => {
-            if (document.hidden) { if (authenticated) clearToken(); }
+            if (document.hidden) { if (authenticated || suspended || validating) clearToken('hidden'); }
             else if (available) void revalidate();
         });
         if (typeof BroadcastChannel === 'function') {

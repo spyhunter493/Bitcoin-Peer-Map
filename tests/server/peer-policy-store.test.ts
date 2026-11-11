@@ -95,3 +95,35 @@ test('an atomic write failure preserves the prior file and makes the instance un
     assert.equal(statSync(store.path).isDirectory(), true);
     assert.deepEqual(readdirSync(dir), ['peer-policy.json']);
 });
+
+test('failure pauses and observed-return flags survive restart and Preview clears only the guard atomically', t => {
+    const { dir, store } = fixture(t);
+    store.configure({ ...CONFIG, mode: 'automatic' }, 0);
+    const saved = state();
+    saved.attempts[0]!.departure_observed = true;
+    saved.attempts[0]!.return_observed = true;
+    saved.failure_guard = { consecutive_failures: 3, paused: true, reason: 'Paused after definite failures.' };
+    store.updateState(saved);
+    const reopened = new PeerPolicyStore(dir, 'synthetic-node-main');
+    assert.deepEqual(reopened.snapshot(), store.snapshot());
+    const stateBefore = reopened.snapshot().state;
+    reopened.configure(CONFIG, 1, { ...stateBefore, failure_guard: { consecutive_failures: 0, paused: false, reason: null } });
+    const restored = new PeerPolicyStore(dir, 'synthetic-node-main').snapshot();
+    assert.equal(restored.config.mode, 'preview');
+    assert.deepEqual(restored.state.attempts, stateBefore.attempts);
+    assert.deepEqual(restored.state.failure_guard, { consecutive_failures: 0, paused: false, reason: null });
+    assert.equal(statSync(reopened.path).mode & 0o777, 0o600);
+});
+
+test('malformed failure guards or return observations cannot silently clear a persisted pause', t => {
+    for (const change of [
+        { failure_guard: { consecutive_failures: 4, paused: true, reason: 'Too many' } },
+        { failure_guard: { consecutive_failures: 1, paused: true, reason: null } },
+        { failure_guard: { consecutive_failures: 1, paused: false, reason: 'Contradictory' } },
+        { attempts: [{ ...state().attempts[0], return_observed: true }] },
+    ]) {
+        const { store } = fixture(t); store.configure(CONFIG, 0);
+        assert.throws(() => store.updateState({ ...state(), ...change } as PolicyState), status(503));
+        assert.throws(() => store.snapshot(), status(503));
+    }
+});

@@ -6,7 +6,7 @@ import { PeerPolicyCoordinator } from '../../src/server/peer-policy/coordinator.
 import { PeerPolicyStore } from '../../src/server/peer-policy/store.ts';
 import { parsePeerInfo, type PeerInfo } from '../../src/server/rpc-types.ts';
 import { HttpError } from '../../src/server/http.ts';
-import { RpcError, RpcTransportError } from '../../src/server/rpc.ts';
+import { RpcAuthenticationError, RpcError, RpcTransportError } from '../../src/server/rpc.ts';
 import { FakeRpc, deferred, flush, temporaryDirectory } from './helpers.ts';
 
 const WALL = 1_800_000_000;
@@ -288,6 +288,125 @@ test('failed or uncertain RPC outcomes retain limits and are never retried blind
         assert.equal(f.rpc.count('disconnectnode'), 1);
         assert(f.coordinator.snapshot().next_action_at! > WALL + f.now / 1_000);
     }
+});
+
+test('definite authentication or unsupported disconnect RPC pauses immediately with the reservation retained', async t => {
+    for (const error of [new RpcAuthenticationError('synthetic authorization failure'), new RpcError('synthetic unsupported method', -32601)]) {
+        const f = fixture(t, { candidates: 4 });
+        f.configure('preview'); await f.warm(); f.configure('automatic');
+        f.rpc.values.disconnectnode = () => { throw error; };
+        await f.step(60);
+        assert.equal(f.rpc.count('disconnectnode'), 1);
+        assert.equal(f.coordinator.status().effective_state, 'paused');
+        assert.equal(f.store.snapshot().state.attempts.length, 1);
+        assert.equal(f.store.snapshot().state.failure_guard?.paused, true);
+        await f.step(600);
+        assert.equal(f.rpc.count('disconnectnode'), 1);
+        assert.throws(() => f.configure('automatic'), (failure: unknown) => failure instanceof HttpError && failure.status === 409);
+    }
+});
+
+test('three definite failures pause durably; only explicit fresh Preview resumes without clearing reservations', async t => {
+    const f = fixture(t, { candidates: 5 });
+    f.configure('preview'); await f.warm(); f.configure('automatic');
+    f.rpc.values.disconnectnode = () => { throw new RpcError('synthetic definite failure', -29); };
+    await f.step(60); await f.step(300); await f.step(300);
+    assert.equal(f.rpc.count('disconnectnode'), 3);
+    assert.equal(f.store.snapshot().state.failure_guard?.consecutive_failures, 3);
+    assert.equal(f.coordinator.status().effective_state, 'paused');
+    const before = f.rpc.calls.length;
+    const restarted = new PeerPolicyCoordinator(new PeerPolicyStore(f.directory, 'synthetic-main'), {
+        rpc: f.rpc, refreshPeers: async () => true, managementEnabled: true, chain: 'main',
+        clock: () => f.now, wallClock: () => WALL + f.now / 1000,
+    });
+    assert.equal(restarted.status().effective_state, 'paused');
+    await restarted.evaluate();
+    assert.equal(f.rpc.calls.length, before, 'durable pause does not poll or dispatch');
+    f.configure('off');
+    assert.throws(() => f.configure('automatic'), (error: unknown) => error instanceof HttpError && error.status === 409);
+    f.configure('preview');
+    assert.equal(f.coordinator.snapshot().preview_remaining_seconds, 1800);
+    assert.equal(f.store.snapshot().state.failure_guard?.paused, false);
+    assert.equal(f.store.snapshot().state.attempts.length, 3);
+    assert.throws(() => f.configure('automatic'), (error: unknown) => error instanceof HttpError && error.status === 409);
+    await f.warm();
+    f.configure('automatic');
+    assert.equal(f.coordinator.status().mode, 'automatic');
+    assert.equal(f.store.snapshot().state.attempts.length, 3);
+});
+
+test('uncertain outcomes do not count as definite failures, and an accepted request clears a definite failure streak', async t => {
+    const uncertain = fixture(t, { candidates: 4 });
+    uncertain.configure('preview'); await uncertain.warm(); uncertain.configure('automatic');
+    uncertain.rpc.values.disconnectnode = () => { throw new RpcTransportError('synthetic timeout'); };
+    await uncertain.step(60); await uncertain.step(300); await uncertain.step(300);
+    assert.equal(uncertain.rpc.count('disconnectnode'), 3);
+    assert.equal(uncertain.store.snapshot().state.failure_guard?.consecutive_failures, 0);
+    assert.equal(uncertain.store.snapshot().state.failure_guard?.paused, false);
+    assert(uncertain.store.snapshot().state.attempts.every(attempt => attempt.outcome === 'uncertain'));
+    const recovered = fixture(t, { candidates: 4 });
+    recovered.configure('preview'); await recovered.warm(); recovered.configure('automatic');
+    recovered.rpc.values.disconnectnode = () => { throw new RpcError('synthetic definite failure', -29); };
+    await recovered.step(60); await recovered.step(300);
+    recovered.rpc.values.disconnectnode = null;
+    await recovered.step(300);
+    assert.equal(recovered.store.snapshot().state.failure_guard?.consecutive_failures, 0);
+    assert.equal(recovered.store.snapshot().state.failure_guard?.paused, false);
+});
+
+test('results distinguish accepted requests, observed departures, and new same-host connections without counting a pre-existing NAT neighbor', async t => {
+    const f = fixture(t, { candidates: 2 });
+    f.peers.find(item => item.id === 31)!.addr = '192.0.2.30:18333';
+    f.configure('preview'); await f.warm(); f.configure('automatic');
+    f.rpc.values.disconnectnode = (params: unknown[]) => { f.peers = f.peers.filter(item => item.id !== params[1]); return null; };
+    await f.step(10);
+    assert.deepEqual(f.coordinator.snapshot().results, { window_seconds: 604800, accepted_requests: 1, observed_departures: 0, same_host_returns: 0 });
+    await f.step(10);
+    assert.equal(f.coordinator.snapshot().results.observed_departures, 1);
+    assert.equal(f.coordinator.snapshot().results.same_host_returns, 0);
+    const reconnected = peer(99);
+    reconnected.addr = '192.0.2.30:28333'; reconnected.conntime = Math.floor(WALL + f.now / 1000);
+    f.peers = [...f.peers, reconnected];
+    await f.step(10);
+    assert.equal(f.coordinator.snapshot().results.same_host_returns, 1);
+    assert.match(f.coordinator.snapshot().events.find(event => event.kind === 'same_host_return')!.reason, /do not establish peer identity/);
+    await f.step(30);
+    assert.equal(f.coordinator.snapshot().events.filter(event => event.kind === 'same_host_return').length, 1);
+    assert.equal(f.coordinator.snapshot().results.same_host_returns, 1);
+    const saved = new PeerPolicyStore(f.directory, 'synthetic-main').snapshot();
+    assert.equal(saved.state.attempts[0]!.return_observed, true);
+});
+
+test('results count distinct attempted connection identities once while retaining every request and reservation', t => {
+    const directory = temporaryDirectory(t), store = new PeerPolicyStore(directory, 'synthetic-main'), rpc = new FakeRpc();
+    const identity = 'epoch:[30,"192.0.2.30:8333",1000,""]';
+    const attempts = Array.from({ length: 3 }, (_, index) => ({
+        id: `attempt-${index}`, time: WALL - 3600 * (index + 1), peer_id: 30, address: '192.0.2.30', identity,
+        outcome: (['succeeded', 'failed', 'uncertain'] as const)[index]!, departure_observed: true, return_observed: true,
+    }));
+    const snapshot = () => new PeerPolicyCoordinator(store, {
+        rpc, refreshPeers: async () => true, managementEnabled: true, chain: 'main', clock: () => 0, wallClock: () => WALL,
+    }).snapshot();
+    store.updateState({ attempts, events: [], last_wall_time: WALL });
+    assert.deepEqual(snapshot().results, { window_seconds: 604800, accepted_requests: 1, observed_departures: 1, same_host_returns: 1 });
+    attempts.push({ ...attempts[0]!, id: 'different-session', identity: 'epoch:[30,"192.0.2.30:8333",2000,""]' });
+    attempts.push({ ...attempts[0]!, id: 'expired-session', identity: 'older-epoch:[31,"192.0.2.31:8333",1000,""]', time: WALL - 604801 });
+    store.updateState({ attempts, events: [], last_wall_time: WALL });
+    assert.deepEqual(snapshot().results, { window_seconds: 604800, accepted_requests: 2, observed_departures: 2, same_host_returns: 2 });
+    assert.equal(store.snapshot().state.attempts.length, 5, 'summary reads do not alter reservation history');
+    assert.equal(rpc.calls.length, 0);
+});
+
+test('compact status does not inspect peers or construct a proposal', async t => {
+    const f = fixture(t);
+    f.configure('preview'); await f.warm();
+    const before = f.store.snapshot(), calls = f.rpc.calls.length;
+    const observer = (f.coordinator as unknown as { observer: { inspect: () => unknown; proposal: () => unknown } }).observer;
+    observer.inspect = () => { throw new Error('status must not inspect'); };
+    observer.proposal = () => { throw new Error('status must not project'); };
+    assert.deepEqual(f.coordinator.status(), { available: true, revision: before.revision, mode: 'preview', effective_state: 'preview', reason: 'Preview only; no node changes.' });
+    assert.equal(f.rpc.calls.length, calls);
+    assert.deepEqual(f.store.snapshot(), before);
 });
 
 test('reservation write failure disables automation before sending any disconnect', async t => {

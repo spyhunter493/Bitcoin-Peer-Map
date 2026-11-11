@@ -5,11 +5,12 @@ export interface AdminAuthentication {
     getRevision?(): number;
     beforeRequest?(): Promise<void>;
     getSignal?(): AbortSignal;
-    clearToken(reason?: 'management-disabled'): void;
+    clearToken(reason?: 'management-disabled' | 'blur' | 'hidden'): void;
     requestToken(signal?: AbortSignal, cooldownDeadline?: number): Promise<string>;
 }
 export interface ManagementState {
     authenticated: boolean;
+    suspended?: boolean;
     available: boolean;
     revision: number;
     signal: AbortSignal;
@@ -372,6 +373,7 @@ export interface ModalOptions {
     contentHtml?: string;
     ariaLabel?: string;
     initialFocusSelector?: string;
+    closeOnBackdrop?: boolean;
     onClose?: () => void;
 }
 export interface ModalController {

@@ -29,28 +29,38 @@ export function parsePolicyConfig(payload: unknown): PolicyConfig {
 }
 function validAddress(value: unknown): value is string { return text(value, 512) && normalizePolicyAddress(value) !== null; }
 function parseState(payload: unknown): PolicyState {
-    if (!object(payload) || !keys(payload, ['attempts', 'events', 'last_wall_time']) || !time(payload.last_wall_time)
+    if (!object(payload) || !keys(payload, ['attempts', 'events', 'last_wall_time'], ['failure_guard']) || !time(payload.last_wall_time)
         || !Array.isArray(payload.attempts) || payload.attempts.length > 2000 || !Array.isArray(payload.events) || payload.events.length > 200) throw unavailable();
     const attempts: PolicyAttempt[] = [];
     const ids = new Set<string>();
     for (const item of payload.attempts) {
-        if (!object(item) || !keys(item, ['id', 'time', 'peer_id', 'address', 'identity', 'outcome'], ['departure_observed'])
+        if (!object(item) || !keys(item, ['id', 'time', 'peer_id', 'address', 'identity', 'outcome'], ['departure_observed', 'return_observed'])
             || !text(item.id, 128) || ids.has(item.id) || !time(item.time) || !nonnegativeInteger(item.peer_id)
             || !validAddress(item.address) || !text(item.identity, 2048) || !['requested', 'succeeded', 'failed', 'uncertain'].includes(item.outcome as string)
-            || (item.departure_observed !== undefined && typeof item.departure_observed !== 'boolean')) throw unavailable();
+            || (item.departure_observed !== undefined && typeof item.departure_observed !== 'boolean')
+            || (item.return_observed !== undefined && (typeof item.return_observed !== 'boolean' || (item.return_observed && item.departure_observed !== true)))) throw unavailable();
         ids.add(item.id);
         attempts.push({ id: item.id, time: item.time, peer_id: item.peer_id, address: normalizePolicyAddress(item.address)!, identity: item.identity,
-            outcome: item.outcome as PolicyAttempt['outcome'], ...(item.departure_observed === undefined ? {} : { departure_observed: item.departure_observed }) });
+            outcome: item.outcome as PolicyAttempt['outcome'], ...(item.departure_observed === undefined ? {} : { departure_observed: item.departure_observed }),
+            ...(item.return_observed === undefined ? {} : { return_observed: item.return_observed }) });
     }
     const events: PolicyEvent[] = [];
     for (const item of payload.events) {
         if (!object(item) || !keys(item, ['id', 'time', 'peer_id', 'address', 'kind', 'reason']) || !text(item.id, 128) || !time(item.time)
             || (item.peer_id !== null && !nonnegativeInteger(item.peer_id)) || (item.address !== null && !validAddress(item.address))
-            || !['would_disconnect', 'requested', 'succeeded', 'failed', 'uncertain', 'departure_observed', 'skipped'].includes(item.kind as string)
+            || !['would_disconnect', 'requested', 'succeeded', 'failed', 'uncertain', 'departure_observed', 'same_host_return', 'paused', 'skipped'].includes(item.kind as string)
             || !text(item.reason, 512)) throw unavailable();
         events.push({ id: item.id, time: item.time, peer_id: item.peer_id, address: item.address === null ? null : normalizePolicyAddress(item.address)!, kind: item.kind as PolicyEvent['kind'], reason: item.reason });
     }
-    return { attempts, events, last_wall_time: payload.last_wall_time };
+    let guard: PolicyState['failure_guard'];
+    if (payload.failure_guard !== undefined) {
+        const value = payload.failure_guard;
+        if (!object(value) || !keys(value, ['consecutive_failures', 'paused', 'reason'])
+            || !nonnegativeInteger(value.consecutive_failures) || value.consecutive_failures > 3 || typeof value.paused !== 'boolean'
+            || (value.reason !== null && !text(value.reason, 512)) || (value.paused ? value.reason === null : value.reason !== null)) throw unavailable();
+        guard = { consecutive_failures: value.consecutive_failures, paused: value.paused, reason: value.reason };
+    }
+    return { attempts, events, last_wall_time: payload.last_wall_time, ...(guard ? { failure_guard: guard } : {}) };
 }
 function initial(scope: string): PolicyDocument {
     return { version: 1, scope, revision: 0, config: structuredClone(DEFAULT_POLICY_CONFIG), state: { attempts: [], events: [], last_wall_time: 0 } };
@@ -83,12 +93,12 @@ export class PeerPolicyStore {
         if (this.failed) throw unavailable();
         return structuredClone(this.value);
     }
-    configure(config: PolicyConfig, expectedRevision: number): void {
+    configure(config: PolicyConfig, expectedRevision: number, state?: PolicyState): void {
         if (this.failed) throw unavailable();
         if (!nonnegativeInteger(expectedRevision) || expectedRevision !== this.value.revision) throw new HttpError(409, 'Inbound peer policy changed. Reload its settings before saving.', 'peer_policy_conflict');
         const validated = parsePolicyConfig(config);
         if (this.value.revision >= Number.MAX_SAFE_INTEGER) { this.failed = true; throw unavailable(); }
-        this.write({ ...this.value, revision: this.value.revision + 1, config: validated });
+        this.write({ ...this.value, revision: this.value.revision + 1, config: validated, ...(state ? { state: parseState(state) } : {}) });
         this.scopeMismatch = false;
     }
     updateState(state: PolicyState): void {

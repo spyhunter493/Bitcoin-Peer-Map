@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ListenerObserver, normalizePolicyAddress, policyIdentity } from '../../src/server/peer-policy/observer.ts';
 import { parsePeerInfo, type PeerInfo } from '../../src/server/rpc-types.ts';
-import type { PolicyConfig } from '../../src/server/peer-policy/types.ts';
+import type { PolicyAttempt, PolicyConfig } from '../../src/server/peer-policy/types.ts';
 
 const WALL = 1_800_000_000;
 const CONFIG: PolicyConfig = { mode: 'preview', listener_allowance: 0, keep_addresses: [] };
@@ -46,6 +46,89 @@ test('a quiet listener qualifies through local observations, with allowance orde
     assert.deepEqual(observer.inspect(CONFIG, now, WALL + now / 1000), all);
     assert.equal(observer.lastObservedAt, now);
     assert.equal(observer.inspect(CONFIG, now + 31_000, WALL + now / 1000 + 31).eligible.length, 0);
+});
+
+test('Preview projects every eligible removal with rolling-hour spacing without advancing observations or reserving attempts', () => {
+    const observer = new ListenerObserver(), peers = healthy(Array.from({ length: 8 }, (_, index) => peer(index + 1)));
+    const now = window(observer, peers), wall = WALL + now / 1000;
+    const evaluation = observer.inspect(CONFIG, now, wall), attempts: PolicyAttempt[] = [];
+    const proposal = observer.proposal(CONFIG, evaluation, wall, attempts, null);
+    assert.equal(proposal.conditional, true);
+    assert.equal(proposal.planned, 8);
+    assert.deepEqual(proposal.entries.filter(entry => entry.action === 'planned').map(entry => entry.proposed_at! - wall), [0, 300, 600, 900, 1200, 1500, 3600, 3900]);
+    assert.equal(proposal.retained, 10, 'block-serving inbound connections remain protected');
+    assert.equal(attempts.length, 0);
+    assert.equal(observer.lastObservedAt, now);
+    assert.deepEqual(observer.proposal(CONFIG, evaluation, wall, attempts, null), proposal);
+});
+
+test('Preview skips a cooling oldest host, respects real reservations, and never selects the listener allowance', () => {
+    const observer = new ListenerObserver(), config = { ...CONFIG, listener_allowance: 1 };
+    const peers = healthy([peer(1, { conntime: WALL - 9000 }), peer(2, { conntime: WALL - 8000 }), peer(3)]);
+    const now = window(observer, peers), wall = WALL + now / 1000;
+    const attempts: PolicyAttempt[] = [{ id: 'old-attempt', time: wall - 100, peer_id: 1, address: '192.0.2.1', identity: 'old', outcome: 'uncertain' }];
+    const proposal = observer.proposal(config, observer.inspect(config, now, wall), wall, attempts, null);
+    const planned = proposal.entries.filter(entry => entry.action === 'planned');
+    assert.deepEqual(planned.map(entry => entry.peer_id), [2, 1]);
+    assert.deepEqual(planned.map(entry => entry.proposed_at! - wall), [200, 1700]);
+    assert.match(planned[1].reason, /same-host cooldown/);
+    assert.equal(proposal.entries.find(entry => entry.peer_id === 3)!.action, 'retained');
+    assert.match(proposal.entries.find(entry => entry.peer_id === 3)!.reason, /allowance/);
+});
+
+test('Preview recomputes transport and AS floors after each projected departure', () => {
+    const onion = (letter: string) => `${letter.repeat(56)}.onion:8333`;
+    const targets = [peer(1, { addr: onion('a'), network: 'onion', mapped_as: 999 }), peer(2, { addr: onion('b'), network: 'onion', mapped_as: 999 })];
+    const peers = healthy(targets).map(row => row.id > 2 ? { ...row, mapped_as: 1 } : row);
+    const observer = new ListenerObserver(), now = window(observer, peers), wall = WALL + now / 1000;
+    const evaluation = observer.inspect(CONFIG, now, wall);
+    assert.equal(evaluation.eligible.length, 2, 'both are individually removable before projecting a departure');
+    const proposal = observer.proposal(CONFIG, evaluation, wall, [], null);
+    assert.equal(proposal.planned, 1);
+    assert.equal(proposal.entries.find(entry => entry.peer_id === 2)!.action, 'blocked');
+    assert.match(proposal.entries.find(entry => entry.peer_id === 2)!.reason, /transport/);
+    const sameTransport = peers.map(row => row.id <= 2 ? { ...row, addr: `192.0.2.${row.id}:8333`, network: 'ipv4' } : row);
+    const asObserver = new ListenerObserver(), at = window(asObserver, sameTransport);
+    const asPlan = asObserver.proposal(CONFIG, asObserver.inspect(CONFIG, at, WALL + at / 1000), WALL + at / 1000, [], null);
+    assert.equal(asPlan.planned, 1);
+    assert.match(asPlan.entries.find(entry => entry.peer_id === 2)!.reason, /AS diversity/);
+});
+
+test('Preview preserves the allowance when excess peers share a cooling host and when a protected peer changes the allowance boundary', () => {
+    const config = { ...CONFIG, listener_allowance: 1 }, observer = new ListenerObserver();
+    const peers = healthy([peer(1, { conntime: WALL - 9000 }), peer(2, { addr: '192.0.2.1:18333', conntime: WALL - 8000 }), peer(3)]);
+    const now = window(observer, peers), wall = WALL + now / 1000;
+    const attempts: PolicyAttempt[] = [{ id: 'cooling', time: wall - 100, peer_id: 1, address: '192.0.2.1', identity: 'old', outcome: 'failed' }];
+    const proposal = observer.proposal(config, observer.inspect(config, now, wall), wall, attempts, null);
+    assert.deepEqual(proposal.entries.filter(entry => entry.action === 'planned').map(entry => entry.peer_id), [1, 2]);
+    assert.deepEqual(proposal.entries.filter(entry => entry.action === 'planned').map(entry => entry.proposed_at! - wall), [1700, 3500]);
+    assert.equal(proposal.entries.find(entry => entry.peer_id === 3)!.action, 'retained', 'a ready younger peer cannot replace reserved excess peers');
+    const asPeers = healthy([peer(1, { conntime: WALL - 9000, mapped_as: 999 }), peer(2, { conntime: WALL - 8000, mapped_as: 1 }), peer(3, { mapped_as: 999 })])
+        .map(row => row.id > 3 ? { ...row, mapped_as: 1 } : row);
+    const asObserver = new ListenerObserver(), asNow = window(asObserver, asPeers), asWall = WALL + asNow / 1000;
+    const asProposal = asObserver.proposal(config, asObserver.inspect(config, asNow, asWall), asWall, [], null);
+    assert.equal(asProposal.planned, 1);
+    assert.equal(asProposal.entries.find(entry => entry.peer_id === 2)!.action, 'retained');
+    assert.match(asProposal.entries.find(entry => entry.peer_id === 3)!.reason, /AS diversity/);
+});
+
+test('Preview stops at the total connectivity floor after sequential projected departures', () => {
+    const observer = new ListenerObserver(), peers = healthy([peer(1), peer(2), peer(3)]).slice(0, 14);
+    const now = window(observer, peers), wall = WALL + now / 1000;
+    const evaluation = observer.inspect(CONFIG, now, wall);
+    assert.equal(evaluation.eligible.length, 3);
+    const proposal = observer.proposal(CONFIG, evaluation, wall, [], null);
+    assert.equal(proposal.planned, 2);
+    assert.match(proposal.entries.find(entry => entry.peer_id === 3)!.reason, /connectivity floor/);
+});
+
+test('Preview cannot project through missing evidence or a global pause', () => {
+    const observer = new ListenerObserver(), now = window(observer, healthy([peer(1), peer(2, { bytesrecv_per_msg: undefined })]));
+    const wall = WALL + now / 1000, evaluation = observer.inspect(CONFIG, now, wall);
+    const proposal = observer.proposal(CONFIG, evaluation, wall, [], 'Automatic cleanup is paused; save Preview.');
+    assert.equal(proposal.planned, 0);
+    assert.match(proposal.entries.find(entry => entry.peer_id === 1)!.reason, /save Preview/);
+    assert.match(proposal.entries.find(entry => entry.peer_id === 2)!.reason, /evidence/);
 });
 
 test('connection grace cannot be replaced by a long local observation window', () => {
