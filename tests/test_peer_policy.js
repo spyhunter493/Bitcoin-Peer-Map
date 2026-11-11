@@ -141,8 +141,14 @@ export default async function assertPeerPolicy(browser, baseUrl) {
         assert.match(await page.locator('#peer-policy-proposal').textContent(), /1 planned, 1 retained, 1 blocked/);
         assert.match(await page.locator('#peer-policy-peers').textContent(), /Planned #1/);
         assert.match(await page.locator('#peer-policy-results').textContent(), /4 accepted requests; 3 observed departures; 2 same-address returns/);
+        const beforeBackgroundClose = writes.length;
         await page.locator('#peer-policy-modal').click({ position: { x: 3, y: 3 } });
-        assert.equal(await page.locator('#peer-policy-modal').isVisible(), true, 'outside clicks keep the policy panel open');
+        await page.locator('#peer-policy-modal').waitFor({ state: 'detached' });
+        assert.equal(config.mode, 'preview', 'closing the panel leaves the server policy selected');
+        assert.equal(writes.length, beforeBackgroundClose, 'background dismissal does not save a policy change');
+        await page.locator('#btn-inbound-policy').click();
+        await page.waitForFunction(() => document.getElementById('peer-policy-mode-preview')?.getAttribute('aria-pressed') === 'true' &&
+            !document.getElementById('peer-policy-mode-preview')?.disabled);
         await page.locator('#peer-policy-allowance').fill('7');
         const card = await page.locator('.peer-policy-card').first().elementHandle();
         await page.locator('#peer-policy-refresh').click();
@@ -294,9 +300,11 @@ export default async function assertPeerPolicy(browser, baseUrl) {
         assert.match(await page.locator('#peer-policy-page-count').textContent(), /1–10 of 125/);
         await page.locator('#peer-policy-page-next').click();
         assert.match(await page.locator('#peer-policy-page-count').textContent(), /11–20 of 125/);
-        await page.locator('#peer-policy-page-size').selectOption('20');
-        assert.equal(await page.locator('.peer-policy-card').count(), 20);
-        assert.match(await page.locator('#peer-policy-page-count').textContent(), /1–20 of 125/);
+        for (const size of [20, 30, 40, 50]) {
+            await page.locator('#peer-policy-page-size').selectOption(String(size));
+            assert.equal(await page.locator('.peer-policy-card').count(), size);
+            assert.match(await page.locator('#peer-policy-page-count').textContent(), new RegExp(`1–${size} of 125`));
+        }
         await page.locator('#peer-policy-page-size').selectOption('all');
         assert.equal(await page.locator('.peer-policy-card').count(), 125);
         await page.locator('#peer-policy-search').fill('PagingSoftware:121');
