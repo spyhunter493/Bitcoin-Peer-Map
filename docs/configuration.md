@@ -72,8 +72,9 @@ credentials when troubleshooting.
 
 Configure `BPM_ADMIN_TOKEN` (or its mounted-file equivalent) to enable the wallet
 control. Wallet names, balances, and ticker settings require a management unlock,
-including when `BPM_VIEW_MODE=public`. A viewing login made with the administrator
-token still needs the separate management unlock.
+including when `BPM_VIEW_MODE=public`. Signing in with an administrator token
+unlocks viewing and management together. A viewing token grants monitoring
+access only.
 
 Add `getbalances`, `getwalletinfo`, and `listwallets` to the BPM account's existing
 whitelist line. For peer management plus wallet monitoring, the complete line is:
@@ -162,11 +163,13 @@ Protect `.env` with `chmod 600 .env`, then apply token changes with
 a mounted token file too; it is read only at startup. This revokes the previous
 token and all remembered sessions.
 
-The first management action opens **Unlock management** and verifies the admin
-token before running the action. Management is remembered separately for 30 days.
+Signing in with an administrator token unlocks viewing and management together.
+If you signed in with a viewing token or subsequently locked management, the
+first management action opens **Unlock management** and verifies the admin token
+before running the action. Management is remembered separately for 30 days.
 **Lock** ends management for that browser while preserving a separate viewing
-session. Unlocking viewing alone does not grant management, even when you use an
-admin token. Cancelling the dialog leaves the pending action unexecuted.
+session. Viewing-only credentials grant no management access. Cancelling the
+dialog leaves the pending action unexecuted.
 
 Management covers peer connect/disconnect/ban/unban, clearing bans, GeoIP and
 outbound settings, dataset updates, and the server's connectivity acknowledgement.

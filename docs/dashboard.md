@@ -11,12 +11,13 @@ upgrades, backups, and GeoIP policy belong in [Operations](operations.md).
 Viewing is private by default. Enter a viewing or administrator token on the
 access screen. The browser remembers access for 30 days, including after closing
 and reopening a tab, unless you lock it or restart the service.
+Signing in with an administrator token unlocks viewing and management together.
+A viewing token unlocks monitoring only.
 
 **Lock view** revokes that browser's viewing and management sessions, clears
-private displayed data, and returns to the access screen. Management has a
-separate unlock: the first action asks for an administrator token, and **Lock**
-signs out of management while preserving a separate viewing session. Unlocking
-the view with an administrator token does not automatically unlock management.
+private displayed data, and returns to the access screen. When management is
+locked, a management action asks for an administrator token. **Lock** signs out
+of management while preserving a separate viewing session.
 See [access control](access-control.md) for public/redacted modes and deployment
 requirements.
 
