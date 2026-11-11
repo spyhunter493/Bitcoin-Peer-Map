@@ -267,7 +267,7 @@ These rules identify listener-like behavior, not intent. Quiet wallets may quali
 use Keep for known addresses. A tracker can request data, advertise services, or
 reconnect to avoid the heuristic. Disconnecting cannot prevent observation of a
 publicly reachable node. See [policy persistence](operations.md#inbound-policy-state)
-and the [design](plans/inbound-listener-cleanup.md) for the precise protections.
+for saved settings and recovery behavior.
 
 ## Keyboard controls and Support
 
