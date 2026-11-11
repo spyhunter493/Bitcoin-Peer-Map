@@ -11,12 +11,13 @@ upgrades, backups, and GeoIP policy belong in [Operations](operations.md).
 Viewing is private by default. Enter a viewing or administrator token on the
 access screen. The browser remembers access for 30 days, including after closing
 and reopening a tab, unless you lock it or restart the service.
+Signing in with an administrator token unlocks viewing and management together.
+A viewing token unlocks monitoring only.
 
 **Lock view** revokes that browser's viewing and management sessions, clears
-private displayed data, and returns to the access screen. Management has a
-separate unlock: the first action asks for an administrator token, and **Lock**
-signs out of management while preserving a separate viewing session. Unlocking
-the view with an administrator token does not automatically unlock management.
+private displayed data, and returns to the access screen. When management is
+locked, a management action asks for an administrator token. **Lock** signs out
+of management while preserving a separate viewing session.
 See [access control](access-control.md) for public/redacted modes and deployment
 requirements.
 
@@ -229,8 +230,8 @@ preserves connectivity and transport/AS diversity floors.
 The panel shows connection age, observed quiet time, remaining grace, eligibility
 or protection reasons, effective state, pause reason, next permitted action, and
 recent outcomes. Search by address or reported software, filter by status or
-transport network, and select **10**, **20**, or **All** peers per page. The default
-is ten; Previous and Next reach every matching connection without rendering all
+transport network, and select **10**, **20**, **30**, **40**, **50**, or **All**
+peers per page. The default is ten; Previous and Next reach every matching connection without rendering all
 cards. Candidates appear first. Evidence and conditional proposal details are
 available on each displayed connection.
 Automatic attempts are limited to one per five minutes, six per rolling hour,
@@ -255,11 +256,12 @@ Failed/stale peer observations, node restart, clock anomalies, or changed node
 scope require fresh evidence. A BPM restart restores the requested mode but
 Automatic waits for a new trial. Missing required RPC fields leave peers
 ineligible. Reasons appear in the panel instead of treating missing values as
-zero. Outside clicks, window focus changes, and hiding the tab leave the panel
+zero. Clicking the app background, using the close button, or pressing Escape
+closes the panel. Switching away from the browser or hiding the tab leaves it
 open. When local management access is suspended, requests stop and private
-evidence clears until access is revalidated; form drafts remain. Explicit close,
-Escape, session expiry, and locking management close the panel and clear its
-private contents. None of those display changes revoke a saved server policy.
+evidence clears until access is revalidated; form drafts remain. Session expiry
+and locking management also close the panel and clear its private contents.
+None of those display changes revoke a saved server policy.
 
 These rules identify listener-like behavior, not intent. Quiet wallets may qualify;
 use Keep for known addresses. A tracker can request data, advertise services, or

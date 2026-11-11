@@ -142,7 +142,7 @@ export function create({ management, document = globalThis.document }) {
             '<div class="peer-policy-filters"><label>Search<input id="peer-policy-search" type="search" placeholder="Address or software" autocomplete="off"></label>' +
             '<label>Status<select id="peer-policy-filter-status"><option value="">All statuses</option><option value="candidate">Listener candidates</option><option value="protected">Protected</option><option value="observing">Observing</option><option value="unknown">Insufficient evidence</option></select></label>' +
             '<label>Network<select id="peer-policy-filter-network"><option value="">All networks</option></select></label>' +
-            '<label>Per page<select id="peer-policy-page-size"><option value="10">10</option><option value="20">20</option><option value="all">All</option></select></label></div>' +
+            '<label>Per page<select id="peer-policy-page-size"><option value="10">10</option><option value="20">20</option><option value="30">30</option><option value="40">40</option><option value="50">50</option><option value="all">All</option></select></label></div>' +
             '<div class="peer-policy-pagination"><span id="peer-policy-page-count" role="status" aria-live="polite"></span><button type="button" class="dialog-btn" id="peer-policy-page-previous">Previous</button><button type="button" class="dialog-btn" id="peer-policy-page-next">Next</button></div>' +
             '<div id="peer-policy-peers" class="peer-policy-peers"></div>' +
             '<h2 class="peer-policy-heading">Keep exceptions</h2><p class="peer-policy-note">An exception applies to that address across connections, including other devices sharing the address.</p>' +
@@ -458,14 +458,14 @@ export function create({ management, document = globalThis.document }) {
             await management.unlock(requests.signal);
             if (current !== generation || requests.signal.aborted || !state.authenticated || document.hidden) return;
             dialog = modal.open({ document, id: 'peer-policy-modal', title: 'Inbound policy', maxWidth: 760,
-                bodyClass: 'modal-body peer-policy-body', initialHtml: build(), closeOnBackdrop: false, onClose: wipe });
+                bodyClass: 'modal-body peer-policy-body', initialHtml: build(), onClose: wipe });
             button?.setAttribute('aria-expanded', 'true');
             bind();
             await refresh();
         } catch (error) {
             if (current !== generation || requests.signal.aborted) return;
             dialog = modal.open({ document, id: 'peer-policy-modal', title: 'Inbound policy', maxWidth: 540,
-                initialHtml: `<p role="alert">${escape(errorMessage(error))}</p>`, closeOnBackdrop: false, onClose: wipe });
+                initialHtml: `<p role="alert">${escape(errorMessage(error))}</p>`, onClose: wipe });
             button?.setAttribute('aria-expanded', 'true');
         } finally {
             if (current === generation) { opening = false; button?.removeAttribute('aria-busy'); if (button) button.disabled = !state.available; renderToolbar(); if (!dialog) resumeStatus(); }
