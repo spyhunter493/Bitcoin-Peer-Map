@@ -188,6 +188,12 @@ export function create(options) {
     /** @param {number} timestamp */
     function frame(timestamp) {
         if (!running) return;
+        // Keep the last map frame behind dialogs. Polling still updates the
+        // scene, which is rendered again as soon as the final dialog closes.
+        if (document.body.classList.contains('modal-open')) {
+            queueFrame();
+            return;
+        }
         const now = Date.now();
         const interacting = document.body.classList.contains('map-interacting');
         const reducedMotion = reducedMotionQuery.matches;

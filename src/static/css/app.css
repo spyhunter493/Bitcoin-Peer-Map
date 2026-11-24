@@ -1448,6 +1448,21 @@ button.fd-net-chip:focus-visible { outline: 2px solid var(--accent); outline-off
 /* ==========================================================
    14. MODALS — Shared overlay + box styles
    ========================================================== */
+/* Keep scrolling dialogs independent of the animated dashboard behind them. */
+[data-modal-overlay],
+[data-modal-overlay] > [role="dialog"] {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+body.modal-open > :not([data-modal-overlay]),
+body.modal-open > :not([data-modal-overlay])::before,
+body.modal-open > :not([data-modal-overlay])::after,
+body.modal-open > :not([data-modal-overlay]) *,
+body.modal-open > :not([data-modal-overlay]) *::before,
+body.modal-open > :not([data-modal-overlay]) *::after {
+    animation-play-state: paused !important;
+    transition: none !important;
+}
 .modal-overlay {
     position: fixed;
     inset: 0;
@@ -1456,8 +1471,6 @@ button.fd-net-chip:focus-visible { outline: 2px solid var(--accent); outline-off
     align-items: center;
     justify-content: center;
     background: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
 }
 .modal-box {
     background: var(--bg-surface);
@@ -2389,8 +2402,6 @@ button.fd-net-chip:focus-visible { outline: 2px solid var(--accent); outline-off
     position: fixed; inset: 0; z-index: 300;
     display: flex; align-items: center; justify-content: center;
     background: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
 }
 .dialog-box {
     background: var(--bg-surface);
@@ -2423,8 +2434,6 @@ button.fd-net-chip:focus-visible { outline: 2px solid var(--accent); outline-off
     position: fixed; inset: 0; z-index: 250;
     display: flex; align-items: center; justify-content: center;
     background: rgba(0, 0, 0, 0.5);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
 }
 .ban-modal-box {
     background: var(--bg-surface);

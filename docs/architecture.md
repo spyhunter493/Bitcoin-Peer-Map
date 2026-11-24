@@ -89,8 +89,10 @@ disposal is terminal and removes listeners, exploration, timers and animations.
 `core/modal.js` owns accessible naming, focus containment, stacking, Escape and
 backdrop dismissal, and focus restoration in the owning document. Pass a dialog's
 abort signal to requests and check `isOpen()` before applying results. Persistent
-controls stay mounted during refreshes. Peer details, settings, tooltips and
-pinned lists are nonmodal popovers.
+controls stay mounted during refreshes. Its per-document stack also keeps map
+rendering and decorative background animations paused until the final dialog
+closes. Modal surfaces omit backdrop blur; polling continues while dialogs are
+open. Peer details, settings, tooltips and pinned lists are nonmodal popovers.
 
 Peer actions own requests, dialogs, notifications, listeners and delayed refreshes
 through an abort signal and `dispose()`. Confirmed mutations use the action owner's
