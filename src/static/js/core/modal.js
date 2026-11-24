@@ -20,8 +20,9 @@ function canFocus(element) {
         element.ownerDocument.defaultView?.getComputedStyle(element).visibility !== 'hidden';
 }
 
-/** @param {import('../types').ModalController[]} modalStack */
-function updateStack(modalStack) {
+/** @param {Document} document @param {import('../types').ModalController[]} modalStack */
+function updateStack(document, modalStack) {
+    document.body.classList.toggle('modal-open', modalStack.length > 0);
     modalStack.forEach((modal, index) => {
         const top = index === modalStack.length - 1;
         modal.overlay.style.zIndex = String(10000 + index);
@@ -144,6 +145,7 @@ function open(options) {
     const widthStyle = ` style="width:calc(100vw - 32px)${maxWidth ? `;max-width:${Number(maxWidth)}px` : ''}"`;
     overlay.id = id;
     overlay.className = overlayClass;
+    overlay.setAttribute('data-modal-overlay', '');
 
     if (showHeader) {
         overlay.innerHTML = `<div class="${safeClassNames(boxClass)}" role="dialog" aria-modal="true" aria-labelledby="${titleId}"${widthStyle}><div class="${safeClassNames(headerClass)}"><span class="${safeClassNames(titleClass)}" id="${titleId}">${escapeHtml(title)}</span><button type="button" class="${safeClassNames(closeClass)}" id="${closeId}" aria-label="Close ${escapeHtml(title)}">&times;</button></div><div class="${safeClassNames(bodyClass)}" id="${bodyId}">${initialHtml}</div></div>`;
@@ -169,7 +171,7 @@ function open(options) {
         document.removeEventListener('keydown', handleKeydown, true);
         document.removeEventListener('focusin', handleFocusin);
         overlay.remove();
-        updateStack(modalStack);
+        updateStack(document, modalStack);
         if (typeof onClose === 'function') onClose();
         const top = modalStack[modalStack.length - 1];
         if (restoreFocus && wasTop && returnFocus instanceof HTMLElement && returnFocus.isConnected && canFocus(returnFocus) &&
@@ -242,7 +244,7 @@ function open(options) {
         isOpen: () => !closed && overlay.isConnected,
     };
     modalStack.push(controller);
-    updateStack(modalStack);
+    updateStack(document, modalStack);
     document.addEventListener('keydown', handleKeydown, true);
     document.addEventListener('focusin', handleFocusin);
     overlay.addEventListener('click', (event) => {
