@@ -32,7 +32,9 @@ function backendFingerprint() {
     return hash.digest('hex');
 }
 const fingerprint = backendFingerprint();
-const sourceRevision = spawnSync('git', ['-c', `safe.directory=${repository}`, '-C', repository, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout?.trim() || 'unknown';
+const suppliedRevision = process.env.BPM_SOAK_SOURCE_REVISION;
+const sourceRevision = suppliedRevision && /^[a-f0-9]{40}$/.test(suppliedRevision) ? suppliedRevision
+    : spawnSync('git', ['-c', `safe.directory=${repository}`, '-C', repository, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout?.trim() || 'unknown';
 let lastSuccess = Date.now() / 1000;
 let peers: PeerInfo[] = [];
 let observations = 0, gaps = 0, queries = 0;
