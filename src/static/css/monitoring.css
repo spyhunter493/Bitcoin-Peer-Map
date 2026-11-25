@@ -1,0 +1,45 @@
+.monitoring-body { display: flex; flex-direction: column; min-height: 0; padding: 0; overflow: hidden; overflow-wrap: anywhere; }
+.monitoring-tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 16px; border-bottom: 1px solid var(--text-dim); flex-shrink: 0; }
+.monitoring-tabs [aria-selected="true"] { color: var(--accent); border-color: var(--accent); }
+.monitoring-panel { overflow-y: auto; padding: 12px 16px; min-height: 0; min-width: 0; overscroll-behavior: contain; }
+.monitoring-panel[hidden] { display: none; }
+.monitoring-message { margin: 0; padding: 0 16px; color: var(--warn); font-size: 12px; }
+.monitoring-message:empty { display: none; }
+.monitoring-form, .monitoring-recording, .monitoring-pagination { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 14px; }
+.monitoring-form label { display: grid; gap: 4px; color: var(--text-secondary); font-size: 12px; flex: 1 1 120px; }
+.monitoring-form input, .monitoring-form select { min-width: 0; width: 100%; box-sizing: border-box; padding: 7px; color: var(--text-primary); background: var(--bg-deep); border: 1px solid var(--accent-dim); border-radius: var(--radius); }
+.monitoring-coverage, .monitoring-note, .monitoring-empty { font-size: 12px; color: var(--text-secondary); line-height: 1.6; margin: 10px 0; }
+.monitoring-event { padding: 10px 0; border-bottom: 1px solid var(--text-dim); overflow-wrap: anywhere; font-size: 12px; }
+.monitoring-event > div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px; color: var(--text-muted); }
+.monitoring-event code { display: block; margin: 7px 0; }
+.monitoring-event p { color: var(--text-secondary); line-height: 1.5; }
+.monitoring-pagination { margin-top: 14px; }
+.monitoring-chart { padding: 10px 0; }
+.monitoring-chart h3, .monitoring-diagnostic h3 { font-size: 13px; margin: 10px 0; text-transform: capitalize; }
+.monitoring-chart svg { display: block; width: 100%; max-height: 240px; }
+.monitoring-chart svg text { font-size: 10px; fill: var(--text-muted); }
+.monitoring-axis { fill: none; stroke: var(--text-dim); stroke-width: 1; }
+.monitoring-line-first, .monitoring-line-second { fill: none; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.monitoring-line-second { stroke: var(--warn); }
+.monitoring-chart-legend { display: flex; gap: 18px; font-size: 12px; }
+.monitoring-chart-legend span:first-child { color: var(--accent); }
+.monitoring-chart-legend span:last-child { color: var(--warn); }
+.monitoring-chart-range { color: var(--text-muted); font-size: 11px; }
+.monitoring-summary { display: flex; flex-wrap: wrap; gap: 12px 24px; margin: 12px 0; font-size: 12px; }
+.monitoring-diagnostic { margin: 8px 0; padding: 0 0 8px 8px; border-left: 1px solid var(--text-dim); }
+.monitoring-diagnostic-row { display: flex; justify-content: space-between; gap: 16px; padding: 5px 0; font-size: 12px; overflow-wrap: anywhere; }
+.monitoring-diagnostic-row span:first-child { color: var(--text-secondary); text-transform: capitalize; }
+.monitoring-diagnostic-row span:last-child { text-align: right; }
+.monitoring-report { width: 100%; min-height: 150px; box-sizing: border-box; color: var(--text-primary); background: var(--bg-deep); }
+.monitoring-alert { border: 1px solid var(--text-dim); border-radius: var(--radius); margin: 10px 0; padding: 12px; font-size: 12px; }
+.monitoring-alert[data-state="active"] { border-color: var(--warn); }
+.monitoring-alert h3 { font-size: 13px; margin: 0 0 8px; }
+.monitoring-alert p { line-height: 1.6; color: var(--text-secondary); margin-bottom: 8px; }
+.monitoring-rules { display: grid; gap: 10px; padding: 12px 0; }
+.monitoring-rules label { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; color: var(--text-secondary); }
+#monitoring-alert-count { margin-left: 4px; color: var(--warn); }
+@media (max-width: 480px) {
+    .monitoring-tabs button { flex: 1 1 40%; }
+    .monitoring-diagnostic-row { flex-wrap: wrap; gap: 5px; }
+    .monitoring-diagnostic-row span:last-child { text-align: left; }
+}

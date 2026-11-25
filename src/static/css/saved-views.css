@@ -1,0 +1,7 @@
+.saved-view-form { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; margin: 12px 0; }
+.saved-view-form label { display: grid; gap: 5px; flex: 1 1 180px; min-width: 0; color: var(--text-secondary); }
+.saved-view-form input, .saved-view-form select { width: 100%; box-sizing: border-box; min-width: 0; padding: 8px; background: var(--bg-deep); color: var(--text-primary); border: 1px solid var(--accent-dim); border-radius: var(--radius); font: inherit; }
+.saved-view-row { display: grid; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--text-dim); overflow-wrap: anywhere; }
+.saved-view-row > div { display: flex; flex-wrap: wrap; gap: 6px; }
+.saved-views-body .dialog-btn, #saved-view-rename .dialog-btn { color: var(--text-primary); border-color: var(--accent-dim); background: var(--bg-deep); }
+#saved-view-result { color: var(--text-secondary); font-size: 12px; line-height: 1.6; }

@@ -4,7 +4,16 @@
 #peer-policy-badge { color: var(--text-secondary); font-size: 11px; }
 #peer-policy-badge[data-state="running"] { color: var(--accent); }
 #peer-policy-badge[data-state="paused"], #peer-policy-badge[data-state="unknown"] { color: var(--warn); }
-.peer-policy-body { overflow-wrap: anywhere; }
+.peer-policy-body { overflow-wrap: anywhere; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+.peer-policy-sticky { flex: 0 0 auto; background: var(--bg-surface); }
+.peer-policy-tabs { display: flex; flex-wrap: wrap; gap: 6px; padding-bottom: 10px; border-bottom: 1px solid var(--text-dim); }
+.peer-policy-tabs [aria-selected="true"] { color: var(--accent); border-color: var(--accent); }
+.peer-policy-content { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.peer-policy-tab-panel { padding-block: 8px; min-height: 160px; }
+.peer-policy-keep-label { display: block; margin-top: 6px; }
+.peer-policy-annotation-form { display: grid; gap: 10px; border: 1px solid var(--accent-dim); padding: 12px; border-radius: var(--radius); }
+.peer-policy-annotation-form label { display: grid; gap: 5px; }
+.peer-policy-annotation-form input, .peer-policy-annotation-form textarea { width: 100%; box-sizing: border-box; color: var(--text-primary); background: var(--bg-deep); border: 1px solid var(--accent-dim); border-radius: var(--radius); padding: 8px; font: inherit; }
 .peer-policy-body .dialog-btn, #peer-policy-confirm .dialog-btn { color: var(--text-secondary); background: rgba(88, 166, 255, .04); border: 1px solid var(--accent-dim); }
 .peer-policy-body .dialog-btn:hover:not(:disabled), #peer-policy-confirm .dialog-btn:hover:not(:disabled) { color: var(--text-primary); border-color: var(--accent); background: rgba(88, 166, 255, .12); }
 .peer-policy-modes { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }

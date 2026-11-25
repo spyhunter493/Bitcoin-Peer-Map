@@ -10,6 +10,8 @@ import { fmtPing } from '../core/ping.js';
 import { formatCoordinate } from '../core/coordinates.js';
 import { addrmanLabel } from '../core/addrman.js';
 import { formatGeoAge, geoSourceLabel, geoFreshnessLabel } from '../core/geo.js';
+import { captureFilter, resolveSavedFilter, validateFilter } from './view-state.js';
+import { getState as performanceState } from '../core/performance.js';
 /** @param {import('../types').PeerTableOptions} options
  *  @returns {import('../types').PeerTableController} */
 function create(options) {
@@ -121,6 +123,8 @@ function create(options) {
     /** @type {string | null} */
     let sortKey = 'id';
     let sortAsc = true;
+    /** @type {import('../types').PeerFilter | null} */
+    let savedFilter = null;
 
     // Auto-fit column state: ON by default, OFF when user resizes
     let autoFitColumns = true;
@@ -417,13 +421,18 @@ function create(options) {
     let highlightedRowId = null;
     const tableTools = TableTools.create({
         onQuery: () => renderPeerTable(),
-        onClear: (filter) => onAction({ type: 'clear-filter', filter }),
+        onClear: (filter) => {
+            if (filter === 'all' || filter === 'saved-view') savedFilter = null;
+            if (filter === 'saved-view') renderPeerTable();
+            else onAction({ type: 'clear-filter', filter });
+        },
     });
 
     /** The chips describe the same scopes that determine the table result. */
     function activeFilterScopes() {
         /** @type {import('./table-tools').FilterScope[]} */
         const scopes = [];
+        if (savedFilter) scopes.push({ key: 'saved-view', label: 'Saved view selection' });
         const interaction = dashboard.interaction;
         const distribution = dashboard.distribution;
         if (privateState.privateNetMode) {
@@ -508,7 +517,7 @@ function create(options) {
             privateState.privateNetMode && privateState.pnFilter
                 ? PeerFilters.resolve(dashboard.peers, privateState.pnFilter.filter)
                 : dashboard.peers;
-        const filtered = BPMPeerTableModel.filterPeers(peers, {
+        const filtered = BPMPeerTableModel.filterPeers(resolveSavedFilter(peers, savedFilter), {
             privateMode: privateState.privateNetMode,
             privateNetwork: privateState.pnSelectedNet,
             passesNetwork: passesNetwork,
@@ -996,7 +1005,7 @@ function create(options) {
         if (peerId === null) return;
 
         if (scrollIntoView && !panelEl.classList.contains('collapsed')) {
-            tableWindow.reveal(peerId, !window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+            tableWindow.reveal(peerId, !performanceState().staticMap);
         }
 
         const row = query(`tr[data-id="${peerId}"]`, tbodyEl);
@@ -1005,7 +1014,38 @@ function create(options) {
         }
     }
 
+    /** @returns {import('../../../shared/api.generated').PeerViewState} */
+    function captureView() {
+        const current = captureFilter(dashboard);
+        const filter = savedFilter && current ? { kind: 'all', filters: [savedFilter, current] } : savedFilter || current;
+        return { query: tableTools.query, networks: /** @type {import('../../../shared/api.generated').PeerViewState['networks']} */ ([...dashboard.interaction.enabledNets]),
+            filter: /** @type {import('../../../shared/api.generated').ViewFilter | null} */ (structuredClone(filter)), private_mode: privateState.privateNetMode,
+            columns: [...visibleColumns], sort: { key: sortKey, direction: sortKey ? (sortAsc ? 'ascending' : 'descending') : null } };
+    }
+    /** @param {import('../../../shared/api.generated').PeerViewState} view */
+    function validateView(view) {
+        validateFilter(view.filter);
+        if (!Array.isArray(view.networks) || view.networks.some(net => !['ipv4', 'ipv6', 'onion', 'i2p', 'cjdns'].includes(net)) || typeof view.query !== 'string' || !Array.isArray(view.columns)) throw new Error('This saved view is unsupported.');
+        const missing = view.columns.filter(key => !TABLE_COLUMN_KEYS.has(key));
+        const known = view.columns.filter(key => TABLE_COLUMN_KEYS.has(key));
+        if (!known.length) throw new Error('This view has no supported columns. Edit or replace the saved view.');
+        return { missing, known };
+    }
+    /** @param {import('../../../shared/api.generated').PeerViewState} view */
+    function applyView(view) {
+        const { missing, known } = validateView(view);
+        savedFilter = structuredClone(view.filter); dashboard.interaction.enabledNets = new Set(view.networks);
+        privateState.privateNetMode = view.private_mode; privateState.pnSelectedNet = null; privateState.pnFilter = null;
+        tableTools.setQuery(view.query); visibleColumns = known;
+        sortKey = view.sort.key && TABLE_COLUMN_KEYS.has(view.sort.key) ? view.sort.key : null;
+        sortAsc = view.sort.direction !== 'descending';
+        renderPeerTableHead(); renderPeerTable();
+        return missing.length || (view.sort.key && !sortKey) ? `Some columns or sorting are unavailable in this build: ${missing.join(', ') || view.sort.key}.` : '';
+    }
     return Object.freeze({
+        captureView,
+        applyView,
+        validateView,
         get showAntarcticaPeers() {
             return showAntarcticaPeers;
         },

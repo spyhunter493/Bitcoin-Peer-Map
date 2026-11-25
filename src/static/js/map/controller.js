@@ -953,6 +953,17 @@ function create() {
         peerTable.applyMaxPeerRows();
     }
 
-    return Object.freeze({ start: init, dispose });
+    /** @param {import('../../../shared/api.generated').PeerViewState} view */
+    function applyView(view) {
+        peerTable.validateView(view);
+        finishInitialViewSelection();
+        BPMDistribution.deselect(); dashboard.distribution.resetNavigation();
+        dashboard.distribution.insightActiveAsNum = null; dashboard.distribution.insightActiveType = null; dashboard.distribution.insightActiveData = null;
+        mapNavigation.filterPeerTable(null); mapNavigation.closeGroup();
+        if (view.private_mode) enterPrivateNetMode(); else if (privateState.privateNetMode) exitPrivateNetMode();
+        const notice = peerTable.applyView(view); updateBadgeStates(); updatePrivateNetUI();
+        return notice;
+    }
+    return Object.freeze({ start: init, dispose, captureView: () => peerTable.captureView(), applyView });
 }
 export { create };

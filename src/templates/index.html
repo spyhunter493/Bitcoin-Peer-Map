@@ -7,6 +7,8 @@
     <link rel="icon" type="image/svg+xml" href="/static/assets/favicon.svg?v={{ asset_revision }}">
     <link rel="stylesheet" href="/static/css/app.css?v={{ asset_revision }}">
     <link rel="stylesheet" href="/static/css/peer-policy.css?v={{ asset_revision }}">
+    <link rel="stylesheet" href="/static/css/monitoring.css?v={{ asset_revision }}">
+    <link rel="stylesheet" href="/static/css/saved-views.css?v={{ asset_revision }}">
     <link rel="stylesheet" href="/static/css/distribution.css?v={{ asset_revision }}"><!-- [DISTRIBUTION] -->
     <link rel="stylesheet" href="/static/v/{{ asset_revision }}/vendor/cinzel/index.css">
 </head>
@@ -226,6 +228,8 @@
                     </div>
                     <button class="handle-btn handle-btn-warn" id="btn-bans" title="View and manage banned peers">Banned Peers</button>
                     <button type="button" class="handle-btn handle-btn-accent" id="btn-inbound-policy" aria-haspopup="dialog" aria-controls="peer-policy-modal" aria-expanded="false" title="Preview and configure inbound listener cleanup">Inbound policy</button>
+                    <button type="button" class="handle-btn handle-btn-accent" id="btn-monitoring" aria-haspopup="dialog" aria-controls="monitoring-modal" aria-expanded="false" hidden>Monitoring<span id="monitoring-alert-count" hidden></span></button>
+                    <button type="button" class="handle-btn handle-btn-accent" id="btn-saved-views" aria-haspopup="dialog" aria-controls="saved-views-modal" aria-expanded="false" hidden>Saved views</button>
                     <button class="handle-btn handle-btn-accent" id="btn-node-info-peer" title="View detailed node information">NODE-INFO</button>
                     <button class="handle-btn handle-btn-accent" id="btn-recent-blocks" title="View recently validated blocks">BLOCKS</button>
                     <button class="handle-btn handle-btn-accent" id="btn-geoip-db-peer" title="GeoIP database info and updates">GEOIP-DB</button>

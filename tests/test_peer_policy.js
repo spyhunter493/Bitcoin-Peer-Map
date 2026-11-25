@@ -102,6 +102,8 @@ export default async function assertPeerPolicy(browser, baseUrl) {
         await route.fulfill({ json: snapshot() });
     });
 
+    async function tab(name) { await page.locator(`#peer-policy-tab-${name}`).click(); }
+
     async function waitSaved() {
         await page.waitForFunction(() => document.getElementById('peer-policy-result')?.textContent === 'Policy settings saved.');
     }
@@ -131,16 +133,20 @@ export default async function assertPeerPolicy(browser, baseUrl) {
         assert.equal(await page.locator('#peer-policy-mode-off').getAttribute('aria-pressed'), 'false');
         assert.equal(await page.locator('#peer-policy-mode-automatic').isDisabled(), true);
         assert.match(await page.locator('#peer-policy-readiness').textContent(), /no changes to your node/);
+        assert.match(await page.locator('#peer-policy-proposal').textContent(), /1 planned, 1 retained, 1 blocked/);
+        assert.match(await page.locator('#peer-policy-results').textContent(), /4 accepted requests; 3 observed departures; 2 same-address returns/);
+        assert.equal(await page.locator('.peer-policy-card').count(), 0, 'inactive Connections content is not mounted');
+        await tab('connections');
         assert.equal(await page.locator('#peer-policy-peers img').count(), 0, 'peer-supplied text is escaped');
         assert.match(await page.locator('#peer-policy-peers').textContent(), /<img src=x/);
         assert.match(await page.locator('#peer-policy-peers').textContent(), /Serving historical blocks/);
         assert.equal(await page.locator('.peer-policy-card[data-status="candidate"] .peer-policy-software').textContent(),
             `Software: /Satoshi:29.3.0/Knots:20260508/${malicious}`, 'the card shows the escaped software version reported by this peer');
         assert.equal(await page.locator('.peer-policy-card[data-status="protected"] .peer-policy-software').textContent(), 'Software: Unknown');
-        assert.match(await page.locator('#peer-policy-events').textContent(), /Outcome uncertain/);
-        assert.match(await page.locator('#peer-policy-proposal').textContent(), /1 planned, 1 retained, 1 blocked/);
         assert.match(await page.locator('#peer-policy-peers').textContent(), /Planned #1/);
-        assert.match(await page.locator('#peer-policy-results').textContent(), /4 accepted requests; 3 observed departures; 2 same-address returns/);
+        await tab('activity');
+        assert.match(await page.locator('#peer-policy-events').textContent(), /Outcome uncertain/);
+        assert.match(await page.locator('#peer-policy-activity-coverage').textContent(), /Oldest retained decision/);
         const beforeBackgroundClose = writes.length;
         await page.locator('#peer-policy-modal').click({ position: { x: 3, y: 3 } });
         await page.locator('#peer-policy-modal').waitFor({ state: 'detached' });
@@ -149,12 +155,16 @@ export default async function assertPeerPolicy(browser, baseUrl) {
         await page.locator('#btn-inbound-policy').click();
         await page.waitForFunction(() => document.getElementById('peer-policy-mode-preview')?.getAttribute('aria-pressed') === 'true' &&
             !document.getElementById('peer-policy-mode-preview')?.disabled);
+        await tab('settings');
         await page.locator('#peer-policy-allowance').fill('7');
+        await tab('connections');
         const card = await page.locator('.peer-policy-card').first().elementHandle();
         await page.locator('#peer-policy-refresh').click();
         await page.waitForFunction(() => !document.getElementById('peer-policy-refresh')?.disabled);
         assert.equal(await card.evaluate(element => element.isConnected), true, 'unchanged refreshes preserve existing card DOM');
+        await tab('settings');
         assert.equal(await page.locator('#peer-policy-allowance').inputValue(), '7');
+        await tab('connections');
         const details = page.locator('.peer-policy-card').first().locator('details');
         await details.locator('summary').click();
         assert.match(await details.textContent(), /Quiet observation \/ required/);
@@ -163,12 +173,14 @@ export default async function assertPeerPolicy(browser, baseUrl) {
         assert.equal(await details.getAttribute('open'), '', 'expanded decision evidence survives polling');
         await page.locator(`[data-policy-action="keep"][data-address="${host}"]`).click();
         await waitSaved();
+        assert.equal(await page.locator('#peer-policy-tab-settings').evaluate(element => element === document.activeElement), true, 'Keep moves focus to its Settings destination');
+        await tab('settings');
         assert.equal(await page.locator('#peer-policy-allowance').inputValue(), '7', 'saving Keep preserves the unsaved allowance draft');
         assert.equal(config.listener_allowance, 0, 'Keep does not implicitly save the allowance');
-        assert.equal(await page.locator(`[data-policy-action="remove"][data-address="${host}"]`).evaluate(element => element === document.activeElement), true, 'focus moves to the matching exception control');
         await page.locator(`[data-policy-action="remove"][data-address="${host}"]`).click();
         await waitSaved();
         if (process.env.BPM_PEER_POLICY_ARTIFACT_DIR) {
+            await tab('connections');
             await mkdir(process.env.BPM_PEER_POLICY_ARTIFACT_DIR, { recursive: true });
             const candidateReason = page.locator('.peer-policy-card[data-status="candidate"] > p:not(.peer-policy-software)').first();
             const originalReason = await candidateReason.textContent();
@@ -177,6 +189,7 @@ export default async function assertPeerPolicy(browser, baseUrl) {
             await candidateReason.evaluate((element, text) => { element.textContent = text; }, originalReason);
         }
 
+        await tab('settings');
         await page.locator('#peer-policy-allowance').fill('1');
         await page.locator('#peer-policy-allowance-save').click();
         await waitSaved();
@@ -196,8 +209,10 @@ export default async function assertPeerPolicy(browser, baseUrl) {
         await page.waitForTimeout(100);
         assert.equal(await page.locator('#peer-policy-allowance').inputValue(), '4', 'an old poll cannot overwrite the saved allowance');
 
+        await tab('connections');
         await page.locator(`[data-policy-action="keep"][data-address="${host}"]`).click();
         await waitSaved();
+        await tab('settings');
         assert.deepEqual(config.keep_addresses, [host]);
         assert.match(await page.locator('#peer-policy-kept').textContent(), /198\.51\.100\.8/);
         await page.locator(`[data-policy-action="remove"][data-address="${host}"]`).click();
@@ -256,6 +271,7 @@ export default async function assertPeerPolicy(browser, baseUrl) {
         assert.ok(geometry.left >= 0 && geometry.right <= geometry.width && !geometry.overflow, 'policy dialog fits narrow screens');
         await page.locator('#peer-policy-mode-preview').click();
         await waitSaved();
+        await tab('connections');
         const softwareGeometry = await page.locator('.peer-policy-card[data-status="observing"] .peer-policy-software').evaluate(label => ({
             clientWidth: label.clientWidth, scrollWidth: label.scrollWidth,
         }));
@@ -293,6 +309,7 @@ export default async function assertPeerPolicy(browser, baseUrl) {
             action: 'planned', order: 1, proposed_at: 1700000000, reason: 'First proposed removal despite its position in the RPC response.' }];
         await page.setViewportSize({ width: 1440, height: 1000 });
         await page.locator('#btn-inbound-policy').click();
+        await tab('connections');
         await page.waitForFunction(() => document.querySelectorAll('.peer-policy-card').length === 10);
         assert.equal(await page.locator('#peer-policy-page-size').inputValue(), '10');
         assert.match(await page.locator('.peer-policy-card').first().textContent(), /PagingSoftware:121/,
@@ -328,6 +345,7 @@ export default async function assertPeerPolicy(browser, baseUrl) {
         assert.match(await page.locator('#peer-policy-page-count').textContent(), /1–3 of 3/, 'a smaller refreshed list clamps the current page');
 
         // Blur suspends private reads, preserves the shell/draft, and revalidates on return.
+        await tab('settings');
         await page.locator('#peer-policy-allowance').fill('9');
         hold = true;
         await page.locator('#peer-policy-refresh').click();
