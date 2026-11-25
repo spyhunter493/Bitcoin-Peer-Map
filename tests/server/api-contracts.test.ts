@@ -15,10 +15,12 @@ import { GeoDatabase } from '../../src/server/services/geoip.ts';
 import { RpcBusyError } from '../../src/server/rpc.ts';
 import { FixtureRuntime, fixtureSettings, FIXTURE_ADMIN_TOKEN } from '../layout_server.ts';
 import { temporaryDirectory, FakeRpc } from './helpers.ts';
+import { MONITORING_REQUESTS } from '../fixtures/monitoring.ts';
 
 type Schema = Record<string, unknown>;
 interface ResponseContract { $ref?: string; content?: Record<string, { schema: Schema }> }
 interface Operation {
+    security?: Record<string, string[]>[];
     responses: Record<string, ResponseContract>;
     requestBody?: { content: Record<string, { schema: Schema }> };
     'x-events'?: Record<string, Schema>;
@@ -84,7 +86,9 @@ async function application(t: TestContext, real = false, token = FIXTURE_ADMIN_T
     const base = `http://127.0.0.1:${address.port}`;
     async function json(path: string, method: 'get' | 'post' = 'get', body?: unknown, options: RequestInit = {}) {
         const headers = new Headers(options.headers);
-        if ((method === 'post' || path.startsWith('/api/wallets') || path === '/api/peer-policy' || path === '/api/peer-policy/status') && !headers.has('Authorization')) headers.set('Authorization', `Bearer ${FIXTURE_ADMIN_TOKEN}`);
+        const security = specification.paths[path.split('?')[0]]?.[method]?.security;
+        const adminOnly = security?.length && security.every(option => Object.keys(option).every(key => ['AdminToken', 'AdminSession'].includes(key)));
+        if ((method === 'post' || adminOnly) && !headers.has('Authorization')) headers.set('Authorization', `Bearer ${FIXTURE_ADMIN_TOKEN}`);
         if (path.endsWith('/logout') && !headers.has('Origin')) headers.set('Origin', base);
         if (body !== undefined) headers.set('Content-Type', 'application/json');
         const response = await fetch(base + path, { ...options, method: method.toUpperCase(), headers, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -95,12 +99,13 @@ async function application(t: TestContext, real = false, token = FIXTURE_ADMIN_T
     return { base, json, runtime, rpc, node, peers, connectivity };
 }
 const bodies: Record<string, unknown> = {
+    ...MONITORING_REQUESTS,
     '/api/peer/connect': { address: '8.8.8.8' }, '/api/peer/disconnect': { peer_id: '1' },
     '/api/peer/ban': { peer_id: 1 }, '/api/peer/unban': { address: '8.8.8.8' },
     '/api/geodb/db-only': { enabled: true }, '/api/geodb/auto-update': { enabled: true },
     '/api/config/outbound': { preference: 'release_checks', enabled: false },
     '/api/wallets/preferences': { selected_wallets: ['watch-descriptor'], unit: 'BTC', rotation_seconds: 8, paused: false },
-    '/api/peer-policy': { expected_revision: 0, config: { mode: 'preview', listener_allowance: 0, keep_addresses: [] } },
+    '/api/peer-policy': { expected_revision: 0, config: { mode: 'preview', listener_allowance: 0, keep_addresses: ['198.51.100.1'] } },
 };
 
 test('all documented JSON routes validate real serialized service responses and browser fixtures', async t => {

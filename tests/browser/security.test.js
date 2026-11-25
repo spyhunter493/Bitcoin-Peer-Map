@@ -15,6 +15,9 @@ import assertPersistentAuthentication from '../test_persistent_auth.js';
 import assertOutboundSettings from '../test_outbound_settings.js';
 import assertWalletTicker from '../test_wallet_ticker.js';
 import assertPeerPolicy from '../test_peer_policy.js';
+import assertMonitoring from '../test_monitoring.js';
+import assertSavedViews from '../test_saved_views.js';
+import assertPerformancePresets from '../test_performance_presets.js';
 
 for (const engine of [chromium, firefox, webkit]) {
     const protectedViewing = async t => {
@@ -50,6 +53,9 @@ for (const engine of [chromium, firefox, webkit]) {
         await assertNarrowManagementDialogs(browser, base);
         await assertPeerSearchExport(browser, base);
         await assertPeerPolicy(browser, base);
+        await assertMonitoring(browser, base);
+        await assertSavedViews(browser, base);
+        await assertPerformancePresets(browser);
         const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
         t.after(() => context.close());
         const external = [], requests = [], errors = [];
@@ -234,7 +240,7 @@ for (const engine of [chromium, firefox, webkit]) {
     await test(`${engine.name()}: browser security regressions`, { concurrency: 2 }, async t => {
         // The longest case starts first; every case owns its app, browser and contexts.
         await Promise.all([
-            t.test(`${engine.name()}: local assets, strict CSP, documentation, management dialogs, and framing`, { timeout: 180_000 }, localAssets),
+            t.test(`${engine.name()}: local assets, strict CSP, documentation, management dialogs, and framing`, { timeout: 240_000 }, localAssets),
             t.test(`${engine.name()}: protected viewing, private data cleanup, redaction and locking`, { timeout: 90_000 }, protectedViewing),
             t.test(`${engine.name()}: persistent viewer and administrator sessions`, { timeout: 180_000 }, persistentAuthentication),
             t.test(`${engine.name()}: optional outbound controls and HTTP provider opt-in`, { timeout: 90_000 }, outboundControls),

@@ -108,10 +108,17 @@ export default async function assertDashboardPerformance(browser) {
         await page.waitForFunction(() => document.getElementById('peer-tbody').dataset.peerCount === '500');
         const animatedBefore = await page.evaluate(() => ({ ...window.canvasRedraws }));
 
-        await page.evaluate(() => { window.performanceTestNow += 6000; window.peerGradients = 0; });
+        await page.evaluate(() => { window.performanceTestNow += 6000; });
         await page.emulateMedia({ reducedMotion: 'no-preference' });
         await page.waitForFunction(count => window.canvasRedraws.worldmap >= count + 3, animatedBefore.worldmap);
-        assert.equal(await page.evaluate(() => window.canvasRedraws['map-connections']), animatedBefore['map-connections'],
+        // A motion-policy transition invalidates the cached scene once. Measure
+        // reuse after that transition has settled, while peer animation continues.
+        const settledAnimation = await page.evaluate(() => {
+            window.peerGradients = 0; window.peerSprites = 0;
+            return { ...window.canvasRedraws };
+        });
+        await page.waitForFunction(count => window.canvasRedraws.worldmap >= count + 3, settledAnimation.worldmap);
+        assert.equal(await page.evaluate(() => window.canvasRedraws['map-connections']), settledAnimation['map-connections'],
             'peer animations reuse unchanged connection drawings');
         assert.ok(await page.evaluate(() => window.peerSprites > 0 && window.peerGradients === 0),
             'large settled peer sets reuse glow sprites while animation continues');

@@ -57,6 +57,10 @@ export class PeerPolicyCoordinator {
     private started = false;
     private stopped = false;
     private lastPreviewIdentity: string | null = null;
+    private eventListeners=new Set<(event:PolicyEvent)=>void>();
+    onEvent(listener:(event:PolicyEvent)=>void){this.eventListeners.add(listener);return()=>{this.eventListeners.delete(listener);};}
+    /** Structured fault classification for monitoring; expected observation pauses are not failures. */
+    monitoringHealth(){const status=this.status();return{mode:status.mode,state:status.effective_state,failure:Boolean(this.persistenceError||this.document.state.failure_guard?.paused)};}
 
     constructor(store: PeerPolicyStore, dependencies: PolicyCoordinatorDependencies) {
         this.store = store;
@@ -443,8 +447,10 @@ export class PeerPolicyCoordinator {
         }
         try {
             const wall = this.wallClock();
+            const previousIds=new Set(this.document.state.events.map(event=>event.id));
             this.store.updateState({ ...state, events: state.events.filter(item => wall - item.time < RETENTION).slice(-MAX_EVENTS) });
             this.document = this.store.snapshot();
+            for(const event of this.document.state.events)if(!previousIds.has(event.id))for(const listener of this.eventListeners){try{listener(structuredClone(event));}catch{/* Observational consumers cannot affect policy decisions. */}}
         } catch {
             this.persistenceError = 'Policy storage write failed; automatic actions are disabled.';
             this.cancelPending();

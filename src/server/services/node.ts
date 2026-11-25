@@ -2,7 +2,7 @@ import { BITCOIN_NETWORKS, type BitcoinChain, formatBytes, normalizePeerAddress,
 import { type Rpc, errorMessage, nowSeconds, round } from '../types.ts';
 import { Lru } from '../tasks.ts';
 import { SharedRead, KeyedSharedReads, readDeadline } from '../shared-read.ts';
-import { RpcBusyError } from '../rpc.ts';
+import { RpcBusyError, RpcTransportError } from '../rpc.ts';
 import type { ConnectivityService } from './connectivity.ts';
 import type { GeoDatabase } from './geoip.ts';
 import { parsePeerInfo, parseNetworkInfo, parseBlockchainInfo, parseBlockHeader, parseBlock, parseMempoolInfo, parseChainTips, parseTxIndex, RpcValidationError, type TxIndexDetails, type NetworkInfo, type BlockchainInfo, type BlockHeader } from '../rpc-types.ts';
@@ -39,6 +39,9 @@ export class NodeService {
     private blockFailures = createFailureReporter(log);
     private networkFailures = createFailureReporter(log);
     private mempoolFailures = createFailureReporter(log);
+    private actionListeners=new Set<(kind:string,address:string|null,peerId:number|null,outcome:'requested'|'succeeded'|'failed'|'uncertain')=>void>();
+    onAction(listener:(kind:string,address:string|null,peerId:number|null,outcome:'requested'|'succeeded'|'failed'|'uncertain')=>void){this.actionListeners.add(listener);return()=>{this.actionListeners.delete(listener);};}
+    private action(kind:string,address:string|null,peerId:number|null,outcome:'requested'|'succeeded'|'failed'|'uncertain'){for(const listener of this.actionListeners){try{listener(kind,address,peerId,outcome);}catch{/* Recording never changes an administrator action. */}}}
     constructor(rpc: Rpc, connectivity: NodeService['connectivity'], geoDatabase: NodeService['geoDatabase'], autoUpdateEnabled: () => boolean, chain: BitcoinChain = 'main') {
         this.rpc = rpc; this.connectivity = connectivity; this.geoDatabase = geoDatabase; this.autoUpdateEnabled = autoUpdateEnabled;
         this.metrics = new NodeMetrics(rpc);
@@ -250,41 +253,38 @@ export class NodeService {
             } };
         } finally { source.cancel(); source.dispose(); metadata.cancel(); metadata.dispose(); total.cancel(); total.dispose(); }
     }
+    private async recordAction(kind:string,address:string|null,id:number|null,work:()=>Promise<ActionResponse>):Promise<ActionResponse>{
+        this.action(kind,address,id,'requested');
+        try{const result=await work();this.action(kind,result.address??result.banned_ip??address,id,result.success?'succeeded':'failed');return result;}
+        catch(error){this.action(kind,address,id,error instanceof RpcTransportError?'uncertain':'failed');if(error instanceof RpcBusyError)throw error;return{success:false,error:errorMessage(error)};}
+    }
     async connect(address: string): Promise<ActionResponse> {
-        try { const normalized = normalizePeerAddress(address, BITCOIN_NETWORKS[this.chain].default_peer_port); await this.rpc.call('addnode', [normalized, 'onetry']); this.dashboardCache.invalidate(); return { success: true, address: normalized }; }
-        catch (error) { if (error instanceof RpcBusyError) throw error; return { success: false, error: errorMessage(error) }; }
+        return this.recordAction('connect',address,null,async()=>{const normalized=normalizePeerAddress(address,BITCOIN_NETWORKS[this.chain].default_peer_port);await this.rpc.call('addnode',[normalized,'onetry']);this.dashboardCache.invalidate();return{success:true,address:normalized};});
     }
     async disconnect(id: number | null): Promise<ActionResponse> {
-        if (id === null) return { success: false, error: 'peer_id is required' };
-        try { await this.rpc.call('disconnectnode', ['', id]); this.dashboardCache.invalidate(); return { success: true }; }
-        catch (error) { if (error instanceof RpcBusyError) throw error; return { success: false, error: errorMessage(error) }; }
+        if(id===null)return{success:false,error:'peer_id is required'};
+        return this.recordAction('disconnect',null,id,async()=>{await this.rpc.call('disconnectnode',['',id]);this.dashboardCache.invalidate();return{success:true};});
     }
     async ban(id: number | null): Promise<ActionResponse> {
-        if (id === null) return { success: false, error: 'peer_id is required' };
-        try {
-            const peers = parsePeerInfo(await this.rpc.call('getpeerinfo'));
-            const peer = peers.find(peer => peer.id === id);
-            if (!peer) return { success: false, error: `Peer ID ${id} not found` };
-            const network = peer.network ?? networkType(peer.addr);
-            if (!['ipv4', 'ipv6'].includes(network)) return { success: false, error: `Cannot ban ${network.toUpperCase()} peers; only IPv4 and IPv6 addresses can be banned` };
-            const [host] = splitPeerAddress(peer.addr || '');
-            await this.rpc.call('setban', [host, 'add', 86400]);
-            this.bansCache.invalidate(); this.dashboardCache.invalidate();
-            return { success: true, banned_ip: host, network };
-        } catch (error) { if (error instanceof RpcBusyError) throw error; return { success: false, error: errorMessage(error) }; }
+        if(id===null)return{success:false,error:'peer_id is required'};
+        return this.recordAction('ban',null,id,async()=>{
+            const peers=parsePeerInfo(await this.rpc.call('getpeerinfo')),peer=peers.find(peer=>peer.id===id);
+            if(!peer)return{success:false,error:`Peer ID ${id} not found`};
+            const network=peer.network??networkType(peer.addr);
+            if(!['ipv4','ipv6'].includes(network))return{success:false,error:`Cannot ban ${network.toUpperCase()} peers; only IPv4 and IPv6 addresses can be banned`};
+            const [host]=splitPeerAddress(peer.addr||'');await this.rpc.call('setban',[host,'add',86400]);this.bansCache.invalidate();this.dashboardCache.invalidate();return{success:true,banned_ip:host,network};
+        });
     }
     async unban(address: string): Promise<ActionResponse> {
-        if (!address) return { success: false, error: 'address is required' };
-        try { await this.rpc.call('setban', [address, 'remove']); this.bansCache.invalidate(); return { success: true }; }
-        catch (error) { if (error instanceof RpcBusyError) throw error; return { success: false, error: errorMessage(error) }; }
+        if(!address)return{success:false,error:'address is required'};
+        return this.recordAction('unban',address,null,async()=>{await this.rpc.call('setban',[address,'remove']);this.bansCache.invalidate();return{success:true};});
     }
     async bans(signal?: AbortSignal): Promise<BansResponse> {
         try { return { success: true, bans: await this.bansCache.get(signal => this.rpc.call('listbanned', [], 10, signal), signal) }; }
         catch (error) { if (error instanceof RpcBusyError || signal?.aborted) throw error; return { success: false, bans: [], error: errorMessage(error) }; }
     }
     async clearBans(): Promise<ActionResponse> {
-        try { await this.rpc.call('clearbanned'); this.bansCache.invalidate(); return { success: true }; }
-        catch (error) { if (error instanceof RpcBusyError) throw error; return { success: false, error: errorMessage(error) }; }
+        return this.recordAction('clear_bans',null,null,async()=>{await this.rpc.call('clearbanned');this.bansCache.invalidate();return{success:true};});
     }
 }
 

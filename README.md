@@ -14,11 +14,13 @@ Example dashboard using demo data.
 - Explore public peers on the map and inspect Tor, I2P, and CJDNS connections.
 - Compare countries and service providers, and inspect node and mempool information.
 - Search and filter peers, view bandwidth rates, and export matches as CSV or JSON.
+- Record optional thirty-day history, inspect trends and diagnostics, and review
+  in-app alerts and shared administrator views.
 - Connect, disconnect, and ban peers from the dashboard.
 - Cache peer locations locally and control external GeoIP lookups.
 
 See the [dashboard guide](docs/dashboard.md) for controls and how to interpret
-peer data.
+peer data, and [monitoring](docs/monitoring.md) for opt-in history and shared views.
 
 ## Requirements
 

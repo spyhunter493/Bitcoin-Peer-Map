@@ -150,6 +150,34 @@ reduced motion. It reports main-thread time, DOM/table size, heap use, canvas
 redraws and mutations during an unchanged poll. Compare runs on the same machine
 and browser.
 
+### Validate monitoring over time
+
+History, alerts, and operator preferences have backend and browser regressions.
+The browser suites include **administrator monitoring and history**, **shared
+saved views and policy annotations**, and **performance presets and static
+rendering**. Use the layout filters above to run one group. They also run in the
+existing cross-browser security group without adding unauthenticated APIs.
+
+Run the isolated real-time monitoring soak with Node 26:
+
+```bash
+node scripts/soak-monitoring.ts --seconds 86400 --directory /tmp/bpm-monitoring-soak
+```
+
+It uses synthetic peers and traffic, binds its fixture HTTP server to loopback,
+and never connects to a production Bitcoin node. The report contains progress,
+coverage counters, memory high-water marks, and final pass/fail status. Minute
+queries exercise pagination, aggregation, diagnostics, and alerts while the
+server records without a browser. Periodic failed observations exercise gap
+recovery. The retention-scale backend test separately seeds the event/sample
+limits and checks pruning and response bounds.
+
+Extended soak runs are optional diagnostics, not a release requirement. Normal
+releases use the required CI checks. A short `--seconds 15` run checks the harness
+only; it is not a passed 24-hour soak. Interrupted or failed runs must not be
+presented as completed evidence. Keep the output directory separate from
+production runtime data.
+
 ## Contribute through a pull request
 
 Use a feature branch, open a PR, run relevant checks, then merge to `main` after

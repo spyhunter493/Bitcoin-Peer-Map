@@ -2736,6 +2736,31 @@ body.modal-open > :not([data-modal-overlay]) *::after {
         scroll-behavior: auto !important;
     }
 }
+
+/* Performance presets are effective overrides; saved Advanced values stay intact. */
+html[data-performance-effects="reduced"] *,
+html[data-performance-effects="reduced"] *::before,
+html[data-performance-effects="reduced"] *::after {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    animation: none !important;
+    transition: none !important;
+    filter: none !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+}
+.dsp-select {
+    max-width: 155px;
+    min-width: 0;
+    padding: 5px 7px;
+    color: var(--text-primary);
+    background: var(--bg-deep);
+    border: 1px solid var(--accent-dim);
+    border-radius: var(--radius);
+    font: inherit;
+}
+.dsp-select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dsp-performance-note { margin: 5px 0 8px; color: var(--text-muted); font-size: 10px; line-height: 1.5; }
 /* Protected pages start with a small access view and no monitoring requests. */
 body.view-locked > :not(#view-access):not(#view-reset-notice):not(script) { display: none !important; }
 .view-access {

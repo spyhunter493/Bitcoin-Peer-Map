@@ -165,6 +165,9 @@ export interface PeerTableOptions {
     onAction(action: { type: 'layout' } | { type: 'fit'; top?: number; immediate?: boolean } | { type: 'antarctica'; visible: boolean } | { type: 'clear-filter'; filter: string }): void;
 }
 export interface PeerTableController {
+    captureView(): import('../../shared/api.generated').PeerViewState;
+    applyView(view: import('../../shared/api.generated').PeerViewState): string;
+    validateView(view: import('../../shared/api.generated').PeerViewState): { missing: string[]; known: string[] };
     readonly showAntarcticaPeers: boolean;
     readonly panelEl: HTMLElement;
     readonly tbodyEl: HTMLElement;

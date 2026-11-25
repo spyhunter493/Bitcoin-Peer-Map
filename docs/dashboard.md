@@ -145,6 +145,11 @@ available independently.
 
 ## Check data and node status
 
+Administrators can also open **Monitoring** for optional thirty-day history,
+trends, cached health diagnostics, and the in-app alert inbox. **Saved views**
+stores administrator filter/table presets across devices. See the
+[monitoring guide](monitoring.md) for recording, coverage, privacy, and alerts.
+
 **Peer data** reports the Bitcoin RPC connection. Failed refreshes retain the last
 successful peer snapshot and mark the outage. Hover the indicator for the last
 successful snapshot time; the top-right countdown shows the next refresh.
@@ -195,6 +200,17 @@ malformed ban-list responses show an error. **No banned IPs** appears only after
 a successful empty response.
 
 ## Inbound listener policy
+
+The panel has **Overview**, **Connections**, **Activity**, and **Settings** tabs.
+Mode and status controls stay accessible above the scrolling content. Activity
+shows twenty retained decisions per page; its coverage label identifies the
+oldest available decision and the bounded recent log. Links open recorded
+history and outcome reports when longer-term review is needed.
+
+Settings includes optional names and notes for Keep addresses. This metadata is
+administrator-only and separate from policy authority: editing a name or note
+does not restart Preview or alter action budgets. Connections can capture or
+apply a shared saved view without changing the policy.
 
 **Inbound policy**, beside **Banned Peers**, requires a management unlock even on
 a public dashboard. It starts **Off**. Opening the panel does not enable it.

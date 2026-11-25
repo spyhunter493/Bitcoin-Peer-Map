@@ -107,6 +107,9 @@ The default volume `bitcoin-peer-map-data` mounts at `/var/lib/bitcoin-peer-map`
 | `settings.json` | Saved GeoIP and optional-outbound preferences |
 | `wallet-ticker.json` | Shared wallet selections and display preferences, scoped to the configured RPC node and network |
 | `peer-policy.json` | Inbound policy settings, Keep addresses, reserved action budgets and bounded recent decisions, scoped to the RPC node and network |
+| `history.db` and its SQLite sidecars | Optional thirty-day history, trend buckets, alert incidents, and monitoring settings; scoped to the configured node/network |
+| `keep-annotations.json` | Administrator names and notes, independent of policy authority |
+| `saved-views.json` | Shared administrator view presets and their revision |
 | `update-check.json` | Application update status and last check time |
 | `tmp/` | Temporary GeoIP dataset downloads |
 
@@ -141,6 +144,12 @@ docker compose up -d bpm
 The previous volume remains available if you need to switch back. These commands
 preserve the container user's file ownership; they do not restore `.env` or
 browser preferences.
+
+The same stopped-service volume backup includes monitoring and operator metadata.
+Preserve SQLite sidecars together with the database; do not copy only a live
+database file. History remains optional after an upgrade and is never backfilled
+from data that was not recorded. A history/metadata failure is shown in Monitoring
+and does not rewrite or reset the policy's independent action-budget document.
 
 ### Wallet ticker preferences
 

@@ -181,5 +181,7 @@ export function create(options) {
         for (const url of downloadUrls) URL.revokeObjectURL(url);
         downloadUrls.clear();
     }
-    return Object.freeze({ get query() { return query; }, update, dispose });
+    /** @param {string} value */
+    function setQuery(value) { query = input.value = value; }
+    return Object.freeze({ get query() { return query; }, setQuery, update, dispose });
 }

@@ -21,6 +21,9 @@ import assertDashboardPerformance from './test_dashboard_performance.js';
 import assertGeoIPSettings from './test_geoip_settings.js';
 import assertOutboundSettings from './test_outbound_settings.js';
 import assertPeerPolicy from './test_peer_policy.js';
+import assertMonitoring from './test_monitoring.js';
+import assertSavedViews from './test_saved_views.js';
+import assertPerformancePresets from './test_performance_presets.js';
 import assertNodeServices from './test_node_services.js';
 import assertNodeMetrics from './test_node_metrics.js';
 import assertSharedDialogs from './test_shared_dialogs.js';
@@ -955,6 +958,9 @@ const suites = [
     ['GeoIP settings', assertGeoIPSettings],
     ['optional outbound settings', assertOutboundSettings],
     ['inbound policy controls', assertPeerPolicy],
+    ['administrator monitoring and history', assertMonitoring],
+    ['shared saved views and policy annotations', assertSavedViews],
+    ['performance presets and static rendering', assertPerformancePresets],
     ['distribution coverage', assertDistributionCoverage],
     ['distribution controller lifecycle', assertDistributionLifecycle],
     ['node services', assertNodeServices],
