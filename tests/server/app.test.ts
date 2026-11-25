@@ -12,6 +12,7 @@ import { ConnectivityService } from '../../src/server/services/connectivity.ts';
 import { GeoDatabase } from '../../src/server/services/geoip.ts';
 import { RpcBusyError } from '../../src/server/rpc.ts';
 import type { TestContext } from 'node:test';
+import { MONITORING_REQUESTS } from '../fixtures/monitoring.ts';
 
 async function application(t: TestContext, version = 'dev') {
     const settings = { ...fixtureSettings(temporaryDirectory(t)), build_version: version }, runtime = new FixtureRuntime(settings);
@@ -208,19 +209,20 @@ test('all documented JSON endpoints are wired and removed endpoints stay absent'
     for (const [path, methods] of Object.entries(schema.paths)) {
         if (!path.startsWith('/api/') || path === '/api/stream/system') continue;
         for (const method of Object.keys(methods as object)) {
-            const body = path === '/api/config/outbound'
+            const body = MONITORING_REQUESTS[path] ?? (path === '/api/config/outbound'
                 ? { preference: 'release_checks', enabled: false }
                 : path === '/api/wallets/preferences'
                     ? { selected_wallets: [], unit: 'BTC', rotation_seconds: 8, paused: false }
                 : path === '/api/peer-policy'
-                    ? { expected_revision: 0, config: { mode: 'preview', listener_allowance: 0, keep_addresses: [] } }
-                : { address: '8.8.8.8', peer_id: 1, enabled: true };
-            const managementRead = path.startsWith('/api/wallets') || path === '/api/peer-policy' || path === '/api/peer-policy/status';
+                    ? { expected_revision: 0, config: { mode: 'preview', listener_allowance: 0, keep_addresses: ['198.51.100.1'] } }
+                : { address: '8.8.8.8', peer_id: 1, enabled: true });
+            const security = (methods as Record<string, { security?: Record<string, string[]>[] }>)[method].security;
+            const managementRead = Boolean(security?.length && security.every(option => Object.keys(option).every(key => ['AdminToken', 'AdminSession'].includes(key))));
             if (method === 'get' && managementRead) {
                 const anonymous = await get(path);
-                assert.equal(anonymous.status, 401);
+                assert.ok([401, 429].includes(anonymous.status));
                 const denied = await anonymous.json();
-                assert.equal(denied.code, 'admin_required');
+                assert.equal(denied.code, anonymous.status === 429 ? 'admin_rate_limited' : 'admin_required');
                 assert.equal('wallets' in denied || 'preferences' in denied, false);
             }
             const headers = { ...(managementRead ? { Authorization: `Bearer ${FIXTURE_ADMIN_TOKEN}` } : {}),

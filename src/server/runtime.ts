@@ -17,6 +17,8 @@ import { createGeoipLookup } from './services/geoip-provider.ts';
 import { createHash } from 'node:crypto';
 import { PeerPolicyStore } from './peer-policy/store.ts';
 import { PeerPolicyCoordinator } from './peer-policy/coordinator.ts';
+import { MonitoringService } from './monitoring/service.ts';
+import { OperatorMetadataService } from './operator-metadata.ts';
 
 export const GEOIP_UPDATE_INTERVAL_MS = 60 * 60 * 1000;
 export class AppRuntime {
@@ -33,6 +35,11 @@ export class AppRuntime {
     readonly updates: UpdateService;
     readonly wallets: WalletService;
     readonly peerPolicy: PeerPolicyCoordinator;
+    readonly monitoring:MonitoringService;
+    readonly operatorMetadata:OperatorMetadataService;
+    private stopMonitoringObservations:()=>void;
+    private stopMonitoringEvents:()=>void;
+    private stopMonitoringActions:()=>void;
     private stopPolicyObservations: () => void;
     readonly outboundPolicy: OutboundPolicy;
     readonly outbound = { snapshot: () => this.outboundSnapshot() };
@@ -63,6 +70,16 @@ export class AppRuntime {
         });
         this.metrics = this.node.metrics;
         this.updates = new UpdateService(settings, this.controller.signal, fetch, this.outboundPolicy);
+        this.operatorMetadata=new OperatorMetadataService(settings.data_dir,policyScope);
+        this.monitoring=new MonitoringService(settings.data_dir,policyScope,{
+            managementEnabled:Boolean(settings.admin_token),build:{version:settings.build_version,revision:settings.build_revision},
+            peers:()=>this.peers.snapshot(),rpc:()=>this.rpc.diagnostics(),
+            geoip:()=>({state:this.geoDatabase.enabled?(this.connectivity.snapshot().providers.geoip?.state??'unknown'):'disabled'}),
+            policy:()=>this.peerPolicy.monitoringHealth(),metrics:()=>this.metrics.summary(),
+        });
+        this.stopMonitoringObservations=this.peers.onObservation((peers,time)=>this.monitoring.observe(peers,time));
+        this.stopMonitoringEvents=this.peerPolicy.onEvent(event=>this.monitoring.policyEvent(event));
+        this.stopMonitoringActions=this.node.onAction((kind,address,id,outcome)=>this.monitoring.action(kind,address,id,outcome));
     }
     async start() {
         this.controller.signal.throwIfAborted();
@@ -71,6 +88,7 @@ export class AppRuntime {
         this.preferencesStore.save(this.preferences);
         this.geoDatabase.initialize();
         this.started = true;
+        await this.monitoring.start();
         this.peerPolicy.start();
         this.connectivity.ensureChecker();
         await this.peers.start();
@@ -82,11 +100,12 @@ export class AppRuntime {
         this.started = false;
         this.controller.abort();
         this.stopPolicyObservations();
+        this.stopMonitoringObservations();this.stopMonitoringEvents();this.stopMonitoringActions();
         this.wallets.stop();
         this.outboundPolicy.close();
         if (this.updateTimer) clearTimeout(this.updateTimer);
         this.updateTimer = null;
-        await Promise.allSettled([this.peerPolicy.stop(), this.peers.stop(), this.connectivity.stop(), this.updates.stop(), this.updateTask]);
+        await Promise.allSettled([this.peerPolicy.stop(), this.peers.stop(), this.connectivity.stop(), this.updates.stop(), this.updateTask,this.monitoring.stop()]);
         this.geoDatabase.close();
     }
     setGeoipAutoUpdate(enabled: boolean) {

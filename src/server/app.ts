@@ -20,6 +20,8 @@ import { RpcBusyError } from './rpc.ts';
 import type { ApiRoutes, RouteHandler } from './api-routes.ts';
 import { setSecurityHeaders } from './security.ts';
 import { createBrowserSessions } from './browser-sessions.ts';
+import type { MonitoringApi } from './monitoring/types.ts';
+import type { OperatorMetadataService } from './operator-metadata.ts';
 
 const log = createLogger('http');
 
@@ -40,6 +42,8 @@ export interface ApplicationRuntime {
     rpc: Pick<AppRuntime['rpc'], 'connectionInfo'>;
     wallets: Pick<AppRuntime['wallets'], 'preferences' | 'setPreferences' | 'snapshot'>;
     peerPolicy: Pick<AppRuntime['peerPolicy'], 'snapshot' | 'status' | 'configure'>;
+    monitoring?:MonitoringApi;
+    operatorMetadata?:Pick<OperatorMetadataService,'annotations'|'setAnnotations'|'savedViews'|'setSavedViews'>;
 }
 const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const mime: Record<string, string> = { '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.html': 'text/html' };
@@ -72,6 +76,8 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
     const sessions = createBrowserSessions();
     const requireAdmin = createAdminAuthentication(settings.admin_token, settings.trusted_proxies, req => sessions.has(req, 'admin'));
     const requireViewer = createViewingAuthentication(settings.view_token, settings.admin_token, settings.trusted_proxies, sessions.hasViewer);
+    const monitoring=()=>{if(!runtime.monitoring)throw new HttpError(503,'Monitoring is unavailable.','monitoring_unavailable');return runtime.monitoring;};
+    const metadata=()=>{if(!runtime.operatorMetadata)throw new HttpError(503,'Operator preferences are unavailable.','operator_metadata_unavailable');return runtime.operatorMetadata;};
 
     const routes: Record<string, RouteHandler> = {
         'GET /healthz': () => ({ status: 'ok' }),
@@ -103,6 +109,20 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
         'GET /api/wallets': (_query, _req, _res, signal) => runtime.wallets.snapshot(signal),
         'GET /api/peer-policy': () => runtime.peerPolicy.snapshot(),
         'GET /api/peer-policy/status': () => runtime.peerPolicy.status(),
+        'GET /api/peer-policy/annotations':()=>metadata().annotations(),
+        'POST /api/peer-policy/annotations':async(_query,req,_res,signal)=>{const payload=await readJsonBody(req);signal.throwIfAborted();return metadata().setAnnotations(payload,runtime.peerPolicy.snapshot().config.keep_addresses);},
+        'GET /api/saved-views':()=>metadata().savedViews(),
+        'POST /api/saved-views':async(_query,req,_res,signal)=>{const payload=await readJsonBody(req);signal.throwIfAborted();return metadata().setSavedViews(payload);},
+        'GET /api/history/settings':()=>monitoring().historySettings(),
+        'POST /api/history/settings':async(_query,req,_res,signal)=>{const payload=await readJsonBody(req);signal.throwIfAborted();return monitoring().setHistorySettings(payload,signal);},
+        'GET /api/history/events':query=>monitoring().historyEvents(query),
+        'GET /api/history/trends':query=>monitoring().historyTrends(query),
+        'GET /api/history/summary':query=>monitoring().historySummary(query),
+        'GET /api/diagnostics':()=>monitoring().diagnostics(),
+        'GET /api/alerts':()=>monitoring().alerts(),
+        'POST /api/alerts':async(_query,req,_res,signal)=>{const payload=await readJsonBody(req);signal.throwIfAborted();return monitoring().acknowledge(payload,signal);},
+        'GET /api/alerts/settings':()=>monitoring().alertSettings(),
+        'POST /api/alerts/settings':async(_query,req,_res,signal)=>{const payload=await readJsonBody(req);signal.throwIfAborted();return monitoring().setAlertSettings(payload,signal);},
         'POST /api/peer-policy': async (_query, req, _res, signal) => {
             const payload = await readJsonBody(req);
             signal.throwIfAborted();
@@ -169,7 +189,7 @@ export function createApplication(settings: Settings, runtime: ApplicationRuntim
             const url = new URL(req.url || '/', 'http://localhost');
             const method = req.method === 'HEAD' ? 'GET' : req.method;
             policyRequest = url.pathname === '/api/peer-policy' || url.pathname === '/api/peer-policy/status';
-            managementRequest = url.pathname === '/api/wallets' || url.pathname.startsWith('/api/wallets/') || policyRequest;
+            managementRequest = url.pathname === '/api/wallets' || url.pathname.startsWith('/api/wallets/') || policyRequest || url.pathname.startsWith('/api/peer-policy/') || url.pathname==='/api/saved-views' || url.pathname.startsWith('/api/history/') || url.pathname==='/api/diagnostics' || url.pathname==='/api/alerts' || url.pathname.startsWith('/api/alerts/');
             const credentialBearing = req.headers.authorization !== undefined || sessions.hasCredentials(req);
             const logout = ['/api/view/logout', '/api/admin/logout'].includes(url.pathname);
             const rememberedLogin = ['/api/view/verify', '/api/admin/verify'].includes(url.pathname) && req.headers['x-bpm-remember'] === '1';

@@ -1,4 +1,6 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { createApplication, type ApplicationRuntime } from '../src/server/app.ts';
 import { loadSettings, type Settings } from '../src/server/settings.ts';
@@ -13,12 +15,18 @@ import { HttpError } from '../src/server/http.ts';
 import { object } from '../src/server/types.ts';
 import { DEFAULT_POLICY_CONFIG, POLICY_LIMITS, type PolicyConfig, type PolicySnapshot } from '../src/server/peer-policy/types.ts';
 import { parsePolicyConfig } from '../src/server/peer-policy/store.ts';
+import { OperatorMetadataService } from '../src/server/operator-metadata.ts';
+import { FixtureMonitoring } from './fixtures/monitoring.ts';
+import type { MonitoringApi } from '../src/server/monitoring/types.ts';
 
 // Captured API fixtures keep browser regressions independent of external services.
 const fixtures: { peers: Peer[]; metrics: NodeMetricsSnapshot; info: DashboardInfo; mempool: MempoolResponse; blockchain: BlockchainResponse; blocks: RecentBlocks; tips: ChainTips } = JSON.parse(readFileSync(new URL('./fixtures/dashboard.json', import.meta.url), 'utf8'));
 export class FixtureRuntime implements ApplicationRuntime {
     readonly settings: Settings;
     readonly rpc: BitcoinRpcClient;
+    readonly operatorMetadata: OperatorMetadataService;
+    readonly monitoring: MonitoringApi = new FixtureMonitoring();
+    private metadataDir = mkdtempSync(join(tmpdir(), 'bpm-browser-metadata-'));
     started = false;
     stopped = false;
     private dbOnly = false;
@@ -30,10 +38,11 @@ export class FixtureRuntime implements ApplicationRuntime {
     private policyRevision = 0;
     constructor(settings: Settings) {
         this.settings = settings; this.rpc = new BitcoinRpcClient(settings);
+        this.operatorMetadata = new OperatorMetadataService(this.metadataDir, 'fixture-node');
         this.outboundPreferences.optional_outbound = settings.outbound_enabled_override === true;
     }
     start() { this.started = true; }
-    stop() { this.stopped = true; }
+    stop() { this.stopped = true; rmSync(this.metadataDir, { recursive: true, force: true }); }
     setGeoipDbOnly(enabled: boolean) { return this.dbOnly = enabled; }
     setGeoipAutoUpdate(enabled: boolean) { return this.autoUpdate = enabled; }
     setOutboundPreference(preference: OutboundPreference, enabled: boolean) { this.outboundPreferences[preference] = enabled; return this.outbound.snapshot(); }

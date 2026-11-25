@@ -719,6 +719,206 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/history/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * History Settings
+         * @description Administrator-only in every viewing mode. GET/HEAD and errors are private, no-store. Authentication precedes parsing and storage work. Cookie-authenticated mutations require the matching browser Origin.
+         */
+        get: operations["get_api_history_settings"];
+        put?: never;
+        /**
+         * History Settings
+         * @description Administrator-only in every viewing mode. GET/HEAD and errors are private, no-store. Authentication precedes parsing and storage work. Cookie-authenticated mutations require the matching browser Origin.
+         */
+        post: operations["post_api_history_settings"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/history/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * History Events
+         * @description Administrator-only in every viewing mode. GET/HEAD and errors are private, no-store. Authentication precedes parsing and storage work. Cookie-authenticated mutations require the matching browser Origin.
+         */
+        get: operations["get_api_history_events"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/history/trends": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * History Trends
+         * @description Administrator-only in every viewing mode. GET/HEAD and errors are private, no-store. Authentication precedes parsing and storage work. Cookie-authenticated mutations require the matching browser Origin.
+         */
+        get: operations["get_api_history_trends"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/history/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * History Summary
+         * @description Administrator-only in every viewing mode. GET/HEAD and errors are private, no-store. Authentication precedes parsing and storage work. Cookie-authenticated mutations require the matching browser Origin.
+         */
+        get: operations["get_api_history_summary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/diagnostics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Diagnostics
+         * @description Administrator-only in every viewing mode. GET/HEAD and errors are private, no-store. Authentication precedes parsing and storage work. Cookie-authenticated mutations require the matching browser Origin.
+         */
+        get: operations["get_api_diagnostics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/alerts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Alerts
+         * @description Administrator-only in every viewing mode. GET/HEAD and errors are private, no-store. Authentication precedes parsing and storage work. Cookie-authenticated mutations require the matching browser Origin.
+         */
+        get: operations["get_api_alerts"];
+        put?: never;
+        /**
+         * Alerts
+         * @description Administrator-only in every viewing mode. GET/HEAD and errors are private, no-store. Authentication precedes parsing and storage work. Cookie-authenticated mutations require the matching browser Origin.
+         */
+        post: operations["post_api_alerts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/alerts/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Alerts Settings
+         * @description Administrator-only in every viewing mode. GET/HEAD and errors are private, no-store. Authentication precedes parsing and storage work. Cookie-authenticated mutations require the matching browser Origin.
+         */
+        get: operations["get_api_alerts_settings"];
+        put?: never;
+        /**
+         * Alerts Settings
+         * @description Administrator-only in every viewing mode. GET/HEAD and errors are private, no-store. Authentication precedes parsing and storage work. Cookie-authenticated mutations require the matching browser Origin.
+         */
+        post: operations["post_api_alerts_settings"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/peer-policy/annotations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Peer-Policy Annotations
+         * @description Administrator-only in every viewing mode. GET/HEAD and errors are private, no-store. Authentication precedes parsing and storage work. Cookie-authenticated mutations require the matching browser Origin.
+         */
+        get: operations["get_api_peer_policy_annotations"];
+        put?: never;
+        /**
+         * Peer-Policy Annotations
+         * @description Administrator-only in every viewing mode. GET/HEAD and errors are private, no-store. Authentication precedes parsing and storage work. Cookie-authenticated mutations require the matching browser Origin.
+         */
+        post: operations["post_api_peer_policy_annotations"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/saved-views": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Saved-Views
+         * @description Administrator-only in every viewing mode. GET/HEAD and errors are private, no-store. Authentication precedes parsing and storage work. Cookie-authenticated mutations require the matching browser Origin.
+         */
+        get: operations["get_api_saved_views"];
+        put?: never;
+        /**
+         * Saved-Views
+         * @description Administrator-only in every viewing mode. GET/HEAD and errors are private, no-store. Authentication precedes parsing and storage work. Cookie-authenticated mutations require the matching browser Origin.
+         */
+        post: operations["post_api_saved_views"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1476,6 +1676,225 @@ export interface components {
             effective_state: "disabled" | "observing" | "preview" | "running" | "paused";
             reason: string;
         };
+        HistorySettings: {
+            revision: number;
+            enabled: boolean;
+            /** @enum {integer} */
+            retention_days: 30;
+        };
+        HistoryEvent: {
+            id: string;
+            time: number;
+            /** @enum {string} */
+            source: "peer" | "manual" | "policy";
+            kind: string;
+            address: string | null;
+            peer_id: number | null;
+            reason: string;
+        };
+        HistoryCoverage: {
+            recording: boolean;
+            started_at: number | null;
+            oldest_at: number | null;
+            newest_at: number | null;
+            gaps: number;
+            dropped: number;
+            incomplete: boolean;
+        };
+        HistoryPage: {
+            events: components["schemas"]["HistoryEvent"][];
+            next_cursor: string | null;
+            coverage: components["schemas"]["HistoryCoverage"];
+        };
+        HistoryBucket: {
+            time: number;
+            inbound: number;
+            outbound: number;
+            networks: {
+                [key: string]: number;
+            };
+            rx_bps: number | null;
+            tx_bps: number | null;
+        };
+        HistoryTrends: {
+            buckets: components["schemas"]["HistoryBucket"][];
+            coverage: components["schemas"]["HistoryCoverage"];
+        };
+        HistorySummary: {
+            /** @enum {string} */
+            window: "1h" | "24h" | "7d" | "30d";
+            accepted_requests: number;
+            observed_departures: number;
+            same_host_returns: number;
+            coverage: components["schemas"]["HistoryCoverage"];
+        };
+        AlertIncident: {
+            id: string;
+            /** @enum {string} */
+            rule: "peer_data" | "low_outbound" | "policy_failure" | "recording_failure";
+            /** @enum {string} */
+            state: "active" | "resolved";
+            raised_at: number;
+            resolved_at: number | null;
+            acknowledged_at: number | null;
+            message: string;
+        };
+        AlertInbox: {
+            incidents: components["schemas"]["AlertIncident"][];
+            persistence_degraded: boolean;
+        };
+        AlertSettings: {
+            revision: number;
+            rules: {
+                peer_data: boolean;
+                low_outbound: boolean;
+                policy_failure: boolean;
+                recording_failure: boolean;
+            };
+        };
+        RpcDiagnostics: {
+            active: number;
+            queued: number;
+            capacity: number;
+            queue_limit: number;
+            calls: number;
+            failures: number;
+            methods: {
+                method: string;
+                samples: number;
+                average_ms: number;
+                p95_ms: number;
+                failures: number;
+            }[];
+        };
+        RecorderHealth: {
+            enabled: boolean;
+            available: boolean;
+            queued: number;
+            dropped: number;
+            error: string | null;
+            started_at: number | null;
+        };
+        MonitoringDiagnostics: {
+            generated_at: number;
+            build: {
+                version: string;
+                revision: string;
+            };
+            peers: {
+                connected: boolean | null;
+                last_success_at: number | null;
+                age_seconds: number | null;
+                count: number;
+            };
+            rpc: components["schemas"]["RpcDiagnostics"];
+            geoip: {
+                state: string;
+            };
+            policy: {
+                mode: string;
+                state: string;
+                failure: boolean;
+            };
+            recorder: components["schemas"]["RecorderHealth"];
+        };
+        KeepAnnotation: {
+            address: string;
+            label: string;
+            note: string;
+        };
+        AnnotationsResponse: {
+            revision: number;
+            annotations: components["schemas"]["KeepAnnotation"][];
+        };
+        PolicyViewState: {
+            query: string;
+            /** @enum {string} */
+            status: "" | "candidate" | "protected" | "observing" | "unknown";
+            network: string;
+            /** @enum {integer} */
+            page_size: 0 | 10 | 20 | 30 | 40 | 50;
+        };
+        PeerViewState: {
+            query: string;
+            networks: ("ipv4" | "ipv6" | "onion" | "i2p" | "cjdns")[];
+            filter: components["schemas"]["ViewFilter"] | null;
+            private_mode: boolean;
+            columns: string[];
+            sort: {
+                key: string | null;
+                /** @enum {string|null} */
+                direction: "ascending" | "descending" | null;
+            };
+        };
+        ViewFilter: {
+            /** @enum {string} */
+            kind: "all";
+            filters: components["schemas"]["ViewFilter"][];
+        } | {
+            /** @enum {string} */
+            kind: "network" | "provider" | "country" | "software" | "services" | "conntype" | "direction" | "hosting" | "others" | "insight";
+            key: string;
+        };
+        SavedView: {
+            id: string;
+            name: string;
+            /** @enum {string} */
+            kind: "peers" | "policy";
+            state: components["schemas"]["PeerViewState"] | components["schemas"]["PolicyViewState"];
+        };
+        SavedViewsResponse: {
+            revision: number;
+            views: components["schemas"]["SavedView"][];
+        };
+        HistorySettingsUpdate: {
+            expected_revision: number;
+            enabled: boolean;
+        };
+        AlertSettingsUpdate: {
+            expected_revision: number;
+            rules: {
+                peer_data: boolean;
+                low_outbound: boolean;
+                policy_failure: boolean;
+                recording_failure: boolean;
+            };
+        };
+        AlertAcknowledge: {
+            id: string;
+        };
+        AnnotationUpdate: {
+            expected_revision: number;
+            address: string;
+            label: string;
+            note: string;
+        };
+        SavedViewUpdate: {
+            expected_revision: number;
+            /** @enum {string} */
+            operation: "create";
+            name: string;
+            /** @enum {string} */
+            kind: "peers" | "policy";
+            state: components["schemas"]["PeerViewState"] | components["schemas"]["PolicyViewState"];
+        } | {
+            expected_revision: number;
+            /** @enum {string} */
+            operation: "update";
+            id: string;
+            state: components["schemas"]["PeerViewState"] | components["schemas"]["PolicyViewState"];
+        } | {
+            expected_revision: number;
+            /** @enum {string} */
+            operation: "rename";
+            id: string;
+            name: string;
+        } | {
+            expected_revision: number;
+            /** @enum {string} */
+            operation: "delete";
+            id: string;
+        };
     };
     responses: {
         /** @description Browser requests whose Origin host does not match Host are rejected. Reverse proxies must preserve the external Host header. Management is also rejected when BPM_ADMIN_TOKEN is not configured (code: management_disabled). */
@@ -1617,6 +2036,31 @@ export type PeerPolicyProposalEntry = components['schemas']['PeerPolicyProposalE
 export type PeerPolicyProposal = components['schemas']['PeerPolicyProposal'];
 export type PeerPolicyResults = components['schemas']['PeerPolicyResults'];
 export type PeerPolicyStatus = components['schemas']['PeerPolicyStatus'];
+export type HistorySettings = components['schemas']['HistorySettings'];
+export type HistoryEvent = components['schemas']['HistoryEvent'];
+export type HistoryCoverage = components['schemas']['HistoryCoverage'];
+export type HistoryPage = components['schemas']['HistoryPage'];
+export type HistoryBucket = components['schemas']['HistoryBucket'];
+export type HistoryTrends = components['schemas']['HistoryTrends'];
+export type HistorySummary = components['schemas']['HistorySummary'];
+export type AlertIncident = components['schemas']['AlertIncident'];
+export type AlertInbox = components['schemas']['AlertInbox'];
+export type AlertSettings = components['schemas']['AlertSettings'];
+export type RpcDiagnostics = components['schemas']['RpcDiagnostics'];
+export type RecorderHealth = components['schemas']['RecorderHealth'];
+export type MonitoringDiagnostics = components['schemas']['MonitoringDiagnostics'];
+export type KeepAnnotation = components['schemas']['KeepAnnotation'];
+export type AnnotationsResponse = components['schemas']['AnnotationsResponse'];
+export type PolicyViewState = components['schemas']['PolicyViewState'];
+export type PeerViewState = components['schemas']['PeerViewState'];
+export type ViewFilter = components['schemas']['ViewFilter'];
+export type SavedView = components['schemas']['SavedView'];
+export type SavedViewsResponse = components['schemas']['SavedViewsResponse'];
+export type HistorySettingsUpdate = components['schemas']['HistorySettingsUpdate'];
+export type AlertSettingsUpdate = components['schemas']['AlertSettingsUpdate'];
+export type AlertAcknowledge = components['schemas']['AlertAcknowledge'];
+export type AnnotationUpdate = components['schemas']['AnnotationUpdate'];
+export type SavedViewUpdate = components['schemas']['SavedViewUpdate'];
 export type ResponseCrossOriginRequest = components['responses']['CrossOriginRequest'];
 export type ResponseAdminRequired = components['responses']['AdminRequired'];
 export type ResponseAdminRateLimited = components['responses']['AdminRateLimited'];
@@ -3043,6 +3487,863 @@ export interface operations {
             401: components["responses"]["AdminRequired"];
             403: components["responses"]["CrossOriginRequest"];
             429: components["responses"]["AdminRateLimited"];
+            /** @description Policy availability or HTTP request failure. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_api_history_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful administrator-only response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistorySettings"];
+                };
+            };
+            401: components["responses"]["AdminRequired"];
+            403: components["responses"]["CrossOriginRequest"];
+            /** @description Revision conflict; reload without replaying the edit. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invalid request. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["AdminRateLimited"];
+            /** @description Feature or persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Policy availability or HTTP request failure. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    post_api_history_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HistorySettingsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful administrator-only response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistorySettings"];
+                };
+            };
+            401: components["responses"]["AdminRequired"];
+            403: components["responses"]["CrossOriginRequest"];
+            /** @description Revision conflict; reload without replaying the edit. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invalid request. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["AdminRateLimited"];
+            /** @description Feature or persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Policy availability or HTTP request failure. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_api_history_events: {
+        parameters: {
+            query?: {
+                window?: "1h" | "24h" | "7d" | "30d";
+                limit?: number;
+                cursor?: string;
+                source?: "peer" | "manual" | "policy";
+                kind?: string;
+                search?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful administrator-only response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryPage"];
+                };
+            };
+            401: components["responses"]["AdminRequired"];
+            403: components["responses"]["CrossOriginRequest"];
+            /** @description Revision conflict; reload without replaying the edit. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invalid request. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["AdminRateLimited"];
+            /** @description Feature or persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Policy availability or HTTP request failure. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_api_history_trends: {
+        parameters: {
+            query?: {
+                window?: "1h" | "24h" | "7d" | "30d";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful administrator-only response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryTrends"];
+                };
+            };
+            401: components["responses"]["AdminRequired"];
+            403: components["responses"]["CrossOriginRequest"];
+            /** @description Revision conflict; reload without replaying the edit. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invalid request. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["AdminRateLimited"];
+            /** @description Feature or persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Policy availability or HTTP request failure. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_api_history_summary: {
+        parameters: {
+            query?: {
+                window?: "1h" | "24h" | "7d" | "30d";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful administrator-only response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistorySummary"];
+                };
+            };
+            401: components["responses"]["AdminRequired"];
+            403: components["responses"]["CrossOriginRequest"];
+            /** @description Revision conflict; reload without replaying the edit. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invalid request. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["AdminRateLimited"];
+            /** @description Feature or persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Policy availability or HTTP request failure. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_api_diagnostics: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful administrator-only response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MonitoringDiagnostics"];
+                };
+            };
+            401: components["responses"]["AdminRequired"];
+            403: components["responses"]["CrossOriginRequest"];
+            /** @description Revision conflict; reload without replaying the edit. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invalid request. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["AdminRateLimited"];
+            /** @description Feature or persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Policy availability or HTTP request failure. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_api_alerts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful administrator-only response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertInbox"];
+                };
+            };
+            401: components["responses"]["AdminRequired"];
+            403: components["responses"]["CrossOriginRequest"];
+            /** @description Revision conflict; reload without replaying the edit. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invalid request. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["AdminRateLimited"];
+            /** @description Feature or persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Policy availability or HTTP request failure. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    post_api_alerts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AlertAcknowledge"];
+            };
+        };
+        responses: {
+            /** @description Successful administrator-only response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertInbox"];
+                };
+            };
+            401: components["responses"]["AdminRequired"];
+            403: components["responses"]["CrossOriginRequest"];
+            /** @description Revision conflict; reload without replaying the edit. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invalid request. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["AdminRateLimited"];
+            /** @description Feature or persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Policy availability or HTTP request failure. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_api_alerts_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful administrator-only response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertSettings"];
+                };
+            };
+            401: components["responses"]["AdminRequired"];
+            403: components["responses"]["CrossOriginRequest"];
+            /** @description Revision conflict; reload without replaying the edit. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invalid request. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["AdminRateLimited"];
+            /** @description Feature or persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Policy availability or HTTP request failure. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    post_api_alerts_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AlertSettingsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful administrator-only response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertSettings"];
+                };
+            };
+            401: components["responses"]["AdminRequired"];
+            403: components["responses"]["CrossOriginRequest"];
+            /** @description Revision conflict; reload without replaying the edit. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invalid request. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["AdminRateLimited"];
+            /** @description Feature or persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Policy availability or HTTP request failure. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_api_peer_policy_annotations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful administrator-only response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationsResponse"];
+                };
+            };
+            401: components["responses"]["AdminRequired"];
+            403: components["responses"]["CrossOriginRequest"];
+            /** @description Revision conflict; reload without replaying the edit. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invalid request. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["AdminRateLimited"];
+            /** @description Feature or persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Policy availability or HTTP request failure. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    post_api_peer_policy_annotations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnnotationUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful administrator-only response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationsResponse"];
+                };
+            };
+            401: components["responses"]["AdminRequired"];
+            403: components["responses"]["CrossOriginRequest"];
+            /** @description Revision conflict; reload without replaying the edit. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invalid request. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["AdminRateLimited"];
+            /** @description Feature or persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Policy availability or HTTP request failure. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_api_saved_views: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful administrator-only response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedViewsResponse"];
+                };
+            };
+            401: components["responses"]["AdminRequired"];
+            403: components["responses"]["CrossOriginRequest"];
+            /** @description Revision conflict; reload without replaying the edit. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invalid request. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["AdminRateLimited"];
+            /** @description Feature or persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Policy availability or HTTP request failure. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    post_api_saved_views: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SavedViewUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful administrator-only response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedViewsResponse"];
+                };
+            };
+            401: components["responses"]["AdminRequired"];
+            403: components["responses"]["CrossOriginRequest"];
+            /** @description Revision conflict; reload without replaying the edit. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invalid request. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["AdminRateLimited"];
+            /** @description Feature or persistence is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Policy availability or HTTP request failure. */
             default: {
                 headers: {

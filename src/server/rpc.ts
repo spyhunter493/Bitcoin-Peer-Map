@@ -4,6 +4,7 @@ import type { Settings } from './settings.ts';
 import { object, errorMessage } from './types.ts';
 import { parseNetworkInfo } from './rpc-types.ts';
 import { createLogger } from './logging.ts';
+import type { RpcDiagnostics } from './monitoring/types.ts';
 
 const log = createLogger('rpc');
 
@@ -27,9 +28,18 @@ export class BitcoinRpcClient {
     private id = 0;
     private active = 0;
     private waiting: WaitingCall[] = [];
+    private samples: {method:string;duration:number;failed:boolean}[] = [];
+    private totalCalls=0;
+    private totalFailures=0;
     constructor(settings: Settings, signal?: AbortSignal) { this.settings = settings; this.signal = signal; }
     get connectionInfo() {
         return { scheme: this.settings.rpc_scheme, host: this.settings.rpc_host, port: this.settings.rpc_port, network: this.settings.bitcoin_network };
+    }
+    /** Bounded method timings only: never retain parameters, URLs, wallet names or error bodies. */
+    diagnostics():RpcDiagnostics {
+        const names=[...new Set(this.samples.map(sample=>sample.method))];
+        return {active:this.active,queued:this.waiting.length,capacity:RPC_CONCURRENCY,queue_limit:RPC_QUEUE_LIMIT,calls:this.totalCalls,failures:this.totalFailures,
+            methods:names.map(method=>{const samples=this.samples.filter(s=>s.method===method),times=samples.map(s=>s.duration).sort((a,b)=>a-b);return{method,samples:samples.length,average_ms:Math.round(times.reduce((a,b)=>a+b,0)/times.length),p95_ms:Math.round(times[Math.min(times.length-1,Math.floor(times.length*.95))]),failures:samples.filter(s=>s.failed).length};})};
     }
     private acquire(signal: AbortSignal): Promise<void> {
         signal.throwIfAborted();
@@ -63,6 +73,12 @@ export class BitcoinRpcClient {
         return this.request(`/wallet/${encodeURIComponent(wallet)}`, method, params, timeoutSeconds, callerSignal);
     }
     private async request(path: string, method: string, params: unknown[], timeoutSeconds: number, callerSignal?: AbortSignal): Promise<unknown> {
+        const started=performance.now();let failed=false;this.totalCalls++;
+        try{return await this.performRequest(path,method,params,timeoutSeconds,callerSignal);}
+        catch(error){failed=true;this.totalFailures++;throw error;}
+        finally{this.samples.push({method:/^[a-z][a-z0-9_]{0,63}$/.test(method)?method:'other',duration:performance.now()-started,failed});if(this.samples.length>128)this.samples.shift();}
+    }
+    private async performRequest(path: string, method: string, params: unknown[], timeoutSeconds: number, callerSignal?: AbortSignal): Promise<unknown> {
         const started = performance.now();
         log.debug(`Calling ${method} (timeout ${timeoutSeconds}s)`);
         const payload = JSON.stringify({ jsonrpc: '1.0', id: ++this.id, method, params });

@@ -2167,6 +2167,1206 @@
           }
         }
       }
+    },
+    "/api/history/settings": {
+      "get": {
+        "summary": "History Settings",
+        "operationId": "get_api_history_settings",
+        "description": "Administrator-only in every viewing mode. GET/HEAD and errors are private, no-store. Authentication precedes parsing and storage work. Cookie-authenticated mutations require the matching browser Origin.",
+        "security": [
+          {
+            "AdminToken": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful administrator-only response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistorySettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/AdminRateLimited"
+          },
+          "default": {
+            "description": "Policy availability or HTTP request failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision conflict; reload without replaying the edit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Feature or persistence is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "History Settings",
+        "operationId": "post_api_history_settings",
+        "description": "Administrator-only in every viewing mode. GET/HEAD and errors are private, no-store. Authentication precedes parsing and storage work. Cookie-authenticated mutations require the matching browser Origin.",
+        "security": [
+          {
+            "AdminToken": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful administrator-only response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistorySettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/AdminRateLimited"
+          },
+          "default": {
+            "description": "Policy availability or HTTP request failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision conflict; reload without replaying the edit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Feature or persistence is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HistorySettingsUpdate"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/history/events": {
+      "get": {
+        "summary": "History Events",
+        "operationId": "get_api_history_events",
+        "description": "Administrator-only in every viewing mode. GET/HEAD and errors are private, no-store. Authentication precedes parsing and storage work. Cookie-authenticated mutations require the matching browser Origin.",
+        "security": [
+          {
+            "AdminToken": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful administrator-only response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryPage"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/AdminRateLimited"
+          },
+          "default": {
+            "description": "Policy availability or HTTP request failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision conflict; reload without replaying the edit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Feature or persistence is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "window",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1h",
+                "24h",
+                "7d",
+                "30d"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "source",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "peer",
+                "manual",
+                "policy"
+              ]
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 512
+            }
+          }
+        ]
+      }
+    },
+    "/api/history/trends": {
+      "get": {
+        "summary": "History Trends",
+        "operationId": "get_api_history_trends",
+        "description": "Administrator-only in every viewing mode. GET/HEAD and errors are private, no-store. Authentication precedes parsing and storage work. Cookie-authenticated mutations require the matching browser Origin.",
+        "security": [
+          {
+            "AdminToken": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful administrator-only response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryTrends"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/AdminRateLimited"
+          },
+          "default": {
+            "description": "Policy availability or HTTP request failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision conflict; reload without replaying the edit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Feature or persistence is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "window",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1h",
+                "24h",
+                "7d",
+                "30d"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "/api/history/summary": {
+      "get": {
+        "summary": "History Summary",
+        "operationId": "get_api_history_summary",
+        "description": "Administrator-only in every viewing mode. GET/HEAD and errors are private, no-store. Authentication precedes parsing and storage work. Cookie-authenticated mutations require the matching browser Origin.",
+        "security": [
+          {
+            "AdminToken": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful administrator-only response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistorySummary"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/AdminRateLimited"
+          },
+          "default": {
+            "description": "Policy availability or HTTP request failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision conflict; reload without replaying the edit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Feature or persistence is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "window",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1h",
+                "24h",
+                "7d",
+                "30d"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "/api/diagnostics": {
+      "get": {
+        "summary": "Diagnostics",
+        "operationId": "get_api_diagnostics",
+        "description": "Administrator-only in every viewing mode. GET/HEAD and errors are private, no-store. Authentication precedes parsing and storage work. Cookie-authenticated mutations require the matching browser Origin.",
+        "security": [
+          {
+            "AdminToken": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful administrator-only response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitoringDiagnostics"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/AdminRateLimited"
+          },
+          "default": {
+            "description": "Policy availability or HTTP request failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision conflict; reload without replaying the edit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Feature or persistence is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/alerts": {
+      "get": {
+        "summary": "Alerts",
+        "operationId": "get_api_alerts",
+        "description": "Administrator-only in every viewing mode. GET/HEAD and errors are private, no-store. Authentication precedes parsing and storage work. Cookie-authenticated mutations require the matching browser Origin.",
+        "security": [
+          {
+            "AdminToken": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful administrator-only response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertInbox"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/AdminRateLimited"
+          },
+          "default": {
+            "description": "Policy availability or HTTP request failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision conflict; reload without replaying the edit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Feature or persistence is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Alerts",
+        "operationId": "post_api_alerts",
+        "description": "Administrator-only in every viewing mode. GET/HEAD and errors are private, no-store. Authentication precedes parsing and storage work. Cookie-authenticated mutations require the matching browser Origin.",
+        "security": [
+          {
+            "AdminToken": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful administrator-only response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertInbox"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/AdminRateLimited"
+          },
+          "default": {
+            "description": "Policy availability or HTTP request failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision conflict; reload without replaying the edit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Feature or persistence is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlertAcknowledge"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/alerts/settings": {
+      "get": {
+        "summary": "Alerts Settings",
+        "operationId": "get_api_alerts_settings",
+        "description": "Administrator-only in every viewing mode. GET/HEAD and errors are private, no-store. Authentication precedes parsing and storage work. Cookie-authenticated mutations require the matching browser Origin.",
+        "security": [
+          {
+            "AdminToken": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful administrator-only response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/AdminRateLimited"
+          },
+          "default": {
+            "description": "Policy availability or HTTP request failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision conflict; reload without replaying the edit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Feature or persistence is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Alerts Settings",
+        "operationId": "post_api_alerts_settings",
+        "description": "Administrator-only in every viewing mode. GET/HEAD and errors are private, no-store. Authentication precedes parsing and storage work. Cookie-authenticated mutations require the matching browser Origin.",
+        "security": [
+          {
+            "AdminToken": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful administrator-only response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/AdminRateLimited"
+          },
+          "default": {
+            "description": "Policy availability or HTTP request failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision conflict; reload without replaying the edit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Feature or persistence is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlertSettingsUpdate"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/peer-policy/annotations": {
+      "get": {
+        "summary": "Peer-Policy Annotations",
+        "operationId": "get_api_peer_policy_annotations",
+        "description": "Administrator-only in every viewing mode. GET/HEAD and errors are private, no-store. Authentication precedes parsing and storage work. Cookie-authenticated mutations require the matching browser Origin.",
+        "security": [
+          {
+            "AdminToken": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful administrator-only response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnotationsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/AdminRateLimited"
+          },
+          "default": {
+            "description": "Policy availability or HTTP request failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision conflict; reload without replaying the edit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Feature or persistence is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Peer-Policy Annotations",
+        "operationId": "post_api_peer_policy_annotations",
+        "description": "Administrator-only in every viewing mode. GET/HEAD and errors are private, no-store. Authentication precedes parsing and storage work. Cookie-authenticated mutations require the matching browser Origin.",
+        "security": [
+          {
+            "AdminToken": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful administrator-only response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnotationsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/AdminRateLimited"
+          },
+          "default": {
+            "description": "Policy availability or HTTP request failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision conflict; reload without replaying the edit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Feature or persistence is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnnotationUpdate"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/saved-views": {
+      "get": {
+        "summary": "Saved-Views",
+        "operationId": "get_api_saved_views",
+        "description": "Administrator-only in every viewing mode. GET/HEAD and errors are private, no-store. Authentication precedes parsing and storage work. Cookie-authenticated mutations require the matching browser Origin.",
+        "security": [
+          {
+            "AdminToken": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful administrator-only response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedViewsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/AdminRateLimited"
+          },
+          "default": {
+            "description": "Policy availability or HTTP request failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision conflict; reload without replaying the edit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Feature or persistence is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Saved-Views",
+        "operationId": "post_api_saved_views",
+        "description": "Administrator-only in every viewing mode. GET/HEAD and errors are private, no-store. Authentication precedes parsing and storage work. Cookie-authenticated mutations require the matching browser Origin.",
+        "security": [
+          {
+            "AdminToken": []
+          },
+          {
+            "AdminSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful administrator-only response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedViewsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/CrossOriginRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/AdminRateLimited"
+          },
+          "default": {
+            "description": "Policy availability or HTTP request failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision conflict; reload without replaying the edit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Feature or persistence is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SavedViewUpdate"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -5159,6 +6359,1042 @@
           }
         },
         "description": "Administrator-only compact state for the policy toolbar. Contains no peer addresses, Keep list, connection evidence, or events. Reading it never inspects the peer set or triggers RPC."
+      },
+      "HistorySettings": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "revision": {
+            "type": "integer"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "retention_days": {
+            "type": "integer",
+            "enum": [
+              30
+            ]
+          }
+        },
+        "required": [
+          "revision",
+          "enabled",
+          "retention_days"
+        ]
+      },
+      "HistoryEvent": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "time": {
+            "type": "number"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "peer",
+              "manual",
+              "policy"
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "address": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "peer_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "time",
+          "source",
+          "kind",
+          "address",
+          "peer_id",
+          "reason"
+        ]
+      },
+      "HistoryCoverage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "recording": {
+            "type": "boolean"
+          },
+          "started_at": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "oldest_at": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "newest_at": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "gaps": {
+            "type": "integer"
+          },
+          "dropped": {
+            "type": "integer"
+          },
+          "incomplete": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "recording",
+          "started_at",
+          "oldest_at",
+          "newest_at",
+          "gaps",
+          "dropped",
+          "incomplete"
+        ]
+      },
+      "HistoryPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HistoryEvent"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/HistoryCoverage"
+          }
+        },
+        "required": [
+          "events",
+          "next_cursor",
+          "coverage"
+        ]
+      },
+      "HistoryBucket": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "time": {
+            "type": "number"
+          },
+          "inbound": {
+            "type": "number"
+          },
+          "outbound": {
+            "type": "number"
+          },
+          "networks": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number"
+            }
+          },
+          "rx_bps": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "tx_bps": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "time",
+          "inbound",
+          "outbound",
+          "networks",
+          "rx_bps",
+          "tx_bps"
+        ]
+      },
+      "HistoryTrends": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "buckets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HistoryBucket"
+            }
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/HistoryCoverage"
+          }
+        },
+        "required": [
+          "buckets",
+          "coverage"
+        ]
+      },
+      "HistorySummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "window": {
+            "type": "string",
+            "enum": [
+              "1h",
+              "24h",
+              "7d",
+              "30d"
+            ]
+          },
+          "accepted_requests": {
+            "type": "integer"
+          },
+          "observed_departures": {
+            "type": "integer"
+          },
+          "same_host_returns": {
+            "type": "integer"
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/HistoryCoverage"
+          }
+        },
+        "required": [
+          "window",
+          "accepted_requests",
+          "observed_departures",
+          "same_host_returns",
+          "coverage"
+        ]
+      },
+      "AlertIncident": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "rule": {
+            "type": "string",
+            "enum": [
+              "peer_data",
+              "low_outbound",
+              "policy_failure",
+              "recording_failure"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "active",
+              "resolved"
+            ]
+          },
+          "raised_at": {
+            "type": "number"
+          },
+          "resolved_at": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "acknowledged_at": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "rule",
+          "state",
+          "raised_at",
+          "resolved_at",
+          "acknowledged_at",
+          "message"
+        ]
+      },
+      "AlertInbox": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "incidents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AlertIncident"
+            }
+          },
+          "persistence_degraded": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "incidents",
+          "persistence_degraded"
+        ]
+      },
+      "AlertSettings": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "revision": {
+            "type": "integer"
+          },
+          "rules": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "peer_data": {
+                "type": "boolean"
+              },
+              "low_outbound": {
+                "type": "boolean"
+              },
+              "policy_failure": {
+                "type": "boolean"
+              },
+              "recording_failure": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "peer_data",
+              "low_outbound",
+              "policy_failure",
+              "recording_failure"
+            ]
+          }
+        },
+        "required": [
+          "revision",
+          "rules"
+        ]
+      },
+      "RpcDiagnostics": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "type": "integer"
+          },
+          "queued": {
+            "type": "integer"
+          },
+          "capacity": {
+            "type": "integer"
+          },
+          "queue_limit": {
+            "type": "integer"
+          },
+          "calls": {
+            "type": "integer"
+          },
+          "failures": {
+            "type": "integer"
+          },
+          "methods": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "method": {
+                  "type": "string"
+                },
+                "samples": {
+                  "type": "integer"
+                },
+                "average_ms": {
+                  "type": "number"
+                },
+                "p95_ms": {
+                  "type": "number"
+                },
+                "failures": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "method",
+                "samples",
+                "average_ms",
+                "p95_ms",
+                "failures"
+              ]
+            }
+          }
+        },
+        "required": [
+          "active",
+          "queued",
+          "capacity",
+          "queue_limit",
+          "calls",
+          "failures",
+          "methods"
+        ]
+      },
+      "RecorderHealth": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "queued": {
+            "type": "integer"
+          },
+          "dropped": {
+            "type": "integer"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "started_at": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "enabled",
+          "available",
+          "queued",
+          "dropped",
+          "error",
+          "started_at"
+        ]
+      },
+      "MonitoringDiagnostics": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "generated_at": {
+            "type": "number"
+          },
+          "build": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "version": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "version",
+              "revision"
+            ]
+          },
+          "peers": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "connected": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "last_success_at": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "age_seconds": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "count": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "connected",
+              "last_success_at",
+              "age_seconds",
+              "count"
+            ]
+          },
+          "rpc": {
+            "$ref": "#/components/schemas/RpcDiagnostics"
+          },
+          "geoip": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "state": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "policy": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "mode": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string"
+              },
+              "failure": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "mode",
+              "state",
+              "failure"
+            ]
+          },
+          "recorder": {
+            "$ref": "#/components/schemas/RecorderHealth"
+          }
+        },
+        "required": [
+          "generated_at",
+          "build",
+          "peers",
+          "rpc",
+          "geoip",
+          "policy",
+          "recorder"
+        ]
+      },
+      "KeepAnnotation": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 512
+          }
+        },
+        "required": [
+          "address",
+          "label",
+          "note"
+        ]
+      },
+      "AnnotationsResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "revision": {
+            "type": "integer"
+          },
+          "annotations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KeepAnnotation"
+            }
+          }
+        },
+        "required": [
+          "revision",
+          "annotations"
+        ]
+      },
+      "PolicyViewState": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "",
+              "candidate",
+              "protected",
+              "observing",
+              "unknown"
+            ]
+          },
+          "network": {
+            "type": "string"
+          },
+          "page_size": {
+            "type": "integer",
+            "enum": [
+              0,
+              10,
+              20,
+              30,
+              40,
+              50
+            ]
+          }
+        },
+        "required": [
+          "query",
+          "status",
+          "network",
+          "page_size"
+        ]
+      },
+      "PeerViewState": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "networks": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "ipv4",
+                "ipv6",
+                "onion",
+                "i2p",
+                "cjdns"
+              ]
+            }
+          },
+          "filter": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ViewFilter"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "private_mode": {
+            "type": "boolean"
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "sort": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "key": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "direction": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "ascending",
+                  "descending",
+                  null
+                ]
+              }
+            },
+            "required": [
+              "key",
+              "direction"
+            ]
+          }
+        },
+        "required": [
+          "query",
+          "networks",
+          "filter",
+          "private_mode",
+          "columns",
+          "sort"
+        ]
+      },
+      "ViewFilter": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "all"
+                ]
+              },
+              "filters": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ViewFilter"
+                }
+              }
+            },
+            "required": [
+              "kind",
+              "filters"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "network",
+                  "provider",
+                  "country",
+                  "software",
+                  "services",
+                  "conntype",
+                  "direction",
+                  "hosting",
+                  "others",
+                  "insight"
+                ]
+              },
+              "key": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "key"
+            ]
+          }
+        ]
+      },
+      "SavedView": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "peers",
+              "policy"
+            ]
+          },
+          "state": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PeerViewState"
+              },
+              {
+                "$ref": "#/components/schemas/PolicyViewState"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "state"
+        ]
+      },
+      "SavedViewsResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "revision": {
+            "type": "integer"
+          },
+          "views": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SavedView"
+            }
+          }
+        },
+        "required": [
+          "revision",
+          "views"
+        ]
+      },
+      "HistorySettingsUpdate": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "type": "integer"
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "expected_revision",
+          "enabled"
+        ]
+      },
+      "AlertSettingsUpdate": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "type": "integer"
+          },
+          "rules": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "peer_data": {
+                "type": "boolean"
+              },
+              "low_outbound": {
+                "type": "boolean"
+              },
+              "policy_failure": {
+                "type": "boolean"
+              },
+              "recording_failure": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "peer_data",
+              "low_outbound",
+              "policy_failure",
+              "recording_failure"
+            ]
+          }
+        },
+        "required": [
+          "expected_revision",
+          "rules"
+        ]
+      },
+      "AlertAcknowledge": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "AnnotationUpdate": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "type": "integer"
+          },
+          "address": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 512
+          }
+        },
+        "required": [
+          "expected_revision",
+          "address",
+          "label",
+          "note"
+        ]
+      },
+      "SavedViewUpdate": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "expected_revision": {
+                "type": "integer"
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "create"
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "peers",
+                  "policy"
+                ]
+              },
+              "state": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/PeerViewState"
+                  },
+                  {
+                    "$ref": "#/components/schemas/PolicyViewState"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "expected_revision",
+              "operation",
+              "name",
+              "kind",
+              "state"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "expected_revision": {
+                "type": "integer"
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "update"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "state": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/PeerViewState"
+                  },
+                  {
+                    "$ref": "#/components/schemas/PolicyViewState"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "expected_revision",
+              "operation",
+              "id",
+              "state"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "expected_revision": {
+                "type": "integer"
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "rename"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "expected_revision",
+              "operation",
+              "id",
+              "name"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "expected_revision": {
+                "type": "integer"
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "delete"
+                ]
+              },
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "expected_revision",
+              "operation",
+              "id"
+            ]
+          }
+        ]
       }
     },
     "responses": {
