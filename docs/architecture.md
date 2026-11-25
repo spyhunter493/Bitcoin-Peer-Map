@@ -94,6 +94,19 @@ rendering and decorative background animations paused until the final dialog
 closes. Modal surfaces omit backdrop blur; polling continues while dialogs are
 open. Peer details, settings, tooltips and pinned lists are nonmodal popovers.
 
+`core/performance.js` supplies browser-local effective rendering preferences.
+Map and distribution consumers share its OS reduced-motion ceiling; effective
+presets do not rewrite stored Advanced appearance settings. Wallet content
+rotation retains its independent behavior.
+
+Monitoring subscribes to the canonical peer-observation stream and committed
+policy/manual-action events. Its SQLite worker owns bounded history, aggregate
+samples, settings, and incidents; optional data jobs cannot starve control work.
+History collection is opt-in and independent of an open browser. Diagnostic
+reads consume bounded cached signals rather than initiating RPC or filesystem
+probes. The authoritative policy document remains separate from monitoring,
+annotations, and saved-view preferences.
+
 Peer actions own requests, dialogs, notifications, listeners and delayed refreshes
 through an abort signal and `dispose()`. Confirmed mutations use the action owner's
 signal because the confirmation closes before dispatch; ban-list work also uses

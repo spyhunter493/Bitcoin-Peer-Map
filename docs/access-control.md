@@ -48,6 +48,12 @@ permission failures report wallet unavailability rather than changing BPM access
 
 ### Inbound policy access
 
+History, diagnostics, alerts and their settings, shared saved views, and Keep
+annotations also require management credentials for every GET, HEAD, and POST,
+including public dashboards. Private responses are no-store; lock/expiry aborts
+reads and removes private displayed data. All administrators share the same saved
+view collection and alert acknowledgments; shared tokens do not identify people.
+
 `GET`/`HEAD` and `POST /api/peer-policy` require a management credential in every
 viewing mode. Evidence, Keep addresses, and recent decisions are private/no-store
 and excluded from ordinary dashboard APIs. Revoking management clears the open
