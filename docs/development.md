@@ -172,11 +172,11 @@ server records without a browser. Periodic failed observations exercise gap
 recovery. The retention-scale backend test separately seeds the event/sample
 limits and checks pruning and response bounds.
 
-A short `--seconds 15` run checks the harness only; it is not a passed 24-hour
-soak. For the combined monitoring release, retain a completed 86,400-second
-report alongside full CI results before publishing. Interrupted or failed runs
-must not be presented as completed evidence. Keep the output directory separate
-from production runtime data.
+Extended soak runs are optional diagnostics, not a release requirement. Normal
+releases use the required CI checks. A short `--seconds 15` run checks the harness
+only; it is not a passed 24-hour soak. Interrupted or failed runs must not be
+presented as completed evidence. Keep the output directory separate from
+production runtime data.
 
 ## Contribute through a pull request
 
