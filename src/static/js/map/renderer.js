@@ -5,6 +5,7 @@ import { worldWrapOffsets } from './world-wrap.js';
 import * as Basemap from './basemap.js';
 import * as PeerRenderer from './peer-renderer.js';
 import * as ConnectionRenderer from './connection-renderer.js';
+import * as performancePolicy from '../core/performance.js';
 
 /** @typedef {object} Options
  * @property {import('../types').MapView} mapView
@@ -36,9 +37,8 @@ export function create(options) {
     const { mapView, view, canvas, ctx, basemapCanvas, baseCtx, interaction, privateState } = options;
     const CFG = options.config;
     const PRIVATE_NETS = new Set(['onion', 'i2p', 'cjdns']);
-    const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
     const basemap = Basemap.create({ ...options, getDpr: () => basemapDpr, getWrapOffsetsFor });
-    const peers = PeerRenderer.create({ ...options, reducedMotionQuery, worldToScreen, getWrapOffsets });
+    const peers = PeerRenderer.create({ ...options, worldToScreen, getWrapOffsets });
     const { connectionCanvas } = options;
     const connectionCtx = /** @type {CanvasRenderingContext2D} */ (connectionCanvas.getContext('2d'));
     const connections = ConnectionRenderer.create({ ...options, ctx: connectionCtx, worldToScreen });
@@ -60,6 +60,8 @@ export function create(options) {
     let brightnessChangesUntil = 0;
     let fadingUntil = 0;
     let animatedPeers = false;
+    /** @type {(() => void) | null} */
+    let stopPerformanceChanges = null;
 
     function invalidate() {
         lastScene = null;
@@ -196,7 +198,16 @@ export function create(options) {
         }
         const now = Date.now();
         const interacting = document.body.classList.contains('map-interacting');
-        const reducedMotion = reducedMotionQuery.matches;
+        const performance = performancePolicy.getState();
+        const reducedMotion = performance.staticMap;
+        const idleFps = Math.min(performance.idleFps, mapView.nodes.length >= 250 ? 20 : 30);
+        const moving = interacting || !cameraSettled(view, mapView.target);
+        const frameInterval = 1000 / (moving ? performance.interactionFps : idleFps);
+        if (timestamp - lastPeerFrameTime < frameInterval - 1) {
+            queueFrame();
+            return;
+        }
+        lastPeerFrameTime = timestamp;
 
         // Direct tracking keeps pointer-driven movement responsive. Programmatic
         // zoom and focus changes retain the existing eased camera movement.
@@ -237,17 +248,10 @@ export function create(options) {
 
         // Animated peers retain their frame rate. Static scenes redraw only when
         // their state changes, including the once-per-second age brightness ramp.
-        const idleFps = mapView.nodes.length >= 250 ? 20 : 30;
-        const frameInterval = interacting || !settled ? 1000 / 60 : 1000 / idleFps;
-        if (timestamp - lastPeerFrameTime < frameInterval - 1) {
-            queueFrame();
-            return;
-        }
-        lastPeerFrameTime = timestamp;
         const scene = sceneKey();
         const fading = !reducedMotion && now < fadingUntil;
-        const nextScene = [...scene, reducedMotion, fading,
-            reducedMotion && now < brightnessChangesUntil ? Math.floor(now / 1000) : 0];
+        const nextScene = [...scene, performance.revision, reducedMotion, fading,
+            performance.preset !== 'static' && reducedMotion && now < brightnessChangesUntil ? Math.floor(now / 1000) : 0];
         if (settled && !interacting && (reducedMotion || (!animatedPeers && !fading)) &&
             sameScene(lastScene, nextScene)) {
             queueFrame();
@@ -345,7 +349,16 @@ export function create(options) {
         invalidate,
         markBasemapDirty() { basemap.markBasemapDirty(); invalidate(); },
         loadGeometry: basemap.loadGeometry,
-        start() { if (!running) { running = true; queueFrame(); } },
-        stop() { running = false; cancelAnimationFrame(frameHandle); frameHandle = 0; },
+        start() {
+            if (running) return;
+            running = true;
+            stopPerformanceChanges = performancePolicy.subscribe(() => { basemap.markBasemapDirty(); invalidate(); });
+            queueFrame();
+        },
+        stop() {
+            running = false;
+            cancelAnimationFrame(frameHandle); frameHandle = 0;
+            stopPerformanceChanges?.(); stopPerformanceChanges = null;
+        },
     });
 }

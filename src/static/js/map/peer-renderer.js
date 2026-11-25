@@ -1,9 +1,9 @@
 import { rgba, clamp } from './geometry.js';
+import * as performancePolicy from '../core/performance.js';
 
 /** @typedef {Pick<import('./renderer.js').Options,
  * 'mapView' | 'ctx' | 'config' | 'preferences' | 'interaction' | 'privateState' |
  * 'isMapNodeVisible'> & {
- * reducedMotionQuery: MediaQueryList;
  * worldToScreen(lon: number, lat: number): import('../types').Point;
  * getWrapOffsets(): number[];
  * }} Options */
@@ -13,7 +13,7 @@ import { rgba, clamp } from './geometry.js';
  */
 export function create(options) {
     const { mapView, ctx, interaction, privateState, isMapNodeVisible,
-        reducedMotionQuery, worldToScreen, getWrapOffsets } = options;
+        worldToScreen, getWrapOffsets } = options;
     const CFG = options.config;
     const { nodeHighlightColor } = options.preferences;
     const PRIVATE_NETS = new Set(['onion', 'i2p', 'cjdns']);
@@ -67,13 +67,14 @@ export function create(options) {
  */
     function drawNodeAt(sx, sy, c, r, gr, pulse, opacity, brightness, cached) {
         // Outer glow (radial gradient) — modulated by brightness and pulse
-        if (cached) {
+        const heavyEffects = performancePolicy.getState().heavyEffects;
+        if (heavyEffects && cached) {
             const sprite = glowSprite(c, r, gr);
             const alpha = ctx.globalAlpha;
             ctx.globalAlpha = alpha * pulse * opacity * brightness;
             ctx.drawImage(sprite.canvas, sx - sprite.radius, sy - sprite.radius, sprite.radius * 2, sprite.radius * 2);
             ctx.globalAlpha = alpha;
-        } else {
+        } else if (heavyEffects) {
             const grad = ctx.createRadialGradient(sx, sy, r, sx, sy, gr);
             grad.addColorStop(0, rgba(c, 0.55 * pulse * opacity * brightness));
             grad.addColorStop(0.5, rgba(c, 0.18 * pulse * opacity * brightness));
@@ -210,7 +211,8 @@ export function create(options) {
     function drawNode(node, now, wrapOffsets) {
         if (!isMapNodeVisible(node)) return;
         if (now < node.spawnTime) return;
-        const reducedMotion = reducedMotionQuery.matches;
+        const performance = performancePolicy.getState();
+        const reducedMotion = performance.staticMap;
         if (reducedMotion && !node.alive) return;
 
         // Network filter: skip nodes whose network isn't enabled
@@ -236,7 +238,7 @@ export function create(options) {
         const ageMs = now - node.spawnTime;
         const nowSec = Math.floor(now / 1000);
         const connAgeSec = node.peer.conntime > 0 ? Math.max(0, nowSec - node.peer.conntime) : 0;
-        const inArrival = !reducedMotion && ageMs < CFG.arrivalDuration;
+        const inArrival = performance.heavyEffects && !reducedMotion && ageMs < CFG.arrivalDuration;
 
         // ── Connection-age brightness (dim newcomers, bright veterans) ──
         const brightness = getAgeBrightness(node, nowSec);
@@ -353,7 +355,8 @@ export function create(options) {
         const isPinned =
             forcePinned ||
             (interaction.pinnedNode && interaction.pinnedNode.peerId === node.peerId);
-        const pulse = reducedMotionQuery.matches ? 1 : 0.7 + 0.3 * Math.sin(now * 0.005);
+        const performance = performancePolicy.getState();
+        const pulse = performance.staticMap ? 1 : 0.7 + 0.3 * Math.sin(now * 0.005);
         const r = CFG.nodeRadius * 2.5;
         for (const off of wrapOffsets) {
             const s = worldToScreen(node.lon + off, node.lat);
@@ -361,14 +364,16 @@ export function create(options) {
 
             if (isPinned) {
                 // Outer soft glow halo
-                const glowR = r * 2.2;
-                const grad = ctx.createRadialGradient(s.x, s.y, r, s.x, s.y, glowR);
-                grad.addColorStop(0, rgba(node.color, 0.3 * pulse));
-                grad.addColorStop(1, rgba(node.color, 0));
-                ctx.fillStyle = grad;
-                ctx.beginPath();
-                ctx.arc(s.x, s.y, glowR, 0, Math.PI * 2);
-                ctx.fill();
+                if (performance.heavyEffects) {
+                    const glowR = r * 2.2;
+                    const grad = ctx.createRadialGradient(s.x, s.y, r, s.x, s.y, glowR);
+                    grad.addColorStop(0, rgba(node.color, 0.3 * pulse));
+                    grad.addColorStop(1, rgba(node.color, 0));
+                    ctx.fillStyle = grad;
+                    ctx.beginPath();
+                    ctx.arc(s.x, s.y, glowR, 0, Math.PI * 2);
+                    ctx.fill();
+                }
 
                 // Inner bright ring
                 ctx.strokeStyle = rgba(node.color, 0.8 * pulse);

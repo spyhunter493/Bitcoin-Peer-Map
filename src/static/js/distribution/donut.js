@@ -2,6 +2,7 @@ import { fmtPing, isMeasuredPing } from '../core/ping.js';
 import { queryAll, query } from '../core/dom.js';
 import * as BPMDistributionData from './data.js';
 import * as BPMModal from '../core/modal.js';
+import * as performancePolicy from '../core/performance.js';
 const distributionData = BPMDistributionData;
 const escapeHtml = BPMModal.escapeHtml;
 
@@ -421,7 +422,6 @@ function buildInsightHtml(type, data) {
  */
 function create(options) {
     const state = options.state;
-    const motionQuery = globalThis.matchMedia ? globalThis.matchMedia('(prefers-reduced-motion: reduce)') : null;
     const config = Object.assign(
         {
             size: 260,
@@ -521,7 +521,7 @@ function create(options) {
             return;
         }
         clearAnimationHandles();
-        if (motionQuery && motionQuery.matches) {
+        if (!performancePolicy.getState().heavyEffects) {
             animation = { state: 'expanded', target: provider, progress: 1, startedAt: 0 };
             renderDonut();
             return;
@@ -545,7 +545,7 @@ function create(options) {
 
     function animateRevert() {
         clearAnimationHandles();
-        if (motionQuery && motionQuery.matches) {
+        if (!performancePolicy.getState().heavyEffects) {
             animation = { state: 'idle', target: null, progress: 0, startedAt: 0 };
             renderDonut();
             return;
@@ -572,7 +572,7 @@ function create(options) {
     }
 
     function onMotionChange() {
-        if (!motionQuery?.matches || animation.state === 'idle' || animation.state === 'expanded') return;
+        if (performancePolicy.getState().heavyEffects || animation.state === 'idle' || animation.state === 'expanded') return;
         clearAnimationHandles();
         if (animation.state === 'expanding') {
             animation.state = 'expanded';
@@ -582,11 +582,11 @@ function create(options) {
         }
         renderDonut();
     }
-    motionQuery?.addEventListener?.('change', onMotionChange);
+    const stopPerformanceChanges = performancePolicy.subscribe(onMotionChange);
 
     function dispose() {
         stopAnimation();
-        motionQuery?.removeEventListener?.('change', onMotionChange);
+        stopPerformanceChanges();
         for (const element of [elements.svg, elements.legend, elements.center, elements.insight]) {
             if (element) element.replaceChildren();
         }

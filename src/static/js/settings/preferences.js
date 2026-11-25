@@ -3,6 +3,7 @@ import * as BPMModal from '../core/modal.js';
 import * as BPMWorldMap from '../map/geometry.js';
 import * as BPMDisplaySettings from './advanced.js';
 import * as BPMSupport from '../core/support.js';
+import * as performancePolicy from '../core/performance.js';
 /**
  * @param {{distribution: ReturnType<typeof import('../distribution/controller.js').create>; config: import('../types').DashboardConfig; onAction: (type: 'theme' | 'map-style' | 'intervals' | 'peer-interval' | 'private-show' | 'private-hide') => void}} options
  */
@@ -575,6 +576,10 @@ function create({ distribution: BPMDistribution, config: CFG, onAction }) {
         });
 
         let html = '<div class="dsp-title">Map Settings</div>';
+        const performance = performancePolicy.getState();
+        html += '<div class="dsp-section">Performance</div><div class="dsp-row"><label class="dsp-label" for="dsp-performance-preset">Visual effects</label><select class="dsp-select" id="dsp-performance-preset">' +
+            Object.entries(performancePolicy.PRESETS).map(([value, label]) => `<option value="${value}"${performance.preset === value ? ' selected' : ''}>${label}</option>`).join('') + '</select></div>';
+        html += `<p class="dsp-performance-note" id="dsp-performance-note" role="status">${performance.systemReducedMotion ? 'System reduced motion is active. ' : ''}This browser only. Live updates continue.</p>`;
         html += '<div class="dsp-section">Update Frequency</div>';
         html += `<div class="dsp-row"><span class="dsp-label" title="How often the peer list is fetched from your node">Peer list</span><div class="dsp-input-wrap"><input type="number" class="dsp-input" id="dsp-poll-sec" value="${pollSec}" min="3" max="120"><span class="dsp-unit">sec</span></div></div>`;
         html += `<div class="dsp-row"><span class="dsp-label" title="How often node info and P2P metrics are refreshed">Node info</span><div class="dsp-input-wrap"><input type="number" class="dsp-input" id="dsp-info-sec" value="${infoSec}" min="5" max="120"><span class="dsp-unit">sec</span></div></div>`;
@@ -589,6 +594,11 @@ function create({ distribution: BPMDistribution, config: CFG, onAction }) {
         popup.innerHTML = html;
         document.body.appendChild(popup);
         displaySettingsEl = popup;
+        required('#dsp-performance-preset', popup).addEventListener('change', event => {
+            const select = /** @type {HTMLSelectElement} */ (event.currentTarget);
+            const state = performancePolicy.setPreset(select.value);
+            required('#dsp-performance-note', popup).textContent = `${state.systemReducedMotion ? 'System reduced motion is active. ' : ''}${state.persistent ? 'This browser only. Live updates continue.' : 'Applied for this visit; browser storage is unavailable.'}`;
+        });
 
         popup.querySelector('#dsp-support-btn')?.addEventListener('click', () => {
             closeDisplaySettingsPopup();
